@@ -17,6 +17,12 @@ const fisherYatesShuffle = (arr) => {
   return a;
 };
 
+const filterByGenres = (trackList, activeGenres) => {
+  if (!activeGenres || activeGenres.length === 0) return trackList;
+  const filtered = trackList.filter(t => activeGenres.includes(t.genre));
+  return filtered.length > 0 ? filtered : trackList;
+};
+
 export default function RotationPlaylistManager({ 
   dancers, 
   rotation, 
@@ -32,6 +38,7 @@ export default function RotationPlaylistManager({
   songsPerSet,
   onSongsPerSetChange,
   activeRotationSongs,
+  djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
   onSkipDancer,
@@ -77,7 +84,8 @@ export default function RotationPlaylistManager({
           if (djOverridesRef.current.has(dancerId)) return;
           if (!fromActive[dancerId] || fromActive[dancerId].length === 0) {
             if (tracks.length > 0) {
-              const shuffled = fisherYatesShuffle(tracks);
+              const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
+              const shuffled = fisherYatesShuffle(genrePool);
               fromActive[dancerId] = shuffled.slice(0, songsPerSet).map(t => t.name);
             }
           }
@@ -103,7 +111,10 @@ export default function RotationPlaylistManager({
         const lastApplied = appliedPlaylistsRef.current[dancerId];
         const hasNewServerPlaylist = serverPlaylist.length > 0 && serverHash !== lastApplied;
 
-        if (hasNewServerPlaylist) {
+        const isFoldersOnly = djOptions?.musicMode === 'folders_only';
+        const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
+
+        if (!isFoldersOnly && hasNewServerPlaylist) {
           const matched = serverPlaylist
             .map(name => tracks.find(t => t.name === name))
             .filter(Boolean);
@@ -111,7 +122,7 @@ export default function RotationPlaylistManager({
             const names = matched.map(t => t.name);
             if (names.length < songsPerSet) {
               const usedSet = new Set([...usedNames, ...names]);
-              const available = tracks.filter(t => !usedSet.has(t.name));
+              const available = genrePool.filter(t => !usedSet.has(t.name));
               const filler = fisherYatesShuffle(available).slice(0, songsPerSet - names.length).map(t => t.name);
               names.push(...filler);
             }
@@ -124,7 +135,7 @@ export default function RotationPlaylistManager({
 
         if (updated[dancerId] && updated[dancerId].length >= songsPerSet) return;
 
-        if (serverPlaylist.length > 0) {
+        if (!isFoldersOnly && serverPlaylist.length > 0) {
           const matched = serverPlaylist
             .map(name => tracks.find(t => t.name === name))
             .filter(Boolean);
@@ -132,7 +143,7 @@ export default function RotationPlaylistManager({
             const names = matched.map(t => t.name);
             if (names.length < songsPerSet) {
               const usedSet = new Set([...usedNames, ...names]);
-              const available = tracks.filter(t => !usedSet.has(t.name));
+              const available = genrePool.filter(t => !usedSet.has(t.name));
               const filler = fisherYatesShuffle(available).slice(0, songsPerSet - names.length).map(t => t.name);
               names.push(...filler);
             }
@@ -144,8 +155,8 @@ export default function RotationPlaylistManager({
         }
 
         const existing = updated[dancerId] || [];
-        const available = tracks.filter(t => !usedNames.has(t.name) && !existing.includes(t.name));
-        const pool = available.length >= songsPerSet ? available : tracks.filter(t => !existing.includes(t.name));
+        const available = genrePool.filter(t => !usedNames.has(t.name) && !existing.includes(t.name));
+        const pool = available.length >= songsPerSet ? available : genrePool.filter(t => !existing.includes(t.name));
         const shuffled = fisherYatesShuffle(pool);
         const needed = songsPerSet - existing.length;
         const assigned = [...existing, ...shuffled.slice(0, needed).map(t => t.name)];
@@ -154,17 +165,18 @@ export default function RotationPlaylistManager({
       });
       return updated;
     });
-  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs]);
+  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs, djOptions]);
 
   useEffect(() => {
     if (tracks.length === 0) return;
+    const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
     setSongAssignments(prev => {
       const updated = { ...prev };
       let changed = false;
       Object.keys(updated).forEach(dancerId => {
         if (djOverridesRef.current.has(dancerId)) return;
         const dancer = dancers.find(d => d.id === dancerId);
-        if (dancer?.playlist?.length > 0) return;
+        if (dancer?.playlist?.length > 0 && djOptions?.musicMode !== 'folders_only') return;
         const songs = updated[dancerId];
         if (!songs) return;
         if (songs.length > songsPerSet) {
@@ -172,7 +184,7 @@ export default function RotationPlaylistManager({
           changed = true;
         } else if (songs.length < songsPerSet) {
           const usedNames = new Set(songs);
-          const available = tracks.filter(t => !usedNames.has(t.name));
+          const available = genrePool.filter(t => !usedNames.has(t.name));
           const shuffled = fisherYatesShuffle(available);
           const needed = songsPerSet - songs.length;
           updated[dancerId] = [...songs, ...shuffled.slice(0, needed).map(t => t.name)];
@@ -181,7 +193,7 @@ export default function RotationPlaylistManager({
       });
       return changed ? updated : prev;
     });
-  }, [songsPerSet, tracks, dancers]);
+  }, [songsPerSet, tracks, dancers, djOptions]);
 
   const getAuthHeaders = useCallback(() => {
     const token = sessionStorage.getItem('djbooth_token');
@@ -254,8 +266,9 @@ export default function RotationPlaylistManager({
   const rotationDancers = localRotation.map(id => dancers.find(d => d.id === id)).filter(Boolean);
   const availableDancers = dancers.filter(d => d.is_active && !localRotation.includes(d.id)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
-  const filteredTracks = serverTracks;
-  const displayedTracks = serverTracks;
+  const genreFilteredTracks = filterByGenres(serverTracks, djOptions?.activeGenres);
+  const filteredTracks = genreFilteredTracks;
+  const displayedTracks = genreFilteredTracks;
 
   const addSongToDancer = useCallback((dancerId, trackName) => {
     djOverridesRef.current.add(dancerId);

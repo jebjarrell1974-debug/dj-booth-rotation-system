@@ -28,7 +28,71 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Feb 27, 2026
+### Feb 27, 2026 — Session 3 (DJ Options + Genre Filtering)
+
+#### Feature: DJ Options Panel
+- **Purpose**: Let DJ control music source mode and active genres from main DJ Booth or iPad Remote
+- **File**: `src/components/dj/DJOptions.jsx` (new component)
+- **Modes**:
+  - "Dancer First" (default): Uses dancer playlists when available, fills remaining slots from active genres
+  - "Folders Only": Ignores dancer playlists entirely, uses only server-scanned music folders filtered by active genres
+- **Genre Selection**: Checkboxes for each genre/folder found on the server; stored as `dj_active_genres` (JSON array) in SQLite settings table
+- **Server API**: `GET/POST /api/dj-options` — persists `musicMode` and `activeGenres`
+- **SSE Broadcast**: `djOptions` event broadcasts changes to all connected clients (iPad changes instantly reflected on Pi)
+- **Integration in DJBooth.jsx**: `djOptions` state + `djOptionsRef` ref, loaded on mount, updated via SSE
+
+#### Feature: Genre Filtering in Rotation Playlist Manager
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`
+- Added `filterByGenres()` helper that filters tracks by active genres (falls back to full list if filter yields 0 results)
+- All filler track selections now use genre-filtered pool
+- Track browser in rotation panel also filtered by active genres
+- In "Folders Only" mode, dancer playlists are skipped entirely — all songs come from genre-filtered server pool
+- `djOptions` prop passed from DJBooth.jsx
+
+#### Feature: Options Tab in iPad Remote
+- **File**: `src/components/dj/RemoteView.jsx`
+- Added "Options" tab (with SlidersHorizontal icon) to the right panel tab bar
+- Embeds full `DJOptions` component — DJ can change music mode and genres from iPad
+- Props `djOptions` and `onOptionsChange` passed through from DJBooth.jsx
+
+#### Genre Filtering in Playback Engine
+- `getDancerTracks` and `playFallbackTrack` in DJBooth.jsx now respect active genres
+- `getRandomTracks` in `server/db.js` accepts genre filter parameter
+
+### Feb 27, 2026 — Session 2 (Fixes + iPad Remote)
+
+#### Bug Fix: Dancer View White Screen
+- **Problem**: When dancers tapped "Add Songs" on their phone, the page would crash to a white screen
+- **Root Cause**: `DancerView.jsx` loaded playlist and genres in a single `Promise.all()`. If the genre fetch failed (e.g., auth issue), the catch block redirected to `/` (login), causing a white screen
+- **Fix**: Separated genre fetch from playlist fetch — genre failure is silently caught, dancer still sees their playlist
+- **File**: `src/pages/DancerView.jsx` (lines 45-62)
+
+#### Bug Fix: Playlist Songs Being Erased
+- **Problem**: When the DJ assigned songs to a dancer's set during rotation, it would replace the dancer's entire saved playlist with just the new rotation songs, erasing all previously saved songs
+- **Root Cause**: `onAutoSavePlaylist` and `onSaveAll` in `DJBooth.jsx` sent the current rotation songs (just 2-3 songs) directly as the dancer's playlist via `updateDancerMutation`, overwriting the full saved playlist
+- **Fix**: Both callbacks now fetch the dancer's existing playlist, merge new songs in (skipping duplicates), then save the merged list
+- **File**: `src/pages/DJBooth.jsx` (lines 2396-2433)
+- **How it works**: `const merged = [...existingPlaylist]; for (song of newSongs) { if (!merged.includes(song)) merged.push(song); }`
+
+#### Tuning: Audio Duck Transition
+- **Problem**: Auto-duck sounded too harsh/abrupt when announcements started and ended
+- **Fix**: Changed `DUCK_TRANSITION` constant from `2.5` to `4.5` seconds for a gentler fade
+- **File**: `src/components/dj/AudioEngine.jsx` (line 10)
+- **Note**: Only the timing constant was changed — no logic or curve modifications
+
+#### Feature: iPad DJ Remote View
+- **Purpose**: iPad on club WiFi acts as a remote control for the Pi's DJ Booth (no audio playback on iPad)
+- **How to use**: Open Pi's IP in iPad Safari → tap "DJ / Manager Remote" → enter DJ PIN
+- **File**: `src/components/dj/RemoteView.jsx` (new file)
+- **Integration**: `DJBooth.jsx` early-returns `<RemoteView>` when `remoteMode=true` (Pi rendering path completely untouched)
+- **Layout**: Landscape split-panel optimized for handheld iPad
+  - Left panel (340px): Now Playing card (dancer name, song #, track), Skip + Announcements buttons (64px tall), Songs/Set selector
+  - Right panel: Tabbed Rotation list (with reorder arrows, remove buttons) and Dancers list (with add/remove from rotation)
+- **Touch**: All buttons 44px+ touch targets, `-webkit-tap-highlight-color: transparent`, `touch-action: manipulation`
+- **CSS**: Added `.remote-view` styles in `src/index.css`
+- **No server changes**: Uses existing SSE (`connectBoothSSE`) + command API (`boothApi.sendCommand`)
+
+### Feb 27, 2026 — Session 1 (Migration + Features)
 - Migrated project to new Repl environment, installed all packages, verified app runs
 - Configured deployment: `server/boot.cjs` as production entry, `npm run build` for build step
 - Built frontend successfully (`dist/public/`)
@@ -46,16 +110,6 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - Search with debounce, paginated results (100 at a time)
   - Track name + genre label display
   - Files changed: `src/pages/DancerView.jsx`, `src/api/serverApi.js` (added `musicApi`)
-- Fixed dancer view white screen bug: separated genre fetch from playlist load so genre failure doesn't crash the page
-- Fixed playlist saving: rotation songs now **append** to dancer playlists instead of replacing them (no more lost songs)
-- Adjusted audio duck transition from 2.5s to 4.5s for a gentler, more gradual fade
-- Built iPad-optimized DJ Remote View (`src/components/dj/RemoteView.jsx`):
-  - Split-panel landscape layout: left panel (now playing + controls), right panel (rotation/dancers tabs)
-  - Large touch targets (44px+) for handheld iPad use
-  - Skip, announcements toggle, songs-per-set controls, rotation reordering
-  - Add/remove dancers from rotation, dancer roster view
-  - Uses existing SSE + boothApi.sendCommand infrastructure (no new server changes)
-  - DJBooth.jsx early-returns RemoteView when remoteMode=true (Pi rendering completely untouched)
 - GitHub backup pushed
 
 ## External Dependencies

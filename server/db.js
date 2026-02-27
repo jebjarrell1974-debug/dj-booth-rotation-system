@@ -385,12 +385,20 @@ export function getMusicTrackByName(name) {
   return db.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
 }
 
-export function getRandomTracks(count = 3, excludeIds = []) {
+export function getRandomTracks(count = 3, excludeIds = [], genres = []) {
+  const conditions = [];
+  const params = [];
   if (excludeIds.length > 0) {
-    const placeholders = excludeIds.map(() => '?').join(',');
-    return db.prepare(`SELECT id, name, path, genre FROM music_tracks WHERE id NOT IN (${placeholders}) ORDER BY RANDOM() LIMIT ?`).all(...excludeIds, count);
+    conditions.push(`id NOT IN (${excludeIds.map(() => '?').join(',')})`);
+    params.push(...excludeIds);
   }
-  return db.prepare('SELECT id, name, path, genre FROM music_tracks ORDER BY RANDOM() LIMIT ?').all(count);
+  if (genres.length > 0) {
+    conditions.push(`genre IN (${genres.map(() => '?').join(',')})`);
+    params.push(...genres);
+  }
+  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+  params.push(count);
+  return db.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
 }
 
 export function getMusicTrackCount() {

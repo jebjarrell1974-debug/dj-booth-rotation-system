@@ -40,7 +40,7 @@ import { Label } from "@/components/ui/label";
 
 import AudioEngine from '@/components/dj/AudioEngine';
 import MusicLibrary from '@/components/dj/MusicLibrary';
-import { isRemoteMode, boothApi, connectBoothSSE } from '@/api/serverApi';
+import { isRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
 import NowPlaying from '@/components/dj/NowPlaying';
 import DancerRoster from '@/components/dj/DancerRoster';
 import StageRotation from '@/components/dj/StageRotation';
@@ -49,6 +49,7 @@ import AnnouncementSystem from '@/components/dj/AnnouncementSystem';
 import RotationPlaylistManager from '@/components/dj/RotationPlaylistManager';
 import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
 import RemoteView from '@/components/dj/RemoteView';
+import DJOptions from '@/components/dj/DJOptions';
 
 const DEFAULT_SONGS_PER_SET = 2;
 
@@ -84,6 +85,8 @@ export default function DJBooth() {
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
   const [energyOverride, setEnergyOverride] = useState(() => getApiConfig().energyOverride || 'auto');
+  const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
+  const djOptionsRef = useRef({ activeGenres: [], musicMode: 'dancer_first' });
   const rotationRef = useRef([]);
   const dancersRef = useRef([]);
   const transitionInProgressRef = useRef(false);
@@ -180,6 +183,13 @@ export default function DJBooth() {
       return aTime - bTime;
     });
     return sorted;
+  }, []);
+
+  const filterByActiveGenres = useCallback((trackList) => {
+    const opts = djOptionsRef.current;
+    if (!opts?.activeGenres || opts.activeGenres.length === 0) return trackList;
+    const filtered = trackList.filter(t => opts.activeGenres.includes(t.genre));
+    return filtered.length > 0 ? filtered : trackList;
   }, []);
 
   const wakeLockRef = useRef(null);
@@ -465,11 +475,21 @@ export default function DJBooth() {
       if (data.type === 'boothState' && data.state) {
         setLiveBoothState(data.state);
       }
+      if (data.type === 'djOptions') {
+        setDjOptions(data);
+        djOptionsRef.current = data;
+      }
       if (data.type === 'reconnected' && data.eventSource) {
         sseRef.current = data.eventSource;
       }
     });
     sseRef.current = es;
+
+    if (remoteMode) {
+      djOptionsApi.get()
+        .then(opts => { if (active) { setDjOptions(opts); djOptionsRef.current = opts; } })
+        .catch(() => {});
+    }
 
     return () => { active = false; sseRef.current?.close(); sseRef.current = null; };
   }, [remoteMode]);
@@ -609,6 +629,10 @@ export default function DJBooth() {
       if (data.type === 'command' && data.command) {
         executeCommand(data.command);
         boothApi.ackCommands(data.command.id).catch(() => {});
+      }
+      if (data.type === 'djOptions') {
+        setDjOptions(data);
+        djOptionsRef.current = data;
       }
       if (data.type === 'reconnected' && data.eventSource) {
         commandSseRef.current = data.eventSource;
@@ -834,7 +858,9 @@ export default function DJBooth() {
 
     try {
       const token = sessionStorage.getItem('djbooth_token');
-      const res = await fetch('/api/music/random?count=5', {
+      const opts = djOptionsRef.current;
+      const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
+      const res = await fetch(`/api/music/random?count=5${genresParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(5000)
       });
@@ -863,7 +889,7 @@ export default function DJBooth() {
       console.warn('⚠️ PlayFallback: Server random fetch failed, using local pool:', err.message);
     }
 
-    const validTracks = tracks.filter(t => t && t.url);
+    const validTracks = filterByActiveGenres(tracks.filter(t => t && t.url));
     if (validTracks.length === 0) {
       console.error('❌ PlayFallback: No tracks available');
       return false;
@@ -954,6 +980,16 @@ export default function DJBooth() {
     })();
   }, [remoteMode]);
 
+  useEffect(() => {
+    if (remoteMode) return;
+    djOptionsApi.get()
+      .then(opts => {
+        setDjOptions(opts);
+        djOptionsRef.current = opts;
+      })
+      .catch(() => {});
+  }, [remoteMode]);
+
   // Get random track handles from library
   const getRandomTracks = useCallback((count) => {
     const pool = filterCooldown(tracks);
@@ -996,6 +1032,8 @@ export default function DJBooth() {
     const count = songsPerSetRef.current;
     const alreadyAssigned = getAlreadyAssignedNames();
     const validTracks = tracks.filter(t => t && t.url);
+    const opts = djOptionsRef.current;
+    const isFoldersOnly = opts?.musicMode === 'folders_only';
     let result = [];
 
     const lruShuffle = (pool) => {
@@ -1009,7 +1047,7 @@ export default function DJBooth() {
       return shuffled;
     };
 
-    if (dancer?.playlist?.length > 0) {
+    if (!isFoldersOnly && dancer?.playlist?.length > 0) {
       const selected = [];
       for (const playlistName of dancer.playlist) {
         let track = validTracks.find(t => t.name === playlistName);
@@ -1026,7 +1064,8 @@ export default function DJBooth() {
 
     if (result.length < count) {
       const usedNames = new Set(result.map(t => t.name));
-      const notUsed = validTracks.filter(t => !alreadyAssigned.has(t.name) && !usedNames.has(t.name));
+      const genreFiltered = filterByActiveGenres(validTracks);
+      const notUsed = genreFiltered.filter(t => !alreadyAssigned.has(t.name) && !usedNames.has(t.name));
       const offCooldown = filterCooldown(notUsed);
       const needed = count - result.length;
       let filler;
@@ -2017,6 +2056,11 @@ export default function DJBooth() {
       <RemoteView
         dancers={dancers}
         liveBoothState={liveBoothState}
+        djOptions={djOptions}
+        onOptionsChange={(opts) => {
+          setDjOptions(opts);
+          djOptionsRef.current = opts;
+        }}
         onLogout={async () => {
           const { clearToken } = await import('@/api/serverApi');
           clearToken();
@@ -2207,6 +2251,15 @@ export default function DJBooth() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setActiveTab('options')}
+                className={`${activeTab === 'options' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
+              >
+                <SlidersHorizontal className="w-4 h-4 mr-1" />
+                Options
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setActiveTab('rotation')}
                 className={`${activeTab === 'rotation' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
               >
@@ -2330,6 +2383,18 @@ export default function DJBooth() {
         <div className="flex-1 relative min-h-0">
           {/* Content Area */}
           <div className="h-full p-4 overflow-hidden">
+            {activeTab === 'options' && (
+              <div className="h-full overflow-auto">
+                <DJOptions
+                  djOptions={djOptions}
+                  onOptionsChange={(opts) => {
+                    setDjOptions(opts);
+                    djOptionsRef.current = opts;
+                  }}
+                />
+              </div>
+            )}
+
             {activeTab === 'rotation' && remoteMode && (
               <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 overflow-auto">
                 <div className="flex items-center justify-between mb-4">
@@ -2404,6 +2469,7 @@ export default function DJBooth() {
                 dancers={dancers}
                 rotation={rotation}
                 tracks={tracks}
+                djOptions={djOptions}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
                 onAutoSavePlaylist={async (dancerId, newSongs) => {
                   const dancer = dancers.find(d => d.id === dancerId);
