@@ -132,28 +132,28 @@ Edit `/etc/systemd/journald.conf`, set `SystemMaxUse=200M`, then `sudo systemctl
 
 The service has `Restart=always` with `RestartSec=5`, so the app auto-restarts after a crash. The journal shows the error output right before each restart.
 
-### Remote Updates
-Each Pi can pull updates from the cloud with a single command. One-time setup: download the updater script to the Pi:
+### Remote Updates (GitHub-Based)
+Pi updates are distributed via GitHub (the Replit cloud deployment has a platform-level routing issue). Code is pushed to `https://github.com/jebjarrell1974-debug/dj-booth-rotation-system` (public repo).
+
+**One-time setup on each Pi:**
 ```bash
-curl -o /home/$(whoami)/djbooth-update.sh https://dj-booth-automated-rotation-system-jebjarrell1974.replit.app/djbooth-update.sh
-chmod +x /home/$(whoami)/djbooth-update.sh
+curl -o ~/djbooth-update.sh https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/public/djbooth-update-github.sh && chmod +x ~/djbooth-update.sh
 ```
 
-Then to update at any time (via SSH/Tailscale):
+**To update at any time (via SSH/Tailscale):**
 ```bash
 ~/djbooth-update.sh
 ```
 
-The script downloads only the app code (server + built frontend, ~95MB), backs up the current install, extracts, runs `npm install --production`, restarts the service, and auto-rolls back if the service fails to start. Old backups are cleaned up (keeps last 3).
+The script downloads the latest code from GitHub, backs up the current install, copies server + config files, builds the frontend with Vite, installs dependencies, restarts the systemd service, and auto-rolls back if the service fails to start. Old backups are cleaned up (keeps last 3).
+
+**Workflow:** Make changes in Replit → push to GitHub (see `github-pi-update` skill) → SSH into Pi → run `~/djbooth-update.sh`
 
 Environment variables for customization:
-- `DJBOOTH_CLOUD_URL` — cloud server URL (defaults to the Replit app URL)
+- `DJBOOTH_GITHUB_REPO` — GitHub repo (defaults to `jebjarrell1974-debug/dj-booth-rotation-system`)
 - `DJBOOTH_APP_DIR` — local app directory (defaults to `/home/<user>/djbooth`)
 - `DJBOOTH_SERVICE` — systemd service name (defaults to `djbooth`)
-
-**Update API Endpoints:**
-- `GET /api/version` — current version info (commit hash, timestamp)
-- `GET /api/update-bundle` — slim update tarball (server + dist + package.json only)
+- `DJBOOTH_BRANCH` — Git branch to pull (defaults to `main`)
 
 ### Security Notes
 - Change the default Master PIN (36669) on every venue from the Configuration page

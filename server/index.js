@@ -801,7 +801,7 @@ const isDirectRun = process.argv[1] && (
 );
 
 if (isDirectRun) {
-  const PORT = process.env.PORT || 5000;
+  const PORT = process.env.PORT || 3001;
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🎵 DJ Booth API server running on port ${PORT}`);
     initMusicScanner();
