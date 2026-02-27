@@ -48,6 +48,7 @@ import PlaylistEditor from '@/components/dj/PlaylistEditor';
 import AnnouncementSystem from '@/components/dj/AnnouncementSystem';
 import RotationPlaylistManager from '@/components/dj/RotationPlaylistManager';
 import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
+import RemoteView from '@/components/dj/RemoteView';
 
 const DEFAULT_SONGS_PER_SET = 2;
 
@@ -2010,6 +2011,20 @@ export default function DJBooth() {
       }
     }
   }, [rotation, dancers, remoteMode]);
+
+  if (remoteMode) {
+    return (
+      <RemoteView
+        dancers={dancers}
+        liveBoothState={liveBoothState}
+        onLogout={async () => {
+          const { clearToken } = await import('@/api/serverApi');
+          clearToken();
+          window.location.href = '/';
+        }}
+      />
+    );
+  }
 
   return (
     <div className="h-screen bg-[#08081a] text-white flex flex-col overflow-hidden">
