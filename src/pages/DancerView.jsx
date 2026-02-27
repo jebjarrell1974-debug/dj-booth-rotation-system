@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { playlistApi, songsApi, auth as authApi } from '@/api/serverApi';
+import { playlistApi, musicApi, auth as authApi } from '@/api/serverApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Music, Search, Plus, X, GripVertical, LogOut } from 'lucide-react';
+import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen, ChevronLeft } from 'lucide-react';
 
 const INACTIVITY_TIMEOUT = 4 * 60 * 60 * 1000;
 const LONG_PRESS_MS = 200;
@@ -13,13 +13,18 @@ export default function DancerView() {
   const { user, role, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [playlist, setPlaylist] = useState([]);
-  const [songs, setSongs] = useState([]);
+  const [tracks, setTracks] = useState([]);
+  const [genres, setGenres] = useState([]);
+  const [selectedGenre, setSelectedGenre] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [tracksLoading, setTracksLoading] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
-  const [songDisplayLimit, setSongDisplayLimit] = useState(200);
+  const [page, setPage] = useState(1);
+  const [totalTracks, setTotalTracks] = useState(0);
   const lastActivityRef = useRef(Date.now());
   const [dragIdx, setDragIdx] = useState(null);
+  const searchTimerRef = useRef(null);
 
   const touchState = useRef({ active: false, idx: null, startY: 0, currentY: 0, timer: null });
   const listRef = useRef(null);
@@ -37,9 +42,12 @@ export default function DancerView() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [pl, s] = await Promise.all([playlistApi.get(), songsApi.list()]);
+        const [pl, genreData] = await Promise.all([
+          playlistApi.get(),
+          musicApi.getGenres()
+        ]);
         setPlaylist(pl.playlist || []);
-        setSongs(s);
+        setGenres(genreData.genres || []);
       } catch {
         navigate('/');
       }
@@ -47,6 +55,32 @@ export default function DancerView() {
     };
     load();
   }, [navigate]);
+
+  const fetchTracks = useCallback(async (search, genre, pageNum) => {
+    setTracksLoading(true);
+    try {
+      const data = await musicApi.getTracks({ page: pageNum, limit: 100, search, genre });
+      if (pageNum === 1) {
+        setTracks(data.tracks || []);
+      } else {
+        setTracks(prev => [...prev, ...(data.tracks || [])]);
+      }
+      setTotalTracks(data.total || 0);
+    } catch (err) {
+      console.error('Failed to fetch tracks:', err);
+    }
+    setTracksLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!showLibrary) return;
+    setPage(1);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      fetchTracks(searchQuery, selectedGenre, 1);
+    }, 300);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [showLibrary, searchQuery, selectedGenre, fetchTracks]);
 
   useEffect(() => {
     const resetTimer = () => { lastActivityRef.current = Date.now(); };
@@ -163,7 +197,6 @@ export default function DancerView() {
     for (let i = 0; i < items.length; i++) {
       if (!items[i]) continue;
       const rect = items[i].getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
       if (i !== ts.idx && touch.clientY > rect.top && touch.clientY < rect.bottom) {
         setPlaylist(prev => {
           const updated = [...prev];
@@ -210,15 +243,11 @@ export default function DancerView() {
     navigate('/');
   };
 
-  const filteredSongs = searchQuery.trim() 
-    ? songs.filter(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
-    : songs;
-
-  const displayedSongs = filteredSongs.slice(0, songDisplayLimit);
-
-  useEffect(() => {
-    setSongDisplayLimit(200);
-  }, [searchQuery]);
+  const loadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchTracks(searchQuery, selectedGenre, nextPage);
+  };
 
   const playlistSet = new Set(playlist);
 
@@ -298,49 +327,94 @@ export default function DancerView() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-4 space-y-3 flex-shrink-0">
+          <div className="p-3 space-y-3 flex-shrink-0 border-b border-[#1e1e3a]">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Song Library</span>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => { setShowLibrary(false); setSearchQuery(''); }}
+                onClick={() => { setShowLibrary(false); setSearchQuery(''); setSelectedGenre(''); }}
                 className="text-gray-400 hover:text-white"
               >
-                <ArrowBackIcon />
+                <ChevronLeft className="w-4 h-4 mr-1" />
                 My Playlist
               </Button>
             </div>
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search songs..."
-                className="pl-9 bg-[#151528] border-[#1e1e3a] text-white placeholder:text-gray-500"
-                autoFocus
+                className="pl-9 bg-[#151528] border-[#1e1e3a] text-white placeholder:text-gray-500 h-10"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {genres.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+                <button
+                  onClick={() => setSelectedGenre('')}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    selectedGenre === ''
+                      ? 'bg-[#e040fb] text-black'
+                      : 'bg-[#151528] text-gray-400 border border-[#1e1e3a] hover:text-white'
+                  }`}
+                >
+                  All
+                </button>
+                {genres.map(genre => (
+                  <button
+                    key={genre}
+                    onClick={() => setSelectedGenre(selectedGenre === genre ? '' : genre)}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                      selectedGenre === genre
+                        ? 'bg-[#e040fb] text-black'
+                        : 'bg-[#151528] text-gray-400 border border-[#1e1e3a] hover:text-white'
+                    }`}
+                  >
+                    <FolderOpen className="w-3 h-3 inline mr-1" />
+                    {genre}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="text-xs text-gray-500">
+              {totalTracks} songs{selectedGenre ? ` in ${selectedGenre}` : ''}{searchQuery ? ` matching "${searchQuery}"` : ''}
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div className="px-4 pb-4 space-y-1">
-              {displayedSongs.length === 0 ? (
+            <div className="px-3 pb-4 pt-2 space-y-0.5">
+              {tracksLoading && tracks.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-6 h-6 border-3 border-[#e040fb]/30 border-t-[#e040fb] rounded-full animate-spin mx-auto" />
+                </div>
+              ) : tracks.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 text-sm">
-                  {songs.length === 0 ? 'No songs available yet' : 'No songs match your search'}
+                  {searchQuery || selectedGenre ? 'No songs match your search' : 'No songs available yet'}
                 </div>
               ) : (
-                displayedSongs.map((song) => {
-                  const inPlaylist = playlistSet.has(song);
+                tracks.map((track) => {
+                  const inPlaylist = playlistSet.has(track.name);
                   return (
                     <button
-                      key={song}
+                      key={track.id}
                       onClick={() => {
                         if (inPlaylist) {
-                          const idx = playlist.indexOf(song);
+                          const idx = playlist.indexOf(track.name);
                           if (idx !== -1) removeSong(idx);
                         } else {
-                          addSong(song);
+                          addSong(track.name);
                         }
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left transition-colors ${
@@ -350,26 +424,31 @@ export default function DancerView() {
                       }`}
                     >
                       <Music className="w-4 h-4 flex-shrink-0 opacity-50" />
-                      <span className="truncate text-sm flex-1">{song}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="truncate text-sm block">{track.name}</span>
+                        {track.genre && (
+                          <span className="text-[10px] text-gray-600 block">{track.genre}</span>
+                        )}
+                      </div>
                       {inPlaylist ? (
                         <span className="flex items-center gap-1 text-xs text-red-400 flex-shrink-0">
                           <X className="w-3.5 h-3.5" />
-                          Remove
                         </span>
                       ) : (
-                        <Plus className="w-4 h-4 text-[#e040fb] flex-shrink-0" />
+                        <Plus className="w-5 h-5 text-[#e040fb] flex-shrink-0" />
                       )}
                     </button>
                   );
                 })
               )}
-              {filteredSongs.length > songDisplayLimit && (
+              {tracks.length < totalTracks && (
                 <div className="text-center py-3">
                   <button
-                    onClick={() => setSongDisplayLimit(prev => prev + 200)}
-                    className="px-4 py-2 text-xs font-medium text-[#e040fb] bg-[#e040fb]/10 hover:bg-[#e040fb]/20 rounded-lg transition-colors active:bg-[#e040fb]/30"
+                    onClick={loadMore}
+                    disabled={tracksLoading}
+                    className="px-4 py-2.5 text-xs font-medium text-[#e040fb] bg-[#e040fb]/10 hover:bg-[#e040fb]/20 rounded-lg transition-colors active:bg-[#e040fb]/30"
                   >
-                    Show More ({songDisplayLimit} of {filteredSongs.length})
+                    {tracksLoading ? 'Loading...' : `Show More (${tracks.length} of ${totalTracks})`}
                   </button>
                 </div>
               )}
@@ -378,13 +457,5 @@ export default function DancerView() {
         </div>
       )}
     </div>
-  );
-}
-
-function ArrowBackIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-      <path d="m15 18-6-6 6-6"/>
-    </svg>
   );
 }

@@ -90,6 +90,12 @@ export const songsApi = {
   sync: (songs) => apiFetch('/songs/sync', { method: 'POST', body: JSON.stringify({ songs }) }),
 };
 
+export const musicApi = {
+  getTracks: ({ page = 1, limit = 100, search = '', genre = '' } = {}) =>
+    apiFetch(`/music/tracks?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&genre=${encodeURIComponent(genre)}`),
+  getGenres: () => apiFetch('/music/genres'),
+};
+
 export const boothApi = {
   getState: () => apiFetch('/booth/state'),
   postState: (state) => apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) }),
