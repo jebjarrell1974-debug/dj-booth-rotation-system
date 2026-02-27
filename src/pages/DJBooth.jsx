@@ -2390,11 +2390,17 @@ export default function DJBooth() {
                 rotation={rotation}
                 tracks={tracks}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
-                onAutoSavePlaylist={async (dancerId, playlist) => {
-                  updateDancerMutation.mutate({ id: dancerId, data: { playlist } });
+                onAutoSavePlaylist={async (dancerId, newSongs) => {
+                  const dancer = dancers.find(d => d.id === dancerId);
+                  const existingPlaylist = dancer?.playlist || [];
+                  const merged = [...existingPlaylist];
+                  for (const song of newSongs) {
+                    if (!merged.includes(song)) merged.push(song);
+                  }
+                  updateDancerMutation.mutate({ id: dancerId, data: { playlist: merged } });
                   if (isRotationActive && tracks.length > 0) {
                     const resolved = [];
-                    for (const name of playlist) {
+                    for (const name of newSongs) {
                       let track = tracks.find(t => t.name === name);
                       if (!track) track = await resolveTrackByName(name);
                       if (track) resolved.push(track);
@@ -2410,10 +2416,16 @@ export default function DJBooth() {
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
-                  Object.entries(playlists).forEach(([dancerId, playlist]) => {
+                  Object.entries(playlists).forEach(([dancerId, newSongs]) => {
+                    const dancer = dancers.find(d => d.id === dancerId);
+                    const existingPlaylist = dancer?.playlist || [];
+                    const merged = [...existingPlaylist];
+                    for (const song of newSongs) {
+                      if (!merged.includes(song)) merged.push(song);
+                    }
                     updateDancerMutation.mutate({ 
                       id: dancerId, 
-                      data: { playlist } 
+                      data: { playlist: merged } 
                     });
                   });
                   if (tracks.length > 0) {
