@@ -32,6 +32,10 @@ args = "cd /home/runner/workspace && PORT=3001 node server/index.js & sleep 2 &&
 waitForPort = 5000
 
 [[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
 localPort = 5000
 externalPort = 80
 
