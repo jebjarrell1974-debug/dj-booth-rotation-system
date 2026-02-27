@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { UserPlus, Edit2, Trash2, Music, User, ListMusic } from 'lucide-react';
+import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus } from 'lucide-react';
 
 const DANCER_COLORS = [
   '#e040fb', '#ff2d55', '#00e5ff', '#7c3aed', '#39ff14', 
@@ -18,6 +18,9 @@ const DANCER_COLORS = [
 
 export default function DancerRoster({ 
   dancers, 
+  rotation = [],
+  onAddToRotation,
+  onRemoveFromRotation,
   onAddDancer, 
   onEditDancer, 
   onDeleteDancer,
@@ -143,10 +146,38 @@ export default function DancerRoster({
               </div>
               
               <p className="text-sm font-medium text-white truncate w-full text-center mb-1">{dancer.name}</p>
-              <div className="flex items-center gap-1 text-xs text-gray-500 mb-3">
+              <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
                 <Music className="w-3 h-3" />
                 <span>{dancer.playlist?.length || 0} songs</span>
               </div>
+
+              {rotation.includes(dancer.id) ? (
+                <Button
+                  size="sm"
+                  className="w-full mb-2 h-7 text-xs bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/50"
+                  title="Remove from rotation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveFromRotation?.(dancer.id);
+                  }}
+                >
+                  <Minus className="w-3.5 h-3.5 mr-1" />
+                  In Rotation
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="w-full mb-2 h-7 text-xs bg-green-900/40 hover:bg-green-800/60 text-green-300 border border-green-700/50"
+                  title="Add to rotation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddToRotation?.(dancer.id);
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add to Rotation
+                </Button>
+              )}
               
               <div className="flex items-center gap-1">
                 <Button

@@ -2526,6 +2526,9 @@ export default function DJBooth() {
               <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 overflow-auto">
                 <DancerRoster
                   dancers={dancers}
+                  rotation={rotation}
+                  onAddToRotation={addToRotation}
+                  onRemoveFromRotation={removeFromRotation}
                   onAddDancer={addDancer}
                   onEditDancer={(id, data) => updateDancerMutation.mutate({ id, data })}
                   onDeleteDancer={(id) => deleteDancerMutation.mutate(id)}

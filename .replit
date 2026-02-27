@@ -28,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd /home/runner/workspace && PORT=3001 node server/index.js & sleep 2 && node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5000"
+args = "PORT=3001 node server/index.js & sleep 2 && node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5000"
 waitForPort = 5000
 
 [[ports]]
@@ -41,8 +41,9 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "prod-server.cjs"]
-build = ["echo", "skip"]
+run = ["node", "server/boot.cjs"]
+build = ["npm", "run", "build"]
+publicDir = "dist/public"
 
 
 [userenv]
