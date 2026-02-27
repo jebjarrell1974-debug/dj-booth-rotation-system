@@ -120,7 +120,7 @@ export default function DJBooth() {
     return a;
   };
 
-  const COOLDOWN_MS = 5 * 60 * 60 * 1000;
+  const COOLDOWN_MS = 4 * 60 * 60 * 1000;
   const songCooldownRef = useRef(null);
 
   useEffect(() => {
@@ -1048,31 +1048,44 @@ export default function DJBooth() {
     };
 
     if (!isFoldersOnly && dancer?.playlist?.length > 0) {
-      const selected = [];
+      const resolved = [];
       for (const playlistName of dancer.playlist) {
         let track = validTracks.find(t => t.name === playlistName);
         if (!track) {
           track = await resolveTrackByName(playlistName);
         }
-        if (track) selected.push(track);
+        if (track) resolved.push(track);
       }
-      if (selected.length > 0) {
-        result = selected;
-        console.log(`🎵 getDancerTracks: Using saved playlist for ${dancer.name} — ${selected.length} tracks in saved order`);
+      if (resolved.length > 0) {
+        const offCooldownPlaylist = filterCooldown(resolved);
+        const usable = offCooldownPlaylist.filter(t => {
+          const lastPlayed = (songCooldownRef.current || {})[t.name] || 0;
+          return !lastPlayed || (Date.now() - lastPlayed) >= COOLDOWN_MS;
+        });
+        if (usable.length > 0) {
+          result = usable;
+          console.log(`🎵 getDancerTracks: Using ${usable.length}/${resolved.length} playlist songs for ${dancer.name} (${resolved.length - usable.length} on cooldown)`);
+        } else {
+          console.log(`🎵 getDancerTracks: All ${resolved.length} playlist songs on cooldown for ${dancer.name} — using random filler`);
+        }
       }
     }
 
     if (result.length < count) {
       const usedNames = new Set(result.map(t => t.name));
-      const genreFiltered = filterByActiveGenres(validTracks);
-      const notUsed = genreFiltered.filter(t => !alreadyAssigned.has(t.name) && !usedNames.has(t.name));
-      const offCooldown = filterCooldown(notUsed);
       const needed = count - result.length;
+      const allAvailable = validTracks.filter(t => !alreadyAssigned.has(t.name) && !usedNames.has(t.name));
+      const allOffCooldown = allAvailable.filter(t => {
+        const lastPlayed = (songCooldownRef.current || {})[t.name] || 0;
+        return !lastPlayed || (Date.now() - lastPlayed) >= COOLDOWN_MS;
+      });
       let filler;
-      if (offCooldown.length >= needed) {
-        filler = lruShuffle(offCooldown).slice(0, needed);
-      } else if (notUsed.length >= needed) {
-        filler = lruShuffle(notUsed).slice(0, needed);
+      if (allOffCooldown.length >= needed) {
+        const genreFiltered = filterByActiveGenres(allOffCooldown);
+        const pool = genreFiltered.length >= needed ? genreFiltered : allOffCooldown;
+        filler = lruShuffle(pool).slice(0, needed);
+      } else if (allAvailable.length >= needed) {
+        filler = lruShuffle(allAvailable).slice(0, needed);
       } else {
         const fallback = validTracks.filter(t => !usedNames.has(t.name));
         filler = lruShuffle(fallback).slice(0, needed);
