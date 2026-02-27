@@ -26,6 +26,21 @@ A fleet management system enables centralized control of multiple Pi units, prov
 
 The application is deployed via Replit as an autoscale target, with Vite building to `dist/public/`. Production Express servers static files from `dist/public/` with SPA fallback.
 
+## Session Notes
+
+### Feb 27, 2026
+- Migrated project to new Repl environment, installed all packages, verified app runs
+- Configured deployment: `server/boot.cjs` as production entry, `npm run build` for build step
+- Built frontend successfully (`dist/public/`)
+- Published app to Replit
+- Added quick rotation management buttons to Dancer Roster page:
+  - Green **+ Add to Rotation** button on each dancer card (when not in rotation)
+  - Red **- In Rotation** button on each dancer card (when already in rotation)
+  - Allows fast rotation changes without switching to the Rotation tab
+  - Files changed: `src/components/dj/DancerRoster.jsx`, `src/pages/DJBooth.jsx`
+- Cleaned up stray import artifacts (`sed3CnVAv`, `zipFile.zip`)
+- GitHub backup pushed
+
 ## External Dependencies
 - **React**: Frontend UI development
 - **Vite**: Project build tool
