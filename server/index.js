@@ -10,7 +10,7 @@ import {
   syncSongs, listSongs,
   saveVoiceover, getVoiceover, getVoiceoverFilePath, listVoiceovers, deleteVoiceover,
   closeDatabase, stopCheckpoints,
-  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, getMusicTrackCount, getLastScanTime,
+  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory
 } from './db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
@@ -530,10 +530,25 @@ app.get('/api/music/track-by-name/:name', authenticate, (req, res) => {
   res.json(track);
 });
 
+app.post('/api/music/select', authenticate, (req, res) => {
+  const { count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = req.body || {};
+  try {
+    const tracks = selectTracksForSet({
+      count: Math.min(count, 20),
+      excludeNames: excludeNames || [],
+      genres: genres || [],
+      dancerPlaylist: dancerPlaylist || []
+    });
+    res.json({ tracks: tracks.map(t => ({ ...t, url: `/api/music/stream/${t.id}` })) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/music/rescan', authenticate, requireDJ, (req, res) => {
   if (!MUSIC_PATH) return res.status(400).json({ error: 'MUSIC_PATH not configured' });
   try {
-    const result = scanMusicFolder(MUSIC_PATH);
+    const result = scanMusicFolder(MUSIC_PATH, true);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

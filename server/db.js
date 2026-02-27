@@ -31,6 +31,9 @@ db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 30000');
 db.pragma('synchronous = NORMAL');
 
+const readDb = new Database(DB_PATH, { readonly: true });
+readDb.pragma('journal_mode = WAL');
+
 export function walCheckpoint() {
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
@@ -41,6 +44,7 @@ export function walCheckpoint() {
 
 export function closeDatabase() {
   try {
+    readDb.close();
     walCheckpoint();
     db.close();
     console.log('🔒 Database closed cleanly');
@@ -367,42 +371,113 @@ export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '' 
     params.push(genre);
   }
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-  const total = db.prepare(`SELECT COUNT(DISTINCT name) as count FROM music_tracks ${whereClause}`).get(...params).count;
+  const total = readDb.prepare(`SELECT COUNT(DISTINCT name) as count FROM music_tracks ${whereClause}`).get(...params).count;
   const offset = (page - 1) * limit;
-  const tracks = db.prepare(`SELECT MIN(id) as id, name, MIN(path) as path, MIN(genre) as genre FROM music_tracks ${whereClause} GROUP BY name ORDER BY name ASC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+  const tracks = readDb.prepare(`SELECT MIN(id) as id, name, MIN(path) as path, MIN(genre) as genre FROM music_tracks ${whereClause} GROUP BY name ORDER BY name ASC LIMIT ? OFFSET ?`).all(...params, limit, offset);
   return { tracks, total, page, totalPages: Math.ceil(total / limit) };
 }
 
 export function getMusicGenres() {
-  return db.prepare('SELECT genre as name, COUNT(DISTINCT name) as count FROM music_tracks WHERE genre IS NOT NULL AND genre != \'\' GROUP BY genre ORDER BY genre ASC').all();
+  return readDb.prepare('SELECT genre as name, COUNT(DISTINCT name) as count FROM music_tracks WHERE genre IS NOT NULL AND genre != \'\' GROUP BY genre ORDER BY genre ASC').all();
 }
 
 export function getMusicTrackById(id) {
-  return db.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
+  return readDb.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
 }
 
 export function getMusicTrackByName(name) {
-  return db.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
+  return readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
 }
 
 export function getRandomTracks(count = 3, excludeIds = [], genres = []) {
-  const conditions = [];
-  const params = [];
-  if (excludeIds.length > 0) {
-    conditions.push(`id NOT IN (${excludeIds.map(() => '?').join(',')})`);
-    params.push(...excludeIds);
+  const maxRow = readDb.prepare('SELECT MAX(id) as maxId FROM music_tracks').get();
+  const maxId = maxRow?.maxId || 0;
+  if (maxId === 0) return [];
+
+  const excludeSet = new Set(excludeIds);
+  const genreSet = genres.length > 0 ? new Set(genres) : null;
+  const results = [];
+  const seenIds = new Set();
+  const maxAttempts = count * 10;
+
+  for (let attempt = 0; attempt < maxAttempts && results.length < count; attempt++) {
+    const randomId = Math.floor(Math.random() * maxId) + 1;
+    if (seenIds.has(randomId)) continue;
+    seenIds.add(randomId);
+
+    const track = readDb.prepare('SELECT id, name, path, genre FROM music_tracks WHERE id >= ? LIMIT 1').get(randomId);
+    if (!track) continue;
+    if (excludeSet.has(track.id)) continue;
+    if (genreSet && !genreSet.has(track.genre)) continue;
+    if (results.some(r => r.name === track.name)) continue;
+    results.push(track);
   }
-  if (genres.length > 0) {
-    conditions.push(`genre IN (${genres.map(() => '?').join(',')})`);
-    params.push(...genres);
+
+  if (results.length < count) {
+    const conditions = [];
+    const params = [];
+    const usedIds = results.map(r => r.id);
+    if (usedIds.length > 0) {
+      conditions.push(`id NOT IN (${usedIds.map(() => '?').join(',')})`);
+      params.push(...usedIds);
+    }
+    if (excludeIds.length > 0) {
+      conditions.push(`id NOT IN (${excludeIds.map(() => '?').join(',')})`);
+      params.push(...excludeIds);
+    }
+    if (genres.length > 0) {
+      conditions.push(`genre IN (${genres.map(() => '?').join(',')})`);
+      params.push(...genres);
+    }
+    const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+    const remaining = count - results.length;
+    params.push(remaining);
+    const fallback = readDb.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
+    results.push(...fallback);
   }
-  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
-  params.push(count);
-  return db.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
+
+  return results;
+}
+
+export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
+  const result = [];
+  const usedNames = new Set(excludeNames);
+
+  if (dancerPlaylist.length > 0) {
+    for (const trackName of dancerPlaylist) {
+      if (result.length >= count) break;
+      if (usedNames.has(trackName)) continue;
+      const track = readDb.prepare('SELECT id, name, path, genre FROM music_tracks WHERE name = ?').get(trackName);
+      if (track) {
+        result.push(track);
+        usedNames.add(track.name);
+      }
+    }
+  }
+
+  let retries = 0;
+  while (result.length < count && retries < 3) {
+    const needed = (count - result.length) * 2;
+    const excludeIds = result.map(r => r.id);
+    const filler = getRandomTracks(needed, excludeIds, retries < 2 ? genres : []);
+    let added = 0;
+    for (const track of filler) {
+      if (result.length >= count) break;
+      if (!usedNames.has(track.name)) {
+        result.push(track);
+        usedNames.add(track.name);
+        added++;
+      }
+    }
+    if (added === 0) retries++;
+    else retries = 0;
+  }
+
+  return result;
 }
 
 export function getMusicTrackCount() {
-  return db.prepare('SELECT COUNT(*) as count FROM music_tracks').get().count;
+  return readDb.prepare('SELECT COUNT(*) as count FROM music_tracks').get().count;
 }
 
 export function getLastScanTime() {
