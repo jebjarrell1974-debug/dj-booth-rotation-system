@@ -2531,6 +2531,17 @@ export default function DJBooth() {
                       console.log('🎵 Interstitial songs updated:', Object.keys(interstitials).length, 'break slots');
                     }
                   }
+                  if (announcementRef.current?.preCacheDancer) {
+                    console.log('🔄 Pre-caching announcements for rotation (' + newRotation.length + ' dancers)...');
+                    for (let i = 0; i < newRotation.length; i++) {
+                      const dancer = dancers.find(d => d.id === newRotation[i]);
+                      if (dancer?.name) {
+                        setTimeout(() => {
+                          announcementRef.current?.preCacheDancer(dancer.name);
+                        }, 1000 + (i * 2000));
+                      }
+                    }
+                  }
                   if (activeStage) {
                     await updateStageMutation.mutateAsync({
                       id: activeStage.id,
