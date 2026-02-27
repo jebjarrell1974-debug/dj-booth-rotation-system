@@ -28,6 +28,37 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Feb 27, 2026 — Session 5 (Music Library Scaling for 30k+ Songs)
+
+#### Feature: Incremental Music Scanner
+- **Problem**: Full scanner walked and stat'd all 30k files every 5 minutes, causing disk I/O spikes that compete with audio streaming
+- **Fix**: Scanner now compares file paths and sizes against previous scan — only changed/new files are upserted, only removed files are deleted
+- **Quick check**: Top-level directory count + DB track count compared before even walking the filesystem — if unchanged, scan is skipped entirely
+- **Scan interval**: Changed from 5 minutes to 30 minutes (manual rescan still available)
+- **Files**: `server/musicScanner.js`
+
+#### Feature: Server-Side Track Selection (`/api/music/select`)
+- **Problem**: DJBooth loaded 500 tracks into browser memory and selected from that pool — limited variety with 30k+ songs, wasted browser RAM on Pi
+- **Fix**: New `POST /api/music/select` endpoint handles all track selection server-side. Client sends: count needed, cooldown names to exclude, active genres, dancer playlist. Server returns exactly the right tracks with streaming URLs
+- **Fallback**: If server request fails, DJBooth falls back to local pool selection (graceful degradation)
+- **Browser memory**: Reduced initial track load from 500 to 100 (used for UI display only, not playback selection)
+- **Files**: `server/db.js` (`selectTracksForSet`), `server/index.js` (new endpoint), `src/pages/DJBooth.jsx` (`getDancerTracks`)
+
+#### Feature: Efficient Random Sampling
+- **Problem**: `ORDER BY RANDOM() LIMIT N` scans and sorts entire table — O(n log n) on 30k rows
+- **Fix**: Index-based sampling using `WHERE id >= randomId LIMIT 1` — O(1) per lookup. Falls back to `ORDER BY RANDOM()` only if index sampling doesn't find enough tracks (e.g., heavy genre filtering)
+- **File**: `server/db.js` (`getRandomTracks`)
+
+#### Feature: Read-Only Database Connection
+- **Problem**: Scanner write transactions could block read queries (track lookups during playback)
+- **Fix**: Separate `readDb` connection opened in read-only mode for all SELECT queries. Write operations (scanner, settings, play history) use the primary `db` connection. WAL mode ensures zero contention
+- **File**: `server/db.js`
+
+#### Break Song Server Fallback
+- **Problem**: Break songs looked up in local 100-track pool — with 30k songs, most won't be found locally
+- **Fix**: All break song lookups now fall back to `resolveTrackByName` (server API) when local lookup fails
+- **File**: `src/pages/DJBooth.jsx`
+
 ### Feb 27, 2026 — Session 3 (DJ Options + Genre Filtering + Cooldown Overhaul)
 
 #### Feature: DJ Options Panel
