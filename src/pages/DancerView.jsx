@@ -42,14 +42,16 @@ export default function DancerView() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [pl, genreData] = await Promise.all([
-          playlistApi.get(),
-          musicApi.getGenres()
-        ]);
+        const pl = await playlistApi.get();
         setPlaylist(pl.playlist || []);
-        setGenres(genreData.genres || []);
       } catch {
         navigate('/');
+        return;
+      }
+      try {
+        const genreData = await musicApi.getGenres();
+        setGenres(genreData.genres || []);
+      } catch {
       }
       setLoading(false);
     };
