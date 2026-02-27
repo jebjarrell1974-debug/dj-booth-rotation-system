@@ -41,8 +41,8 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "prod-server.cjs"]
-build = ["echo", "skip"]
+run = ["node", "server/boot.cjs"]
+build = ["npm", "run", "build"]
 
 
 [userenv]
