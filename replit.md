@@ -46,6 +46,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - Search with debounce, paginated results (100 at a time)
   - Track name + genre label display
   - Files changed: `src/pages/DancerView.jsx`, `src/api/serverApi.js` (added `musicApi`)
+- Fixed dancer view white screen bug: separated genre fetch from playlist load so genre failure doesn't crash the page
+- Fixed playlist saving: rotation songs now **append** to dancer playlists instead of replacing them (no more lost songs)
+- Adjusted audio duck transition from 2.5s to 4.5s for a gentler, more gradual fade
+- Built iPad-optimized DJ Remote View (`src/components/dj/RemoteView.jsx`):
+  - Split-panel landscape layout: left panel (now playing + controls), right panel (rotation/dancers tabs)
+  - Large touch targets (44px+) for handheld iPad use
+  - Skip, announcements toggle, songs-per-set controls, rotation reordering
+  - Add/remove dancers from rotation, dancer roster view
+  - Uses existing SSE + boothApi.sendCommand infrastructure (no new server changes)
+  - DJBooth.jsx early-returns RemoteView when remoteMode=true (Pi rendering completely untouched)
 - GitHub backup pushed
 
 ## External Dependencies

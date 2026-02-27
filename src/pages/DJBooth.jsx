@@ -48,6 +48,7 @@ import PlaylistEditor from '@/components/dj/PlaylistEditor';
 import AnnouncementSystem from '@/components/dj/AnnouncementSystem';
 import RotationPlaylistManager from '@/components/dj/RotationPlaylistManager';
 import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
+import RemoteView from '@/components/dj/RemoteView';
 
 const DEFAULT_SONGS_PER_SET = 2;
 
@@ -2011,6 +2012,20 @@ export default function DJBooth() {
     }
   }, [rotation, dancers, remoteMode]);
 
+  if (remoteMode) {
+    return (
+      <RemoteView
+        dancers={dancers}
+        liveBoothState={liveBoothState}
+        onLogout={async () => {
+          const { clearToken } = await import('@/api/serverApi');
+          clearToken();
+          window.location.href = '/';
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-screen bg-[#08081a] text-white flex flex-col overflow-hidden">
       {!remoteMode && (
@@ -2390,11 +2405,17 @@ export default function DJBooth() {
                 rotation={rotation}
                 tracks={tracks}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
-                onAutoSavePlaylist={async (dancerId, playlist) => {
-                  updateDancerMutation.mutate({ id: dancerId, data: { playlist } });
+                onAutoSavePlaylist={async (dancerId, newSongs) => {
+                  const dancer = dancers.find(d => d.id === dancerId);
+                  const existingPlaylist = dancer?.playlist || [];
+                  const merged = [...existingPlaylist];
+                  for (const song of newSongs) {
+                    if (!merged.includes(song)) merged.push(song);
+                  }
+                  updateDancerMutation.mutate({ id: dancerId, data: { playlist: merged } });
                   if (isRotationActive && tracks.length > 0) {
                     const resolved = [];
-                    for (const name of playlist) {
+                    for (const name of newSongs) {
                       let track = tracks.find(t => t.name === name);
                       if (!track) track = await resolveTrackByName(name);
                       if (track) resolved.push(track);
@@ -2410,10 +2431,16 @@ export default function DJBooth() {
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
-                  Object.entries(playlists).forEach(([dancerId, playlist]) => {
+                  Object.entries(playlists).forEach(([dancerId, newSongs]) => {
+                    const dancer = dancers.find(d => d.id === dancerId);
+                    const existingPlaylist = dancer?.playlist || [];
+                    const merged = [...existingPlaylist];
+                    for (const song of newSongs) {
+                      if (!merged.includes(song)) merged.push(song);
+                    }
                     updateDancerMutation.mutate({ 
                       id: dancerId, 
-                      data: { playlist } 
+                      data: { playlist: merged } 
                     });
                   });
                   if (tracks.length > 0) {

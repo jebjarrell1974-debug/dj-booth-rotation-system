@@ -93,3 +93,14 @@
     overflow: hidden;
   }
 }
+
+.remote-view {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.remote-view button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
