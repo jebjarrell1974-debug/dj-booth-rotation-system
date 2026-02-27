@@ -83,6 +83,20 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   5. **Genre preference maintained when possible**: Filler tries active genre folders first, falls back to full catalog if not enough off-cooldown songs exist
 - **File**: `src/pages/DJBooth.jsx` (`getDancerTracks` function)
 
+### Feb 27, 2026 — Session 4 (DancerView White Screen Fix)
+
+#### Bug Fix: DancerView White Screen (React Error #31)
+- **Problem**: When dancers opened their phone view, the page crashed to a pure white screen
+- **Root Cause**: `/api/music/genres` returns objects like `{name: "Pop", count: 5}`, but DancerView treated them as plain strings. When genres rendered in JSX filter buttons, React received objects instead of strings → "Objects are not valid as a React child" (minified error #31)
+- **Fix**: Normalize genre data to string names on fetch: `.map(g => typeof g === 'string' ? g : g.name)`
+- **File**: `src/pages/DancerView.jsx` (line 56)
+
+#### Feature: React ErrorBoundary
+- **Problem**: Any React crash resulted in a white screen with no information
+- **Fix**: Added `ErrorBoundary` class component wrapping the entire app in `src/App.jsx`
+- **Behavior**: Catches render errors, shows dark-themed error page with the error message and a "Go Back" button that navigates to `/`
+- **File**: `src/App.jsx`
+
 ### Feb 27, 2026 — Session 2 (Fixes + iPad Remote)
 
 #### Bug Fix: Dancer View White Screen
