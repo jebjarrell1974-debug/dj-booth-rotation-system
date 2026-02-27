@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DJ Booth - Download for Pi</title>
+  <style>
+    body {
+      margin: 0;
+      background: #08081a;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .container {
+      text-align: center;
+      max-width: 500px;
+      padding: 40px;
+    }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #9ca3af;
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+    .download-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #e040fb, #7c3aed);
+      color: white;
+      font-size: 20px;
+      font-weight: 600;
+      padding: 20px 48px;
+      border-radius: 12px;
+      text-decoration: none;
+      transition: transform 0.2s;
+    }
+    .download-btn:hover {
+      transform: scale(1.05);
+    }
+    .instructions {
+      margin-top: 40px;
+      text-align: left;
+      background: #0d0d1f;
+      border: 1px solid #1e1e3a;
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .instructions h2 {
+      font-size: 16px;
+      margin-top: 0;
+      color: #e040fb;
+    }
+    .instructions code {
+      background: #1e1e3a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .instructions pre {
+      background: #1e1e3a;
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    .instructions li {
+      margin-bottom: 8px;
+      color: #d1d5db;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>DJ Booth Pi Installer</h1>
+    <p>Download the DJ Booth app files to install on your Raspberry Pi.</p>
+    <a class="download-btn" href="/djbooth-pi-install.tar.gz" download>Download for Pi</a>
+    <div class="instructions">
+      <h2>After downloading, run on your Pi:</h2>
+      <ol>
+        <li>Open the Pi terminal</li>
+        <li>Create the app folder:
+          <pre>mkdir -p ~/djbooth ~/data</pre>
+        </li>
+        <li>Extract the files:
+          <pre>cd ~/djbooth
+tar xzf ~/Downloads/djbooth-pi-install.tar.gz</pre>
+        </li>
+        <li>Install dependencies:
+          <pre>npm install</pre>
+        </li>
+        <li>Start the server:
+          <pre>NODE_ENV=production DB_PATH=~/data/djbooth.db node server/index.js</pre>
+        </li>
+        <li>Open Chromium to <code>http://localhost:3001</code></li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>
