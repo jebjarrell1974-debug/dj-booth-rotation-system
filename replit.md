@@ -18,7 +18,7 @@ Music tracks are indexed server-side in a SQLite `music_tracks` table via `serve
 
 A custom dual-deck audio engine manages seamless music playback, featuring equal-power crossfading, audio ducking, and sophisticated announcement overlays. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours. Announcements include shift-based personalities, optional adult innuendo, and generic fallbacks for offline use. Transitions involve parallel pre-fetching of announcement audio and ducking, playing the announcement over the outgoing song before swapping to the next track.
 
-An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, with mobile-optimized playlist management. Performance is optimized for low-power devices like the Raspberry Pi 5 through throttled updates, minimal GPU effects, and memory management. Critical state persists to `localStorage` for crash recovery. Features include a 5-hour song cooldown, configurable songs-per-set, interstitial "break songs," display-capped track lists, genre filtering, and debounced search. The `DJBooth` component remains mounted persistently (CSS-hidden) to preserve audio engine state. Robustness features include SQLite WAL mode, touch-based drag-and-drop, aggressive caching, and a Playback Watchdog for automatic recovery from audio dropouts. Playlist synchronization handles DJ overrides and server changes, with an anti-repeat system using Fisher-Yates shuffling. "DJ Remote Mode" uses Server-Sent Events (SSE) for real-time updates. Performance optimizations include gzip compression, database indexing, next-dancer track preloading, and server health endpoints. Voiceover pre-caching runs in batches, with silent fallbacks for API failures.
+An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, with mobile-optimized playlist management. Performance is optimized for low-power devices like the Raspberry Pi 5 through throttled updates, minimal GPU effects, and memory management. Critical state persists to `localStorage` for crash recovery. Features include a 4-hour song cooldown (applies to both dancer playlist songs and random filler), configurable songs-per-set, interstitial "break songs," display-capped track lists, genre filtering, and debounced search. The `DJBooth` component remains mounted persistently (CSS-hidden) to preserve audio engine state. Robustness features include SQLite WAL mode, touch-based drag-and-drop, aggressive caching, and a Playback Watchdog for automatic recovery from audio dropouts. Playlist synchronization handles DJ overrides and server changes, with an anti-repeat system using Fisher-Yates shuffling. "DJ Remote Mode" uses Server-Sent Events (SSE) for real-time updates. Performance optimizations include gzip compression, database indexing, next-dancer track preloading, and server health endpoints. Voiceover pre-caching runs in batches, with silent fallbacks for API failures.
 
 Every played song is logged server-side in the `play_history` SQLite table, including track name, dancer, genre, and timestamp. Logs older than 90 days are automatically cleaned.
 
@@ -28,7 +28,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Feb 27, 2026 — Session 3 (DJ Options + Genre Filtering)
+### Feb 27, 2026 — Session 3 (DJ Options + Genre Filtering + Cooldown Overhaul)
 
 #### Feature: DJ Options Panel
 - **Purpose**: Let DJ control music source mode and active genres from main DJ Booth or iPad Remote
@@ -58,6 +58,30 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 #### Genre Filtering in Playback Engine
 - `getDancerTracks` and `playFallbackTrack` in DJBooth.jsx now respect active genres
 - `getRandomTracks` in `server/db.js` accepts genre filter parameter
+
+#### Bug Fix: Folder Names Showing as "(Root folder)"
+- **Problem**: DJ Options panel showed every music folder as "(Root folder)" instead of the actual folder name
+- **Root Cause**: SQL query `getMusicGenres()` in `server/db.js` returns `genre as name` (aliased to `name`), but `DJOptions.jsx` referenced `g.genre` which was `undefined`, falling through to the "(Root folder)" fallback
+- **Fix**: Changed all references in `DJOptions.jsx` from `g.genre` to `g.name` — `selectAll`, `toggleGenre`, key, display, and active check
+- **File**: `src/components/dj/DJOptions.jsx`
+
+#### Feature: Pre-Cache on Save All
+- **Problem**: Announcement pre-caching wasn't firing when rotation was saved from the Pi
+- **Fix**: Added pre-cache trigger inside the `onSaveAll` handler in `DJBooth.jsx` — when DJ hits Save All, all dancers in rotation get their announcements pre-cached
+- **Staggering**: Each dancer starts 2 seconds apart (1s, 3s, 5s, etc.) to avoid hammering the ElevenLabs API
+- **Safe**: `preCacheDancer` checks if announcements are already cached and skips them, so repeated Save All calls are harmless
+- **Background**: Uses `setTimeout` — fires even when navigating to other tabs since DJBooth stays mounted (CSS-hidden)
+- **File**: `src/pages/DJBooth.jsx` (inside `onSaveAll` callback)
+
+#### Song Cooldown Overhaul (4-Hour Anti-Repeat)
+- **Problem**: Dancer playlist songs played every set with no cooldown; when all songs were on cooldown, filler came from the same genre folder repeatedly
+- **Changes**:
+  1. **Cooldown reduced from 5 hours → 4 hours** (`COOLDOWN_MS` in `DJBooth.jsx`)
+  2. **Dancer playlist songs now respect cooldown**: Songs played in the last 4 hours are filtered out of the dancer's set. If 1 of 3 songs is on cooldown, the other 2 play and 1 random filler fills the gap
+  3. **When all playlist songs are on cooldown**: The entire set is filled with random songs from the full catalog (not restricted to the dancer's genre folder)
+  4. **Filler songs also respect 4-hour cooldown**: Random replacements won't repeat within 4 hours either
+  5. **Genre preference maintained when possible**: Filler tries active genre folders first, falls back to full catalog if not enough off-cooldown songs exist
+- **File**: `src/pages/DJBooth.jsx` (`getDancerTracks` function)
 
 ### Feb 27, 2026 — Session 2 (Fixes + iPad Remote)
 

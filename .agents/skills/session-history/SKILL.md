@@ -48,6 +48,34 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Feb 27, 2026 — Session 3 Changes
+
+### New Features
+- **DJ Options Panel** (`src/components/dj/DJOptions.jsx`): Music mode selection (Dancer First / Folders Only) + active genre/folder checkboxes. Saved server-side via `/api/dj-options`, broadcast via SSE `djOptions` event.
+- **Options Tab in iPad Remote**: `RemoteView.jsx` now has an Options tab embedding full `DJOptions` component. DJ can change music mode and genres from iPad.
+- **Genre Filtering in RotationPlaylistManager**: `filterByGenres()` helper filters filler tracks and track browser by active genres. In "Folders Only" mode, dancer playlists skipped entirely.
+- **Pre-Cache on Save All**: Hitting Save All on rotation panel triggers `preCacheDancer` for every dancer in rotation. Staggered 2s apart. Safe to call repeatedly (cached announcements are skipped).
+
+### Bug Fixes
+- **Folder Names Showing as "(Root folder)"**: `DJOptions.jsx` referenced `g.genre` but SQL returned `genre as name`. Fixed all references to `g.name`.
+- **Songs Repeating Too Often**: Dancer playlist songs now respect 4-hour cooldown. When all playlist songs on cooldown, filler comes from full catalog (not just same genre). Random filler also respects 4-hour cooldown.
+
+### Cooldown Changes
+- `COOLDOWN_MS` changed from 5 hours → 4 hours in `DJBooth.jsx`
+- Dancer playlist songs now filtered by cooldown — previously played every set regardless
+- Filler tracks: tries active genre folders first, falls back to full catalog if not enough off-cooldown songs
+- All songs (playlist + filler) subject to same 4-hour anti-repeat window
+
+### New/Modified Files
+| File | Change |
+|---|---|
+| `src/components/dj/DJOptions.jsx` | NEW — DJ Options panel component |
+| `src/components/dj/RemoteView.jsx` | Added Options tab, `djOptions`/`onOptionsChange` props |
+| `src/components/dj/RotationPlaylistManager.jsx` | Added `filterByGenres()`, genre filtering, `djOptions` prop |
+| `src/pages/DJBooth.jsx` | DJ Options state/SSE, pre-cache on Save All, cooldown overhaul in `getDancerTracks`, 4-hour cooldown |
+| `server/index.js` | Added `/api/dj-options` GET/POST endpoints, SSE `djOptions` broadcast |
+| `server/db.js` | `getRandomTracks()` accepts genre filter param |
+
 ## Feb 27, 2026 — Session 2 Changes
 
 ### Bug Fixes
@@ -156,6 +184,7 @@ Categories=AudioVideo;
 | `src/pages/Landing.jsx` | PIN login page |
 | `src/pages/Configuration.jsx` | Venue configuration page |
 | `src/components/dj/RemoteView.jsx` | iPad-optimized remote control view (landscape, touch-friendly) |
+| `src/components/dj/DJOptions.jsx` | DJ Options panel — music mode + genre/folder selection |
 | `src/api/serverApi.js` | Client-side API wrapper |
 | `public/djbooth-update-github.sh` | Pi update script (GitHub-based) |
 | `replit.md` | Project documentation (always loaded into agent memory) |
