@@ -601,26 +601,6 @@ export default function RotationPlaylistManager({
               </div>
             </div>
             
-            {availableDancers.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-3 border-t border-[#1e1e3a]">
-                <p className="text-xs text-gray-500 w-full mb-1">Add to rotation:</p>
-                {availableDancers.map(dancer => (
-                  <button
-                    key={dancer.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border border-[#1e1e3a] bg-[#0d0d1f] text-gray-200 hover:bg-[#1a1a35] hover:text-white"
-                    onClick={() => handleAddToRotation(dancer.id)}
-                  >
-                    <div 
-                      className="w-4 h-4 rounded-full flex items-center justify-center text-black font-bold text-[10px] shrink-0"
-                      style={{ backgroundColor: dancer.color || '#e040fb' }}
-                    >
-                      {dancer.name.charAt(0).toUpperCase()}
-                    </div>
-                    {dancer.name}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           <Droppable droppableId="rotation-list" type="dancer">

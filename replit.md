@@ -39,6 +39,8 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - Allows fast rotation changes without switching to the Rotation tab
   - Files changed: `src/components/dj/DancerRoster.jsx`, `src/pages/DJBooth.jsx`
 - Cleaned up stray import artifacts (`sed3CnVAv`, `zipFile.zip`)
+- Removed "Add to rotation" dancer buttons section from Rotation tab (no longer needed with Dancers page buttons)
+  - File changed: `src/components/dj/RotationPlaylistManager.jsx`
 - GitHub backup pushed
 
 ## External Dependencies
