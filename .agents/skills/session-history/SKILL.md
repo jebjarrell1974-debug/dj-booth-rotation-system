@@ -48,6 +48,28 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Feb 27, 2026 — Session 2 Changes
+
+### Bug Fixes
+- **Dancer View White Screen**: `DancerView.jsx` crashed when genre fetch failed because playlist + genres were in one `Promise.all()`. Fixed by separating them — genre failure is silently caught.
+- **Playlist Songs Erased**: `onAutoSavePlaylist`/`onSaveAll` in `DJBooth.jsx` replaced dancer playlists with just the current rotation songs. Fixed by merging new songs into existing playlist (deduped with `includes()` check).
+
+### Audio Tuning
+- **Duck Transition**: Changed `DUCK_TRANSITION` from `2.5` to `4.5` seconds in `AudioEngine.jsx` for gentler announcement fades. Only the constant changed — no logic modified.
+
+### New Feature: iPad Remote View
+- New component: `src/components/dj/RemoteView.jsx`
+- `DJBooth.jsx` early-returns `<RemoteView>` when `remoteMode=true`
+- Landscape split-panel: left (now playing + controls), right (rotation/dancers tabs)
+- All touch targets 44px+, optimized for handheld iPad
+- Uses existing SSE + `boothApi.sendCommand` — no server changes needed
+- CSS in `src/index.css` (`.remote-view` class)
+
+### Other Changes
+- Rotation buttons added to Dancer Roster cards (green +Add / red -In Rotation)
+- Removed "Add to rotation" section from Rotation tab (redundant)
+- Dancer phone music catalog now uses server `musicApi` with genre filters + search + pagination
+
 ## Key Fixes & Discoveries
 
 ### Port Configuration
@@ -133,6 +155,7 @@ Categories=AudioVideo;
 | `src/pages/DancerView.jsx` | Dancer-facing mobile view |
 | `src/pages/Landing.jsx` | PIN login page |
 | `src/pages/Configuration.jsx` | Venue configuration page |
+| `src/components/dj/RemoteView.jsx` | iPad-optimized remote control view (landscape, touch-friendly) |
 | `src/api/serverApi.js` | Client-side API wrapper |
 | `public/djbooth-update-github.sh` | Pi update script (GitHub-based) |
 | `replit.md` | Project documentation (always loaded into agent memory) |
