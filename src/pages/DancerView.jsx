@@ -50,7 +50,8 @@ export default function DancerView() {
       }
       try {
         const genreData = await musicApi.getGenres();
-        setGenres(genreData.genres || []);
+        const genreList = (genreData.genres || []).map(g => typeof g === 'string' ? g : g.name);
+        setGenres(genreList);
       } catch {
       }
       setLoading(false);
