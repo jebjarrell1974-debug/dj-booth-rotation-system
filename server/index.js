@@ -491,10 +491,36 @@ app.get('/api/music/stats', authenticate, (req, res) => {
   });
 });
 
+app.get('/api/dj-options', authenticate, requireDJ, (req, res) => {
+  const activeGenres = getSetting('dj_active_genres');
+  const musicMode = getSetting('dj_music_mode');
+  res.json({
+    activeGenres: activeGenres ? JSON.parse(activeGenres) : [],
+    musicMode: musicMode || 'dancer_first',
+  });
+});
+
+app.put('/api/dj-options', authenticate, requireDJ, (req, res) => {
+  const { activeGenres, musicMode } = req.body;
+  if (activeGenres !== undefined) {
+    setSetting('dj_active_genres', JSON.stringify(activeGenres));
+  }
+  if (musicMode !== undefined) {
+    setSetting('dj_music_mode', musicMode);
+  }
+  broadcastSSE('djOptions', {
+    activeGenres: activeGenres !== undefined ? activeGenres : JSON.parse(getSetting('dj_active_genres') || '[]'),
+    musicMode: musicMode !== undefined ? musicMode : (getSetting('dj_music_mode') || 'dancer_first'),
+  });
+  res.json({ ok: true });
+});
+
 app.get('/api/music/random', authenticate, (req, res) => {
   const count = Math.min(parseInt(req.query.count) || 3, 50);
   const excludeIds = req.query.exclude ? req.query.exclude.split(',').map(Number).filter(n => !isNaN(n)) : [];
-  const tracks = getRandomTracks(count, excludeIds);
+  const genresParam = req.query.genres || '';
+  const genres = genresParam ? genresParam.split(',').map(g => g.trim()).filter(Boolean) : [];
+  const tracks = getRandomTracks(count, excludeIds, genres);
   res.json({ tracks });
 });
 

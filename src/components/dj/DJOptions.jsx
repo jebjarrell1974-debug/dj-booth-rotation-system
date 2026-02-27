@@ -1,0 +1,184 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { djOptionsApi, musicApi } from '@/api/serverApi';
+import { Settings, FolderOpen, Check } from 'lucide-react';
+
+export default function DJOptions({ djOptions, onOptionsChange }) {
+  const [genres, setGenres] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const activeGenres = djOptions?.activeGenres || [];
+  const musicMode = djOptions?.musicMode || 'dancer_first';
+
+  useEffect(() => {
+    musicApi.getGenres()
+      .then(data => setGenres(data.genres || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const saveOptions = useCallback(async (updates) => {
+    setSaving(true);
+    try {
+      const newOptions = { ...djOptions, ...updates };
+      await djOptionsApi.update(updates);
+      onOptionsChange(newOptions);
+    } catch (err) {
+      console.error('Failed to save DJ options:', err);
+    }
+    setSaving(false);
+  }, [djOptions, onOptionsChange]);
+
+  const toggleGenre = useCallback((genreName) => {
+    const current = [...activeGenres];
+    const idx = current.indexOf(genreName);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(genreName);
+    }
+    saveOptions({ activeGenres: current });
+  }, [activeGenres, saveOptions]);
+
+  const selectAll = useCallback(() => {
+    saveOptions({ activeGenres: genres.map(g => g.genre) });
+  }, [genres, saveOptions]);
+
+  const clearAll = useCallback(() => {
+    saveOptions({ activeGenres: [] });
+  }, [saveOptions]);
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <p className="text-gray-500">Loading options...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-auto">
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-5">
+          <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider mb-4">Music Selection Mode</h3>
+          <div className="space-y-3">
+            <button
+              onClick={() => saveOptions({ musicMode: 'dancer_first' })}
+              className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl border text-left transition-colors ${
+                musicMode === 'dancer_first'
+                  ? 'bg-[#e040fb]/10 border-[#e040fb]/40'
+                  : 'bg-[#151528] border-[#1e1e3a] hover:border-[#2e2e5a]'
+              }`}
+            >
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                musicMode === 'dancer_first' ? 'border-[#e040fb] bg-[#e040fb]' : 'border-gray-600'
+              }`}>
+                {musicMode === 'dancer_first' && <Check className="w-4 h-4 text-black" />}
+              </div>
+              <div>
+                <p className={`text-base font-semibold ${musicMode === 'dancer_first' ? 'text-[#e040fb]' : 'text-white'}`}>
+                  Dancer First
+                </p>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Play each dancer's saved playlist. Selected folders are used as fallback when a dancer has no songs or all songs are on cooldown.
+                </p>
+              </div>
+            </button>
+            <button
+              onClick={() => saveOptions({ musicMode: 'folders_only' })}
+              className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl border text-left transition-colors ${
+                musicMode === 'folders_only'
+                  ? 'bg-[#e040fb]/10 border-[#e040fb]/40'
+                  : 'bg-[#151528] border-[#1e1e3a] hover:border-[#2e2e5a]'
+              }`}
+            >
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                musicMode === 'folders_only' ? 'border-[#e040fb] bg-[#e040fb]' : 'border-gray-600'
+              }`}>
+                {musicMode === 'folders_only' && <Check className="w-4 h-4 text-black" />}
+              </div>
+              <div>
+                <p className={`text-base font-semibold ${musicMode === 'folders_only' ? 'text-[#e040fb]' : 'text-white'}`}>
+                  Folders Only
+                </p>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Ignore dancer playlists. All songs come from the selected folders below only.
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Active Music Folders</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {activeGenres.length === 0
+                  ? 'No folders selected — all folders are used'
+                  : `${activeGenres.length} folder${activeGenres.length !== 1 ? 's' : ''} selected`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={selectAll}
+                className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-[#151528] rounded-lg transition-colors"
+              >
+                Select All
+              </button>
+              <button
+                onClick={clearAll}
+                className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-[#151528] rounded-lg transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+
+          {genres.length === 0 ? (
+            <div className="text-center py-8">
+              <FolderOpen className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">No music folders found</p>
+              <p className="text-xs text-gray-600 mt-1">Set your music path in Configuration first</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {genres.map(g => {
+                const isActive = activeGenres.includes(g.genre);
+                return (
+                  <button
+                    key={g.genre}
+                    onClick={() => toggleGenre(g.genre)}
+                    disabled={saving}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
+                      isActive
+                        ? 'bg-[#7c3aed]/10 border-[#7c3aed]/40'
+                        : 'bg-[#151528] border-[#1e1e3a] hover:border-[#2e2e5a]'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                      isActive ? 'border-[#7c3aed] bg-[#7c3aed]' : 'border-gray-600'
+                    }`}>
+                      {isActive && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-[#7c3aed]' : 'text-gray-500'}`} />
+                    <span className={`text-sm font-medium flex-1 ${isActive ? 'text-white' : 'text-gray-300'}`}>
+                      {g.genre || '(Root folder)'}
+                    </span>
+                    <span className="text-xs text-gray-500">{g.count} tracks</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {activeGenres.length === 0 && genres.length > 0 && (
+            <p className="text-xs text-gray-600 mt-3 text-center">
+              When no folders are selected, the system pulls from all available music.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -28,6 +28,37 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Feb 27, 2026 — Session 3 (DJ Options + Genre Filtering)
+
+#### Feature: DJ Options Panel
+- **Purpose**: Let DJ control music source mode and active genres from main DJ Booth or iPad Remote
+- **File**: `src/components/dj/DJOptions.jsx` (new component)
+- **Modes**:
+  - "Dancer First" (default): Uses dancer playlists when available, fills remaining slots from active genres
+  - "Folders Only": Ignores dancer playlists entirely, uses only server-scanned music folders filtered by active genres
+- **Genre Selection**: Checkboxes for each genre/folder found on the server; stored as `dj_active_genres` (JSON array) in SQLite settings table
+- **Server API**: `GET/POST /api/dj-options` — persists `musicMode` and `activeGenres`
+- **SSE Broadcast**: `djOptions` event broadcasts changes to all connected clients (iPad changes instantly reflected on Pi)
+- **Integration in DJBooth.jsx**: `djOptions` state + `djOptionsRef` ref, loaded on mount, updated via SSE
+
+#### Feature: Genre Filtering in Rotation Playlist Manager
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`
+- Added `filterByGenres()` helper that filters tracks by active genres (falls back to full list if filter yields 0 results)
+- All filler track selections now use genre-filtered pool
+- Track browser in rotation panel also filtered by active genres
+- In "Folders Only" mode, dancer playlists are skipped entirely — all songs come from genre-filtered server pool
+- `djOptions` prop passed from DJBooth.jsx
+
+#### Feature: Options Tab in iPad Remote
+- **File**: `src/components/dj/RemoteView.jsx`
+- Added "Options" tab (with SlidersHorizontal icon) to the right panel tab bar
+- Embeds full `DJOptions` component — DJ can change music mode and genres from iPad
+- Props `djOptions` and `onOptionsChange` passed through from DJBooth.jsx
+
+#### Genre Filtering in Playback Engine
+- `getDancerTracks` and `playFallbackTrack` in DJBooth.jsx now respect active genres
+- `getRandomTracks` in `server/db.js` accepts genre filter parameter
+
 ### Feb 27, 2026 — Session 2 (Fixes + iPad Remote)
 
 #### Bug Fix: Dancer View White Screen

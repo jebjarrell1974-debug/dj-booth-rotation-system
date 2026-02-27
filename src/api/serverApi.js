@@ -96,6 +96,11 @@ export const musicApi = {
   getGenres: () => apiFetch('/music/genres'),
 };
 
+export const djOptionsApi = {
+  get: () => apiFetch('/dj-options'),
+  update: (options) => apiFetch('/dj-options', { method: 'PUT', body: JSON.stringify(options) }),
+};
+
 export const boothApi = {
   getState: () => apiFetch('/booth/state'),
   postState: (state) => apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) }),

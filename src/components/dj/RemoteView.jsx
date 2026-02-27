@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { boothApi } from '@/api/serverApi';
+import DJOptions from '@/components/dj/DJOptions';
 import {
   Wifi,
   SkipForward,
@@ -14,9 +15,10 @@ import {
   Radio,
   ChevronUp,
   ChevronDown,
+  SlidersHorizontal,
 } from 'lucide-react';
 
-export default function RemoteView({ dancers, liveBoothState, onLogout }) {
+export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange }) {
   const [activePanel, setActivePanel] = useState('rotation');
 
   const isConnected = liveBoothState?.updatedAt > 0;
@@ -144,6 +146,17 @@ export default function RemoteView({ dancers, liveBoothState, onLogout }) {
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex items-center gap-1 px-4 pt-3 pb-2 flex-shrink-0">
             <button
+              onClick={() => setActivePanel('options')}
+              className={`flex items-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${
+                activePanel === 'options'
+                  ? 'bg-[#e040fb] text-black'
+                  : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
+              }`}
+            >
+              <SlidersHorizontal className="w-5 h-5" />
+              Options
+            </button>
+            <button
               onClick={() => setActivePanel('rotation')}
               className={`flex items-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${
                 activePanel === 'rotation'
@@ -168,6 +181,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout }) {
           </div>
 
           <div className="flex-1 px-4 pb-4 overflow-auto min-h-0">
+            {activePanel === 'options' && (
+              <DJOptions
+                djOptions={djOptions}
+                onOptionsChange={onOptionsChange}
+              />
+            )}
+
             {activePanel === 'rotation' && (
               <div className="space-y-2">
                 {rotationList.length === 0 ? (
