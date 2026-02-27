@@ -109,9 +109,18 @@ The script: downloads from GitHub, backs up current install, copies server + con
 | `DJBOOTH_SERVICE` | `djbooth` | Systemd service name |
 | `DJBOOTH_BRANCH` | `main` | Git branch to pull |
 
+## Pi Kiosk Setup
+
+- Browser binary is `chromium` (NOT `chromium-browser`) on Raspberry Pi OS Bookworm
+- Server runs on port 3001 by default (set via `PORT` env var or defaults in `server/index.js`)
+- Kiosk launch: `chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001`
+- Desktop shortcut: `~/Desktop/DJBooth.desktop`
+- Autostart on boot: `~/.config/autostart/djbooth-kiosk.desktop`
+
 ## Important Notes
 
 - GitHub repo must stay **public** for Pis to download without auth
 - Push to GitHub at end of each working session
 - The update script is at `public/djbooth-update-github.sh` in the project
 - Replit deployment is broken at the platform level (persistent 404) — use GitHub instead
+- Server default port is 3001 — do NOT change this (Pi kiosk browser connects to localhost:3001)
