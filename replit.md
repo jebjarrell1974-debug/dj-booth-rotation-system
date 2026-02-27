@@ -41,6 +41,11 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Cleaned up stray import artifacts (`sed3CnVAv`, `zipFile.zip`)
 - Removed "Add to rotation" dancer buttons section from Rotation tab (no longer needed with Dancers page buttons)
   - File changed: `src/components/dj/RotationPlaylistManager.jsx`
+- Fixed dancer phone view to use real server music catalog instead of empty songs table
+  - Genre filter pills (horizontal scroll, mobile-optimized)
+  - Search with debounce, paginated results (100 at a time)
+  - Track name + genre label display
+  - Files changed: `src/pages/DancerView.jsx`, `src/api/serverApi.js` (added `musicApi`)
 - GitHub backup pushed
 
 ## External Dependencies
