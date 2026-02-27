@@ -794,6 +794,7 @@ export default function DJBooth() {
   }, [tracks]);
 
   const lastRefreshTimeRef = useRef(0);
+  const trackCountRef = useRef(0);
 
   const refreshTracks = useCallback(async () => {
     const now = Date.now();
@@ -801,13 +802,14 @@ export default function DJBooth() {
     lastRefreshTimeRef.current = now;
     try {
       const token = sessionStorage.getItem('djbooth_token');
-      const res = await fetch('/api/music/tracks?limit=500', {
+      const res = await fetch('/api/music/tracks?limit=100', {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (!res.ok) return null;
       const data = await res.json();
       const withUrls = data.tracks.map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
       setTracks(withUrls);
+      trackCountRef.current = data.total || withUrls.length;
       return withUrls;
     } catch (err) {
       console.error('❌ RefreshTracks failed:', err.message);
@@ -990,7 +992,6 @@ export default function DJBooth() {
       .catch(() => {});
   }, [remoteMode]);
 
-  // Get random track handles from library
   const getRandomTracks = useCallback((count) => {
     const pool = filterCooldown(tracks);
     const cooldowns = songCooldownRef.current || {};
@@ -1031,75 +1032,57 @@ export default function DJBooth() {
   const getDancerTracks = useCallback(async (dancer) => {
     const count = songsPerSetRef.current;
     const alreadyAssigned = getAlreadyAssignedNames();
-    const validTracks = tracks.filter(t => t && t.url);
     const opts = djOptionsRef.current;
     const isFoldersOnly = opts?.musicMode === 'folders_only';
-    let result = [];
+    const cooldowns = songCooldownRef.current || {};
+    const now = Date.now();
 
-    const lruShuffle = (pool) => {
-      const cooldowns = songCooldownRef.current || {};
-      const shuffled = fisherYatesShuffle(pool);
-      shuffled.sort((a, b) => {
-        const aTime = cooldowns[a.name] || 0;
-        const bTime = cooldowns[b.name] || 0;
-        return aTime - bTime;
+    const cooldownNames = Object.entries(cooldowns)
+      .filter(([, ts]) => ts && (now - ts) < COOLDOWN_MS)
+      .map(([name]) => name);
+    const excludeNames = [...new Set([...cooldownNames, ...alreadyAssigned])];
+
+    const activeGenres = opts?.activeGenres?.length > 0 ? opts.activeGenres : [];
+    const dancerPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
+
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const res = await fetch('/api/music/select', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          count,
+          excludeNames,
+          genres: activeGenres,
+          dancerPlaylist
+        }),
+        signal: AbortSignal.timeout(5000)
       });
-      return shuffled;
-    };
 
-    if (!isFoldersOnly && dancer?.playlist?.length > 0) {
-      const resolved = [];
-      for (const playlistName of dancer.playlist) {
-        let track = validTracks.find(t => t.name === playlistName);
-        if (!track) {
-          track = await resolveTrackByName(playlistName);
-        }
-        if (track) resolved.push(track);
+      if (res.ok) {
+        const data = await res.json();
+        const result = data.tracks || [];
+        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks from server, playlist: ${dancerPlaylist.length})`);
+        return result;
       }
-      if (resolved.length > 0) {
-        const offCooldownPlaylist = filterCooldown(resolved);
-        const usable = offCooldownPlaylist.filter(t => {
-          const lastPlayed = (songCooldownRef.current || {})[t.name] || 0;
-          return !lastPlayed || (Date.now() - lastPlayed) >= COOLDOWN_MS;
-        });
-        if (usable.length > 0) {
-          result = usable;
-          console.log(`🎵 getDancerTracks: Using ${usable.length}/${resolved.length} playlist songs for ${dancer.name} (${resolved.length - usable.length} on cooldown)`);
-        } else {
-          console.log(`🎵 getDancerTracks: All ${resolved.length} playlist songs on cooldown for ${dancer.name} — using random filler`);
-        }
-      }
+    } catch (err) {
+      console.warn(`⚠️ getDancerTracks: Server select failed for ${dancer?.name}: ${err.message}, using local fallback`);
     }
 
-    if (result.length < count) {
-      const usedNames = new Set(result.map(t => t.name));
-      const needed = count - result.length;
-      const allAvailable = validTracks.filter(t => !alreadyAssigned.has(t.name) && !usedNames.has(t.name));
-      const allOffCooldown = allAvailable.filter(t => {
-        const lastPlayed = (songCooldownRef.current || {})[t.name] || 0;
-        return !lastPlayed || (Date.now() - lastPlayed) >= COOLDOWN_MS;
-      });
-      let filler;
-      if (allOffCooldown.length >= needed) {
-        const genreFiltered = filterByActiveGenres(allOffCooldown);
-        const pool = genreFiltered.length >= needed ? genreFiltered : allOffCooldown;
-        filler = lruShuffle(pool).slice(0, needed);
-      } else if (allAvailable.length >= needed) {
-        filler = lruShuffle(allAvailable).slice(0, needed);
-      } else {
-        const fallback = validTracks.filter(t => !usedNames.has(t.name));
-        filler = lruShuffle(fallback).slice(0, needed);
-      }
-      result = [...result, ...filler];
-    }
-
-    if (result.length === 0 && validTracks.length === 0) {
-      console.warn(`⚠️ getDancerTracks: No valid tracks available for ${dancer?.name || 'unknown'}`);
-    }
-
-    console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks, ${validTracks.length} valid, ${tracks.length} total, playlist: ${dancer?.playlist?.length || 0})`);
+    const validTracks = tracks.filter(t => t && t.url);
+    const available = validTracks.filter(t => !alreadyAssigned.has(t.name));
+    const offCooldown = available.filter(t => {
+      const lastPlayed = cooldowns[t.name] || 0;
+      return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
+    });
+    const pool = offCooldown.length >= count ? offCooldown : available;
+    const result = fisherYatesShuffle(pool).slice(0, count);
+    console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks local fallback)`);
     return result;
-  }, [tracks, filterCooldown, getAlreadyAssignedNames, resolveTrackByName]);
+  }, [tracks, filterCooldown, getAlreadyAssignedNames]);
 
   const restoredSongsRef = useRef(false);
   useEffect(() => {
@@ -1401,7 +1384,8 @@ export default function DJBooth() {
         setCurrentSongNumber(newSongNum);
         
         if (nextTrack && !nextTrack.url && nextTrack.name) {
-          const fresh = tracks.find(t => t.name === nextTrack.name && t.url);
+          let fresh = tracks.find(t => t.name === nextTrack.name && t.url);
+          if (!fresh) fresh = await resolveTrackByName(nextTrack.name);
           if (fresh) {
             nextTrack = fresh;
             dancerTracks[songNum] = fresh;
@@ -1573,6 +1557,9 @@ export default function DJBooth() {
             t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
           ));
         }
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = await resolveTrackByName(nextBreakName);
+        }
         if (nextBreakTrack?.url) {
           console.log('🎵 HandleTrackEnd: Playing next break song:', nextBreakTrack.name);
           lastAudioActivityRef.current = Date.now();
@@ -1687,7 +1674,8 @@ export default function DJBooth() {
         setCurrentSongNumber(newSongNum);
         
         if (nextTrack && !nextTrack.url && nextTrack.name) {
-          const fresh = tracks.find(t => t.name === nextTrack.name && t.url);
+          let fresh = tracks.find(t => t.name === nextTrack.name && t.url);
+          if (!fresh) fresh = await resolveTrackByName(nextTrack.name);
           if (fresh) {
             nextTrack = fresh;
             dancerTracks[songNum] = fresh;
@@ -1754,6 +1742,9 @@ export default function DJBooth() {
               t.name === firstBreakName || 
               t.name.replace(/\.[^.]+$/, '') === firstBreakName.replace(/\.[^.]+$/, '')
             ));
+          }
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = await resolveTrackByName(firstBreakName);
           }
           if (firstBreakTrack?.url) {
             console.log('🎵 Playing break song:', firstBreakTrack.name);
