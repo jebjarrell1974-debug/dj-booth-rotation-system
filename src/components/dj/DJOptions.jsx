@@ -29,19 +29,19 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
     setSaving(false);
   }, [djOptions, onOptionsChange]);
 
-  const toggleGenre = useCallback((genreName) => {
+  const toggleGenre = useCallback((folderName) => {
     const current = [...activeGenres];
-    const idx = current.indexOf(genreName);
+    const idx = current.indexOf(folderName);
     if (idx >= 0) {
       current.splice(idx, 1);
     } else {
-      current.push(genreName);
+      current.push(folderName);
     }
     saveOptions({ activeGenres: current });
   }, [activeGenres, saveOptions]);
 
   const selectAll = useCallback(() => {
-    saveOptions({ activeGenres: genres.map(g => g.genre) });
+    saveOptions({ activeGenres: genres.map(g => g.name) });
   }, [genres, saveOptions]);
 
   const clearAll = useCallback(() => {
@@ -144,11 +144,11 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
           ) : (
             <div className="space-y-1.5">
               {genres.map(g => {
-                const isActive = activeGenres.includes(g.genre);
+                const isActive = activeGenres.includes(g.name);
                 return (
                   <button
-                    key={g.genre}
-                    onClick={() => toggleGenre(g.genre)}
+                    key={g.name}
+                    onClick={() => toggleGenre(g.name)}
                     disabled={saving}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
                       isActive
@@ -163,7 +163,7 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
                     </div>
                     <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-[#7c3aed]' : 'text-gray-500'}`} />
                     <span className={`text-sm font-medium flex-1 ${isActive ? 'text-white' : 'text-gray-300'}`}>
-                      {g.genre || '(Root folder)'}
+                      {g.name || '(Root folder)'}
                     </span>
                     <span className="text-xs text-gray-500">{g.count} tracks</span>
                   </button>
