@@ -96,8 +96,6 @@ export default function Landing() {
       const isRemote = mode === 'dj-remote';
       if (isRemote) {
         setBoothIp(boothIpInput || '');
-      } else {
-        setBoothIp('');
       }
       await login('dj', pin, { remote: isRemote });
     } catch (loginErr) {

@@ -1,0 +1,184 @@
+Yes. What you need is not more research. You need a clear architectural spec that an AI coding agent can follow without improvising.
+
+Below is a single, structured specification you can copy directly into Replit so it understands exactly how your DJ engine should behave.
+
+No fluff. Just behavior and algorithms.
+
+⸻
+
+AI DJ Audio Engine Specification
+
+Music Playback + Pre-Recorded Voice + Intelligent Transitions
+
+1. Audio Architecture
+
+The engine must use a bus-based mixing architecture.
+
+Signal flow:
+	•	Music Deck A → Music Bus
+	•	Music Deck B → Music Bus
+	•	Voice Track (pre-recorded) → Voice Bus
+	•	Music Bus + Voice Bus → Master Bus → Output
+
+Ducking is applied only to the Music Bus.
+Never apply ducking on the Master Bus.
+
+⸻
+
+2. Core Features
+
+The system must support:
+	1.	Dual music deck playback
+	2.	Equal-power crossfading between music decks
+	3.	Pre-recorded voice playback
+	4.	Automatic music ducking when voice plays
+	5.	Smooth attack and release envelopes
+	6.	Optional beat-aligned transitions
+
+⸻
+
+3. Equal-Power Crossfade Algorithm (Between Music Tracks)
+
+Crossfades must NOT use linear gain.
+
+Use equal-power curves:
+
+Let x range from 0.0 → 1.0 during fade duration.
+
+gainA = cos(x * π/2)
+gainB = sin(x * π/2)
+
+Music Bus input:
+
+musicMix = (deckA * gainA) + (deckB * gainB)
+
+This preserves perceived loudness during transitions.
+
+⸻
+
+4. Voice-Triggered Ducking (Pre-Recorded Voice)
+
+Since voice is pre-recorded, do NOT use voice detection.
+
+Ducking is triggered by voice playback state.
+
+When voice starts:
+
+targetMusicGain = duckLevel
+
+When voice ends:
+
+targetMusicGain = 1.0
+
+Recommended duckLevel:
+0.25 to 0.35 (≈ -9 dB to -12 dB)
+
+⸻
+
+5. Smooth Gain Envelope (Attack/Release)
+
+Music gain must transition smoothly toward targetMusicGain.
+
+Use exponential smoothing:
+
+musicGain[n] = musicGain[n-1] + α * (targetMusicGain - musicGain[n-1])
+
+Where:
+	•	α_attack = computed from 150–250ms
+	•	α_release = computed from 400–800ms
+
+If increasing gain → use release constant
+If decreasing gain → use attack constant
+
+This prevents abrupt volume jumps.
+
+⸻
+
+6. Audio Frame Mixing
+
+Per audio buffer:
+
+musicBusOutput = musicMix * musicGain
+finalOutput = musicBusOutput + voiceTrack
+
+Ensure clipping protection with limiter or normalization at master stage.
+
+⸻
+
+7. State Machine
+
+Engine must operate with explicit states:
+	•	NORMAL
+	•	TRANSITIONING
+	•	VOICE_ACTIVE
+
+Transitions:
+
+If voicePlaybackTriggered:
+→ VOICE_ACTIVE
+
+If voicePlaybackEnded:
+→ return to NORMAL
+
+If crossfadeTriggered:
+→ TRANSITIONING
+
+State transitions must not hard-reset gain.
+All gain changes must go through envelope smoothing.
+
+⸻
+
+8. Beat Alignment (Optional but Recommended)
+
+For professional transitions:
+	•	Analyze BPM of tracks.
+	•	Maintain beat grid.
+	•	Only start crossfade at:
+	•	Downbeat
+	•	Phrase boundary (16 or 32 bars)
+
+Voice drops may optionally snap to nearest downbeat.
+
+⸻
+
+9. Timing Recommendations
+
+Crossfade duration:
+4–16 seconds (configurable)
+
+Ducking:
+Attack: 200ms
+Release: 600ms
+
+These values should be adjustable.
+
+⸻
+
+10. Optional Advanced Enhancements
+
+Future upgrades may include:
+	•	Multiband ducking (reduce only mid frequencies 1kHz–4kHz)
+	•	LUFS normalization of voice tracks
+	•	Lookahead envelope smoothing (10–20ms buffer)
+	•	Limiter on master output
+
+These are not required for MVP.
+
+⸻
+
+11. Design Principles
+	•	Never hard-switch gain.
+	•	Never use linear crossfade.
+	•	Never duck master output.
+	•	All transitions must use time-based envelopes.
+	•	Voice playback controls ducking deterministically.
+
+⸻
+
+End of specification.
+
+⸻
+
+That document gives Replit a clean behavioral model instead of a vague concept.
+
+If you want, I can also generate a second version that includes actual implementation pseudocode in JavaScript, Python, or WebAudio API format so it becomes executable scaffolding rather than just architecture.
