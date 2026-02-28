@@ -28,6 +28,30 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Feb 28, 2026 — Session 7 (Break Song Ducking, Rotation Flip, Pre-Cache Fix)
+
+#### Bug Fix: Break Song Ducking
+- **Problem**: When the last dancer song ended and break songs were next, the break song started via crossfade BEFORE the outro announcement ducked — so no duck was heard
+- **Fix**: Reordered to match dancer-to-dancer pattern: duck → play outro announcement → start break song during announcement → unduck
+- **Files**: `src/pages/DJBooth.jsx` (handleTrackEnd break songs block)
+
+#### Bug Fix: Rotation Flip Timing
+- **Problem**: Dancer stayed at top of rotation list during break songs, only moved to bottom after ALL break songs finished
+- **Fix**: Flip rotation visually (`setRotation`, `setCurrentDancerIndex`, `updateStageState`) immediately when break songs start. Refs (`rotationRef`, `currentDancerIndexRef`) left unchanged so interstitial handler can still look up break songs by dancer ID. Post-interstitial handler syncs refs when break songs finish.
+- **Files**: `src/pages/DJBooth.jsx`
+
+#### Feature: Smart Voiceover Pre-Cache
+- **Problem**: Pre-cache only triggered on new dancer IDs added to rotation, not on reorder. Transition announcements (e.g. "Thank you Stacy, welcome Sage") were never auto-cached. All dancers fired simultaneously causing API rate limits.
+- **Fix**: New `preCacheUpcoming` method in AnnouncementSystem that:
+  1. Caches next 3 dancers in rotation (intro, round2, outro, AND transition)
+  2. Watches rotation order + currentDancerIndex (not just ID membership)
+  3. Cancels in-flight pre-cache when rotation changes
+  4. 2-second stagger between uncached API calls; cached items return instantly
+  5. 2-second debounce before starting pre-cache after rotation change
+- Old `preCacheDancer` method retained for single-dancer additions (addDancer)
+- SSE remote rotation handler updated to use `preCacheUpcoming`
+- **Files**: `src/components/dj/AnnouncementSystem.jsx`, `src/pages/DJBooth.jsx`
+
 ### Feb 28, 2026 — Session 6 (Break Songs Persistence)
 
 #### Bug Fix: Break Songs Disappearing on Tab Switch
