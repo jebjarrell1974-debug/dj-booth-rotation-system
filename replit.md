@@ -50,6 +50,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
 
+#### Optimization: Touchscreen (Pi Kiosk)
+- **Purpose**: Pi touchscreen is the primary interface — optimize all touch interactions for fat-finger use
+- **Global CSS** (`src/index.css`): Disabled text selection (except inputs/textareas), tap highlights, touch callouts, overscroll bounce; enabled `touch-action: manipulation` (eliminates 300ms tap delay and double-tap zoom); active-state opacity feedback on all buttons
+- **Touch targets**: All buttons, role=button, labels enforce 44px minimum height/width. Button `icon` variant bumped from 36px to 44px. All inline `w-6`/`w-7`/`w-8` icon button overrides changed to `w-11` (44px) across DancerRoster, PlaylistEditor, StageRotation, RotationBuilder, RotationPlaylistManager
+- **Transport controls** (NowPlaying): Skip button enlarged to 56px (matches play/pause) for easy mid-set tapping
+- **Slider** (`src/components/ui/slider.jsx`): Thumb from 16px to 28px, track from 6px to 12px — much easier to grab on touchscreen
+- **Scroll areas**: Momentum scrolling (`-webkit-overflow-scrolling: touch`) and contained overscroll on all Radix scroll areas
+- **Performance impact**: Zero — all changes are pure CSS properties, no additional JS, no GPU layers, no animations
+- **Files**: `src/index.css`, `src/components/ui/button.jsx`, `src/components/ui/slider.jsx`, `src/components/dj/DancerRoster.jsx`, `src/components/dj/PlaylistEditor.jsx`, `src/components/dj/StageRotation.jsx`, `src/components/dj/RotationBuilder.jsx`, `src/components/dj/RotationPlaylistManager.jsx`, `src/components/dj/NowPlaying.jsx`
+
 #### Bug Fix: Song Repeating
 - **Problem 1**: `rotationSongsRef` cached songs at rotation start but reused them for later dancers without rechecking cooldown. If a dancer's turn came after a long wait, their cached songs (now on cooldown from earlier play) would repeat.
 - **Fix 1**: All three cache-reuse paths (beginRotation, handleSkip transition, handleTrackEnd transition) now verify every cached song is off-cooldown before reusing. If any song is on cooldown, fresh tracks are fetched via `getDancerTracks`.

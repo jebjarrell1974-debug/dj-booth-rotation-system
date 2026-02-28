@@ -80,17 +80,47 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
   }
 
   html, body {
     @apply bg-background text-foreground;
     height: 100%;
     overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   #root {
     height: 100%;
     overflow: hidden;
+  }
+
+  input, textarea, [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+    touch-action: auto;
+  }
+
+  button, [role="button"], a, label, .cursor-pointer {
+    touch-action: manipulation;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  button:active, [role="button"]:active {
+    opacity: 0.75;
+    transition: opacity 0.05s ease-out;
+  }
+
+  [data-radix-scroll-area-viewport],
+  .overflow-y-auto,
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 }
 
@@ -103,4 +133,12 @@
 .remote-view button {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+.touch-icon-btn {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }

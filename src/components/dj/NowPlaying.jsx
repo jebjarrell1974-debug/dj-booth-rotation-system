@@ -89,7 +89,7 @@ export default function NowPlaying({
           size="icon"
           variant="ghost"
           onClick={onSkip}
-          className="w-10 h-10 rounded-full text-gray-400 hover:text-white hover:bg-[#1e1e3a]"
+          className="w-14 h-14 rounded-full text-gray-400 hover:text-white hover:bg-[#1e1e3a]"
         >
           <SkipForward className="w-5 h-5" />
         </Button>
