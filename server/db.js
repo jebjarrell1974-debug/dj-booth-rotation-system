@@ -389,54 +389,22 @@ export function getMusicTrackByName(name) {
   return readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
 }
 
-export function getRandomTracks(count = 3, excludeIds = [], genres = []) {
-  const maxRow = readDb.prepare('SELECT MAX(id) as maxId FROM music_tracks').get();
-  const maxId = maxRow?.maxId || 0;
-  if (maxId === 0) return [];
+export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
+  const conditions = [];
+  const params = [];
 
-  const excludeSet = new Set(excludeIds);
-  const genreSet = genres.length > 0 ? new Set(genres) : null;
-  const results = [];
-  const seenIds = new Set();
-  const maxAttempts = count * 10;
-
-  for (let attempt = 0; attempt < maxAttempts && results.length < count; attempt++) {
-    const randomId = Math.floor(Math.random() * maxId) + 1;
-    if (seenIds.has(randomId)) continue;
-    seenIds.add(randomId);
-
-    const track = readDb.prepare('SELECT id, name, path, genre FROM music_tracks WHERE id >= ? LIMIT 1').get(randomId);
-    if (!track) continue;
-    if (excludeSet.has(track.id)) continue;
-    if (genreSet && !genreSet.has(track.genre)) continue;
-    if (results.some(r => r.name === track.name)) continue;
-    results.push(track);
+  if (excludeNames.length > 0) {
+    conditions.push(`name NOT IN (${excludeNames.map(() => '?').join(',')})`);
+    params.push(...excludeNames);
+  }
+  if (genres.length > 0) {
+    conditions.push(`genre IN (${genres.map(() => '?').join(',')})`);
+    params.push(...genres);
   }
 
-  if (results.length < count) {
-    const conditions = [];
-    const params = [];
-    const usedIds = results.map(r => r.id);
-    if (usedIds.length > 0) {
-      conditions.push(`id NOT IN (${usedIds.map(() => '?').join(',')})`);
-      params.push(...usedIds);
-    }
-    if (excludeIds.length > 0) {
-      conditions.push(`id NOT IN (${excludeIds.map(() => '?').join(',')})`);
-      params.push(...excludeIds);
-    }
-    if (genres.length > 0) {
-      conditions.push(`genre IN (${genres.map(() => '?').join(',')})`);
-      params.push(...genres);
-    }
-    const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
-    const remaining = count - results.length;
-    params.push(remaining);
-    const fallback = readDb.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
-    results.push(...fallback);
-  }
-
-  return results;
+  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+  params.push(count);
+  return readDb.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
 }
 
 export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
@@ -455,22 +423,22 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     }
   }
 
-  let retries = 0;
-  while (result.length < count && retries < 3) {
-    const needed = (count - result.length) * 2;
-    const excludeIds = result.map(r => r.id);
-    const filler = getRandomTracks(needed, excludeIds, retries < 2 ? genres : []);
-    let added = 0;
+  if (result.length < count) {
+    const needed = count - result.length;
+    const allExcluded = [...usedNames];
+    let filler = getRandomTracks(needed, allExcluded, genres);
+    if (filler.length < needed && genres.length > 0) {
+      const stillExcluded = [...usedNames, ...filler.map(t => t.name)];
+      const more = getRandomTracks(needed - filler.length, stillExcluded, []);
+      filler = [...filler, ...more];
+    }
     for (const track of filler) {
       if (result.length >= count) break;
       if (!usedNames.has(track.name)) {
         result.push(track);
         usedNames.add(track.name);
-        added++;
       }
     }
-    if (added === 0) retries++;
-    else retries = 0;
   }
 
   return result;

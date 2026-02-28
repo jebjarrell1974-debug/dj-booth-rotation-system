@@ -538,10 +538,11 @@ app.put('/api/dj-options', authenticate, requireDJ, (req, res) => {
 
 app.get('/api/music/random', authenticate, (req, res) => {
   const count = Math.min(parseInt(req.query.count) || 3, 50);
-  const excludeIds = req.query.exclude ? req.query.exclude.split(',').map(Number).filter(n => !isNaN(n)) : [];
+  const excludeParam = req.query.exclude || '';
+  const excludeNames = excludeParam ? excludeParam.split(',').map(s => s.trim()).filter(Boolean) : [];
   const genresParam = req.query.genres || '';
   const genres = genresParam ? genresParam.split(',').map(g => g.trim()).filter(Boolean) : [];
-  const tracks = getRandomTracks(count, excludeIds, genres);
+  const tracks = getRandomTracks(count, excludeNames, genres);
   res.json({ tracks });
 });
 
