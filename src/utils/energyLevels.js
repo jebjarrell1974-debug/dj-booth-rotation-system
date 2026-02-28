@@ -64,31 +64,31 @@ export const VOICE_SETTINGS = {
     stability: 0.75,
     similarity_boost: 0.80,
     style: 0.15,
-    speed: 0.92,
+    speed: 0.82,
   },
   2: {
     stability: 0.60,
     similarity_boost: 0.78,
     style: 0.25,
-    speed: 1.0,
+    speed: 0.85,
   },
   3: {
     stability: 0.50,
     similarity_boost: 0.75,
     style: 0.35,
-    speed: 1.05,
+    speed: 0.88,
   },
   4: {
     stability: 0.42,
     similarity_boost: 0.72,
     style: 0.40,
-    speed: 1.1,
+    speed: 0.92,
   },
   5: {
     stability: 0.65,
     similarity_boost: 0.80,
     style: 0.20,
-    speed: 0.95,
+    speed: 0.85,
   },
 };
 
