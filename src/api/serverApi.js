@@ -115,9 +115,11 @@ export function connectBoothSSE(onMessage) {
   
   const url = `${API_BASE}/booth/events?token=${encodeURIComponent(token)}`;
   const es = new EventSource(url);
+  let failCount = 0;
   
   es.onmessage = (event) => {
     try {
+      failCount = 0;
       const data = JSON.parse(event.data);
       onMessage(data);
     } catch {}
@@ -125,12 +127,19 @@ export function connectBoothSSE(onMessage) {
   
   es.onerror = () => {
     es.close();
+    failCount++;
+    if (failCount > 5) {
+      apiFetch('/auth/session').catch(() => {});
+      failCount = 0;
+    }
+    const delay = Math.min(3000 * failCount, 15000);
     setTimeout(() => {
+      if (!getToken()) return;
       const reconnected = connectBoothSSE(onMessage);
       if (reconnected) {
         onMessage({ type: 'reconnected', eventSource: reconnected });
       }
-    }, 3000);
+    }, delay);
   };
   
   return es;
