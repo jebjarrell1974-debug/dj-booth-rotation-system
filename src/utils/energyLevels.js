@@ -64,19 +64,19 @@ export const VOICE_SETTINGS = {
     stability: 0.75,
     similarity_boost: 0.80,
     style: 0.15,
-    speed: 0.82,
+    speed: 0.92,
   },
   2: {
     stability: 0.60,
     similarity_boost: 0.78,
     style: 0.25,
-    speed: 0.85,
+    speed: 1.0,
   },
   3: {
     stability: 0.50,
     similarity_boost: 0.75,
     style: 0.35,
-    speed: 0.88,
+    speed: 1.05,
   },
   4: {
     stability: 0.42,
@@ -88,7 +88,7 @@ export const VOICE_SETTINGS = {
     stability: 0.65,
     similarity_boost: 0.80,
     style: 0.20,
-    speed: 0.85,
+    speed: 0.95,
   },
 };
 
