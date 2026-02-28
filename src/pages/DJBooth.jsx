@@ -1065,7 +1065,8 @@ export default function DJBooth() {
     const excludeNames = [...new Set([...cooldownNames, ...alreadyAssigned])];
 
     const activeGenres = opts?.activeGenres?.length > 0 ? opts.activeGenres : [];
-    const dancerPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
+    const rawPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
+    const dancerPlaylist = fisherYatesShuffle(rawPlaylist);
 
     try {
       const token = sessionStorage.getItem('djbooth_token');
