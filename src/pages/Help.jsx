@@ -327,7 +327,7 @@ export default function Help() {
   const collapseAll = () => setOpenSections(new Set());
 
   return (
-    <div className="min-h-screen bg-[#08081a] text-white">
+    <div className="fixed inset-0 bg-[#08081a] text-white overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
       <header className="sticky top-0 z-50 bg-[#08081a]/95 backdrop-blur border-b border-[#1e293b] px-6 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
