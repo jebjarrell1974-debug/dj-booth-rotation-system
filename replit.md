@@ -51,6 +51,12 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
 
+#### Remote Fleet Update (Phone-Triggered)
+- **Endpoint**: `POST /api/system/update` — PIN-protected (master or DJ PIN), runs `~/djbooth-update.sh` or `~/djbooth-update-github.sh`
+- **Behavior**: Sends response immediately ("Update started"), then runs script after 1s delay so HTTP response completes before server restarts
+- **UI**: "Remote Update" section in Configuration page — add Pi IPs (stored in `djbooth_fleet_ips` localStorage), "Check All" pings `/api/version`, "Update All" sends update command to all Pis
+- **Files**: `server/index.js` (endpoint), `src/pages/Configuration.jsx` (UI)
+
 #### Rewrite: Strip Club DJ Announcement Prompts
 - **Problem**: AI-generated scripts sounded like a generic hype-man, not a real strip club DJ. Intros lacked buildup, outros didn't push VIP, and scripts felt robotic.
 - **Fix**: Complete rewrite of `buildAnnouncementPrompt` in `energyLevels.js` with:

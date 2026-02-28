@@ -676,6 +676,40 @@ app.get('/api/version', async (req, res) => {
   });
 });
 
+app.post('/api/system/update', async (req, res) => {
+  const { pin } = req.body;
+  if (!pin || pin.length !== 5) {
+    return res.status(400).json({ error: '5-digit PIN required' });
+  }
+  const masterPin = getMasterPin();
+  const djPinHash = getSetting('dj_pin');
+  const isAuthorized = pin === masterPin || (djPinHash && verifyPin(pin, djPinHash));
+  if (!isAuthorized) {
+    return res.status(401).json({ error: 'Incorrect PIN' });
+  }
+
+  const { existsSync: fileExists } = await import('fs');
+  const { exec } = await import('child_process');
+  const homeDir = process.env.HOME || `/home/${process.env.USER || 'pi'}`;
+  const scriptPaths = [
+    `${homeDir}/djbooth-update.sh`,
+    `${homeDir}/djbooth-update-github.sh`,
+  ];
+  const script = scriptPaths.find(p => fileExists(p));
+  if (!script) {
+    return res.status(404).json({ error: 'Update script not found on this device' });
+  }
+
+  res.json({ ok: true, message: 'Update started', script });
+
+  setTimeout(() => {
+    exec(`bash "${script}" 2>&1`, { timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) console.error('Update script error:', err.message);
+      if (stdout) console.log('Update output:', stdout.slice(-500));
+    });
+  }, 1000);
+});
+
 app.get('/api/update-bundle', async (req, res) => {
   const { readdirSync: readDir, statSync: statF, readFileSync: readF } = await import('fs');
   const { gzipSync } = await import('zlib');

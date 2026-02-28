@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { toast } from 'sonner';
@@ -43,6 +43,12 @@ export default function Configuration() {
   const [musicPathSaving, setMusicPathSaving] = useState(false);
   const [musicTrackCount, setMusicTrackCount] = useState(0);
   const [musicLastScan, setMusicLastScan] = useState(null);
+  const [fleetIps, setFleetIps] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('djbooth_fleet_ips') || '[]'); } catch { return []; }
+  });
+  const [newFleetIp, setNewFleetIp] = useState('');
+  const [fleetStatus, setFleetStatus] = useState({});
+  const [fleetUpdating, setFleetUpdating] = useState(false);
 
   const config = getApiConfig();
   const currentLevel = getCurrentEnergyLevel({ clubOpenHour, clubCloseHour, energyOverride: config.energyOverride });
@@ -820,6 +826,168 @@ export default function Configuration() {
               </p>
             )}
           </div>
+        </div>
+
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Wifi className="w-5 h-5 text-[#00d4ff]" />
+            <h2 className="text-lg font-semibold">Remote Update</h2>
+          </div>
+          <p className="text-sm text-gray-400 mb-4">
+            Add your Pi kiosk IPs (local or Tailscale) to check versions and push updates from your phone.
+          </p>
+
+          <div className="flex gap-2 mb-4">
+            <Input
+              value={newFleetIp}
+              onChange={(e) => setNewFleetIp(e.target.value)}
+              placeholder="192.168.1.98 or 100.x.x.x"
+              className="bg-[#08081a] border-[#1e293b] flex-1 font-mono text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newFleetIp.trim()) {
+                  const ip = newFleetIp.trim();
+                  if (!fleetIps.includes(ip)) {
+                    const updated = [...fleetIps, ip];
+                    setFleetIps(updated);
+                    localStorage.setItem('djbooth_fleet_ips', JSON.stringify(updated));
+                  }
+                  setNewFleetIp('');
+                }
+              }}
+            />
+            <Button
+              onClick={() => {
+                const ip = newFleetIp.trim();
+                if (ip && !fleetIps.includes(ip)) {
+                  const updated = [...fleetIps, ip];
+                  setFleetIps(updated);
+                  localStorage.setItem('djbooth_fleet_ips', JSON.stringify(updated));
+                }
+                setNewFleetIp('');
+              }}
+              disabled={!newFleetIp.trim()}
+              className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {fleetIps.length === 0 && (
+            <p className="text-xs text-gray-500 text-center py-4">No Pi units added yet. Enter an IP above.</p>
+          )}
+
+          {fleetIps.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {fleetIps.map((ip) => {
+                const status = fleetStatus[ip];
+                return (
+                  <div key={ip} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#08081a] border border-[#1e293b]">
+                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                      status?.state === 'online' ? 'bg-green-400' :
+                      status?.state === 'updating' ? 'bg-yellow-400 animate-pulse' :
+                      status?.state === 'updated' ? 'bg-[#00d4ff]' :
+                      status?.state === 'error' ? 'bg-red-400' :
+                      'bg-gray-600'
+                    }`} />
+                    <span className="font-mono text-sm text-white flex-1">{ip}</span>
+                    {status?.version && (
+                      <span className="text-xs text-gray-400 font-mono">{status.version} ({status.commit})</span>
+                    )}
+                    {status?.state === 'updating' && (
+                      <span className="text-xs text-yellow-400 animate-pulse">Updating...</span>
+                    )}
+                    {status?.state === 'updated' && (
+                      <span className="text-xs text-[#00d4ff]">Update sent</span>
+                    )}
+                    {status?.state === 'error' && (
+                      <span className="text-xs text-red-400 truncate max-w-[120px]">{status.error}</span>
+                    )}
+                    <button
+                      onClick={() => {
+                        const updated = fleetIps.filter(i => i !== ip);
+                        setFleetIps(updated);
+                        localStorage.setItem('djbooth_fleet_ips', JSON.stringify(updated));
+                        setFleetStatus(prev => { const n = {...prev}; delete n[ip]; return n; });
+                      }}
+                      className="text-gray-600 hover:text-red-400 p-1 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {fleetIps.length > 0 && (
+            <div className="flex gap-3">
+              <Button
+                onClick={async () => {
+                  for (const ip of fleetIps) {
+                    setFleetStatus(prev => ({ ...prev, [ip]: { state: 'checking' } }));
+                    try {
+                      const controller = new AbortController();
+                      const timeout = setTimeout(() => controller.abort(), 5000);
+                      const res = await fetch(`http://${ip}:3001/api/version`, { signal: controller.signal });
+                      clearTimeout(timeout);
+                      const data = await res.json();
+                      setFleetStatus(prev => ({ ...prev, [ip]: { state: 'online', version: data.version, commit: data.commit } }));
+                    } catch (err) {
+                      setFleetStatus(prev => ({ ...prev, [ip]: { state: 'error', error: 'Offline' } }));
+                    }
+                  }
+                }}
+                className="flex-1 bg-[#1e293b] hover:bg-[#1e293b]/80 text-white"
+                disabled={fleetUpdating}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Check All
+              </Button>
+              <Button
+                onClick={async () => {
+                  const pin = prompt('Enter your DJ PIN to authorize the update:');
+                  if (!pin || pin.length !== 5) {
+                    toast.error('5-digit PIN required');
+                    return;
+                  }
+                  setFleetUpdating(true);
+                  let successCount = 0;
+                  let failCount = 0;
+                  for (const ip of fleetIps) {
+                    setFleetStatus(prev => ({ ...prev, [ip]: { ...prev[ip], state: 'updating' } }));
+                    try {
+                      const controller = new AbortController();
+                      const timeout = setTimeout(() => controller.abort(), 10000);
+                      const res = await fetch(`http://${ip}:3001/api/system/update`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pin }),
+                        signal: controller.signal,
+                      });
+                      clearTimeout(timeout);
+                      if (!res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        throw new Error(data.error || `HTTP ${res.status}`);
+                      }
+                      setFleetStatus(prev => ({ ...prev, [ip]: { ...prev[ip], state: 'updated' } }));
+                      successCount++;
+                    } catch (err) {
+                      setFleetStatus(prev => ({ ...prev, [ip]: { ...prev[ip], state: 'error', error: err.message } }));
+                      failCount++;
+                    }
+                  }
+                  setFleetUpdating(false);
+                  if (successCount > 0) toast.success(`Update triggered on ${successCount} unit${successCount !== 1 ? 's' : ''}`);
+                  if (failCount > 0) toast.error(`${failCount} unit${failCount !== 1 ? 's' : ''} failed`);
+                }}
+                className="flex-1 bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+                disabled={fleetUpdating}
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                {fleetUpdating ? 'Updating...' : 'Update All'}
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5">
