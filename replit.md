@@ -59,6 +59,13 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Normal songs**: Unaffected — still capped at 180s. Override only set for FEATURE tracks and auto-clears
 - **Files**: `src/components/dj/AudioEngine.jsx` (override mechanism), `src/pages/DJBooth.jsx` (detection + trigger)
 
+#### Help Page
+- **Route**: `/Help` (DJ login required)
+- **Access**: Help button with question mark icon in the DJBooth tab bar, next to Options
+- **Content**: 12 collapsible sections covering every feature — Getting Started, Options, Rotation, Dancers, Music Library, Announcements, Settings, Configuration, Rotation Display, Dancer View, iPad Remote, Music Tips
+- **Design**: Matches app theme (neon cyan headers, navy-black backgrounds, accordion sections)
+- **File**: `src/pages/Help.jsx`
+
 #### Configuration Page — Master PIN Lock
 - **Change**: Configuration page now requires master PIN to access (DJ PIN rejected)
 - **Flow**: Lock screen → enter PIN → login via `/api/auth/login` → verify against `/api/settings/master-pin` → unlock
