@@ -399,6 +399,53 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     console.log(`✅ Pre-cache complete for: ${dancerName}`);
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
+  const preCacheCancelRef = useRef(false);
+
+  const preCacheUpcoming = useCallback(async (upcomingDancers) => {
+    const config = getApiConfig();
+    if (!config.elevenLabsApiKey && !elevenLabsApiKey) return;
+    if (!upcomingDancers || upcomingDancers.length === 0) return;
+
+    preCacheCancelRef.current = true;
+    await new Promise(r => setTimeout(r, 100));
+    preCacheCancelRef.current = false;
+
+    const level = getCurrentEnergyLevel(config);
+    const jobs = [];
+    for (let i = 0; i < upcomingDancers.length; i++) {
+      const d = upcomingDancers[i];
+      jobs.push([ANNOUNCEMENT_TYPES.INTRO, d.name, null, 1]);
+      jobs.push([ANNOUNCEMENT_TYPES.ROUND2, d.name, null, 2]);
+      jobs.push([ANNOUNCEMENT_TYPES.OUTRO, d.name, null, 1]);
+      if (d.nextName) {
+        jobs.push([ANNOUNCEMENT_TYPES.TRANSITION, d.name, d.nextName, 1]);
+      }
+    }
+
+    console.log(`🔄 Pre-cache upcoming: ${upcomingDancers.map(d => d.name).join(', ')} (${jobs.length} announcements, L${level})`);
+
+    for (const [type, name, nextName, round] of jobs) {
+      if (preCacheCancelRef.current) {
+        console.log('🔄 Pre-cache cancelled (rotation changed)');
+        return;
+      }
+      try {
+        const result = await getOrGenerateAnnouncement(type, name, nextName, level, round);
+        if (result.fromCache && result.url && result.url.startsWith('blob:')) {
+          URL.revokeObjectURL(result.url);
+        }
+        if (!result.fromCache) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      } catch (err) {
+        console.error(`Pre-cache failed for ${type}-${name}:`, err.message);
+      }
+    }
+    if (!preCacheCancelRef.current) {
+      console.log(`✅ Pre-cache upcoming complete`);
+    }
+  }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
+
   React.useImperativeHandle(ref, () => ({
     playAutoAnnouncement: async (type, currentDancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
       await playAnnouncement(type, currentDancerName, nextDancerName, roundNumber, audioOptions);
@@ -415,7 +462,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         return null;
       }
     },
-    preCacheDancer
+    preCacheDancer,
+    preCacheUpcoming
   }));
 
   const preCacheAll = useCallback(async () => {
