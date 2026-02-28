@@ -89,25 +89,25 @@ export default function RotationBuilder({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-6 h-6 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
+                    className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
                     onClick={() => onMoveUp(idx)}
                     disabled={idx === 0}
                   >
-                    <ChevronUp className="w-3 h-3" />
+                    <ChevronUp className="w-4 h-4" />
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-6 h-6 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
+                    className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
                     onClick={() => onMoveDown(idx)}
                     disabled={idx === rotationDancers.length - 1}
                   >
-                    <ChevronDown className="w-3 h-3" />
+                    <ChevronDown className="w-4 h-4" />
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-6 h-6 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a]"
+                    className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a]"
                     onClick={() => onRemoveFromRotation(dancer.id)}
                   >
                     <X className="w-3 h-3" />

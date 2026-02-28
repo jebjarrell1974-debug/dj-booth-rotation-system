@@ -154,7 +154,7 @@ export default function DancerRoster({
               {rotation.includes(dancer.id) ? (
                 <Button
                   size="sm"
-                  className="w-full mb-2 h-7 text-xs bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/50"
+                  className="w-full mb-2 h-10 text-xs bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/50"
                   title="Remove from rotation"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -167,7 +167,7 @@ export default function DancerRoster({
               ) : (
                 <Button
                   size="sm"
-                  className="w-full mb-2 h-7 text-xs bg-green-900/40 hover:bg-green-800/60 text-green-300 border border-green-700/50"
+                  className="w-full mb-2 h-10 text-xs bg-green-900/40 hover:bg-green-800/60 text-green-300 border border-green-700/50"
                   title="Add to rotation"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -183,7 +183,7 @@ export default function DancerRoster({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="w-7 h-7 text-gray-500 hover:text-[#e040fb] hover:bg-[#1e1e3a]"
+                  className="w-11 h-11 text-gray-500 hover:text-[#e040fb] hover:bg-[#1e1e3a]"
                   title="Edit playlist"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -198,7 +198,7 @@ export default function DancerRoster({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="w-7 h-7 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
+                      className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
                       title="Edit name"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -229,7 +229,7 @@ export default function DancerRoster({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="w-7 h-7 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a]"
+                  className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a]"
                   title="Delete dancer"
                   onClick={(e) => {
                     e.stopPropagation();

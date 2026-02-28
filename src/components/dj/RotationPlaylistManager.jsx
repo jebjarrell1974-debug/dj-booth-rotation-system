@@ -689,7 +689,7 @@ export default function RotationPlaylistManager({
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="w-8 h-8 text-yellow-500 hover:text-yellow-300 hover:bg-yellow-900/30 flex-shrink-0"
+                                  className="w-11 h-11 text-yellow-500 hover:text-yellow-300 hover:bg-yellow-900/30 flex-shrink-0"
                                   title="Skip to bottom of rotation"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -702,7 +702,7 @@ export default function RotationPlaylistManager({
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="w-8 h-8 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a] flex-shrink-0"
+                                className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a] flex-shrink-0"
                                 onClick={(e) => { e.stopPropagation(); handleRemoveFromRotation(dancer.id); }}
                               >
                                 <X className="w-5 h-5" />

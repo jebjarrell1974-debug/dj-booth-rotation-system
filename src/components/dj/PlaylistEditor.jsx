@@ -180,7 +180,7 @@ export default function PlaylistEditor({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="w-7 h-7 text-gray-500 hover:text-white"
+                        className="w-11 h-11 text-gray-500 hover:text-white"
                         onClick={() => moveTrack(idx, -1)}
                         disabled={idx === 0}
                       >
@@ -189,7 +189,7 @@ export default function PlaylistEditor({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="w-7 h-7 text-gray-500 hover:text-white"
+                        className="w-11 h-11 text-gray-500 hover:text-white"
                         onClick={() => moveTrack(idx, 1)}
                         disabled={idx === playlist.length - 1}
                       >
@@ -198,7 +198,7 @@ export default function PlaylistEditor({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="w-7 h-7 text-gray-500 hover:text-red-400"
+                        className="w-11 h-11 text-gray-500 hover:text-red-400"
                         onClick={() => removeTrack(songName)}
                       >
                         <Trash2 className="w-4 h-4" />
