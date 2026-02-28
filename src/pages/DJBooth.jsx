@@ -1751,25 +1751,34 @@ export default function DJBooth() {
           if (!firstBreakTrack?.url) {
             firstBreakTrack = await resolveTrackByName(firstBreakName);
           }
-          if (firstBreakTrack?.url) {
-            console.log('🎵 Playing break song:', firstBreakTrack.name);
-            lastAudioActivityRef.current = Date.now();
-            const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name);
-            if (!ok) {
-              console.warn('⚠️ Break song playTrack failed, using fallback');
-              await playFallbackTrack(true);
-            }
-          } else {
-            console.error('❌ Could not resolve break song:', firstBreakName, '- falling back');
-            await playFallbackTrack(true);
-          }
-          
+
           if (announcementsEnabled) {
             const announcementPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
-            await playPrefetchedAnnouncement(announcementUrl);
+            const announcementDone = playPrefetchedAnnouncement(announcementUrl);
+            await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+            if (firstBreakTrack?.url) {
+              console.log('🎵 Playing break song during outro announcement:', firstBreakTrack.name);
+              lastAudioActivityRef.current = Date.now();
+              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name);
+              if (!ok) await playFallbackTrack(false);
+            } else {
+              console.error('❌ Could not resolve break song:', firstBreakName, '- falling back');
+              await playFallbackTrack(false);
+            }
+            await announcementDone;
             audioEngineRef.current?.unduck();
+          } else {
+            if (firstBreakTrack?.url) {
+              console.log('🎵 Playing break song:', firstBreakTrack.name);
+              lastAudioActivityRef.current = Date.now();
+              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name);
+              if (!ok) await playFallbackTrack(true);
+            } else {
+              console.error('❌ Could not resolve break song:', firstBreakName, '- falling back');
+              await playFallbackTrack(true);
+            }
           }
           
           transitionInProgressRef.current = false;
