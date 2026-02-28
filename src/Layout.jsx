@@ -41,7 +41,7 @@ export default function Layout({ children, currentPageName }) {
           background: #0d0d1f;
         }
         ::-webkit-scrollbar-thumb {
-          background: #1e1e3a;
+          background: #1e293b;
           border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
@@ -50,13 +50,13 @@ export default function Layout({ children, currentPageName }) {
         
         /* Slider styling */
         [data-orientation="horizontal"] [data-radix-slider-track] {
-          background: #1e1e3a;
+          background: #1e293b;
         }
         [data-orientation="horizontal"] [data-radix-slider-range] {
-          background: #e040fb;
+          background: #00d4ff;
         }
         [data-radix-slider-thumb] {
-          background: #e040fb;
+          background: #00d4ff;
           border: none;
         }
       `}</style>

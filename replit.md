@@ -1,12 +1,13 @@
-# DJ Booth - Automated Rotation System
+# NEON AI DJ — Nightclub Entertainment Operations Network
 
 ## Overview
-The DJ Booth project is a React-based application for automating dancer rotations, managing music playback, and generating dynamic voice announcements in nightclubs. It is designed as a robust, low-power solution for hardware like the Raspberry Pi, aiming to streamline club operations and enhance the atmosphere through intelligent automation and responsive design. Key features include seamless music transitions, automated set management, and engaging announcements tailored to club hours and event types. The system also incorporates a fleet management system for centralized control, remote monitoring, updates, and content synchronization across multiple deployed units.
+NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent Disc Jockey) is a React-based application for automating dancer rotations, managing music playback, and generating dynamic voice announcements in nightclubs. It is designed as a robust, low-power solution for hardware like the Raspberry Pi, aiming to streamline club operations and enhance the atmosphere through intelligent automation and responsive design. Key features include seamless music transitions, automated set management, and engaging announcements tailored to club hours and event types. The system also incorporates a fleet management system for centralized control, remote monitoring, updates, and content synchronization across multiple deployed units.
 
 ## User Preferences
-- Nightclub dark theme with electric magenta accent (#e040fb) and violet secondary (#7c3aed)
-- Deep navy-black backgrounds (#08081a, #0d0d1f) with purple-tinged borders (#1e1e3a)
+- Nightclub dark theme with neon cyan accent (#00d4ff) and blue secondary (#2563eb)
+- Deep navy-black backgrounds (#08081a, #0d0d1f) with blue-tinged borders (#1e293b)
 - Neon dancer color palette for club atmosphere
+- App name: "NEON AI DJ" (logo at `/public/neon-ai-dj-logo.jpeg`)
 - Minimize CPU/GPU usage for local hardware operation
 - Do not modify `AudioEngine.jsx` audio behavior (crossfade, ducking, volume levels are finalized). The `loadTrack` method accepts both URL strings and FileSystemFileHandle objects.
 - Production database stored at `/home/runner/data/djbooth.db` (outside project directory) to survive republishing. Development uses `./djbooth.db`. Configurable via `DB_PATH` env var.
@@ -49,6 +50,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Terminology Lock**: System prompt enforces "round two"/"round three" instead of "around" (common AI mistake)
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
+
+#### Rebrand: DJ Booth → NEON AI DJ
+- **App name**: Changed all user-visible "DJ Booth" references to "NEON AI DJ"
+- **Logo**: Landing page shows `/public/neon-ai-dj-logo.jpeg` (NEON AI DJ branding image)
+- **Color scheme**: Magenta/violet → neon cyan/blue to match the logo
+  - `#e040fb` → `#00d4ff` (neon cyan primary)
+  - `#c026d3` → `#00a3cc` (darker cyan hover)
+  - `#7c3aed` → `#2563eb` (blue secondary)
+  - `#1e1e3a` → `#1e293b` (blue-tinged borders)
+- **Updated**: `index.html` title, `manifest.json`, Landing.jsx, DJBooth.jsx header, Configuration.jsx, server console logs, all component accent colors
+- **NOT changed**: Internal localStorage keys (`djbooth_*`), file names, route paths, variable names — preserves backwards compatibility with existing Pi installations
 
 #### Optimization: Touchscreen (Pi Kiosk)
 - **Purpose**: Pi touchscreen is the primary interface — optimize all touch interactions for fat-finger use

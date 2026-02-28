@@ -598,11 +598,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }
 
   return (
-    <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4">
+    <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Mic className="w-4 h-4 text-[#e040fb]" />
-          <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">
+          <Mic className="w-4 h-4 text-[#00d4ff]" />
+          <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
             Announcements
           </h3>
         </div>
@@ -638,7 +638,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       <Button
         onClick={preCacheAll}
         disabled={isPreCaching || rotation.length === 0}
-        className="w-full mb-4 bg-[#151528] hover:bg-[#1e1e3a] text-white border border-[#1e1e3a]"
+        className="w-full mb-4 bg-[#151528] hover:bg-[#1e293b] text-white border border-[#1e293b]"
       >
         {isPreCaching ? (
           <>
@@ -684,7 +684,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
                   key={type}
                   size="sm"
                   variant="outline"
-                  className={`border-[#1e1e3a] text-gray-300 hover:bg-[#1e1e3a] hover:text-white justify-start ${isCached ? 'border-green-500/40' : ''}`}
+                  className={`border-[#1e293b] text-gray-300 hover:bg-[#1e293b] hover:text-white justify-start ${isCached ? 'border-green-500/40' : ''}`}
                   onClick={() => playAnnouncement(type, dancer, nd, type === ANNOUNCEMENT_TYPES.ROUND2 ? 2 : 1)}
                   disabled={generatingType === type}
                 >

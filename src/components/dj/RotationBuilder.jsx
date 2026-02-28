@@ -26,11 +26,11 @@ export default function RotationBuilder({
   const availableDancers = dancers.filter(d => d.is_active && !rotation.includes(d.id));
 
   return (
-    <div className="flex flex-col h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a]">
-      <div className="p-4 border-b border-[#1e1e3a]">
+    <div className="flex flex-col h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
+      <div className="p-4 border-b border-[#1e293b]">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">
+            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
               Build Rotation
             </h3>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -61,9 +61,9 @@ export default function RotationBuilder({
                 key={dancer.id}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                   isCurrent 
-                    ? 'bg-[#e040fb]/20 ring-1 ring-[#e040fb]' 
+                    ? 'bg-[#00d4ff]/20 ring-1 ring-[#00d4ff]' 
                     : isNext
-                    ? 'bg-[#1e1e3a]/50 ring-1 ring-[#1e1e3a]'
+                    ? 'bg-[#1e293b]/50 ring-1 ring-[#1e293b]'
                     : 'hover:bg-[#151528]'
                 }`}
               >
@@ -71,7 +71,7 @@ export default function RotationBuilder({
                 
                 <div 
                   className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs"
-                  style={{ backgroundColor: dancer.color || '#e040fb' }}
+                  style={{ backgroundColor: dancer.color || '#00d4ff' }}
                 >
                   {dancer.name.charAt(0).toUpperCase()}
                 </div>
@@ -79,7 +79,7 @@ export default function RotationBuilder({
                 <span className="flex-1 text-sm text-white truncate">{dancer.name}</span>
                 
                 {isCurrent && (
-                  <Badge className="bg-[#e040fb] text-black text-xs">NOW</Badge>
+                  <Badge className="bg-[#00d4ff] text-black text-xs">NOW</Badge>
                 )}
                 {isNext && !isCurrent && (
                   <Badge variant="outline" className="border-gray-600 text-gray-400 text-xs">NEXT</Badge>
@@ -89,7 +89,7 @@ export default function RotationBuilder({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
+                    className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e293b]"
                     onClick={() => onMoveUp(idx)}
                     disabled={idx === 0}
                   >
@@ -98,7 +98,7 @@ export default function RotationBuilder({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
+                    className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e293b]"
                     onClick={() => onMoveDown(idx)}
                     disabled={idx === rotationDancers.length - 1}
                   >
@@ -107,7 +107,7 @@ export default function RotationBuilder({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a]"
+                    className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e293b]"
                     onClick={() => onRemoveFromRotation(dancer.id)}
                   >
                     <X className="w-3 h-3" />
@@ -127,7 +127,7 @@ export default function RotationBuilder({
       
       {/* Add to Rotation */}
       {availableDancers.length > 0 && (
-        <div className="p-4 border-t border-[#1e1e3a]">
+        <div className="p-4 border-t border-[#1e293b]">
           <p className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Available Dancers:</p>
           <div className="grid grid-cols-2 gap-2">
             {availableDancers.map(dancer => (
@@ -135,12 +135,12 @@ export default function RotationBuilder({
                 key={dancer.id}
                 size="sm"
                 variant="outline"
-                className="border-[#1e1e3a] text-gray-300 hover:bg-[#1e1e3a] hover:text-white text-xs justify-start"
+                className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b] hover:text-white text-xs justify-start"
                 onClick={() => onAddToRotation(dancer.id)}
               >
                 <div 
                   className="w-5 h-5 rounded-full flex items-center justify-center text-black font-bold text-xs mr-2"
-                  style={{ backgroundColor: dancer.color || '#e040fb' }}
+                  style={{ backgroundColor: dancer.color || '#00d4ff' }}
                 >
                   {dancer.name.charAt(0).toUpperCase()}
                 </div>

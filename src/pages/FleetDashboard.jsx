@@ -35,13 +35,13 @@ function formatDate(timestamp) {
   return new Date(timestamp).toLocaleString();
 }
 
-function MiniBar({ value, max = 100, color = '#e040fb', label }) {
+function MiniBar({ value, max = 100, color = '#00d4ff', label }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   const barColor = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : color;
   return (
     <div className="flex items-center gap-2 text-xs">
       {label && <span className="text-gray-500 w-12 shrink-0">{label}</span>}
-      <div className="flex-1 h-2 bg-[#1e1e3a] rounded-full overflow-hidden">
+      <div className="flex-1 h-2 bg-[#1e293b] rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: barColor }} />
       </div>
       <span className="text-gray-400 w-10 text-right">{Math.round(pct)}%</span>
@@ -49,7 +49,7 @@ function MiniBar({ value, max = 100, color = '#e040fb', label }) {
   );
 }
 
-function HealthSparkline({ data, field, color = '#e040fb', height = 40 }) {
+function HealthSparkline({ data, field, color = '#00d4ff', height = 40 }) {
   if (!data || data.length < 2) return <div className="text-xs text-gray-600">No data</div>;
   
   const values = data.map(d => d[field] || 0).reverse();
@@ -104,8 +104,8 @@ function DeviceDetailModal({ device, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-xl max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="p-4 border-b border-[#1e1e3a] flex items-center justify-between">
+      <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b border-[#1e293b] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'bg-red-400/60'}`} />
             <div>
@@ -117,7 +117,7 @@ function DeviceDetailModal({ device, onClose }) {
         </div>
 
         {latestHb && (
-          <div className="p-4 border-b border-[#1e1e3a] grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-4 border-b border-[#1e293b] grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="text-center">
               <p className="text-xs text-gray-500">CPU</p>
               <p className="text-lg font-bold text-white">{Math.round(latestHb.cpu_percent || 0)}%</p>
@@ -137,10 +137,10 @@ function DeviceDetailModal({ device, onClose }) {
           </div>
         )}
 
-        <div className="flex gap-1 p-2 border-b border-[#1e1e3a]">
+        <div className="flex gap-1 p-2 border-b border-[#1e293b]">
           {['health', 'logs'].map(tab => (
             <button key={tab} onClick={() => setActiveSubTab(tab)}
-              className={`flex-1 px-3 py-1.5 rounded text-sm ${activeSubTab === tab ? 'bg-[#e040fb]/20 text-[#e040fb]' : 'text-gray-400 hover:text-white'}`}>
+              className={`flex-1 px-3 py-1.5 rounded text-sm ${activeSubTab === tab ? 'bg-[#00d4ff]/20 text-[#00d4ff]' : 'text-gray-400 hover:text-white'}`}>
               {tab === 'health' ? 'Health History' : `Error Logs (${logs.length})`}
             </button>
           ))}
@@ -157,7 +157,7 @@ function DeviceDetailModal({ device, onClose }) {
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Memory Usage</p>
-                <HealthSparkline data={heartbeats} field="memory_percent" color="#e040fb" />
+                <HealthSparkline data={heartbeats} field="memory_percent" color="#00d4ff" />
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Disk Usage</p>
@@ -174,7 +174,7 @@ function DeviceDetailModal({ device, onClose }) {
               {logs.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No errors logged</p>
               ) : logs.map(log => (
-                <div key={log.id} className="text-xs font-mono bg-[#08081a] rounded px-3 py-2 border border-[#1e1e3a]/50">
+                <div key={log.id} className="text-xs font-mono bg-[#08081a] rounded px-3 py-2 border border-[#1e293b]/50">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-500">{formatDate(log.timestamp)}</span>
                     <span className={`uppercase font-bold px-1.5 py-0.5 rounded text-[10px] ${levelColors[log.level] || 'text-gray-400 bg-gray-500/10'}`}>{log.level}</span>
@@ -198,7 +198,7 @@ function DeviceCard({ device, onDelete, onViewDetail }) {
   const isStale = timeSince && timeSince > 10 * 60 * 1000;
 
   return (
-    <div className={`bg-[#0d0d1f] border rounded-lg p-4 cursor-pointer hover:border-[#e040fb]/30 transition-colors ${isStale ? 'border-red-500/30' : 'border-[#1e1e3a]'}`}
+    <div className={`bg-[#0d0d1f] border rounded-lg p-4 cursor-pointer hover:border-[#00d4ff]/30 transition-colors ${isStale ? 'border-red-500/30' : 'border-[#1e293b]'}`}
       onClick={() => onViewDetail(device)}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -256,33 +256,33 @@ function RegisterDeviceModal({ onClose, onRegister }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+      <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
         {!result ? (
           <>
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-[#e040fb]" /> Register New Device
+              <Plus className="w-5 h-5 text-[#00d4ff]" /> Register New Device
             </h2>
             <div className="space-y-3">
               <div>
                 <label className="text-sm text-gray-400 block mb-1">Device Name</label>
                 <Input value={deviceName} onChange={e => setDeviceName(e.target.value)}
                   placeholder="e.g., Pi-ClubA-Main"
-                  className="bg-[#08081a] border-[#1e1e3a] text-white" />
+                  className="bg-[#08081a] border-[#1e293b] text-white" />
               </div>
               <div>
                 <label className="text-sm text-gray-400 block mb-1">Club Name</label>
                 <Input value={clubName} onChange={e => setClubName(e.target.value)}
                   placeholder="e.g., Club Aurora"
-                  className="bg-[#08081a] border-[#1e1e3a] text-white" />
+                  className="bg-[#08081a] border-[#1e293b] text-white" />
               </div>
             </div>
             <div className="flex gap-2 mt-5">
               <Button onClick={handleRegister} disabled={!deviceName.trim()}
-                className="flex-1 bg-[#e040fb] hover:bg-[#e040fb]/80 text-white">
+                className="flex-1 bg-[#00d4ff] hover:bg-[#00d4ff]/80 text-white">
                 Register
               </Button>
               <Button variant="outline" onClick={onClose}
-                className="border-[#1e1e3a] text-gray-300 hover:bg-[#1e1e3a]">
+                className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b]">
                 Cancel
               </Button>
             </div>
@@ -303,14 +303,14 @@ function RegisterDeviceModal({ onClose, onRegister }) {
                   <AlertTriangle className="w-3 h-3" /> Save this API key — it won't be shown again
                 </p>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs text-[#e040fb] bg-[#1e1e3a] rounded px-2 py-1 flex-1 overflow-x-auto">{result.apiKey}</code>
+                  <code className="text-xs text-[#00d4ff] bg-[#1e293b] rounded px-2 py-1 flex-1 overflow-x-auto">{result.apiKey}</code>
                   <Button size="sm" variant="ghost" onClick={copyApiKey} className="text-gray-400 hover:text-white shrink-0">
                     {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                   </Button>
                 </div>
               </div>
             </div>
-            <Button onClick={onClose} className="w-full mt-4 bg-[#e040fb] hover:bg-[#e040fb]/80 text-white">
+            <Button onClick={onClose} className="w-full mt-4 bg-[#00d4ff] hover:bg-[#00d4ff]/80 text-white">
               Done
             </Button>
           </>
@@ -338,28 +338,28 @@ function CreateUpdateModal({ onClose, onCreate, devices }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+      <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Package className="w-5 h-5 text-[#e040fb]" /> Create Update
+          <Package className="w-5 h-5 text-[#00d4ff]" /> Create Update
         </h2>
         <div className="space-y-3">
           <div>
             <label className="text-sm text-gray-400 block mb-1">Version</label>
             <Input value={version} onChange={e => setVersion(e.target.value)}
               placeholder="e.g., 1.2.0"
-              className="bg-[#08081a] border-[#1e1e3a] text-white" />
+              className="bg-[#08081a] border-[#1e293b] text-white" />
           </div>
           <div>
             <label className="text-sm text-gray-400 block mb-1">Release Notes</label>
             <textarea value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)}
               placeholder="What's new in this version..."
               rows={3}
-              className="w-full bg-[#08081a] border border-[#1e1e3a] text-white rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#e040fb]/50" />
+              className="w-full bg-[#08081a] border border-[#1e293b] text-white rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#00d4ff]/50" />
           </div>
           <div>
             <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
               <input type="checkbox" checked={targetAll} onChange={e => setTargetAll(e.target.checked)}
-                className="rounded border-[#1e1e3a]" />
+                className="rounded border-[#1e293b]" />
               Target all devices
             </label>
             {!targetAll && devices.length > 0 && (
@@ -368,7 +368,7 @@ function CreateUpdateModal({ onClose, onCreate, devices }) {
                   <label key={d.device_id} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
                     <input type="checkbox" checked={selectedDevices.includes(d.device_id)}
                       onChange={e => setSelectedDevices(prev => e.target.checked ? [...prev, d.device_id] : prev.filter(id => id !== d.device_id))}
-                      className="rounded border-[#1e1e3a]" />
+                      className="rounded border-[#1e293b]" />
                     {d.device_name} ({d.club_name || 'No club'})
                   </label>
                 ))}
@@ -378,11 +378,11 @@ function CreateUpdateModal({ onClose, onCreate, devices }) {
         </div>
         <div className="flex gap-2 mt-5">
           <Button onClick={handleCreate} disabled={!version.trim()}
-            className="flex-1 bg-[#e040fb] hover:bg-[#e040fb]/80 text-white">
+            className="flex-1 bg-[#00d4ff] hover:bg-[#00d4ff]/80 text-white">
             Create Update
           </Button>
           <Button variant="outline" onClick={onClose}
-            className="border-[#1e1e3a] text-gray-300 hover:bg-[#1e1e3a]">
+            className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b]">
             Cancel
           </Button>
         </div>
@@ -458,15 +458,15 @@ function ErrorLogsPanel({ devices }) {
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <Input value={searchText} onChange={e => setSearchText(e.target.value)}
             placeholder="Search logs..."
-            className="bg-[#08081a] border-[#1e1e3a] text-white pl-9 h-8 text-sm" />
+            className="bg-[#08081a] border-[#1e293b] text-white pl-9 h-8 text-sm" />
         </div>
         <select value={filterDevice} onChange={e => setFilterDevice(e.target.value)}
-          className="bg-[#08081a] border border-[#1e1e3a] text-gray-300 rounded-md px-2 h-8 text-xs">
+          className="bg-[#08081a] border border-[#1e293b] text-gray-300 rounded-md px-2 h-8 text-xs">
           <option value="">All Devices</option>
           {devices.map(d => <option key={d.device_id} value={d.device_id}>{d.device_name}</option>)}
         </select>
         <select value={filterLevel} onChange={e => setFilterLevel(e.target.value)}
-          className="bg-[#08081a] border border-[#1e1e3a] text-gray-300 rounded-md px-2 h-8 text-xs">
+          className="bg-[#08081a] border border-[#1e293b] text-gray-300 rounded-md px-2 h-8 text-xs">
           <option value="">All Levels</option>
           <option value="error">Errors ({errorCount})</option>
           <option value="warn">Warnings ({warnCount})</option>
@@ -496,7 +496,7 @@ function ErrorLogsPanel({ devices }) {
           </div>
         ) : (
           filteredLogs.map(log => (
-            <div key={log.id} className="text-xs font-mono bg-[#08081a] rounded px-3 py-2 border border-[#1e1e3a]/50">
+            <div key={log.id} className="text-xs font-mono bg-[#08081a] rounded px-3 py-2 border border-[#1e293b]/50">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-gray-500">{formatDate(log.timestamp)}</span>
                 <span className={`uppercase font-bold px-1.5 py-0.5 rounded text-[10px] ${levelColors[log.level] || 'text-gray-400 bg-gray-500/10'}`}>{log.level}</span>
@@ -547,7 +547,7 @@ function UpdatesPanel({ devices }) {
       <div className="flex justify-between items-center">
         <h2 className="text-sm font-medium text-gray-400">App Updates</h2>
         <Button size="sm" onClick={() => setShowCreate(true)}
-          className="bg-[#e040fb] hover:bg-[#e040fb]/80 text-white text-xs">
+          className="bg-[#00d4ff] hover:bg-[#00d4ff]/80 text-white text-xs">
           <Plus className="w-3 h-3 mr-1" /> New Update
         </Button>
       </div>
@@ -565,10 +565,10 @@ function UpdatesPanel({ devices }) {
           {updates.map(update => {
             const targets = JSON.parse(update.target_devices || '[]');
             return (
-              <div key={update.id} className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-4">
+              <div key={update.id} className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="border-[#e040fb]/50 text-[#e040fb] text-sm font-mono">
+                    <Badge variant="outline" className="border-[#00d4ff]/50 text-[#00d4ff] text-sm font-mono">
                       v{update.version}
                     </Badge>
                     {update.is_active ? (
@@ -683,7 +683,7 @@ export default function FleetDashboard() {
             </Link>
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2">
-                <Server className="w-5 h-5 text-[#e040fb]" /> Fleet Dashboard
+                <Server className="w-5 h-5 text-[#00d4ff]" /> Fleet Dashboard
               </h1>
               <p className="text-sm text-gray-500">Manage your deployed Pi units</p>
             </div>
@@ -704,32 +704,32 @@ export default function FleetDashboard() {
 
         {overview && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-3 text-center">
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-white">{overview.totalDevices}</p>
               <p className="text-xs text-gray-500">Total Devices</p>
             </div>
-            <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-3 text-center">
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-green-400">{overview.onlineDevices}</p>
               <p className="text-xs text-gray-500">Online</p>
             </div>
-            <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-[#e040fb]">{overview.uniqueDancers}</p>
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-[#00d4ff]">{overview.uniqueDancers}</p>
               <p className="text-xs text-gray-500">Dancers</p>
             </div>
-            <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-3 text-center">
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-purple-400">{overview.totalVoiceovers}</p>
               <p className="text-xs text-gray-500">Voiceovers</p>
             </div>
           </div>
         )}
 
-        <div className="flex gap-1 mb-4 bg-[#0d0d1f] rounded-lg p-1 border border-[#1e1e3a] overflow-x-auto">
+        <div className="flex gap-1 mb-4 bg-[#0d0d1f] rounded-lg p-1 border border-[#1e293b] overflow-x-auto">
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm whitespace-nowrap transition-colors
                 ${activeTab === tab.id 
-                  ? 'bg-[#e040fb]/20 text-[#e040fb] border border-[#e040fb]/30' 
-                  : 'text-gray-400 hover:text-white hover:bg-[#1e1e3a]/50 border border-transparent'}`}>
+                  ? 'bg-[#00d4ff]/20 text-[#00d4ff] border border-[#00d4ff]/30' 
+                  : 'text-gray-400 hover:text-white hover:bg-[#1e293b]/50 border border-transparent'}`}>
               <tab.icon className="w-4 h-4" />
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
@@ -741,7 +741,7 @@ export default function FleetDashboard() {
             <div className="flex justify-between items-center">
               <h2 className="text-sm font-medium text-gray-400">Registered Devices</h2>
               <Button size="sm" onClick={() => setShowRegister(true)}
-                className="bg-[#e040fb] hover:bg-[#e040fb]/80 text-white text-xs">
+                className="bg-[#00d4ff] hover:bg-[#00d4ff]/80 text-white text-xs">
                 <Plus className="w-3 h-3 mr-1" /> Add Device
               </Button>
             </div>
@@ -778,11 +778,11 @@ export default function FleetDashboard() {
               </div>
             ) : (
               Object.entries(voiceoversByDancer).map(([name, vos]) => (
-                <div key={name} className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-4">
+                <div key={name} className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-4">
                   <h3 className="text-white font-medium mb-2">{name}</h3>
                   <div className="flex flex-wrap gap-2">
                     {vos.map(vo => (
-                      <Badge key={vo.id} variant="outline" className="border-[#e040fb]/30 text-[#e040fb] text-xs">
+                      <Badge key={vo.id} variant="outline" className="border-[#00d4ff]/30 text-[#00d4ff] text-xs">
                         {vo.voiceover_type} ({formatBytes(vo.file_size)})
                       </Badge>
                     ))}
@@ -823,7 +823,7 @@ export default function FleetDashboard() {
               </div>
             ) : (
               syncHistory.map(entry => (
-                <div key={entry.id} className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg px-4 py-3 flex items-center justify-between">
+                <div key={entry.id} className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg px-4 py-3 flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className={
@@ -883,10 +883,10 @@ function MusicManifestCard({ device }) {
   const totalSize = manifest ? manifest.reduce((sum, m) => sum + (m.file_size || 0), 0) : 0;
 
   return (
-    <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-lg p-4">
+    <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-4">
       <div className="flex items-center justify-between cursor-pointer" onClick={loadManifest}>
         <div className="flex items-center gap-2">
-          <Music className="w-4 h-4 text-[#e040fb]" />
+          <Music className="w-4 h-4 text-[#00d4ff]" />
           <span className="text-white font-medium">{device.device_name}</span>
           <span className="text-xs text-gray-500">{device.club_name}</span>
         </div>
@@ -900,13 +900,13 @@ function MusicManifestCard({ device }) {
         </div>
       </div>
       {expanded && manifest && (
-        <div className="mt-3 pt-3 border-t border-[#1e1e3a]">
+        <div className="mt-3 pt-3 border-t border-[#1e293b]">
           {manifest.length === 0 ? (
             <p className="text-xs text-gray-500">No music manifest tracked for this device yet</p>
           ) : (
             <div className="max-h-48 overflow-y-auto space-y-0.5">
               {manifest.map(track => (
-                <div key={track.id || track.filename} className="flex justify-between text-xs py-1 px-2 rounded hover:bg-[#1e1e3a]/30">
+                <div key={track.id || track.filename} className="flex justify-between text-xs py-1 px-2 rounded hover:bg-[#1e293b]/30">
                   <span className="text-gray-300 truncate flex-1">{track.filename}</span>
                   <span className="text-gray-500 shrink-0 ml-2">{track.genre || '-'} · {formatBytes(track.file_size)}</span>
                 </div>

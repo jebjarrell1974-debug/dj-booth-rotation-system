@@ -64,24 +64,24 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
   return (
     <div className="h-full overflow-auto">
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-5">
-          <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider mb-4">Music Selection Mode</h3>
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+          <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Music Selection Mode</h3>
           <div className="space-y-3">
             <button
               onClick={() => saveOptions({ musicMode: 'dancer_first' })}
               className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl border text-left transition-colors ${
                 musicMode === 'dancer_first'
-                  ? 'bg-[#e040fb]/10 border-[#e040fb]/40'
-                  : 'bg-[#151528] border-[#1e1e3a] hover:border-[#2e2e5a]'
+                  ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
+                  : 'bg-[#151528] border-[#1e293b] hover:border-[#2e2e5a]'
               }`}
             >
               <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                musicMode === 'dancer_first' ? 'border-[#e040fb] bg-[#e040fb]' : 'border-gray-600'
+                musicMode === 'dancer_first' ? 'border-[#00d4ff] bg-[#00d4ff]' : 'border-gray-600'
               }`}>
                 {musicMode === 'dancer_first' && <Check className="w-4 h-4 text-black" />}
               </div>
               <div>
-                <p className={`text-base font-semibold ${musicMode === 'dancer_first' ? 'text-[#e040fb]' : 'text-white'}`}>
+                <p className={`text-base font-semibold ${musicMode === 'dancer_first' ? 'text-[#00d4ff]' : 'text-white'}`}>
                   Dancer First
                 </p>
                 <p className="text-sm text-gray-400 mt-0.5">
@@ -93,17 +93,17 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
               onClick={() => saveOptions({ musicMode: 'folders_only' })}
               className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl border text-left transition-colors ${
                 musicMode === 'folders_only'
-                  ? 'bg-[#e040fb]/10 border-[#e040fb]/40'
-                  : 'bg-[#151528] border-[#1e1e3a] hover:border-[#2e2e5a]'
+                  ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
+                  : 'bg-[#151528] border-[#1e293b] hover:border-[#2e2e5a]'
               }`}
             >
               <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                musicMode === 'folders_only' ? 'border-[#e040fb] bg-[#e040fb]' : 'border-gray-600'
+                musicMode === 'folders_only' ? 'border-[#00d4ff] bg-[#00d4ff]' : 'border-gray-600'
               }`}>
                 {musicMode === 'folders_only' && <Check className="w-4 h-4 text-black" />}
               </div>
               <div>
-                <p className={`text-base font-semibold ${musicMode === 'folders_only' ? 'text-[#e040fb]' : 'text-white'}`}>
+                <p className={`text-base font-semibold ${musicMode === 'folders_only' ? 'text-[#00d4ff]' : 'text-white'}`}>
                   Folders Only
                 </p>
                 <p className="text-sm text-gray-400 mt-0.5">
@@ -114,10 +114,10 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
           </div>
         </div>
 
-        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-5">
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Active Music Folders</h3>
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Active Music Folders</h3>
               <p className="text-xs text-gray-500 mt-1">
                 {activeGenres.length === 0
                   ? 'No folders selected — all folders are used'
@@ -157,16 +157,16 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
                     disabled={saving}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
                       isActive
-                        ? 'bg-[#7c3aed]/10 border-[#7c3aed]/40'
-                        : 'bg-[#151528] border-[#1e1e3a] hover:border-[#2e2e5a]'
+                        ? 'bg-[#2563eb]/10 border-[#2563eb]/40'
+                        : 'bg-[#151528] border-[#1e293b] hover:border-[#2e2e5a]'
                     }`}
                   >
                     <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                      isActive ? 'border-[#7c3aed] bg-[#7c3aed]' : 'border-gray-600'
+                      isActive ? 'border-[#2563eb] bg-[#2563eb]' : 'border-gray-600'
                     }`}>
                       {isActive && <Check className="w-3 h-3 text-white" />}
                     </div>
-                    <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-[#7c3aed]' : 'text-gray-500'}`} />
+                    <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-[#2563eb]' : 'text-gray-500'}`} />
                     <span className={`text-sm font-medium flex-1 ${isActive ? 'text-white' : 'text-gray-300'}`}>
                       {g.name || '(Root folder)'}
                     </span>
@@ -186,10 +186,10 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
       </div>
 
       {serverIps.length > 0 && (
-        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-5">
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <div className="flex items-center gap-2 mb-3">
-            <Wifi className="w-4 h-4 text-[#7c3aed]" />
-            <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Remote Connection</h3>
+            <Wifi className="w-4 h-4 text-[#2563eb]" />
+            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Remote Connection</h3>
           </div>
           <p className="text-xs text-gray-500 mb-3">Enter this IP on the iPad to connect as DJ Remote</p>
           {serverIps.map((ip, i) => (

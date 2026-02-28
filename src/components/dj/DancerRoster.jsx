@@ -12,7 +12,7 @@ import {
 import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus } from 'lucide-react';
 
 const DANCER_COLORS = [
-  '#e040fb', '#ff2d55', '#00e5ff', '#7c3aed', '#39ff14', 
+  '#00d4ff', '#ff2d55', '#00e5ff', '#2563eb', '#39ff14', 
   '#ff6b35', '#ff1493', '#00bfff', '#ff4081', '#00ffc8'
 ];
 
@@ -75,19 +75,19 @@ export default function DancerRoster({
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">
+          <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
             Dancer Roster
           </h3>
           <p className="text-xs text-gray-500 mt-1">{activeDancers.length} active</p>
         </div>
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" className="bg-[#e040fb] hover:bg-[#c026d3] text-black">
+            <Button size="sm" className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
               <UserPlus className="w-4 h-4 mr-1" />
               Add
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-[#151528] border-[#1e1e3a] text-white">
+          <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
             <DialogHeader>
               <DialogTitle>Add New Dancer</DialogTitle>
             </DialogHeader>
@@ -96,7 +96,7 @@ export default function DancerRoster({
                 value={newDancerName}
                 onChange={(e) => setNewDancerName(e.target.value)}
                 placeholder="Stage name..."
-                className="bg-[#0d0d1f] border-[#1e1e3a]"
+                className="bg-[#0d0d1f] border-[#1e293b]"
                 autoFocus
               />
               <div>
@@ -107,7 +107,7 @@ export default function DancerRoster({
                     setNewDancerPin(val);
                   }}
                   placeholder="5-digit PIN..."
-                  className="bg-[#0d0d1f] border-[#1e1e3a]"
+                  className="bg-[#0d0d1f] border-[#1e293b]"
                   inputMode="numeric"
                   maxLength={5}
                   onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
@@ -118,7 +118,7 @@ export default function DancerRoster({
               <Button 
                 onClick={handleAdd} 
                 disabled={isAdding || !newDancerName.trim() || newDancerPin.length !== 5}
-                className="w-full bg-[#e040fb] hover:bg-[#c026d3] text-black"
+                className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
               >
                 {isAdding ? 'Adding...' : 'Add Dancer'}
               </Button>
@@ -134,13 +134,13 @@ export default function DancerRoster({
               key={dancer.id}
               className={`bg-[#151528] rounded-lg border p-3 flex flex-col items-center transition-colors ${
                 selectedDancerId === dancer.id
-                  ? 'border-[#e040fb] ring-1 ring-[#e040fb]/30'
-                  : 'border-[#1e1e3a] hover:border-[#2e2e4a]'
+                  ? 'border-[#00d4ff] ring-1 ring-[#00d4ff]/30'
+                  : 'border-[#1e293b] hover:border-[#2e2e4a]'
               } ${!dancer.is_active ? 'opacity-50' : ''}`}
             >
               <div 
                 className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-lg mb-2"
-                style={{ backgroundColor: dancer.color || '#e040fb' }}
+                style={{ backgroundColor: dancer.color || '#00d4ff' }}
               >
                 {dancer.name.charAt(0).toUpperCase()}
               </div>
@@ -183,7 +183,7 @@ export default function DancerRoster({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="w-11 h-11 text-gray-500 hover:text-[#e040fb] hover:bg-[#1e1e3a]"
+                  className="w-11 h-11 text-gray-500 hover:text-[#00d4ff] hover:bg-[#1e293b]"
                   title="Edit playlist"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -198,7 +198,7 @@ export default function DancerRoster({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e1e3a]"
+                      className="w-11 h-11 text-gray-500 hover:text-white hover:bg-[#1e293b]"
                       title="Edit name"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -208,7 +208,7 @@ export default function DancerRoster({
                       <Edit2 className="w-3 h-3" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-[#151528] border-[#1e1e3a] text-white">
+                  <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
                     <DialogHeader>
                       <DialogTitle>Edit Dancer</DialogTitle>
                     </DialogHeader>
@@ -217,9 +217,9 @@ export default function DancerRoster({
                         value={editingDancer?.name || ''}
                         onChange={(e) => setEditingDancer(prev => ({ ...prev, name: e.target.value }))}
                         placeholder="Stage name..."
-                        className="bg-[#0d0d1f] border-[#1e1e3a]"
+                        className="bg-[#0d0d1f] border-[#1e293b]"
                       />
-                      <Button onClick={handleEdit} className="w-full bg-[#e040fb] hover:bg-[#c026d3] text-black">
+                      <Button onClick={handleEdit} className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
                         Save Changes
                       </Button>
                     </div>
@@ -229,7 +229,7 @@ export default function DancerRoster({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a]"
+                  className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e293b]"
                   title="Delete dancer"
                   onClick={(e) => {
                     e.stopPropagation();

@@ -14,7 +14,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
   import('./index.js').then(({ app, initMusicScanner, stopPeriodicScan, stopCheckpoints, closeDatabase }) => {
     expressApp = app;
-    console.log(`🎵 DJ Booth API server running on port ${PORT}`);
+    console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
     initMusicScanner();
 
     const gracefulShutdown = () => {

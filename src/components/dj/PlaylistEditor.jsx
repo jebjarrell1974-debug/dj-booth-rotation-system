@@ -133,12 +133,12 @@ export default function PlaylistEditor({
 
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
-      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] w-full max-w-6xl max-h-[90vh] flex flex-col">
-        <div className="p-4 border-b border-[#1e1e3a] flex items-center justify-between">
+      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] w-full max-w-6xl max-h-[90vh] flex flex-col">
+        <div className="p-4 border-b border-[#1e293b] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div 
               className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold"
-              style={{ backgroundColor: dancer.color || '#e040fb' }}
+              style={{ backgroundColor: dancer.color || '#00d4ff' }}
             >
               {dancer.name.charAt(0).toUpperCase()}
             </div>
@@ -158,8 +158,8 @@ export default function PlaylistEditor({
         </div>
 
         <div className="flex-1 flex overflow-hidden min-h-0">
-          <div className="w-1/2 border-r border-[#1e1e3a] p-4 flex flex-col min-h-0">
-            <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider mb-3">
+          <div className="w-1/2 border-r border-[#1e293b] p-4 flex flex-col min-h-0">
+            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
               Current Playlist ({playlist.length})
             </h3>
 
@@ -168,9 +168,9 @@ export default function PlaylistEditor({
                 {playlist.map((songName, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e040fb]/30 bg-[#e040fb]/10 group"
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#00d4ff]/30 bg-[#00d4ff]/10 group"
                   >
-                    <span className="text-xs text-[#e040fb]/60 font-mono w-6 text-right flex-shrink-0">
+                    <span className="text-xs text-[#00d4ff]/60 font-mono w-6 text-right flex-shrink-0">
                       {idx + 1}.
                     </span>
                     <span className="text-sm text-white flex-1 min-w-0 break-words">
@@ -208,7 +208,7 @@ export default function PlaylistEditor({
                 ))}
                 
                 {playlist.length === 0 && (
-                  <div className="p-4 bg-[#151528] border border-dashed border-[#1e1e3a] rounded-lg text-center">
+                  <div className="p-4 bg-[#151528] border border-dashed border-[#1e293b] rounded-lg text-center">
                     <span className="text-sm text-gray-600">No songs selected</span>
                   </div>
                 )}
@@ -229,7 +229,7 @@ export default function PlaylistEditor({
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                className="flex-1 border-[#1e1e3a] text-gray-300 hover:bg-[#1e1e3a]"
+                className="flex-1 border-[#1e293b] text-gray-300 hover:bg-[#1e293b]"
                 onClick={randomize}
                 disabled={serverTracks.length === 0 && tracks.length === 0}
               >
@@ -237,7 +237,7 @@ export default function PlaylistEditor({
                 Add 10 Random
               </Button>
               <Button
-                className="flex-1 bg-[#e040fb] hover:bg-[#c026d3] text-black"
+                className="flex-1 bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
                 onClick={handleSave}
               >
                 <Save className="w-4 h-4 mr-2" />
@@ -247,7 +247,7 @@ export default function PlaylistEditor({
           </div>
 
           <div className="w-1/2 flex flex-col min-h-0">
-            <div className="p-4 pb-2 border-b border-[#1e1e3a] flex flex-col gap-3">
+            <div className="p-4 pb-2 border-b border-[#1e293b] flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-400">
                   Available Tracks ({serverTracks.length} of {serverTotalTracks})
@@ -261,7 +261,7 @@ export default function PlaylistEditor({
                   placeholder="Search by name, genre, or path..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[#151528] border border-[#1e1e3a] rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#e040fb]/50"
+                  className="w-full bg-[#151528] border border-[#1e293b] rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#00d4ff]/50"
                 />
               </div>
 
@@ -271,8 +271,8 @@ export default function PlaylistEditor({
                     onClick={() => setActiveGenre(null)}
                     className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                       !activeGenre
-                        ? 'bg-[#e040fb] text-black'
-                        : 'bg-[#151528] text-gray-400 hover:text-white border border-[#1e1e3a]'
+                        ? 'bg-[#00d4ff] text-black'
+                        : 'bg-[#151528] text-gray-400 hover:text-white border border-[#1e293b]'
                     }`}
                   >
                     All
@@ -283,8 +283,8 @@ export default function PlaylistEditor({
                       onClick={() => setActiveGenre(activeGenre === name ? null : name)}
                       className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
                         activeGenre === name
-                          ? 'bg-[#e040fb] text-black'
-                          : 'bg-[#151528] text-gray-400 hover:text-white border border-[#1e1e3a]'
+                          ? 'bg-[#00d4ff] text-black'
+                          : 'bg-[#151528] text-gray-400 hover:text-white border border-[#1e293b]'
                       }`}
                     >
                       <Folder className="w-3 h-3" />
@@ -308,11 +308,11 @@ export default function PlaylistEditor({
                       disabled={isSelected}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
                         isSelected
-                          ? 'bg-[#e040fb]/20 text-[#e040fb] cursor-default'
+                          ? 'bg-[#00d4ff]/20 text-[#00d4ff] cursor-default'
                           : 'text-gray-300 hover:bg-[#151528] hover:text-white'
                       }`}
                     >
-                      <Music className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-[#e040fb]' : 'text-gray-500'}`} />
+                      <Music className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-[#00d4ff]' : 'text-gray-500'}`} />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm break-words text-left block">{track.name}</span>
                         {genre && (
@@ -320,7 +320,7 @@ export default function PlaylistEditor({
                         )}
                       </div>
                       {isSelected && (
-                        <Badge className="ml-auto flex-shrink-0 bg-[#e040fb] text-black text-xs">
+                        <Badge className="ml-auto flex-shrink-0 bg-[#00d4ff] text-black text-xs">
                           ✓
                         </Badge>
                       )}
@@ -332,7 +332,7 @@ export default function PlaylistEditor({
                     <button
                       onClick={loadMore}
                       disabled={serverLoading}
-                      className="px-4 py-2 text-xs font-medium text-[#e040fb] bg-[#e040fb]/10 hover:bg-[#e040fb]/20 rounded-lg transition-colors"
+                      className="px-4 py-2 text-xs font-medium text-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 rounded-lg transition-colors"
                     >
                       {serverLoading ? 'Loading...' : `Load More (${serverTracks.length} of ${serverTotalTracks})`}
                     </button>

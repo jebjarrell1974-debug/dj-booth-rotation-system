@@ -34,7 +34,7 @@ function PinPad({ onSubmit, onBack, label, error, loading }) {
       <div className="flex gap-3 justify-center">
         {[0,1,2,3,4].map(i => (
           <div key={i} className={`w-12 h-14 rounded-lg border-2 flex items-center justify-center text-2xl font-bold transition-colors ${
-            i < pin.length ? 'border-[#e040fb] bg-[#e040fb]/20 text-[#e040fb]' : 'border-[#1e1e3a] bg-[#0d0d1f] text-gray-600'
+            i < pin.length ? 'border-[#00d4ff] bg-[#00d4ff]/20 text-[#00d4ff]' : 'border-[#1e293b] bg-[#0d0d1f] text-gray-600'
           }`}>
             {i < pin.length ? '\u2022' : ''}
           </div>
@@ -49,7 +49,7 @@ function PinPad({ onSubmit, onBack, label, error, loading }) {
             key={d}
             onClick={() => handleDigit(String(d))}
             disabled={loading}
-            className="h-16 rounded-xl bg-[#151528] border border-[#1e1e3a] text-white text-2xl font-semibold hover:bg-[#1e1e3a] active:bg-[#e040fb]/20 transition-colors"
+            className="h-16 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-2xl font-semibold hover:bg-[#1e293b] active:bg-[#00d4ff]/20 transition-colors"
           >
             {d}
           </button>
@@ -58,14 +58,14 @@ function PinPad({ onSubmit, onBack, label, error, loading }) {
         <button
           onClick={() => handleDigit('0')}
           disabled={loading}
-          className="h-16 rounded-xl bg-[#151528] border border-[#1e1e3a] text-white text-2xl font-semibold hover:bg-[#1e1e3a] active:bg-[#e040fb]/20 transition-colors"
+          className="h-16 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-2xl font-semibold hover:bg-[#1e293b] active:bg-[#00d4ff]/20 transition-colors"
         >
           0
         </button>
         <button
           onClick={handleDelete}
           disabled={loading}
-          className="h-16 rounded-xl bg-[#151528] border border-[#1e1e3a] text-gray-400 flex items-center justify-center hover:bg-[#1e1e3a] hover:text-white transition-colors"
+          className="h-16 rounded-xl bg-[#151528] border border-[#1e293b] text-gray-400 flex items-center justify-center hover:bg-[#1e293b] hover:text-white transition-colors"
         >
           <Delete className="w-6 h-6" />
         </button>
@@ -129,25 +129,22 @@ export default function Landing() {
         {!mode ? (
           <div className="flex flex-col items-center gap-8">
             <div className="text-center">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#e040fb] to-[#7c3aed] flex items-center justify-center mx-auto mb-4">
-                <Music2 className="w-10 h-10 text-black" />
-              </div>
-              <h1 className="text-3xl font-bold text-white">DJ Booth</h1>
+              <img src="/neon-ai-dj-logo.jpeg" alt="NEON AI DJ" className="w-64 mx-auto mb-4 rounded-xl" />
               <p className="text-gray-500 text-sm mt-1">Enter your PIN to continue</p>
             </div>
 
             <div className="flex flex-col gap-4 w-full">
               <Button
                 onClick={() => setMode('dj')}
-                className="h-16 text-lg font-semibold bg-gradient-to-r from-[#e040fb] to-[#7c3aed] hover:from-[#c026d3] hover:to-[#6d28d9] text-black"
+                className="h-16 text-lg font-semibold bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black"
               >
                 <Music2 className="w-5 h-5 mr-3" />
-                DJ Booth
+                NEON AI DJ
               </Button>
               <Button
                 onClick={() => setMode('dj-remote')}
                 variant="outline"
-                className="h-16 text-lg font-semibold border-[#7c3aed] bg-[#7c3aed]/10 text-[#e040fb] hover:bg-[#7c3aed]/20 hover:text-white"
+                className="h-16 text-lg font-semibold border-[#2563eb] bg-[#2563eb]/10 text-[#00d4ff] hover:bg-[#2563eb]/20 hover:text-white"
               >
                 <Wifi className="w-5 h-5 mr-3" />
                 DJ / Manager Remote
@@ -155,7 +152,7 @@ export default function Landing() {
               <Button
                 onClick={() => setMode('dancer')}
                 variant="outline"
-                className="h-16 text-lg font-semibold border-[#1e1e3a] bg-[#0d0d1f] text-white hover:bg-[#151528] hover:text-white"
+                className="h-16 text-lg font-semibold border-[#1e293b] bg-[#0d0d1f] text-white hover:bg-[#151528] hover:text-white"
               >
                 <Users className="w-5 h-5 mr-3" />
                 Dancer
@@ -175,7 +172,7 @@ export default function Landing() {
                   value={boothIpInput}
                   onChange={(e) => setBoothIpInput(e.target.value)}
                   placeholder="192.168.1.98"
-                  className="w-full h-12 px-4 rounded-lg bg-[#0d0d1f] border-2 border-[#1e1e3a] text-white text-lg font-mono placeholder-gray-600 focus:border-[#7c3aed] focus:outline-none transition-colors"
+                  className="w-full h-12 px-4 rounded-lg bg-[#0d0d1f] border-2 border-[#1e293b] text-white text-lg font-mono placeholder-gray-600 focus:border-[#2563eb] focus:outline-none transition-colors"
                   inputMode="decimal"
                   autoComplete="off"
                   autoCorrect="off"
