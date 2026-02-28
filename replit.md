@@ -52,6 +52,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - SSE remote rotation handler updated to use `preCacheUpcoming`
 - **Files**: `src/components/dj/AnnouncementSystem.jsx`, `src/pages/DJBooth.jsx`
 
+#### Feature: Booth IP for iPad Remote
+- **Problem**: iPad remote had no way to specify which Pi to connect to; with multiple fleet units this is essential
+- **Fix**:
+  1. Login screen shows "Booth IP Address" input when "DJ Remote" is selected
+  2. IP stored in `localStorage` as `djbooth_booth_ip`
+  3. All API calls and SSE connections dynamically use `http://{ip}:3001/api` when IP is set, or relative `/api` when blank
+  4. CORS enabled on Express server for cross-origin iPad connections
+  5. Options tab shows Pi's local IP addresses under "Remote Connection" section
+  6. SSE reconnection now detects expired sessions and kicks to login (backoff retry)
+- **Files**: `server/index.js`, `src/api/serverApi.js`, `src/pages/Landing.jsx`, `src/components/dj/DJOptions.jsx`
+
 ### Feb 28, 2026 — Session 6 (Break Songs Persistence)
 
 #### Bug Fix: Break Songs Disappearing on Tab Switch

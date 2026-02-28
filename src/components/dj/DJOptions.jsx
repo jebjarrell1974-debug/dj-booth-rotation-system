@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check } from 'lucide-react';
+import { Settings, FolderOpen, Check, Wifi } from 'lucide-react';
 
 export default function DJOptions({ djOptions, onOptionsChange }) {
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [serverIps, setServerIps] = useState([]);
 
   const activeGenres = djOptions?.activeGenres || [];
   const musicMode = djOptions?.musicMode || 'dancer_first';
@@ -15,6 +16,10 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
       .then(data => setGenres(data.genres || []))
       .catch(() => {})
       .finally(() => setLoading(false));
+    fetch('/api/server-info')
+      .then(r => r.json())
+      .then(data => setServerIps(data.ips || []))
+      .catch(() => {});
   }, []);
 
   const saveOptions = useCallback(async (updates) => {
@@ -179,6 +184,22 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
           )}
         </div>
       </div>
+
+      {serverIps.length > 0 && (
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Wifi className="w-4 h-4 text-[#7c3aed]" />
+            <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Remote Connection</h3>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">Enter this IP on the iPad to connect as DJ Remote</p>
+          {serverIps.map((ip, i) => (
+            <div key={i} className="flex items-center justify-between py-2 px-3 bg-[#151528] rounded-lg mb-2 last:mb-0">
+              <span className="text-xs text-gray-400">{ip.interface}</span>
+              <span className="text-lg font-mono font-bold text-white">{ip.address}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

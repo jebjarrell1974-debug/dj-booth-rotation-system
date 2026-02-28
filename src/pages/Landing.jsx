@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Music2, Users, Delete, ArrowLeft, Wifi } from 'lucide-react';
+import { Music2, Users, Delete, ArrowLeft, Wifi, Server } from 'lucide-react';
+import { setBoothIp, getBoothIp } from '@/api/serverApi';
 
 function PinPad({ onSubmit, onBack, label, error, loading }) {
   const [pin, setPin] = useState('');
@@ -77,6 +78,7 @@ export default function Landing() {
   const [mode, setMode] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [boothIpInput, setBoothIpInput] = useState(getBoothIp());
   const { login, initDjPin, isAuthenticated, role } = useAuth();
   const navigate = useNavigate();
 
@@ -92,6 +94,11 @@ export default function Landing() {
     setLoading(true);
     try {
       const isRemote = mode === 'dj-remote';
+      if (isRemote) {
+        setBoothIp(boothIpInput || '');
+      } else {
+        setBoothIp('');
+      }
       await login('dj', pin, { remote: isRemote });
     } catch (loginErr) {
       if (loginErr.message && (loginErr.message.includes('No DJ PIN') || loginErr.message.includes('not set'))) {
@@ -105,7 +112,7 @@ export default function Landing() {
       }
     }
     setLoading(false);
-  }, [login, initDjPin, mode]);
+  }, [login, initDjPin, mode, boothIpInput]);
 
   const handleDancerLogin = useCallback(async (pin) => {
     setError('');
@@ -158,19 +165,42 @@ export default function Landing() {
             </div>
           </div>
         ) : (
-          <PinPad
-            label={
-              mode === 'dj' 
-                ? 'Enter DJ PIN'
-                : mode === 'dj-remote'
-                ? 'Enter DJ PIN (Remote)'
-                : 'Enter your Dancer PIN'
-            }
-            onSubmit={mode === 'dj' || mode === 'dj-remote' ? handleDJLogin : handleDancerLogin}
-            onBack={() => { setMode(null); setError(''); }}
-            error={error}
-            loading={loading}
-          />
+          <div className="flex flex-col gap-4">
+            {mode === 'dj-remote' && (
+              <div className="flex flex-col gap-2 px-4">
+                <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
+                  <Server className="w-4 h-4" />
+                  Booth IP Address
+                </label>
+                <input
+                  type="text"
+                  value={boothIpInput}
+                  onChange={(e) => setBoothIpInput(e.target.value)}
+                  placeholder="192.168.1.98"
+                  className="w-full h-12 px-4 rounded-lg bg-[#0d0d1f] border-2 border-[#1e1e3a] text-white text-lg font-mono placeholder-gray-600 focus:border-[#7c3aed] focus:outline-none transition-colors"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  autoCorrect="off"
+                />
+                <p className="text-xs text-gray-600">
+                  {boothIpInput ? `Connecting to ${boothIpInput}:3001` : 'Leave blank if on the same device'}
+                </p>
+              </div>
+            )}
+            <PinPad
+              label={
+                mode === 'dj' 
+                  ? 'Enter DJ PIN'
+                  : mode === 'dj-remote'
+                  ? 'Enter DJ PIN (Remote)'
+                  : 'Enter your Dancer PIN'
+              }
+              onSubmit={mode === 'dj' || mode === 'dj-remote' ? handleDJLogin : handleDancerLogin}
+              onBack={() => { setMode(null); setError(''); }}
+              error={error}
+              loading={loading}
+            />
+          </div>
         )}
       </div>
     </div>
