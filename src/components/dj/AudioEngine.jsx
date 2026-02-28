@@ -13,6 +13,11 @@ const DUCK_RELEASE_MS = 600;
 
 const NEAR_END_SECONDS = 3;
 
+const AUTO_GAIN_TARGET_LUFS = -14;
+const AUTO_GAIN_ANALYSIS_SECONDS = 10;
+const AUTO_GAIN_MIN = 0.3;
+const AUTO_GAIN_MAX = 2.5;
+
 const AudioEngine = forwardRef(({ 
   onTrackEnd, 
   onTimeUpdate, 
@@ -27,8 +32,11 @@ const AudioEngine = forwardRef(({
   const deckAGainRef = useRef(null);
   const deckBGainRef = useRef(null);
   const musicBusGainRef = useRef(null);
+  const limiterRef = useRef(null);
   const masterGainRef = useRef(null);
   const voiceElRef = useRef(null);
+  const autoGainEnabledRef = useRef(true);
+  const autoGainCacheRef = useRef(new Map());
 
   const activeDeck = useRef('A');
   const masterVolume = useRef(0.8);
@@ -69,9 +77,17 @@ const AudioEngine = forwardRef(({
       masterGainRef.current.gain.value = masterVolume.current;
       masterGainRef.current.connect(audioCtxRef.current.destination);
 
+      limiterRef.current = audioCtxRef.current.createDynamicsCompressor();
+      limiterRef.current.threshold.value = -6;
+      limiterRef.current.knee.value = 3;
+      limiterRef.current.ratio.value = 20;
+      limiterRef.current.attack.value = 0.002;
+      limiterRef.current.release.value = 0.1;
+      limiterRef.current.connect(masterGainRef.current);
+
       musicBusGainRef.current = audioCtxRef.current.createGain();
       musicBusGainRef.current.gain.value = 1.0;
-      musicBusGainRef.current.connect(masterGainRef.current);
+      musicBusGainRef.current.connect(limiterRef.current);
 
       deckAGainRef.current = audioCtxRef.current.createGain();
       deckAGainRef.current.gain.value = 1.0;
@@ -160,6 +176,76 @@ const AudioEngine = forwardRef(({
     }
   }, []);
 
+  const analyzeTrackLoudness = useCallback(async (deckEl) => {
+    if (!autoGainEnabledRef.current) return 1.0;
+    try {
+      const ctx = audioCtxRef.current;
+      if (!ctx || !deckEl.src) return 1.0;
+
+      const srcUrl = deckEl.src;
+      const cacheKey = srcUrl.replace(/^blob:/, '');
+      const cached = autoGainCacheRef.current.get(cacheKey);
+      if (cached !== undefined) {
+        console.log(`🔊 AutoGain: cached gain=${cached.toFixed(2)}x`);
+        return cached;
+      }
+
+      const dur = deckEl.duration;
+      if (!dur || !isFinite(dur) || dur <= 0) return 1.0;
+
+      const sampleRate = ctx.sampleRate || 44100;
+      const analysisDur = Math.min(dur, AUTO_GAIN_ANALYSIS_SECONDS);
+      const frameCount = Math.floor(analysisDur * sampleRate);
+      if (frameCount <= 0) return 1.0;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(srcUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+      const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offlineCtx.destination);
+      source.start(0, 0, analysisDur);
+
+      const rendered = await offlineCtx.startRendering();
+
+      let sumSquares = 0;
+      let sampleCount = 0;
+      for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+        const data = rendered.getChannelData(ch);
+        for (let i = 0; i < data.length; i++) {
+          sumSquares += data[i] * data[i];
+          sampleCount++;
+        }
+      }
+
+      if (sampleCount === 0) return 1.0;
+
+      const rms = Math.sqrt(sumSquares / sampleCount);
+      const lufs = 20 * Math.log10(Math.max(rms, 1e-10));
+      const diff = AUTO_GAIN_TARGET_LUFS - lufs;
+      const gain = Math.pow(10, diff / 20);
+      const clamped = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, gain));
+
+      autoGainCacheRef.current.set(cacheKey, clamped);
+      if (autoGainCacheRef.current.size > 200) {
+        const firstKey = autoGainCacheRef.current.keys().next().value;
+        autoGainCacheRef.current.delete(firstKey);
+      }
+
+      console.log(`🔊 AutoGain: LUFS=${lufs.toFixed(1)}dB, target=${AUTO_GAIN_TARGET_LUFS}dB, gain=${clamped.toFixed(2)}x`);
+      return clamped;
+    } catch (err) {
+      console.warn('⚠️ AutoGain: Analysis failed, using 1.0:', err.message);
+      return 1.0;
+    }
+  }, []);
+
   const loadTrack = useCallback(async (input) => {
     if (!input) return null;
 
@@ -234,6 +320,9 @@ const AudioEngine = forwardRef(({
       connectDeckSource(inactiveDeck, inactiveGain, inactiveSourceRef, inactiveSourceElRef);
     }
 
+    const autoGainValue = await analyzeTrackLoudness(inactiveDeck);
+    inactiveGain.gain.value = autoGainValue;
+
     const maxDur = maxDurationOverrideRef.current || MAX_SONG_DURATION;
     const effectiveDuration = Math.min(inactiveDeck.duration || maxDur, maxDur);
     maxDurationOverrideRef.current = null;
@@ -248,7 +337,7 @@ const AudioEngine = forwardRef(({
         inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
         await inactiveDeck.play();
 
-        const targetVolume = 1.0;
+        const targetVolume = autoGainValue;
         const oldStartVolume = activeGain.gain.value;
         const startTime = performance.now();
         const fadeDuration = CROSSFADE_DURATION * 1000;
@@ -274,7 +363,7 @@ const AudioEngine = forwardRef(({
 
         fadeAnimationRef.current = requestAnimationFrame(animateFade);
       } else if (isPlayingRef.current) {
-        const targetVolume = 1.0;
+        const targetVolume = autoGainValue;
         const oldStartVolume = activeGain.gain.value;
         inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
         await inactiveDeck.play();
@@ -307,7 +396,7 @@ const AudioEngine = forwardRef(({
         activeDeckEl.pause();
         activeDeckEl.src = '';
         cleanupDeck(activeDeckEl);
-        inactiveGain.gain.setValueAtTime(1.0, ctx.currentTime);
+        inactiveGain.gain.setValueAtTime(autoGainValue, ctx.currentTime);
         inactiveDeck.currentTime = 0;
         await inactiveDeck.play();
         activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
@@ -403,7 +492,7 @@ const AudioEngine = forwardRef(({
     newDeck.onended = endedHandler;
 
     return true;
-  }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource]);
+  }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource, analyzeTrackLoudness]);
 
   const duck = useCallback(() => {
     const ctx = ensureAudioContext();
@@ -527,6 +616,7 @@ const AudioEngine = forwardRef(({
     setVolume,
     seek,
     setMaxDuration: (seconds) => { maxDurationOverrideRef.current = seconds; },
+    setAutoGain: (enabled) => { autoGainEnabledRef.current = enabled; },
     isPlaying,
     currentTrack,
     currentTime,

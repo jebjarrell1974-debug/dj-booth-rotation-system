@@ -17,7 +17,7 @@ The application uses React 18, Vite, and TailwindCSS for the frontend, with Radi
 
 Music tracks are indexed server-side in a SQLite `music_tracks` table via `server/musicScanner.js`, supporting various audio formats and genre extraction from directory structures. The server performs initial scans on startup, periodic rescans every 5 minutes, and manual rescans via API. The client fetches paginated track metadata and streams audio with Range support.
 
-A custom dual-deck audio engine manages seamless music playback, featuring equal-power crossfading, audio ducking, and sophisticated announcement overlays. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours. Announcements include shift-based personalities, optional adult innuendo, and generic fallbacks for offline use. Transitions involve parallel pre-fetching of announcement audio and ducking, playing the announcement over the outgoing song before swapping to the next track.
+A custom dual-deck audio engine manages seamless music playback, featuring equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours. Announcements include shift-based personalities, optional adult innuendo, and generic fallbacks for offline use. Transitions involve parallel pre-fetching of announcement audio and ducking, playing the announcement over the outgoing song before swapping to the next track.
 
 An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, with mobile-optimized playlist management. Performance is optimized for low-power devices like the Raspberry Pi 5 through throttled updates, minimal GPU effects, and memory management. Critical state persists to `localStorage` for crash recovery. Features include a 4-hour song cooldown (applies to both dancer playlist songs and random filler), configurable songs-per-set, interstitial "break songs," display-capped track lists, genre filtering, and debounced search. The `DJBooth` component remains mounted persistently (CSS-hidden) to preserve audio engine state. Robustness features include SQLite WAL mode, touch-based drag-and-drop, aggressive caching, and a Playback Watchdog for automatic recovery from audio dropouts. Playlist synchronization handles DJ overrides and server changes, with an anti-repeat system using Fisher-Yates shuffling. "DJ Remote Mode" uses Server-Sent Events (SSE) for real-time updates. Performance optimizations include gzip compression, database indexing, next-dancer track preloading, and server health endpoints. Voiceover pre-caching runs in batches, with silent fallbacks for API failures.
 
@@ -50,6 +50,15 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Terminology Lock**: System prompt enforces "round two"/"round three" instead of "around" (common AI mistake)
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
+
+#### Audio Normalization — Auto-Gain + Limiter
+- **Auto-Gain**: Analyzes first 10 seconds of each track via OfflineAudioContext to calculate RMS loudness. Computes gain multiplier to match target -14 LUFS, clamped between 0.3x–2.5x. Results cached per URL (up to 200 entries). 5-second fetch timeout with graceful fallback to 1.0x on failure
+- **Limiter**: DynamicsCompressorNode inserted between MusicBusGain and MasterGain. Threshold -6dB, ratio 20:1, knee 3dB, attack 0.002s, release 0.1s. Prevents peaks from distorting speakers
+- **Audio chain**: `Deck → DeckGain(auto-gain) → MusicBusGain → Limiter → MasterGain → destination`
+- **Crossfade**: Incoming deck fades to its auto-gain value (not hardcoded 1.0). Outgoing deck fades from whatever gain it had. Ducking unchanged (operates on MusicBusGain, before limiter)
+- **Toggle**: `setAutoGain(bool)` exposed via imperative handle. Defaults to enabled
+- **CPU impact**: Near zero — OfflineAudioContext runs once per track load, DynamicsCompressorNode runs on native audio thread
+- **File**: `src/components/dj/AudioEngine.jsx`
 
 #### FEATURE Track Support (Full-Length Playback)
 - **Problem**: Feature performers need songs to play to completion, not capped at 3 minutes
