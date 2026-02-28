@@ -1088,7 +1088,7 @@ export default function DJBooth() {
       const lastPlayed = cooldowns[t.name] || 0;
       return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
     });
-    const pool = offCooldown.length >= count ? offCooldown : available;
+    const pool = offCooldown.length >= count ? offCooldown : (available.length >= count ? available : validTracks);
     const result = fisherYatesShuffle(pool).slice(0, count);
     console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks local fallback)`);
     return result;
@@ -1227,6 +1227,8 @@ export default function DJBooth() {
     try {
     
     const existingSongs = rotationSongsRef.current || {};
+    const cooldowns = songCooldownRef.current || {};
+    const now = Date.now();
     const selectedSongs = {};
     for (const dancerId of cleanRotation) {
       const dancer = dnc.find(d => d.id === dancerId);
@@ -1234,7 +1236,11 @@ export default function DJBooth() {
         const existing = existingSongs[dancerId];
         const hasManualPlaylist = dancer.playlist && dancer.playlist.length > 0;
         const count = songsPerSetRef.current;
-        if (hasManualPlaylist && existing && existing.length >= count && existing.every(t => t.url)) {
+        const allOffCooldown = existing?.every(t => {
+          const lastPlayed = cooldowns[t.name] || 0;
+          return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
+        });
+        if (hasManualPlaylist && existing && existing.length >= count && existing.every(t => t.url) && allOffCooldown) {
           selectedSongs[dancerId] = existing;
         } else {
           selectedSongs[dancerId] = await getDancerTracks(dancer);
@@ -1460,8 +1466,15 @@ export default function DJBooth() {
 
         const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
         const skipCount = songsPerSetRef.current;
-        let freshTracks = (hasManualPlaylist && rotationSongsRef.current[newRotation[newIdx]]?.length >= skipCount)
-          ? rotationSongsRef.current[newRotation[newIdx]]
+        const cachedTracks = rotationSongsRef.current[newRotation[newIdx]];
+        const skipCooldowns = songCooldownRef.current || {};
+        const skipNow = Date.now();
+        const cachedAllOffCooldown = cachedTracks?.every(t => {
+          const lp = skipCooldowns[t.name] || 0;
+          return !lp || (skipNow - lp) >= COOLDOWN_MS;
+        });
+        let freshTracks = (hasManualPlaylist && cachedTracks?.length >= skipCount && cachedAllOffCooldown)
+          ? cachedTracks
           : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
@@ -1601,8 +1614,15 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
         const endCount = songsPerSetRef.current;
-        let freshTracks = (hasManualPlaylist && rotationSongsRef.current[newRotation[newIdx]]?.length >= endCount)
-          ? rotationSongsRef.current[newRotation[newIdx]]
+        const endCached = rotationSongsRef.current[newRotation[newIdx]];
+        const endCooldowns = songCooldownRef.current || {};
+        const endNow = Date.now();
+        const endAllOffCooldown = endCached?.every(t => {
+          const lp = endCooldowns[t.name] || 0;
+          return !lp || (endNow - lp) >= COOLDOWN_MS;
+        });
+        let freshTracks = (hasManualPlaylist && endCached?.length >= endCount && endAllOffCooldown)
+          ? endCached
           : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
