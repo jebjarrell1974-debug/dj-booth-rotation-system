@@ -155,7 +155,40 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, energyLevel = 3, roundNumber = 1) => {
     const config = getApiConfig();
     const clubName = config.clubName || '';
-    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, energyLevel, roundNumber, clubName);
+    const specials = (config.clubSpecials || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, energyLevel, roundNumber, clubName, specials);
+
+    const openaiKey = config.openaiApiKey || '';
+    const scriptModel = config.scriptModel || 'auto';
+
+    if (openaiKey && scriptModel !== 'auto') {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: scriptModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.9,
+          frequency_penalty: 0.6,
+          presence_penalty: 0.4,
+          max_tokens: 300,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`OpenAI ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      return parseResponse(data);
+    }
+
     const response = await localIntegrations.Core.InvokeLLM({ prompt });
     return parseResponse(response);
   }, []);

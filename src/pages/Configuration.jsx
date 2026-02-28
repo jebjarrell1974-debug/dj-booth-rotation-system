@@ -35,6 +35,8 @@ export default function Configuration() {
   const [clubName, setClubName] = useState('');
   const [clubOpenHour, setClubOpenHour] = useState(11);
   const [clubCloseHour, setClubCloseHour] = useState(2);
+  const [scriptModel, setScriptModel] = useState('auto');
+  const [clubSpecials, setClubSpecials] = useState('');
   const [configReady, setConfigReady] = useState(false);
   const [musicPath, setMusicPath] = useState('');
   const [musicPathSaved, setMusicPathSaved] = useState('');
@@ -55,6 +57,8 @@ export default function Configuration() {
       setClubName(cfg.clubName || '');
       setClubOpenHour(cfg.clubOpenHour);
       setClubCloseHour(cfg.clubCloseHour);
+      setScriptModel(cfg.scriptModel || 'auto');
+      setClubSpecials(cfg.clubSpecials || '');
       setConfigReady(true);
     });
     const token = sessionStorage.getItem('djbooth_token');
@@ -88,8 +92,10 @@ export default function Configuration() {
       clubName,
       clubOpenHour,
       clubCloseHour,
+      scriptModel,
+      clubSpecials,
     });
-  }, [elevenLabsKey, elevenLabsVoiceId, openaiKey, announcementsEnabled, clubName, clubOpenHour, clubCloseHour, configReady]);
+  }, [elevenLabsKey, elevenLabsVoiceId, openaiKey, announcementsEnabled, clubName, clubOpenHour, clubCloseHour, scriptModel, clubSpecials, configReady]);
 
   const { data: dancers = [] } = useQuery({
     queryKey: ['dancers'],
@@ -188,8 +194,28 @@ export default function Configuration() {
             }
           } catch {}
 
-          const prompt = buildAnnouncementPrompt(type, dancer.name, next, level, round, cfg.clubName);
-          const rawResponse = await localIntegrations.Core.InvokeLLM({ prompt });
+          const specials = (cfg.clubSpecials || '').split('\n').map(s => s.trim()).filter(Boolean);
+          const prompt = buildAnnouncementPrompt(type, dancer.name, next, level, round, cfg.clubName, specials);
+
+          let rawResponse;
+          if (cfg.scriptModel && cfg.scriptModel !== 'auto' && cfg.openaiApiKey) {
+            const oaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.openaiApiKey}` },
+              body: JSON.stringify({
+                model: cfg.scriptModel,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.9,
+                frequency_penalty: 0.6,
+                presence_penalty: 0.4,
+                max_tokens: 200,
+              }),
+            });
+            const oaiData = await oaiRes.json();
+            rawResponse = oaiData.choices?.[0]?.message?.content || '';
+          } else {
+            rawResponse = await localIntegrations.Core.InvokeLLM({ prompt });
+          }
           let script = '';
           if (typeof rawResponse === 'string') {
             script = rawResponse.replace(/^\d+[\.\)]\s*/gm, '').replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -637,7 +663,39 @@ export default function Configuration() {
                   placeholder="Enter your OpenAI API key"
                   className="bg-[#08081a] border-[#1e1e3a]"
                 />
-                <p className="text-xs text-gray-500">Leave blank to use built-in AI for script generation</p>
+                <p className="text-xs text-gray-500">Optional — enables model selection below</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="script-model" className="text-gray-400">Script Generation Model</Label>
+                <select
+                  id="script-model"
+                  value={scriptModel}
+                  onChange={(e) => setScriptModel(e.target.value)}
+                  className="w-full bg-[#08081a] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2"
+                >
+                  <option value="auto">Auto (Built-in AI)</option>
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini</option>
+                  <option value="gpt-4.1">GPT-4.1</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  {scriptModel === 'auto' ? 'Uses built-in AI — no OpenAI key needed' : 'Requires OpenAI API key above'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="club-specials" className="text-gray-400">Club Specials</Label>
+                <textarea
+                  id="club-specials"
+                  value={clubSpecials}
+                  onChange={(e) => setClubSpecials(e.target.value)}
+                  placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
+                  rows={3}
+                  className="w-full bg-[#08081a] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2 resize-none"
+                />
+                <p className="text-xs text-gray-500">One per line — the DJ will weave these into announcements naturally</p>
               </div>
             </div>
           </div>
