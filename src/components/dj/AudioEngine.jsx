@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 
 const MAX_SONG_DURATION = 180;
+const MAX_FEATURE_DURATION = 3600;
 const TRANSITION_LEAD_TIME = 15;
 const CROSSFADE_DURATION = 5;
 const SAFETY_FADE_SECONDS = 5;
@@ -46,6 +47,8 @@ const AudioEngine = forwardRef(({
 
   const deckAUrl = useRef(null);
   const deckBUrl = useRef(null);
+
+  const maxDurationOverrideRef = useRef(null);
 
   const onTrackEndRef = useRef(onTrackEnd);
   const onTimeUpdateRef = useRef(onTimeUpdate);
@@ -231,7 +234,9 @@ const AudioEngine = forwardRef(({
       connectDeckSource(inactiveDeck, inactiveGain, inactiveSourceRef, inactiveSourceElRef);
     }
 
-    const effectiveDuration = Math.min(inactiveDeck.duration || MAX_SONG_DURATION, MAX_SONG_DURATION);
+    const maxDur = maxDurationOverrideRef.current || MAX_SONG_DURATION;
+    const effectiveDuration = Math.min(inactiveDeck.duration || maxDur, maxDur);
+    maxDurationOverrideRef.current = null;
     setDuration(effectiveDuration);
     setCurrentTrack(trackData.name);
     setCurrentTime(0);
@@ -353,7 +358,7 @@ const AudioEngine = forwardRef(({
 
       const realDur = newDeck.duration;
       if (realDur && isFinite(realDur) && realDur > 0) {
-        const capped = Math.min(realDur, MAX_SONG_DURATION);
+        const capped = Math.min(realDur, maxDur);
         if (Math.abs(capped - resolvedDuration) > 1) {
           resolvedDuration = capped;
           setDuration(resolvedDuration);
@@ -521,6 +526,7 @@ const AudioEngine = forwardRef(({
     playAnnouncement,
     setVolume,
     seek,
+    setMaxDuration: (seconds) => { maxDurationOverrideRef.current = seconds; },
     isPlaying,
     currentTrack,
     currentTime,

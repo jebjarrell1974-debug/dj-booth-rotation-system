@@ -51,6 +51,14 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
 
+#### FEATURE Track Support (Full-Length Playback)
+- **Problem**: Feature performers need songs to play to completion, not capped at 3 minutes
+- **Detection**: Songs in the `FEATURE/` subfolder of the music library have `genre='FEATURE'`
+- **AudioEngine change**: Added `maxDurationOverrideRef` + `setMaxDuration(seconds)` method. Override replaces `MAX_SONG_DURATION` (180s) for one track, then auto-resets to null
+- **DJBooth change**: `isFeatureTrack()` checks `track.genre === 'FEATURE'` or `track.path` starts with `FEATURE/`. Calls `setMaxDuration(3600)` before playing feature tracks
+- **Normal songs**: Unaffected — still capped at 180s. Override only set for FEATURE tracks and auto-clears
+- **Files**: `src/components/dj/AudioEngine.jsx` (override mechanism), `src/pages/DJBooth.jsx` (detection + trigger)
+
 #### Configuration Page — Master PIN Lock
 - **Change**: Configuration page now requires master PIN to access (DJ PIN rejected)
 - **Flow**: Lock screen → enter PIN → login via `/api/auth/login` → verify against `/api/settings/master-pin` → unlock

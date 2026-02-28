@@ -934,6 +934,12 @@ export default function DJBooth() {
     return false;
   }, [tracks, filterCooldown, recordSongPlayed]);
 
+  const isFeatureTrack = useCallback((name) => {
+    if (!name) return false;
+    const track = tracks.find(t => t.name === name);
+    return track?.genre?.toUpperCase() === 'FEATURE' || track?.path?.toUpperCase()?.startsWith('FEATURE/');
+  }, [tracks]);
+
   const playTrack = useCallback(async (trackUrl, crossfade = true, trackName = null) => {
     if (!trackUrl) {
       console.error('❌ PlayTrack: No track URL provided');
@@ -955,6 +961,10 @@ export default function DJBooth() {
     }
     const name = trackName || decodeURIComponent(trackUrl.split('/').pop().split('?')[0]) || null;
     if (name) recordSongPlayed(name);
+    if (isFeatureTrack(name)) {
+      console.log('🌟 PlayTrack: FEATURE track detected — playing full duration:', name);
+      audioEngineRef.current.setMaxDuration(3600);
+    }
     playbackExpectedRef.current = true;
     lastAudioActivityRef.current = Date.now();
     console.log('🎵 PlayTrack: Playing track URL, crossfade=' + crossfade);
@@ -973,7 +983,7 @@ export default function DJBooth() {
     }
     setIsPlaying(true);
     return true;
-  }, [recordSongPlayed, playFallbackTrack]);
+  }, [recordSongPlayed, playFallbackTrack, isFeatureTrack]);
 
   const tracksLoadedRef = useRef(false);
   useEffect(() => {
