@@ -51,6 +51,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
 
+#### Rewrite: Strip Club DJ Announcement Prompts
+- **Problem**: AI-generated scripts sounded like a generic hype-man, not a real strip club DJ. Intros lacked buildup, outros didn't push VIP, and scripts felt robotic.
+- **Fix**: Complete rewrite of `buildAnnouncementPrompt` in `energyLevels.js` with:
+  - Few-shot example scripts for each type based on real strip club DJ delivery
+  - Name-at-end rule (dancer name always lands at the end of a sentence for impact)
+  - Direct audience commands ("get those dollars ready", "make it rain", "don't let her walk away lonely")
+  - VIP/private dance upsell on every outro and transition
+  - Day-of-week awareness (e.g., "doing it right on a Friday night")
+  - Type-specific structure: intros = 3-5 sentences (big buildup), round 2/3 = 1-3 sentences (short/punchy), outros = 2-4 sentences (VIP push), transitions = 3-5 sentences (thank + hype)
+- **File**: `src/utils/energyLevels.js`
+
 #### Rebrand: DJ Booth → NEON AI DJ
 - **App name**: Changed all user-visible "DJ Booth" references to "NEON AI DJ"
 - **Logo**: Landing page shows `/public/neon-ai-dj-logo.jpeg` (NEON AI DJ branding image)
