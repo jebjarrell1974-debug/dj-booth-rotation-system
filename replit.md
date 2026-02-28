@@ -50,6 +50,13 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
 
+#### Bug Fix: Song Repeating
+- **Problem 1**: `rotationSongsRef` cached songs at rotation start but reused them for later dancers without rechecking cooldown. If a dancer's turn came after a long wait, their cached songs (now on cooldown from earlier play) would repeat.
+- **Fix 1**: All three cache-reuse paths (beginRotation, handleSkip transition, handleTrackEnd transition) now verify every cached song is off-cooldown before reusing. If any song is on cooldown, fresh tracks are fetched via `getDancerTracks`.
+- **Problem 2**: Local fallback in `getDancerTracks` used `available` pool (100-track local subset minus already-assigned) when all off-cooldown songs ran out, which was too small to find fresh songs.
+- **Fix 2**: Fallback chain is now: offCooldown → available → validTracks (entire local pool). Only falls through when the previous tier can't fill the needed count.
+- **File**: `src/pages/DJBooth.jsx`
+
 ### Feb 28, 2026 — Session 7 (Break Song Ducking, Rotation Flip, Pre-Cache Fix)
 
 #### Bug Fix: Break Song Ducking
