@@ -3,6 +3,7 @@ import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, statSync, createReadStream, readdirSync } from 'fs';
+import { networkInterfaces } from 'os';
 import {
   getSetting, setSetting, hashPin, verifyPin,
   createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer,
@@ -31,6 +32,13 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use(compression());
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
 app.use(express.json({ limit: '50mb' }));
 
 const DANCER_TIMEOUT_MS = 4 * 60 * 60 * 1000;
@@ -88,6 +96,19 @@ function getMasterPin() {
 
 app.get('/__health', (req, res) => {
   res.status(200).send('OK');
+});
+
+app.get('/api/server-info', (req, res) => {
+  const nets = networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        ips.push({ interface: name, address: net.address });
+      }
+    }
+  }
+  res.json({ ips, port: PORT });
 });
 
 app.post('/api/auth/login', (req, res) => {

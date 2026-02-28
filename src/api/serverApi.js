@@ -1,4 +1,20 @@
-const API_BASE = '/api';
+function getApiBase() {
+  const boothIp = localStorage.getItem('djbooth_booth_ip');
+  if (boothIp) return `http://${boothIp}:3001/api`;
+  return '/api';
+}
+
+function setBoothIp(ip) {
+  if (ip) {
+    localStorage.setItem('djbooth_booth_ip', ip.trim());
+  } else {
+    localStorage.removeItem('djbooth_booth_ip');
+  }
+}
+
+function getBoothIp() {
+  return localStorage.getItem('djbooth_booth_ip') || '';
+}
 
 function getToken() {
   return sessionStorage.getItem('djbooth_token');
@@ -46,7 +62,7 @@ async function apiFetch(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${getApiBase()}${path}`, { ...options, headers });
   
   if (res.status === 401) {
     clearToken();
@@ -113,7 +129,7 @@ export function connectBoothSSE(onMessage) {
   const token = getToken();
   if (!token) return null;
   
-  const url = `${API_BASE}/booth/events?token=${encodeURIComponent(token)}`;
+  const url = `${getApiBase()}/booth/events?token=${encodeURIComponent(token)}`;
   const es = new EventSource(url);
   let failCount = 0;
   
@@ -145,4 +161,4 @@ export function connectBoothSSE(onMessage) {
   return es;
 }
 
-export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode };
+export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode, setBoothIp, getBoothIp };
