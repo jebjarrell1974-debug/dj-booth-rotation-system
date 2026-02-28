@@ -51,6 +51,13 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
 - **File**: `src/utils/energyLevels.js`
 
+#### Configuration Page — Master PIN Lock
+- **Change**: Configuration page now requires master PIN to access (DJ PIN rejected)
+- **Flow**: Lock screen → enter PIN → login via `/api/auth/login` → verify against `/api/settings/master-pin` → unlock
+- **Server data**: Master PIN and music path fetched after unlock (not on mount) since token doesn't exist until then
+- **Club Specials**: Removed from Configuration, kept only in DJBooth.jsx announcements section
+- **File**: `src/pages/Configuration.jsx`
+
 #### Remote Fleet Update (Phone-Triggered)
 - **Endpoint**: `POST /api/system/update` — PIN-protected (master or DJ PIN), runs `~/djbooth-update.sh` or `~/djbooth-update-github.sh`
 - **Behavior**: Sends response immediately ("Update started"), then runs script after 1s delay so HTTP response completes before server restarts
