@@ -935,13 +935,14 @@ export default function DJBooth() {
     return false;
   }, [tracks, filterCooldown, recordSongPlayed]);
 
-  const isFeatureTrack = useCallback((name) => {
+  const isFeatureTrack = useCallback((name, genre) => {
+    if (genre && genre.toUpperCase() === 'FEATURE') return true;
     if (!name) return false;
     const track = tracks.find(t => t.name === name);
     return track?.genre?.toUpperCase() === 'FEATURE' || track?.path?.toUpperCase()?.startsWith('FEATURE/');
   }, [tracks]);
 
-  const playTrack = useCallback(async (trackUrl, crossfade = true, trackName = null) => {
+  const playTrack = useCallback(async (trackUrl, crossfade = true, trackName = null, trackGenre = null) => {
     if (!trackUrl) {
       console.error('❌ PlayTrack: No track URL provided');
       return false;
@@ -962,7 +963,7 @@ export default function DJBooth() {
     }
     const name = trackName || decodeURIComponent(trackUrl.split('/').pop().split('?')[0]) || null;
     if (name) recordSongPlayed(name);
-    if (isFeatureTrack(name)) {
+    if (isFeatureTrack(name, trackGenre)) {
       console.log('🌟 PlayTrack: FEATURE track detected — playing full duration:', name);
       audioEngineRef.current.setMaxDuration(3600);
     }
@@ -997,7 +998,7 @@ export default function DJBooth() {
         const randomTrack = pool[Math.floor(Math.random() * pool.length)];
         if (randomTrack?.url) {
           lastAudioActivityRef.current = Date.now();
-          await playTrack(randomTrack.url, true, randomTrack.name);
+          await playTrack(randomTrack.url, true, randomTrack.name, randomTrack.genre);
         }
       }
     })();
@@ -1280,7 +1281,7 @@ export default function DJBooth() {
       if (firstTrack && firstTrack.url) {
         console.log('🎵 BeginRotation: Playing first track:', firstTrack.name);
         lastAudioActivityRef.current = Date.now();
-        const success = await playTrack(firstTrack.url, false, firstTrack.name);
+        const success = await playTrack(firstTrack.url, false, firstTrack.name, firstTrack.genre);
         if (success === false) {
           console.warn('⚠️ BeginRotation: First track failed, trying fallback');
           await playFallbackTrack(false);
@@ -1439,7 +1440,7 @@ export default function DJBooth() {
           await playPrefetchedAnnouncement(announcementUrl);
           if (nextTrack?.url) {
             console.log('🎵 HandleSkip: Switching to next track after announcement:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name);
+            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
             if (!trackOk) {
               console.warn('⚠️ HandleSkip: playTrack failed, trying fallback');
               await playFallbackTrack(false);
@@ -1451,7 +1452,7 @@ export default function DJBooth() {
         } else {
           if (nextTrack?.url) {
             console.log('🎵 HandleSkip: Playing next track:', nextTrack.name);
-            await playTrack(nextTrack.url, true, nextTrack.name);
+            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
           } else {
             await playFallbackTrack(true);
           }
@@ -1500,7 +1501,7 @@ export default function DJBooth() {
           await playPrefetchedAnnouncement(announcementUrl);
           if (nextTrack && nextTrack.url) {
             console.log('🎵 HandleSkip: Switching to next dancer after announcement:', nextDancer.name, 'track:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name);
+            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
             if (!trackOk) await playFallbackTrack(false);
           } else {
             await playFallbackTrack(false);
@@ -1508,7 +1509,7 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         } else {
           if (nextTrack && nextTrack.url) {
-            await playTrack(nextTrack.url, true, nextTrack.name);
+            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
           } else {
             await playFallbackTrack(true);
           }
@@ -1597,7 +1598,7 @@ export default function DJBooth() {
         if (nextBreakTrack?.url) {
           console.log('🎵 HandleTrackEnd: Playing next break song:', nextBreakTrack.name);
           lastAudioActivityRef.current = Date.now();
-          const ok = await playTrack(nextBreakTrack.url, true, nextBreakTrack.name);
+          const ok = await playTrack(nextBreakTrack.url, true, nextBreakTrack.name, nextBreakTrack.genre);
           if (!ok) await playFallbackTrack(true);
           transitionInProgressRef.current = false;
           return;
@@ -1649,7 +1650,7 @@ export default function DJBooth() {
           await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
           lastAudioActivityRef.current = Date.now();
           if (nextTrack?.url) {
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name);
+            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
             if (!trackOk) await playFallbackTrack(false);
           } else {
             await playFallbackTrack(false);
@@ -1659,7 +1660,7 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         } else {
           if (nextTrack?.url) {
-            await playTrack(nextTrack.url, true, nextTrack.name);
+            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
           } else {
             await playFallbackTrack(true);
           }
@@ -1743,7 +1744,7 @@ export default function DJBooth() {
           await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
           if (nextTrack?.url) {
             console.log('🎵 HandleTrackEnd: Switching to next track during announcement:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name);
+            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
             if (!trackOk) {
               const ok = await playFallbackTrack(false);
               if (!ok) audioEngineRef.current?.resume();
@@ -1757,7 +1758,7 @@ export default function DJBooth() {
         } else {
           if (nextTrack?.url) {
             console.log('🎵 HandleTrackEnd: Playing next track:', nextTrack.name);
-            const result = await playTrack(nextTrack.url, true, nextTrack.name);
+            const result = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
             if (result === false) {
               const ok = await playFallbackTrack(true);
               if (!ok) audioEngineRef.current?.resume();
@@ -1808,7 +1809,7 @@ export default function DJBooth() {
             if (firstBreakTrack?.url) {
               console.log('🎵 Playing break song during outro announcement:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
-              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name);
+              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name, firstBreakTrack.genre);
               if (!ok) await playFallbackTrack(false);
             } else {
               console.error('❌ Could not resolve break song:', firstBreakName, '- falling back');
@@ -1820,7 +1821,7 @@ export default function DJBooth() {
             if (firstBreakTrack?.url) {
               console.log('🎵 Playing break song:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
-              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name);
+              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre);
               if (!ok) await playFallbackTrack(true);
             } else {
               console.error('❌ Could not resolve break song:', firstBreakName, '- falling back');
@@ -1868,7 +1869,7 @@ export default function DJBooth() {
           await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
           if (nextTrack && nextTrack.url) {
             console.log('🎵 HandleTrackEnd: Switching to next dancer during announcement:', nextDancer.name, 'track:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name);
+            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
             if (!trackOk) await playFallbackTrack(false);
           } else {
             await playFallbackTrack(false);
@@ -1877,7 +1878,7 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         } else {
           if (nextTrack && nextTrack.url) {
-            await playTrack(nextTrack.url, true, nextTrack.name);
+            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
           } else {
             await playFallbackTrack(true);
           }
@@ -2739,7 +2740,7 @@ export default function DJBooth() {
                 <MusicLibrary
                   onTrackSelect={(track) => {
                     if (editingPlaylist) return;
-                    if (track.url) playTrack(track.url, true, track.name);
+                    if (track.url) playTrack(track.url, true, track.name, track.genre);
                   }}
                 />
               </div>
