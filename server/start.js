@@ -26,7 +26,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`✅ Full app loaded in ${elapsed}s, switching over...`);
 
     expressApp = app;
-    console.log(`🎵 DJ Booth API server running on port ${PORT}`);
+    console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
     initMusicScanner();
 
     const gracefulShutdown = () => {

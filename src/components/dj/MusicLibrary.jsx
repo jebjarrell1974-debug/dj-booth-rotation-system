@@ -124,10 +124,10 @@ export default function MusicLibrary({
   const isSelected = (trackName) => selectedTracks.includes(trackName);
 
   return (
-    <div className="flex flex-col h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a]">
-      <div className="p-4 border-b border-[#1e1e3a]">
+    <div className="flex flex-col h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
+      <div className="p-4 border-b border-[#1e293b]">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Music Library</h3>
+          <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Music Library</h3>
           <span className="text-xs text-gray-500">
             {tracks.length} of {totalTracks} tracks
           </span>
@@ -143,7 +143,7 @@ export default function MusicLibrary({
               variant="ghost"
               onClick={handleRescan}
               disabled={isRescanning}
-              className="text-gray-400 hover:text-white hover:bg-[#1e1e3a]"
+              className="text-gray-400 hover:text-white hover:bg-[#1e293b]"
               title="Rescan music folder"
             >
               <RefreshCw className={`w-4 h-4 ${isRescanning ? 'animate-spin' : ''}`} />
@@ -155,21 +155,21 @@ export default function MusicLibrary({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search tracks..."
-              className="pl-9 bg-[#151528] border-[#1e1e3a] text-white placeholder:text-gray-500"
+              className="pl-9 bg-[#151528] border-[#1e293b] text-white placeholder:text-gray-500"
             />
           </div>
         </div>
       </div>
       
       {genres.length > 0 && (
-        <div className="px-3 py-2 border-b border-[#1e1e3a]">
+        <div className="px-3 py-2 border-b border-[#1e293b]">
           <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => setActiveGenre(null)}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                 !activeGenre
-                  ? 'bg-[#e040fb] text-black'
-                  : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e1e3a]'
+                  ? 'bg-[#00d4ff] text-black'
+                  : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e293b]'
               }`}
             >
               All
@@ -180,8 +180,8 @@ export default function MusicLibrary({
                 onClick={() => setActiveGenre(activeGenre === genre.name ? null : genre.name)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                   activeGenre === genre.name
-                    ? 'bg-[#e040fb] text-black'
-                    : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e1e3a]'
+                    ? 'bg-[#00d4ff] text-black'
+                    : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e293b]'
                 }`}
               >
                 <Folder className="w-3 h-3" />
@@ -207,12 +207,12 @@ export default function MusicLibrary({
               onClick={() => onTrackSelect?.({ ...track, url: '/api/music/stream/' + track.id })}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
                 isSelected(track.name)
-                  ? 'bg-[#e040fb]/20 text-[#e040fb]'
+                  ? 'bg-[#00d4ff]/20 text-[#00d4ff]'
                   : 'text-gray-300 hover:bg-[#151528] hover:text-white'
               }`}
             >
               {selectionMode && isSelected(track.name) ? (
-                <Check className="w-4 h-4 text-[#e040fb] flex-shrink-0" />
+                <Check className="w-4 h-4 text-[#00d4ff] flex-shrink-0" />
               ) : (
                 <Music className="w-4 h-4 text-gray-500 flex-shrink-0" />
               )}
@@ -232,7 +232,7 @@ export default function MusicLibrary({
                 size="sm"
                 onClick={loadMore}
                 disabled={isLoadingMore}
-                className="text-[#e040fb] hover:text-white hover:bg-[#1e1e3a]"
+                className="text-[#00d4ff] hover:text-white hover:bg-[#1e293b]"
               >
                 <ChevronDown className="w-4 h-4 mr-2" />
                 {isLoadingMore ? 'Loading...' : `Load More (${tracks.length} of ${totalTracks})`}

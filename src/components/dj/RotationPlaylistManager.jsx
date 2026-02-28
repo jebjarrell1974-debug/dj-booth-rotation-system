@@ -440,12 +440,12 @@ export default function RotationPlaylistManager({
   };
 
   return (
-    <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a]">
+    <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="w-1/2 border-r border-[#1e1e3a] flex flex-col">
-          <div className="p-4 border-b border-[#1e1e3a]">
+        <div className="w-1/2 border-r border-[#1e293b] flex flex-col">
+          <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
                 Music Library
               </h3>
               <span className="text-xs text-gray-500">
@@ -458,7 +458,7 @@ export default function RotationPlaylistManager({
                 placeholder="Search by name, genre, or path..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-[#151528] border-[#1e1e3a]"
+                className="pl-9 bg-[#151528] border-[#1e293b]"
               />
               {searchQuery && (
                 <button
@@ -472,14 +472,14 @@ export default function RotationPlaylistManager({
           </div>
 
           {genres.length > 0 && (
-            <div className="px-3 py-2 border-b border-[#1e1e3a]">
+            <div className="px-3 py-2 border-b border-[#1e293b]">
               <div className="flex flex-wrap gap-1.5">
                 <button
                   onClick={() => setActiveGenre(null)}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                     !activeGenre
-                      ? 'bg-[#e040fb] text-black'
-                      : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e1e3a]'
+                      ? 'bg-[#00d4ff] text-black'
+                      : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e293b]'
                   }`}
                 >
                   All
@@ -490,8 +490,8 @@ export default function RotationPlaylistManager({
                       onClick={() => setActiveGenre(activeGenre === g.name ? null : g.name)}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                         activeGenre === g.name
-                          ? 'bg-[#e040fb] text-black'
-                          : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e1e3a]'
+                          ? 'bg-[#00d4ff] text-black'
+                          : 'bg-[#151528] text-gray-400 hover:text-white hover:bg-[#1e293b]'
                       }`}
                     >
                       <Folder className="w-3 h-3" />
@@ -520,8 +520,8 @@ export default function RotationPlaylistManager({
                           {...provided.dragHandleProps}
                           className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
                             snapshot.isDragging
-                              ? 'bg-[#e040fb]/20 ring-2 ring-[#e040fb]'
-                              : 'bg-[#151528] hover:bg-[#1e1e3a]'
+                              ? 'bg-[#00d4ff]/20 ring-2 ring-[#00d4ff]'
+                              : 'bg-[#151528] hover:bg-[#1e293b]'
                           } cursor-pointer`}
                           onClick={() => handleLibraryTrackClick(track.name)}
                         >
@@ -541,7 +541,7 @@ export default function RotationPlaylistManager({
                       <button
                         onClick={loadMoreServerTracks}
                         disabled={serverLoading}
-                        className="px-4 py-2 text-xs font-medium text-[#e040fb] bg-[#e040fb]/10 hover:bg-[#e040fb]/20 rounded-lg transition-colors"
+                        className="px-4 py-2 text-xs font-medium text-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 rounded-lg transition-colors"
                       >
                         {serverLoading ? 'Loading...' : `Load More (${serverTracks.length} of ${serverTotalTracks})`}
                       </button>
@@ -560,10 +560,10 @@ export default function RotationPlaylistManager({
         </div>
 
         <div className="w-1/2 flex flex-col">
-          <div className="p-4 border-b border-[#1e1e3a]">
+          <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">
+                <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
                   Rotation
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -571,14 +571,14 @@ export default function RotationPlaylistManager({
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e1e3a] p-0.5">
+                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
                   {[1, 2, 3].map(n => (
                     <button
                       key={n}
                       onClick={() => onSongsPerSetChange?.(n)}
                       className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                         songsPerSet === n
-                          ? 'bg-[#e040fb] text-black'
+                          ? 'bg-[#00d4ff] text-black'
                           : 'text-gray-400 hover:text-white'
                       }`}
                     >
@@ -591,7 +591,7 @@ export default function RotationPlaylistManager({
                   onClick={() => onAnnouncementsToggle?.(!announcementsEnabled)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-colors ${
                     announcementsEnabled
-                      ? 'bg-[#e040fb]/20 border-[#e040fb] text-[#e040fb]'
+                      ? 'bg-[#00d4ff]/20 border-[#00d4ff] text-[#00d4ff]'
                       : 'bg-red-900/30 border-red-700 text-red-400'
                   }`}
                   title={announcementsEnabled ? 'Voice announcements ON — click to turn off' : 'Voice announcements OFF — click to turn on'}
@@ -601,7 +601,7 @@ export default function RotationPlaylistManager({
                 </button>
                 <Button
                   onClick={handleSave}
-                  className="bg-[#e040fb] hover:bg-[#c026d3] text-black"
+                  className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
                 >
                   <Save className="w-4 h-4 mr-2" />
                   Save All
@@ -651,15 +651,15 @@ export default function RotationPlaylistManager({
                             {...dragProvided.draggableProps}
                             className={`bg-[#151528] rounded-lg border overflow-hidden ${
                               dragSnapshot.isDragging
-                                ? 'border-[#e040fb] ring-2 ring-[#e040fb]/30'
-                                : 'border-[#1e1e3a]'
+                                ? 'border-[#00d4ff] ring-2 ring-[#00d4ff]/30'
+                                : 'border-[#1e293b]'
                             }`}
                           >
                             <div
                               className={`px-3 py-2.5 border-b flex items-center gap-2 cursor-pointer transition-colors ${
                                 selectedDancerId === dancer.id
-                                  ? 'border-[#e040fb] bg-[#e040fb]/10'
-                                  : 'border-[#1e1e3a] hover:bg-[#1a1a35]'
+                                  ? 'border-[#00d4ff] bg-[#00d4ff]/10'
+                                  : 'border-[#1e293b] hover:bg-[#1a1a35]'
                               }`}
                               onClick={() => setSelectedDancerId(selectedDancerId === dancer.id ? null : dancer.id)}
                             >
@@ -672,7 +672,7 @@ export default function RotationPlaylistManager({
                               </div>
                               <div
                                 className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0"
-                                style={{ backgroundColor: dancer.color || '#e040fb' }}
+                                style={{ backgroundColor: dancer.color || '#00d4ff' }}
                               >
                                 {dancer.name.charAt(0).toUpperCase()}
                               </div>
@@ -702,7 +702,7 @@ export default function RotationPlaylistManager({
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e1e3a] flex-shrink-0"
+                                className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e293b] flex-shrink-0"
                                 onClick={(e) => { e.stopPropagation(); handleRemoveFromRotation(dancer.id); }}
                               >
                                 <X className="w-5 h-5" />
@@ -715,7 +715,7 @@ export default function RotationPlaylistManager({
                                   ref={songProvided.innerRef}
                                   {...songProvided.droppableProps}
                                   className={`px-3 py-2 min-h-[40px] transition-colors ${
-                                    songSnapshot.isDraggingOver ? 'bg-[#e040fb]/10' : ''
+                                    songSnapshot.isDraggingOver ? 'bg-[#00d4ff]/10' : ''
                                   }`}
                                 >
                                   {assigned.length > 0 ? (
@@ -729,11 +729,11 @@ export default function RotationPlaylistManager({
                                               {...songDragProvided.dragHandleProps}
                                               className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${
                                                 songDragSnapshot.isDragging
-                                                  ? 'bg-[#e040fb]/20 border-[#e040fb]'
-                                                  : 'bg-[#0d0d1f] border-[#1e1e3a]'
+                                                  ? 'bg-[#00d4ff]/20 border-[#00d4ff]'
+                                                  : 'bg-[#0d0d1f] border-[#1e293b]'
                                               }`}
                                             >
-                                              <span className="text-xs text-[#e040fb] font-bold w-4 flex-shrink-0">{songIdx + 1}</span>
+                                              <span className="text-xs text-[#00d4ff] font-bold w-4 flex-shrink-0">{songIdx + 1}</span>
                                               <Music2 className="w-3 h-3 text-gray-500 flex-shrink-0" />
                                               <span className="text-xs text-gray-300 truncate flex-1">{songName}</span>
                                               <button
@@ -748,7 +748,7 @@ export default function RotationPlaylistManager({
                                       ))}
                                     </div>
                                   ) : (
-                                    <div className="flex items-center justify-center h-[36px] border-2 border-dashed border-[#1e1e3a] rounded-lg">
+                                    <div className="flex items-center justify-center h-[36px] border-2 border-dashed border-[#1e293b] rounded-lg">
                                       <p className="text-xs text-gray-600">Drag songs here from library</p>
                                     </div>
                                   )}
@@ -769,7 +769,7 @@ export default function RotationPlaylistManager({
                               className={`mx-2 my-1 rounded-lg transition-colors ${
                                 breakSongs.length > 0 || breakSnapshot.isDraggingOver
                                   ? 'border border-dashed border-violet-500/40 bg-violet-900/10 p-2'
-                                  : 'border border-dashed border-[#1e1e3a]/50 p-1'
+                                  : 'border border-dashed border-[#1e293b]/50 p-1'
                               }`}
                             >
                               {breakSongs.length > 0 ? (

@@ -56,7 +56,7 @@ export default function RotationDisplay() {
     <div className="min-h-screen bg-[#08081a] flex flex-col items-center justify-center p-12 overflow-hidden">
       <div className="w-full max-w-4xl">
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-[#e040fb] mb-6 tracking-wide uppercase">
+          <h2 className="text-4xl font-bold text-[#00d4ff] mb-6 tracking-wide uppercase">
             Currently On Stage
           </h2>
           {currentDancer ? (
@@ -69,14 +69,14 @@ export default function RotationDisplay() {
         </div>
 
         <div className="text-center">
-          <h2 className="text-4xl font-bold text-[#e040fb] mb-8 tracking-wide uppercase">
+          <h2 className="text-4xl font-bold text-[#00d4ff] mb-8 tracking-wide uppercase">
             Next On Stage
           </h2>
-          <div className="bg-[#0d0d1f] rounded-2xl p-8 border border-[#1e1e3a]">
+          <div className="bg-[#0d0d1f] rounded-2xl p-8 border border-[#1e293b]">
             {nextDancers.map((dancer) => (
               <div
                 key={dancer.id}
-                className="text-center py-4 border-b border-[#1e1e3a] last:border-b-0"
+                className="text-center py-4 border-b border-[#1e293b] last:border-b-0"
               >
                 <h3 className="text-4xl font-bold text-white uppercase tracking-wider">
                   {dancer.name}

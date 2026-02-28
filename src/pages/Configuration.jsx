@@ -396,11 +396,11 @@ export default function Configuration() {
           <Link to={createPageUrl('DJBooth')}>
             <Button variant="ghost" className="mb-4 text-gray-400 hover:text-white">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to DJ Booth
+              Back to NEON DJ
             </Button>
           </Link>
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#e040fb] to-[#7c3aed] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#00d4ff] to-[#2563eb] flex items-center justify-center">
               <Settings className="w-6 h-6 text-black" />
             </div>
             <div>
@@ -411,9 +411,9 @@ export default function Configuration() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Building2 className="w-5 h-5 text-[#e040fb]" />
+              <Building2 className="w-5 h-5 text-[#00d4ff]" />
               <h2 className="text-lg font-semibold">Club Information</h2>
             </div>
 
@@ -425,7 +425,7 @@ export default function Configuration() {
                   value={clubName}
                   onChange={(e) => setClubName(e.target.value)}
                   placeholder="Enter your club name"
-                  className="bg-[#08081a] border-[#1e1e3a]"
+                  className="bg-[#08081a] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Used in DJ announcements — leave blank to omit</p>
               </div>
@@ -439,7 +439,7 @@ export default function Configuration() {
                     id="openHour"
                     value={clubOpenHour}
                     onChange={(e) => setClubOpenHour(parseInt(e.target.value, 10))}
-                    className="w-full h-10 rounded-md bg-[#08081a] border border-[#1e1e3a] text-white px-3 text-sm"
+                    className="w-full h-10 rounded-md bg-[#08081a] border border-[#1e293b] text-white px-3 text-sm"
                   >
                     {HOUR_OPTIONS.map(h => (
                       <option key={h.value} value={h.value}>{h.label}</option>
@@ -454,7 +454,7 @@ export default function Configuration() {
                     id="closeHour"
                     value={clubCloseHour}
                     onChange={(e) => setClubCloseHour(parseInt(e.target.value, 10))}
-                    className="w-full h-10 rounded-md bg-[#08081a] border border-[#1e1e3a] text-white px-3 text-sm"
+                    className="w-full h-10 rounded-md bg-[#08081a] border border-[#1e293b] text-white px-3 text-sm"
                   >
                     {HOUR_OPTIONS.map(h => (
                       <option key={h.value} value={h.value}>{h.label}</option>
@@ -474,15 +474,15 @@ export default function Configuration() {
                   <span className="text-xs text-gray-400">{levelInfo.name}</span>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Energy level auto-adjusts based on time of day and your club hours. Override available in the DJ Booth.
+                  Energy level auto-adjusts based on time of day and your club hours. Override available in the NEON DJ panel.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Music className="w-5 h-5 text-[#e040fb]" />
+              <Music className="w-5 h-5 text-[#00d4ff]" />
               <h2 className="text-lg font-semibold">Music Library</h2>
             </div>
 
@@ -498,7 +498,7 @@ export default function Configuration() {
                     value={musicPath}
                     onChange={(e) => setMusicPath(e.target.value)}
                     placeholder="/path/to/music/folder"
-                    className="bg-[#08081a] border-[#1e1e3a] flex-1 font-mono text-sm"
+                    className="bg-[#08081a] border-[#1e293b] flex-1 font-mono text-sm"
                   />
                   <Button
                     onClick={async () => {
@@ -524,7 +524,7 @@ export default function Configuration() {
                       }
                     }}
                     disabled={musicPathSaving || !musicPath.trim()}
-                    className="bg-[#e040fb] hover:bg-[#c026d3] text-black"
+                    className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
                   >
                     <FolderOpen className="w-4 h-4 mr-2" />
                     {musicPathSaving ? 'Scanning...' : 'Set & Scan'}
@@ -533,10 +533,10 @@ export default function Configuration() {
               </div>
 
               {musicPathSaved && (
-                <div className="px-3 py-2.5 rounded-lg bg-[#08081a] border border-[#1e1e3a]">
+                <div className="px-3 py-2.5 rounded-lg bg-[#08081a] border border-[#1e293b]">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-400">Current path:</span>
-                    <span className="text-sm font-mono text-[#e040fb] truncate ml-2">{musicPathSaved}</span>
+                    <span className="text-sm font-mono text-[#00d4ff] truncate ml-2">{musicPathSaved}</span>
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-xs text-gray-500">{musicTrackCount.toLocaleString()} tracks indexed</span>
@@ -549,24 +549,24 @@ export default function Configuration() {
             </div>
           </div>
 
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Mic className="w-5 h-5 text-[#e040fb]" />
+              <Mic className="w-5 h-5 text-[#00d4ff]" />
               <h2 className="text-lg font-semibold">Voice Announcements</h2>
             </div>
 
             {voStats.total > 0 && (
-              <div className="mb-4 p-3 rounded-lg bg-[#08081a] border border-[#1e1e3a]">
+              <div className="mb-4 p-3 rounded-lg bg-[#08081a] border border-[#1e293b]">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-white">Voiceover Library</span>
-                  <span className="text-lg font-bold text-[#e040fb]">{voStats.total}</span>
+                  <span className="text-lg font-bold text-[#00d4ff]">{voStats.total}</span>
                 </div>
                 <p className="text-xs text-gray-400 mb-2">
                   {voStats.total} voiceover{voStats.total !== 1 ? 's' : ''} for {voStats.dancerCount} dancer{voStats.dancerCount !== 1 ? 's' : ''}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(voStats.byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                    <span key={type} className="text-xs px-2 py-0.5 rounded-full bg-[#1e1e3a] text-gray-300">
+                    <span key={type} className="text-xs px-2 py-0.5 rounded-full bg-[#1e293b] text-gray-300">
                       {type}: {count}
                     </span>
                   ))}
@@ -574,7 +574,7 @@ export default function Configuration() {
               </div>
             )}
             {voStats.total === 0 && (
-              <div className="mb-4 p-3 rounded-lg bg-[#08081a] border border-[#1e1e3a]">
+              <div className="mb-4 p-3 rounded-lg bg-[#08081a] border border-[#1e293b]">
                 <p className="text-sm text-gray-400">No voiceovers yet. Generate them by running a rotation or use the pre-cache button below.</p>
               </div>
             )}
@@ -592,29 +592,29 @@ export default function Configuration() {
               />
             </div>
 
-            <div className="border-t border-[#1e1e3a] pt-4 mt-2">
+            <div className="border-t border-[#1e293b] pt-4 mt-2">
               <p className="text-sm text-gray-400 mb-3">
                 Import voiceover MP3 files from another device. Select the folder containing the voiceover files and they'll be linked to this system.
               </p>
               <Button
                 onClick={handleImportVoiceovers}
                 disabled={isImportingVoiceovers}
-                className="w-full bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
+                className="w-full bg-[#2563eb] hover:bg-[#2563eb]/80 text-white"
               >
                 <FolderOpen className="w-4 h-4 mr-2" />
                 {isImportingVoiceovers ? 'Importing...' : 'Import Voiceovers Folder'}
               </Button>
               {importProgress && (
-                <p className="text-xs text-[#e040fb] text-center mt-2 animate-pulse">
+                <p className="text-xs text-[#00d4ff] text-center mt-2 animate-pulse">
                   {importProgress}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Key className="w-5 h-5 text-[#e040fb]" />
+              <Key className="w-5 h-5 text-[#00d4ff]" />
               <h2 className="text-lg font-semibold">API Configuration</h2>
             </div>
 
@@ -636,7 +636,7 @@ export default function Configuration() {
                   value={elevenLabsKey}
                   onChange={(e) => setElevenLabsKey(e.target.value)}
                   placeholder="Enter your ElevenLabs API key"
-                  className="bg-[#08081a] border-[#1e1e3a]"
+                  className="bg-[#08081a] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Required for voice synthesis announcements</p>
               </div>
@@ -648,7 +648,7 @@ export default function Configuration() {
                   value={elevenLabsVoiceId}
                   onChange={(e) => setElevenLabsVoiceId(e.target.value)}
                   placeholder="21m00Tcm4TlvDq8ikWAM"
-                  className="bg-[#08081a] border-[#1e1e3a]"
+                  className="bg-[#08081a] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Find voice IDs in your ElevenLabs dashboard</p>
               </div>
@@ -661,7 +661,7 @@ export default function Configuration() {
                   value={openaiKey}
                   onChange={(e) => setOpenaiKey(e.target.value)}
                   placeholder="Enter your OpenAI API key"
-                  className="bg-[#08081a] border-[#1e1e3a]"
+                  className="bg-[#08081a] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Optional — enables model selection below</p>
               </div>
@@ -672,7 +672,7 @@ export default function Configuration() {
                   id="script-model"
                   value={scriptModel}
                   onChange={(e) => setScriptModel(e.target.value)}
-                  className="w-full bg-[#08081a] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2"
+                  className="w-full bg-[#08081a] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2"
                 >
                   <option value="auto">Auto (Built-in AI)</option>
                   <option value="gpt-4o">GPT-4o</option>
@@ -693,16 +693,16 @@ export default function Configuration() {
                   onChange={(e) => setClubSpecials(e.target.value)}
                   placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
                   rows={3}
-                  className="w-full bg-[#08081a] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2 resize-none"
+                  className="w-full bg-[#08081a] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
                 />
                 <p className="text-xs text-gray-500">One per line — the DJ will weave these into announcements naturally</p>
               </div>
             </div>
           </div>
 
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Lock className="w-5 h-5 text-[#e040fb]" />
+              <Lock className="w-5 h-5 text-[#00d4ff]" />
               <h2 className="text-lg font-semibold">PIN Management</h2>
             </div>
 
@@ -710,14 +710,14 @@ export default function Configuration() {
               <div>
                 <p className="text-sm font-medium text-white mb-1">DJ Login PIN</p>
                 <p className="text-xs text-gray-500 mb-3">
-                  The PIN used to log into the DJ Booth on this device.
+                  The PIN used to log into NEON AI DJ on this device.
                 </p>
                 <div className="flex gap-3">
                   <Input
                     value={djPin}
                     onChange={(e) => setDjPin(e.target.value.replace(/\D/g, '').slice(0, 5))}
                     placeholder="Enter new 5-digit PIN..."
-                    className="bg-[#08081a] border-[#1e1e3a] flex-1"
+                    className="bg-[#08081a] border-[#1e293b] flex-1"
                     inputMode="numeric"
                     type="password"
                   />
@@ -742,21 +742,21 @@ export default function Configuration() {
                       }
                     }}
                     disabled={pinSaving || djPin.length !== 5}
-                    className="bg-[#e040fb] hover:bg-[#c026d3] text-black"
+                    className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
                   >
                     {pinSaving ? 'Saving...' : 'Update'}
                   </Button>
                 </div>
               </div>
 
-              <div className="border-t border-[#1e1e3a] pt-5">
+              <div className="border-t border-[#1e293b] pt-5">
                 <p className="text-sm font-medium text-white mb-1">Master PIN</p>
                 <p className="text-xs text-gray-500 mb-1">
                   A backup admin PIN that always works to log in, even if the DJ PIN is lost. Set a unique one for each venue.
                 </p>
                 {masterPinCurrent && (
                   <p className="text-xs text-gray-500 mb-3">
-                    Current: <span className="text-[#e040fb] font-mono">{masterPinCurrent}</span>
+                    Current: <span className="text-[#00d4ff] font-mono">{masterPinCurrent}</span>
                   </p>
                 )}
                 <div className="flex gap-3">
@@ -764,7 +764,7 @@ export default function Configuration() {
                     value={masterPin}
                     onChange={(e) => setMasterPin(e.target.value.replace(/\D/g, '').slice(0, 5))}
                     placeholder="Enter new 5-digit master PIN..."
-                    className="bg-[#08081a] border-[#1e1e3a] flex-1"
+                    className="bg-[#08081a] border-[#1e293b] flex-1"
                     inputMode="numeric"
                     type="password"
                   />
@@ -790,7 +790,7 @@ export default function Configuration() {
                       }
                     }}
                     disabled={masterPinSaving || masterPin.length !== 5}
-                    className="bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
+                    className="bg-[#2563eb] hover:bg-[#2563eb]/80 text-white"
                   >
                     {masterPinSaving ? 'Saving...' : 'Update'}
                   </Button>
@@ -799,8 +799,8 @@ export default function Configuration() {
             </div>
           </div>
 
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
-            <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider mb-3">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
+            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
               Pre-Cache Announcements
             </h3>
             <p className="text-sm text-gray-400 mb-4">
@@ -822,16 +822,16 @@ export default function Configuration() {
           </div>
         </div>
 
-        <div className="bg-[#0d0d1f] border border-[#1e1e3a] rounded-xl p-5">
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5">
           <h3 className="text-white text-md font-semibold mb-2 flex items-center gap-2">
-            <Server className="w-4 h-4 text-[#e040fb]" />
+            <Server className="w-4 h-4 text-[#00d4ff]" />
             Fleet Management
           </h3>
           <p className="text-sm text-gray-400 mb-4">
             Manage deployed Pi units, monitor health, share voiceovers across venues, and push updates.
           </p>
           <Link to="/FleetDashboard">
-            <Button className="w-full bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white">
+            <Button className="w-full bg-[#2563eb] hover:bg-[#2563eb]/80 text-white">
               <Server className="w-4 h-4 mr-2" />
               Open Fleet Dashboard
             </Button>

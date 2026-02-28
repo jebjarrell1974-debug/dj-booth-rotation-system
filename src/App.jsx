@@ -27,13 +27,13 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div style={{ background: '#08081a', color: '#fff', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', fontFamily: 'sans-serif' }}>
-          <h2 style={{ color: '#e040fb', marginBottom: '1rem' }}>Something went wrong</h2>
+          <h2 style={{ color: '#00d4ff', marginBottom: '1rem' }}>Something went wrong</h2>
           <p style={{ color: '#999', marginBottom: '1.5rem', textAlign: 'center', maxWidth: '400px' }}>
             {this.state.error?.message || 'An unexpected error occurred'}
           </p>
           <button
             onClick={() => { this.setState({ hasError: false, error: null }); window.location.href = '/'; }}
-            style={{ background: '#e040fb', color: '#000', border: 'none', padding: '12px 32px', borderRadius: '12px', fontSize: '16px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ background: '#00d4ff', color: '#000', border: 'none', padding: '12px 32px', borderRadius: '12px', fontSize: '16px', fontWeight: 600, cursor: 'pointer' }}
           >
             Go Back
           </button>
@@ -50,7 +50,7 @@ function ProtectedRoute({ children, allowedRole }) {
   if (isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#08081a]">
-        <div className="w-8 h-8 border-4 border-[#e040fb]/30 border-t-[#e040fb] rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-4 border-[#00d4ff]/30 border-t-[#00d4ff] rounded-full animate-spin"></div>
       </div>
     );
   }

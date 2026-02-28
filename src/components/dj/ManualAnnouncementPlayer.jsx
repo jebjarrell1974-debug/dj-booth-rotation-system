@@ -117,8 +117,8 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="bg-[#151528] rounded-lg border border-[#1e1e3a] p-4 mb-4">
-        <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider mb-3">
+      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4 mb-4">
+        <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
           Upload Announcement / Ad
         </h3>
 
@@ -127,13 +127,13 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
             placeholder="Custom name (optional)"
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
-            className="bg-[#08081a] border-[#1e1e3a]"
+            className="bg-[#08081a] border-[#1e293b]"
           />
 
           <label className="block">
             <Button
               as="span"
-              className="w-full bg-[#e040fb] hover:bg-[#c026d3] text-black cursor-pointer"
+              className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black cursor-pointer"
               disabled={uploading}
             >
               <Upload className="w-4 h-4 mr-2" />
@@ -154,8 +154,8 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
         </div>
       </div>
 
-      <div className="flex-1 bg-[#151528] rounded-lg border border-[#1e1e3a] p-4 flex flex-col">
-        <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider mb-3">
+      <div className="flex-1 bg-[#151528] rounded-lg border border-[#1e293b] p-4 flex flex-col">
+        <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
           Announcements Library ({announcements.length})
         </h3>
 
@@ -170,7 +170,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
               announcements.map((announcement) => (
                 <div
                   key={announcement.cache_key}
-                  className="flex items-center gap-3 bg-[#0d0d1f] rounded-lg p-3 border border-[#1e1e3a] hover:border-[#e040fb]/50 transition-colors"
+                  className="flex items-center gap-3 bg-[#0d0d1f] rounded-lg p-3 border border-[#1e293b] hover:border-[#00d4ff]/50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate">{announcement.dancer_name || announcement.cache_key}</p>

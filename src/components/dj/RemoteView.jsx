@@ -45,7 +45,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
     <div className="remote-view h-[100dvh] bg-[#08081a] text-white flex flex-col overflow-hidden select-none">
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#151528] flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[#7c3aed] flex items-center justify-center">
+          <div className="w-9 h-9 rounded-lg bg-[#2563eb] flex items-center justify-center">
             <Wifi className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -60,7 +60,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         </div>
         <button
           onClick={onLogout}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#151528] active:bg-[#1e1e3a] transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#151528] active:bg-[#1e293b] transition-colors"
         >
           <LogOut className="w-4 h-4" />
           <span className="text-sm">Logout</span>
@@ -69,19 +69,19 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
       <div className="flex flex-1 min-h-0 gap-0">
         <div className="w-[340px] flex-shrink-0 flex flex-col border-r border-[#151528] p-4 gap-4">
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 flex-shrink-0">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex-shrink-0">
             {isRotationActive && currentDancer ? (
               <>
                 <div className="flex items-center gap-3 mb-3">
                   <div
                     className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0"
-                    style={{ backgroundColor: currentDancer?.color || '#e040fb' }}
+                    style={{ backgroundColor: currentDancer?.color || '#00d4ff' }}
                   >
                     {currentDancer?.name?.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-semibold text-white truncate">{currentDancer?.name}</p>
-                    <p className="text-sm text-[#e040fb]">Song {currentSongNumber} / {songsPerSet}</p>
+                    <p className="text-sm text-[#00d4ff]">Song {currentSongNumber} / {songsPerSet}</p>
                   </div>
                 </div>
                 {currentTrack && (
@@ -103,7 +103,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           <div className="flex gap-3 flex-shrink-0">
             <button
               onClick={() => boothApi.sendCommand('skip')}
-              className="flex-1 h-16 rounded-xl bg-[#1e1e3a] border border-[#2e2e5a] flex items-center justify-center gap-3 text-white active:bg-[#2e2e5a] transition-colors"
+              className="flex-1 h-16 rounded-xl bg-[#1e293b] border border-[#2e2e5a] flex items-center justify-center gap-3 text-white active:bg-[#2e2e5a] transition-colors"
             >
               <SkipForward className="w-7 h-7" />
               <span className="text-base font-semibold">Skip</span>
@@ -112,8 +112,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               onClick={() => boothApi.sendCommand('toggleAnnouncements')}
               className={`flex-1 h-16 rounded-xl border flex items-center justify-center gap-3 active:opacity-80 transition-colors ${
                 announcementsEnabled
-                  ? 'bg-[#e040fb]/15 border-[#e040fb]/40 text-[#e040fb]'
-                  : 'bg-[#1e1e3a] border-[#2e2e5a] text-gray-500'
+                  ? 'bg-[#00d4ff]/15 border-[#00d4ff]/40 text-[#00d4ff]'
+                  : 'bg-[#1e293b] border-[#2e2e5a] text-gray-500'
               }`}
             >
               {announcementsEnabled ? <Mic className="w-7 h-7" /> : <MicOff className="w-7 h-7" />}
@@ -121,7 +121,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
             </button>
           </div>
 
-          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 flex-shrink-0">
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex-shrink-0">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-semibold text-gray-400">Songs / Set</span>
               <div className="flex items-center gap-1">
@@ -131,7 +131,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     onClick={() => boothApi.sendCommand('setSongsPerSet', { count: n })}
                     className={`w-10 h-10 rounded-lg text-base font-bold transition-colors ${
                       n === songsPerSet
-                        ? 'bg-[#e040fb] text-black'
+                        ? 'bg-[#00d4ff] text-black'
                         : 'bg-[#151528] text-gray-400 active:bg-[#2e2e5a]'
                     }`}
                   >
@@ -149,7 +149,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               onClick={() => setActivePanel('options')}
               className={`flex items-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${
                 activePanel === 'options'
-                  ? 'bg-[#e040fb] text-black'
+                  ? 'bg-[#00d4ff] text-black'
                   : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
               }`}
             >
@@ -160,7 +160,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               onClick={() => setActivePanel('rotation')}
               className={`flex items-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${
                 activePanel === 'rotation'
-                  ? 'bg-[#e040fb] text-black'
+                  ? 'bg-[#00d4ff] text-black'
                   : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
               }`}
             >
@@ -171,7 +171,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               onClick={() => setActivePanel('dancers')}
               className={`flex items-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${
                 activePanel === 'dancers'
-                  ? 'bg-[#e040fb] text-black'
+                  ? 'bg-[#00d4ff] text-black'
                   : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
               }`}
             >
@@ -208,8 +208,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           key={dancerId}
                           className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
                             isCurrent
-                              ? 'bg-[#e040fb]/10 border-[#e040fb]/40'
-                              : 'bg-[#0d0d1f] border-[#1e1e3a]'
+                              ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
+                              : 'bg-[#0d0d1f] border-[#1e293b]'
                           }`}
                         >
                           <div className="flex items-center gap-0 flex-shrink-0">
@@ -230,14 +230,14 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           </div>
                           <div
                             className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0"
-                            style={{ backgroundColor: dancer.color || '#e040fb' }}
+                            style={{ backgroundColor: dancer.color || '#00d4ff' }}
                           >
                             {dancer.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-base font-medium ${isCurrent ? 'text-[#e040fb]' : 'text-white'}`}>
+                            <p className={`text-base font-medium ${isCurrent ? 'text-[#00d4ff]' : 'text-white'}`}>
                               {dancer.name}
-                              {isCurrent && <span className="ml-2 text-sm text-[#e040fb]/70">◀ NOW</span>}
+                              {isCurrent && <span className="ml-2 text-sm text-[#00d4ff]/70">◀ NOW</span>}
                             </p>
                             {dancerSongs.length > 0 && (
                               <p className="text-sm text-gray-500 truncate">
@@ -258,7 +258,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 )}
 
                 {availableDancers.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-[#1e1e3a]">
+                  <div className="mt-4 pt-4 border-t border-[#1e293b]">
                     <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">Add to Rotation</h4>
                     <div className="space-y-1">
                       {availableDancers.map(dancer => (
@@ -269,12 +269,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                         >
                           <div
                             className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold text-sm"
-                            style={{ backgroundColor: dancer.color || '#e040fb' }}
+                            style={{ backgroundColor: dancer.color || '#00d4ff' }}
                           >
                             {dancer.name.charAt(0).toUpperCase()}
                           </div>
                           <span className="text-base text-gray-300 flex-1">{dancer.name}</span>
-                          <Plus className="w-6 h-6 text-[#e040fb]" />
+                          <Plus className="w-6 h-6 text-[#00d4ff]" />
                         </button>
                       ))}
                     </div>
@@ -296,11 +296,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     return (
                       <div
                         key={dancer.id}
-                        className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#0d0d1f] border border-[#1e1e3a]"
+                        className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#0d0d1f] border border-[#1e293b]"
                       >
                         <div
                           className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0"
-                          style={{ backgroundColor: dancer.color || '#e040fb' }}
+                          style={{ backgroundColor: dancer.color || '#00d4ff' }}
                         >
                           {dancer.name.charAt(0).toUpperCase()}
                         </div>
@@ -321,7 +321,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex-shrink-0 ${
                             inRotation
                               ? 'bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25'
-                              : 'bg-[#e040fb]/15 text-[#e040fb] border border-[#e040fb]/30 active:bg-[#e040fb]/25'
+                              : 'bg-[#00d4ff]/15 text-[#00d4ff] border border-[#00d4ff]/30 active:bg-[#00d4ff]/25'
                           }`}
                         >
                           {inRotation ? '- In Rotation' : '+ Add to Rotation'}

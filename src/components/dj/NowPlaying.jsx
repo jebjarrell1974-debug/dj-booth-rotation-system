@@ -26,14 +26,14 @@ export default function NowPlaying({
   const remaining = duration - currentTime;
 
   return (
-    <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6">
+    <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
       {/* Dancer Info */}
       {dancerName && (
         <div className="mb-4 text-center">
           <span className="text-xs uppercase tracking-widest text-gray-500">Now Performing</span>
           <h2 className="text-2xl font-bold text-white mt-1">{dancerName}</h2>
           {songNumber && (
-            <span className="text-sm text-[#e040fb]">Song {songNumber} of 2</span>
+            <span className="text-sm text-[#00d4ff]">Song {songNumber} of 2</span>
           )}
         </div>
       )}
@@ -47,7 +47,7 @@ export default function NowPlaying({
       
       {/* Progress Bar */}
       <div className="mb-4">
-        <div className="relative h-2 bg-[#1e1e3a] rounded-full overflow-hidden cursor-pointer"
+        <div className="relative h-2 bg-[#1e293b] rounded-full overflow-hidden cursor-pointer"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const percent = (e.clientX - rect.left) / rect.width;
@@ -55,7 +55,7 @@ export default function NowPlaying({
           }}
         >
           <div 
-            className="absolute h-full bg-[#e040fb]"
+            className="absolute h-full bg-[#00d4ff]"
             style={{ width: `${progress}%` }}
           />
           {/* 3-minute marker */}
@@ -80,7 +80,7 @@ export default function NowPlaying({
           size="icon"
           variant="ghost"
           onClick={onPlayPause}
-          className="w-14 h-14 rounded-full bg-[#e040fb] hover:bg-[#c026d3] text-black"
+          className="w-14 h-14 rounded-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
         >
           {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
         </Button>
@@ -89,7 +89,7 @@ export default function NowPlaying({
           size="icon"
           variant="ghost"
           onClick={onSkip}
-          className="w-14 h-14 rounded-full text-gray-400 hover:text-white hover:bg-[#1e1e3a]"
+          className="w-14 h-14 rounded-full text-gray-400 hover:text-white hover:bg-[#1e293b]"
         >
           <SkipForward className="w-5 h-5" />
         </Button>

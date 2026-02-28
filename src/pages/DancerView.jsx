@@ -257,14 +257,14 @@ export default function DancerView() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#08081a] flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-[#e040fb]/30 border-t-[#e040fb] rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-[#00d4ff]/30 border-t-[#00d4ff] rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#08081a] flex flex-col" style={{ maxHeight: '100dvh' }}>
-      <div className="p-4 border-b border-[#1e1e3a] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
+      <div className="p-4 border-b border-[#1e293b] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
         <div>
           <h1 className="text-lg font-bold text-white">{user?.name || 'Dancer'}</h1>
           <p className="text-xs text-gray-500">My Playlist</p>
@@ -282,7 +282,7 @@ export default function DancerView() {
             <Button
               size="sm"
               onClick={() => setShowLibrary(true)}
-              className="bg-[#e040fb] hover:bg-[#c026d3] text-black font-medium"
+              className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black font-medium"
             >
               <Plus className="w-4 h-4 mr-1" />
               Add Songs
@@ -311,7 +311,7 @@ export default function DancerView() {
                     onTouchEnd={handleTouchEnd}
                     onTouchCancel={handleTouchCancel}
                     className={`flex items-center gap-2 px-3 py-3 rounded-lg transition-colors select-none ${
-                      dragIdx === idx ? 'bg-[#e040fb]/20 border border-[#e040fb]/40' : 'bg-[#151528]'
+                      dragIdx === idx ? 'bg-[#00d4ff]/20 border border-[#00d4ff]/40' : 'bg-[#151528]'
                     }`}
                   >
                     <GripVertical className="w-4 h-4 text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
@@ -330,9 +330,9 @@ export default function DancerView() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-3 space-y-3 flex-shrink-0 border-b border-[#1e1e3a]">
+          <div className="p-3 space-y-3 flex-shrink-0 border-b border-[#1e293b]">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Song Library</span>
+              <span className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Song Library</span>
               <Button
                 size="sm"
                 variant="ghost"
@@ -350,7 +350,7 @@ export default function DancerView() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search songs..."
-                className="pl-9 bg-[#151528] border-[#1e1e3a] text-white placeholder:text-gray-500 h-10"
+                className="pl-9 bg-[#151528] border-[#1e293b] text-white placeholder:text-gray-500 h-10"
               />
               {searchQuery && (
                 <button
@@ -368,8 +368,8 @@ export default function DancerView() {
                   onClick={() => setSelectedGenre('')}
                   className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                     selectedGenre === ''
-                      ? 'bg-[#e040fb] text-black'
-                      : 'bg-[#151528] text-gray-400 border border-[#1e1e3a] hover:text-white'
+                      ? 'bg-[#00d4ff] text-black'
+                      : 'bg-[#151528] text-gray-400 border border-[#1e293b] hover:text-white'
                   }`}
                 >
                   All
@@ -380,8 +380,8 @@ export default function DancerView() {
                     onClick={() => setSelectedGenre(selectedGenre === genre ? '' : genre)}
                     className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                       selectedGenre === genre
-                        ? 'bg-[#e040fb] text-black'
-                        : 'bg-[#151528] text-gray-400 border border-[#1e1e3a] hover:text-white'
+                        ? 'bg-[#00d4ff] text-black'
+                        : 'bg-[#151528] text-gray-400 border border-[#1e293b] hover:text-white'
                     }`}
                   >
                     <FolderOpen className="w-3 h-3 inline mr-1" />
@@ -400,7 +400,7 @@ export default function DancerView() {
             <div className="px-3 pb-4 pt-2 space-y-0.5">
               {tracksLoading && tracks.length === 0 ? (
                 <div className="text-center py-12">
-                  <div className="w-6 h-6 border-3 border-[#e040fb]/30 border-t-[#e040fb] rounded-full animate-spin mx-auto" />
+                  <div className="w-6 h-6 border-3 border-[#00d4ff]/30 border-t-[#00d4ff] rounded-full animate-spin mx-auto" />
                 </div>
               ) : tracks.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 text-sm">
@@ -422,8 +422,8 @@ export default function DancerView() {
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left transition-colors ${
                         inPlaylist
-                          ? 'bg-[#e040fb]/10 text-[#e040fb] active:bg-red-500/20'
-                          : 'text-gray-300 hover:bg-[#151528] hover:text-white active:bg-[#e040fb]/20'
+                          ? 'bg-[#00d4ff]/10 text-[#00d4ff] active:bg-red-500/20'
+                          : 'text-gray-300 hover:bg-[#151528] hover:text-white active:bg-[#00d4ff]/20'
                       }`}
                     >
                       <Music className="w-4 h-4 flex-shrink-0 opacity-50" />
@@ -438,7 +438,7 @@ export default function DancerView() {
                           <X className="w-3.5 h-3.5" />
                         </span>
                       ) : (
-                        <Plus className="w-5 h-5 text-[#e040fb] flex-shrink-0" />
+                        <Plus className="w-5 h-5 text-[#00d4ff] flex-shrink-0" />
                       )}
                     </button>
                   );
@@ -449,7 +449,7 @@ export default function DancerView() {
                   <button
                     onClick={loadMore}
                     disabled={tracksLoading}
-                    className="px-4 py-2.5 text-xs font-medium text-[#e040fb] bg-[#e040fb]/10 hover:bg-[#e040fb]/20 rounded-lg transition-colors active:bg-[#e040fb]/30"
+                    className="px-4 py-2.5 text-xs font-medium text-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 rounded-lg transition-colors active:bg-[#00d4ff]/30"
                   >
                     {tracksLoading ? 'Loading...' : `Show More (${tracks.length} of ${totalTracks})`}
                   </button>

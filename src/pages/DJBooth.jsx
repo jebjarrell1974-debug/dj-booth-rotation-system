@@ -534,7 +534,7 @@ export default function DJBooth() {
               try {
                 await localEntities.Dancer.create({
                   name: dancer.name,
-                  color: dancer.color || '#e040fb',
+                  color: dancer.color || '#00d4ff',
                   pin: genPin(),
                   playlist: dancer.playlist || []
                 });
@@ -2170,12 +2170,12 @@ export default function DJBooth() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#e040fb] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-[#00d4ff] flex items-center justify-center">
                 <Radio className="w-5 h-5 text-black" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight">DJ Booth</h1>
-                <p className="text-xs text-gray-500">Automated Rotation System</p>
+                <h1 className="text-xl font-bold tracking-tight">NEON AI DJ</h1>
+                <p className="text-xs text-gray-500">Automated Intelligent Disc Jockey</p>
               </div>
             </div>
 
@@ -2192,7 +2192,7 @@ export default function DJBooth() {
                       setEnergyOverride(val);
                       saveApiConfig({ energyOverride: val });
                     }}
-                    className="h-8 rounded-md bg-[#0d0d1f] border border-[#1e1e3a] text-xs px-2"
+                    className="h-8 rounded-md bg-[#0d0d1f] border border-[#1e293b] text-xs px-2"
                     style={{ color: info.color }}
                   >
                     <option value="auto">Auto</option>
@@ -2211,12 +2211,12 @@ export default function DJBooth() {
             })()}
 
             {remoteMode ? (
-              <div className="bg-[#7c3aed]/10 rounded-lg border border-[#7c3aed] p-3 min-w-[280px]">
+              <div className="bg-[#2563eb]/10 rounded-lg border border-[#2563eb] p-3 min-w-[280px]">
                 <div className="flex items-center gap-3 mb-2">
-                  <Wifi className="w-5 h-5 text-[#e040fb] flex-shrink-0" />
+                  <Wifi className="w-5 h-5 text-[#00d4ff] flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-[#e040fb]">Remote Control</p>
+                      <p className="text-sm font-semibold text-[#00d4ff]">Remote Control</p>
                       {liveBoothState?.updatedAt > 0 && (
                         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${liveBoothState.isPlaying ? 'bg-green-400 animate-pulse' : 'bg-yellow-500'}`} />
                       )}
@@ -2239,7 +2239,7 @@ export default function DJBooth() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-white hover:bg-[#1e1e3a] h-8 px-2"
+                    className="text-white hover:bg-[#1e293b] h-8 px-2"
                     onClick={() => boothApi.sendCommand('skip')}
                   >
                     <SkipForward className="w-4 h-4" />
@@ -2247,7 +2247,7 @@ export default function DJBooth() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className={`h-8 px-2 ${liveBoothState?.announcementsEnabled ? 'text-[#e040fb]' : 'text-gray-500'}`}
+                    className={`h-8 px-2 ${liveBoothState?.announcementsEnabled ? 'text-[#00d4ff]' : 'text-gray-500'}`}
                     onClick={() => boothApi.sendCommand('toggleAnnouncements')}
                   >
                     {liveBoothState?.announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
@@ -2255,12 +2255,12 @@ export default function DJBooth() {
                 </div>
               </div>
             ) : (
-              <div className="bg-[#0d0d1f] rounded-lg border border-[#1e1e3a] p-3 min-w-[320px]">
+              <div className="bg-[#0d0d1f] rounded-lg border border-[#1e293b] p-3 min-w-[320px]">
                 <div className="flex items-center gap-3 mb-2">
                   {currentDancer && (
                     <div 
                       className="w-6 h-6 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0"
-                      style={{ backgroundColor: currentDancer.color || '#e040fb' }}
+                      style={{ backgroundColor: currentDancer.color || '#00d4ff' }}
                     >
                       {currentDancer.name.charAt(0).toUpperCase()}
                     </div>
@@ -2277,7 +2277,7 @@ export default function DJBooth() {
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-7 h-7 text-white hover:bg-[#1e1e3a]"
+                    className="w-7 h-7 text-white hover:bg-[#1e293b]"
                     onClick={handleSkip}
                   >
                     <SkipForward className="w-4 h-4" />
@@ -2312,7 +2312,7 @@ export default function DJBooth() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setActiveTab('options')}
-                className={`${activeTab === 'options' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
+                className={`${activeTab === 'options' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
               >
                 <SlidersHorizontal className="w-4 h-4 mr-1" />
                 Options
@@ -2321,7 +2321,7 @@ export default function DJBooth() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setActiveTab('rotation')}
-                className={`${activeTab === 'rotation' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
+                className={`${activeTab === 'rotation' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
               >
                 <Layers className="w-4 h-4 mr-1" />
                 Rotation
@@ -2330,7 +2330,7 @@ export default function DJBooth() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setActiveTab('dancers')}
-                className={`${activeTab === 'dancers' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
+                className={`${activeTab === 'dancers' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
               >
                 <Users className="w-4 h-4 mr-1" />
                 Dancers
@@ -2341,7 +2341,7 @@ export default function DJBooth() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setActiveTab('library')}
-                    className={`${activeTab === 'library' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
+                    className={`${activeTab === 'library' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
                   >
                     <Music2 className="w-4 h-4 mr-1" />
                     Library
@@ -2350,7 +2350,7 @@ export default function DJBooth() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setActiveTab('announcements')}
-                    className={`${activeTab === 'announcements' ? 'bg-[#e040fb] text-black' : 'text-gray-400 hover:text-white'}`}
+                    className={`${activeTab === 'announcements' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
                   >
                     <Mic className="w-4 h-4 mr-1" />
                     Announcements
@@ -2394,7 +2394,7 @@ export default function DJBooth() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="border-[#1e1e3a] text-gray-300 hover:bg-[#1e1e3a] hover:text-white"
+                    className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b] hover:text-white"
                   >
                     <Radio className="w-4 h-4 mr-2" />
                     Open Display
@@ -2456,15 +2456,15 @@ export default function DJBooth() {
             )}
 
             {activeTab === 'rotation' && remoteMode && (
-              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 overflow-auto">
+              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 overflow-auto">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Live Rotation</h3>
+                  <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Live Rotation</h3>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-500">Songs/Set:</span>
                     <select
                       value={liveBoothState?.songsPerSet || 3}
                       onChange={(e) => boothApi.sendCommand('setSongsPerSet', { count: parseInt(e.target.value) })}
-                      className="bg-[#151528] border border-[#1e1e3a] text-white text-xs rounded px-2 py-1"
+                      className="bg-[#151528] border border-[#1e293b] text-white text-xs rounded px-2 py-1"
                     >
                       {[1,2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
@@ -2481,12 +2481,12 @@ export default function DJBooth() {
                       const isCurrent = idx === (liveBoothState?.currentDancerIndex || 0) && liveBoothState?.isRotationActive;
                       const dancerSongs = liveBoothState?.rotationSongs?.[dancerId] || [];
                       return (
-                        <div key={dancerId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${isCurrent ? 'bg-[#e040fb]/10 border-[#e040fb]/40' : 'bg-[#151528] border-[#1e1e3a]'}`}>
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#e040fb' }}>
+                        <div key={dancerId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${isCurrent ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40' : 'bg-[#151528] border-[#1e293b]'}`}>
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                             {dancer.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium ${isCurrent ? 'text-[#e040fb]' : 'text-white'}`}>{dancer.name}</p>
+                            <p className={`text-sm font-medium ${isCurrent ? 'text-[#00d4ff]' : 'text-white'}`}>{dancer.name}</p>
                             {dancerSongs.length > 0 && (
                               <p className="text-xs text-gray-500 truncate">{dancerSongs.map(s => typeof s === 'string' ? s : s.name).join(', ')}</p>
                             )}
@@ -2503,7 +2503,7 @@ export default function DJBooth() {
                   </div>
                 )}
                 
-                <div className="border-t border-[#1e1e3a] pt-4">
+                <div className="border-t border-[#1e293b] pt-4">
                   <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Add to Rotation</h4>
                   <div className="space-y-1">
                     {dancers.filter(d => d.is_active && !(liveBoothState?.rotation || []).includes(d.id)).map(dancer => (
@@ -2512,11 +2512,11 @@ export default function DJBooth() {
                         onClick={() => boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id })}
                         className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-[#151528] transition-colors"
                       >
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-black font-bold text-xs" style={{ backgroundColor: dancer.color || '#e040fb' }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-black font-bold text-xs" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                           {dancer.name.charAt(0).toUpperCase()}
                         </div>
                         <span className="text-sm text-gray-300">{dancer.name}</span>
-                        <Plus className="w-4 h-4 text-[#e040fb] ml-auto" />
+                        <Plus className="w-4 h-4 text-[#00d4ff] ml-auto" />
                       </button>
                     ))}
                   </div>
@@ -2694,7 +2694,7 @@ export default function DJBooth() {
             )}
             
             {activeTab === 'dancers' && (
-              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 overflow-auto">
+              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 overflow-auto">
                 <DancerRoster
                   dancers={dancers}
                   rotation={rotation}
@@ -2713,7 +2713,7 @@ export default function DJBooth() {
             )}
             
             {!remoteMode && (
-              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-4 flex flex-col overflow-hidden" style={{ display: activeTab === 'library' ? 'flex' : 'none' }}>
+              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex flex-col overflow-hidden" style={{ display: activeTab === 'library' ? 'flex' : 'none' }}>
                 <MusicLibrary
                   onTrackSelect={(track) => {
                     if (editingPlaylist) return;
@@ -2734,7 +2734,7 @@ export default function DJBooth() {
                   openaiApiKey={openaiKey}
                   hideUI={false}
                 />
-                <div className="bg-[#0d0d1f] rounded-xl border border-[#1e1e3a] p-6 flex-1">
+                <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6 flex-1">
                   <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />
                 </div>
               </div>
@@ -2763,7 +2763,7 @@ export default function DJBooth() {
 
       {/* Settings Modal */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="bg-[#0d0d1f] border-[#1e1e3a] text-white max-w-2xl">
+        <DialogContent className="bg-[#0d0d1f] border-[#1e293b] text-white max-w-2xl">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
           </DialogHeader>
@@ -2779,7 +2779,7 @@ export default function DJBooth() {
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">API Keys</h3>
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">API Keys</h3>
               
               <div className="space-y-2">
                 <Label htmlFor="openai-key">OpenAI API Key</Label>
@@ -2789,7 +2789,7 @@ export default function DJBooth() {
                   value={openaiKey}
                   onChange={(e) => setOpenaiKey(e.target.value)}
                   placeholder="sk-..."
-                  className="bg-[#151528] border-[#1e1e3a]"
+                  className="bg-[#151528] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Optional — enables model selection below</p>
               </div>
@@ -2800,7 +2800,7 @@ export default function DJBooth() {
                   id="script-model"
                   value={scriptModel}
                   onChange={(e) => setScriptModel(e.target.value)}
-                  className="w-full bg-[#151528] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2"
+                  className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2"
                 >
                   <option value="auto">Auto (Built-in AI)</option>
                   <option value="gpt-4o">GPT-4o</option>
@@ -2821,7 +2821,7 @@ export default function DJBooth() {
                   value={elevenLabsKey}
                   onChange={(e) => setElevenLabsKey(e.target.value)}
                   placeholder="sk_..."
-                  className="bg-[#151528] border-[#1e1e3a]"
+                  className="bg-[#151528] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Used for text-to-speech announcements</p>
               </div>
@@ -2833,7 +2833,7 @@ export default function DJBooth() {
                   value={voiceId}
                   onChange={(e) => setVoiceId(e.target.value)}
                   placeholder="21m00Tcm4TlvDq8ikWAM"
-                  className="bg-[#151528] border-[#1e1e3a]"
+                  className="bg-[#151528] border-[#1e293b]"
                 />
                 <p className="text-xs text-gray-500">Leave empty for default voice</p>
               </div>
@@ -2841,7 +2841,7 @@ export default function DJBooth() {
 
             {/* Announcement Settings */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Announcements</h3>
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Announcements</h3>
               
               <div className="flex items-center justify-between">
                 <div>
@@ -2866,27 +2866,27 @@ export default function DJBooth() {
                   onChange={(e) => setClubSpecials(e.target.value)}
                   placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
                   rows={3}
-                  className="w-full bg-[#151528] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2 resize-none"
+                  className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
                 />
                 <p className="text-xs text-gray-500">One per line — the DJ will weave these into announcements naturally</p>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-[#e040fb] uppercase tracking-wider">Import Voiceovers</h3>
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Import Voiceovers</h3>
               <p className="text-xs text-gray-400">
                 Select a folder containing voiceover MP3 files from another device to import them into this system.
               </p>
               <Button
                 onClick={handleImportVoiceovers}
                 disabled={isImportingVoiceovers}
-                className="w-full bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
+                className="w-full bg-[#2563eb] hover:bg-[#2563eb]/80 text-white"
               >
                 <FolderOpen className="w-4 h-4 mr-2" />
                 {isImportingVoiceovers ? 'Importing...' : 'Import Voiceovers Folder'}
               </Button>
               {voImportProgress && (
-                <p className="text-xs text-[#e040fb] text-center animate-pulse">
+                <p className="text-xs text-[#00d4ff] text-center animate-pulse">
                   {voImportProgress}
                 </p>
               )}
@@ -2919,10 +2919,10 @@ export default function DJBooth() {
               </p>
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-[#1e1e3a]">
+            <div className="flex justify-end pt-4 border-t border-[#1e293b]">
               <Button
                 onClick={() => setSettingsOpen(false)}
-                className="bg-[#e040fb] hover:bg-[#c026d3] text-black"
+                className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
               >
                 Done
               </Button>
