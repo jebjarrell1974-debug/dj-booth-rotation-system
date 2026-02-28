@@ -1981,12 +1981,6 @@ export default function DJBooth() {
     if (!rotation.includes(dancerId)) {
       const newRotation = [...rotation, dancerId];
       setRotation(newRotation);
-      const dancer = dancers.find(d => d.id === dancerId);
-      if (dancer?.name && announcementRef.current?.preCacheDancer) {
-        setTimeout(() => {
-          announcementRef.current.preCacheDancer(dancer.name);
-        }, 500);
-      }
     }
   };
 
@@ -2063,22 +2057,34 @@ export default function DJBooth() {
     return () => clearInterval(interval);
   }, []);
 
-  const prevRotationRef = useRef([]);
+  const prevRotationKeyRef = useRef('');
   useEffect(() => {
     if (remoteMode) return;
-    const prev = prevRotationRef.current;
-    const newIds = rotation.filter(id => !prev.includes(id));
-    prevRotationRef.current = [...rotation];
-    if (newIds.length === 0 || !announcementRef.current?.preCacheDancer) return;
-    for (const id of newIds) {
-      const dancer = dancers.find(d => d.id === id);
+    if (!announcementRef.current?.preCacheUpcoming) return;
+    if (rotation.length === 0 || dancers.length === 0) return;
+
+    const key = rotation.join(',') + '|' + currentDancerIndex;
+    if (key === prevRotationKeyRef.current) return;
+    prevRotationKeyRef.current = key;
+
+    const lookahead = Math.min(3, rotation.length);
+    const upcoming = [];
+    for (let i = 0; i < lookahead; i++) {
+      const idx = (currentDancerIndex + i) % rotation.length;
+      const nextIdx = (currentDancerIndex + i + 1) % rotation.length;
+      const dancer = dancers.find(d => d.id === rotation[idx]);
+      const nextDancer = dancers.find(d => d.id === rotation[nextIdx]);
       if (dancer?.name) {
-        setTimeout(() => {
-          announcementRef.current?.preCacheDancer(dancer.name);
-        }, 1000);
+        upcoming.push({ name: dancer.name, nextName: nextDancer?.name || null });
       }
     }
-  }, [rotation, dancers, remoteMode]);
+    if (upcoming.length === 0) return;
+
+    const timer = setTimeout(() => {
+      announcementRef.current?.preCacheUpcoming(upcoming);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [rotation, dancers, currentDancerIndex, remoteMode]);
 
   if (remoteMode) {
     return (
@@ -2562,15 +2568,20 @@ export default function DJBooth() {
                       console.log('🎵 Interstitial songs updated:', Object.keys(interstitials).length, 'break slots');
                     }
                   }
-                  if (announcementRef.current?.preCacheDancer) {
-                    console.log('🔄 Pre-caching announcements for rotation (' + newRotation.length + ' dancers)...');
-                    for (let i = 0; i < newRotation.length; i++) {
-                      const dancer = dancers.find(d => d.id === newRotation[i]);
+                  if (announcementRef.current?.preCacheUpcoming) {
+                    const lookahead = Math.min(3, newRotation.length);
+                    const upcoming = [];
+                    for (let i = 0; i < lookahead; i++) {
+                      const rIdx = i % newRotation.length;
+                      const nIdx = (i + 1) % newRotation.length;
+                      const dancer = dancers.find(d => d.id === newRotation[rIdx]);
+                      const nextDancer = dancers.find(d => d.id === newRotation[nIdx]);
                       if (dancer?.name) {
-                        setTimeout(() => {
-                          announcementRef.current?.preCacheDancer(dancer.name);
-                        }, 1000 + (i * 2000));
+                        upcoming.push({ name: dancer.name, nextName: nextDancer?.name || null });
                       }
+                    }
+                    if (upcoming.length > 0) {
+                      setTimeout(() => announcementRef.current?.preCacheUpcoming(upcoming), 2000);
                     }
                   }
                   if (activeStage) {
