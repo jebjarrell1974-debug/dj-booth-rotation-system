@@ -19,6 +19,10 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => {
 });
 
 export default function Configuration() {
+  const [masterPinInput, setMasterPinInput] = useState('');
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockError, setUnlockError] = useState('');
+
   const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState('21m00Tcm4TlvDq8ikWAM');
   const [openaiKey, setOpenaiKey] = useState('');
@@ -36,7 +40,6 @@ export default function Configuration() {
   const [clubOpenHour, setClubOpenHour] = useState(11);
   const [clubCloseHour, setClubCloseHour] = useState(2);
   const [scriptModel, setScriptModel] = useState('auto');
-  const [clubSpecials, setClubSpecials] = useState('');
   const [configReady, setConfigReady] = useState(false);
   const [musicPath, setMusicPath] = useState('');
   const [musicPathSaved, setMusicPathSaved] = useState('');
@@ -64,29 +67,31 @@ export default function Configuration() {
       setClubOpenHour(cfg.clubOpenHour);
       setClubCloseHour(cfg.clubCloseHour);
       setScriptModel(cfg.scriptModel || 'auto');
-      setClubSpecials(cfg.clubSpecials || '');
       setConfigReady(true);
     });
-    const token = sessionStorage.getItem('djbooth_token');
-    if (token) {
-      fetch('/api/settings/master-pin', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).then(r => r.ok ? r.json() : null).then(data => {
-        if (data) setMasterPinCurrent(data.pin);
-      }).catch(() => {});
-
-      fetch('/api/settings/music-path', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).then(r => r.ok ? r.json() : null).then(data => {
-        if (data) {
-          setMusicPath(data.path || '');
-          setMusicPathSaved(data.path || '');
-          setMusicTrackCount(data.totalTracks || 0);
-          setMusicLastScan(data.lastScan || null);
-        }
-      }).catch(() => {});
-    }
   }, []);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const token = sessionStorage.getItem('djbooth_token');
+    if (!token) return;
+    fetch('/api/settings/master-pin', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (data) setMasterPinCurrent(data.pin);
+    }).catch(() => {});
+
+    fetch('/api/settings/music-path', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (data) {
+        setMusicPath(data.path || '');
+        setMusicPathSaved(data.path || '');
+        setMusicTrackCount(data.totalTracks || 0);
+        setMusicLastScan(data.lastScan || null);
+      }
+    }).catch(() => {});
+  }, [isUnlocked]);
 
   useEffect(() => {
     if (!configReady) return;
@@ -99,9 +104,8 @@ export default function Configuration() {
       clubOpenHour,
       clubCloseHour,
       scriptModel,
-      clubSpecials,
     });
-  }, [elevenLabsKey, elevenLabsVoiceId, openaiKey, announcementsEnabled, clubName, clubOpenHour, clubCloseHour, scriptModel, clubSpecials, configReady]);
+  }, [elevenLabsKey, elevenLabsVoiceId, openaiKey, announcementsEnabled, clubName, clubOpenHour, clubCloseHour, scriptModel, configReady]);
 
   const { data: dancers = [] } = useQuery({
     queryKey: ['dancers'],
@@ -394,6 +398,84 @@ export default function Configuration() {
       setImportProgress('');
     }
   };
+
+  const handleUnlock = async () => {
+    if (masterPinInput.length !== 5) {
+      setUnlockError('Enter a 5-digit PIN');
+      return;
+    }
+    setUnlockError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'dj', pin: masterPinInput }),
+      });
+      if (!res.ok) {
+        setUnlockError('Incorrect PIN');
+        return;
+      }
+      const data = await res.json();
+      const token = data.token;
+      const masterRes = await fetch('/api/settings/master-pin', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (masterRes.ok) {
+        const masterData = await masterRes.json();
+        if (masterPinInput === masterData.pin) {
+          sessionStorage.setItem('djbooth_token', token);
+          setIsUnlocked(true);
+          return;
+        }
+      }
+      setUnlockError('Master PIN required — DJ PIN not accepted');
+    } catch {
+      setUnlockError('Connection failed');
+    }
+  };
+
+  if (!isUnlocked) {
+    return (
+      <div className="h-screen bg-[#08081a] text-white flex items-center justify-center">
+        <div className="max-w-sm w-full mx-4">
+          <Link to={createPageUrl('DJBooth')}>
+            <Button variant="ghost" className="mb-6 text-gray-400 hover:text-white">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to NEON DJ
+            </Button>
+          </Link>
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-8">
+            <div className="flex items-center gap-3 mb-6 justify-center">
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#00d4ff] to-[#2563eb] flex items-center justify-center">
+                <Lock className="w-6 h-6 text-black" />
+              </div>
+            </div>
+            <h2 className="text-xl font-bold text-center mb-2">Configuration Locked</h2>
+            <p className="text-sm text-gray-400 text-center mb-6">Enter the master PIN to access system settings</p>
+            <Input
+              value={masterPinInput}
+              onChange={(e) => { setMasterPinInput(e.target.value.replace(/\D/g, '').slice(0, 5)); setUnlockError(''); }}
+              placeholder="Enter master PIN..."
+              className="bg-[#08081a] border-[#1e293b] text-center text-lg tracking-widest mb-3"
+              inputMode="numeric"
+              type="password"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleUnlock(); }}
+            />
+            {unlockError && (
+              <p className="text-sm text-red-400 text-center mb-3">{unlockError}</p>
+            )}
+            <Button
+              onClick={handleUnlock}
+              disabled={masterPinInput.length !== 5}
+              className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+            >
+              Unlock Configuration
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-[#08081a] text-white overflow-y-auto">
@@ -691,18 +773,6 @@ export default function Configuration() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="club-specials" className="text-gray-400">Club Specials</Label>
-                <textarea
-                  id="club-specials"
-                  value={clubSpecials}
-                  onChange={(e) => setClubSpecials(e.target.value)}
-                  placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
-                  rows={3}
-                  className="w-full bg-[#08081a] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
-                />
-                <p className="text-xs text-gray-500">One per line — the DJ will weave these into announcements naturally</p>
-              </div>
             </div>
           </div>
 
