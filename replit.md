@@ -52,6 +52,31 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - SSE remote rotation handler updated to use `preCacheUpcoming`
 - **Files**: `src/components/dj/AnnouncementSystem.jsx`, `src/pages/DJBooth.jsx`
 
+#### Rebuild: AudioEngine — Web Audio API with Gain Bus Architecture
+- **Problem**: Multiple ducking bugs — double duck sound, volume drift after several dancers, duck too slow (4.5s), crossfade and duck animations fighting over `.volume` on same Audio elements
+- **Root Cause**: Old engine used `requestAnimationFrame` to manually set `.volume` on Audio elements for both crossfading AND ducking. These separate animation loops fought each other. Duck was 4.5 seconds (too slow). No gain separation.
+- **Fix**: Complete rebuild using Web Audio API:
+  1. **Signal chain**: Deck A/B → deckGainNode (crossfade) → musicBusGain (ducking) → masterGain (volume) → destination
+  2. **Ducking** uses `exponentialRampToValueAtTime` on `musicBusGain` — 200ms attack, 600ms release. Completely independent of crossfade.
+  3. **Crossfading** operates on deck-level GainNodes with equal-power curves via `requestAnimationFrame`
+  4. **Volume** controlled via `masterGainRef` — consistent across all decks and crossfades
+  5. **MediaElementSource** tracked per Audio element identity to prevent duplicate creation (browser restriction)
+  6. Voice plays through separate HTML5 Audio element (not routed through Web Audio) — independent of ducking
+  7. `DUCK_SETTLE_MS` reduced from 2600ms to 300ms in DJBooth.jsx to match new fast duck
+- **External interface unchanged**: `playTrack`, `duck`, `unduck`, `playAnnouncement`, `pause`, `resume`, `setVolume`, `seek`
+- **Files**: `src/components/dj/AudioEngine.jsx`, `src/pages/DJBooth.jsx`
+
+#### Feature: Booth IP for iPad Remote
+- **Problem**: iPad remote had no way to specify which Pi to connect to; with multiple fleet units this is essential
+- **Fix**:
+  1. Login screen shows "Booth IP Address" input when "DJ Remote" is selected
+  2. IP stored in `localStorage` as `djbooth_booth_ip`
+  3. All API calls and SSE connections dynamically use `http://{ip}:3001/api` when IP is set, or relative `/api` when blank
+  4. CORS enabled on Express server for cross-origin iPad connections
+  5. Options tab shows Pi's local IP addresses under "Remote Connection" section
+  6. SSE reconnection now detects expired sessions and kicks to login (backoff retry)
+- **Files**: `server/index.js`, `src/api/serverApi.js`, `src/pages/Landing.jsx`, `src/components/dj/DJOptions.jsx`
+
 ### Feb 28, 2026 — Session 6 (Break Songs Persistence)
 
 #### Bug Fix: Break Songs Disappearing on Tab Switch

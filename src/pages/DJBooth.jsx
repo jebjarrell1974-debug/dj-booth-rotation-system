@@ -106,7 +106,7 @@ export default function DJBooth() {
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
   
-  const DUCK_SETTLE_MS = 2600;
+  const DUCK_SETTLE_MS = 300;
   const SONG_OVERLAP_DELAY_MS = 10000;
   const waitForDuck = () => {
     lastAudioActivityRef.current = Date.now();
