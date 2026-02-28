@@ -1738,6 +1738,17 @@ export default function DJBooth() {
         if (breakSongs.length > 0) {
           console.log('🎵 HandleTrackEnd: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
           
+          const flippedRotation = [...rot];
+          const [finishedId] = flippedRotation.splice(idx, 1);
+          flippedRotation.push(finishedId);
+          setRotation(flippedRotation);
+          setCurrentDancerIndex(0);
+          setCurrentSongNumber(0);
+          const clearedSongs = { ...rotationSongsRef.current };
+          delete clearedSongs[finishedId];
+          rotationSongsRef.current = clearedSongs;
+          updateStageState(0, flippedRotation);
+
           playingInterstitialRef.current = true;
           interstitialIndexRef.current = 1;
           const firstBreakName = breakSongs[0];
