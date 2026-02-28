@@ -27,7 +27,8 @@ import {
   X,
   FolderOpen,
   SlidersHorizontal,
-  MonitorOff
+  MonitorOff,
+  HelpCircle
 } from 'lucide-react';
 import {
   Dialog,
@@ -2327,6 +2328,17 @@ export default function DJBooth() {
                 <SlidersHorizontal className="w-4 h-4 mr-1" />
                 Options
               </Button>
+              <Link to={createPageUrl('Help')}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-gray-400 hover:text-white"
+                  title="Help"
+                >
+                  <HelpCircle className="w-4 h-4 mr-1" />
+                  Help
+                </Button>
+              </Link>
               <Button
                 variant="ghost"
                 size="sm"

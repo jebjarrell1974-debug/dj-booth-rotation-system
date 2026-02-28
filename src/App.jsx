@@ -11,6 +11,7 @@ import DancerView from '@/pages/DancerView';
 import RotationDisplay from '@/pages/RotationDisplay';
 import Configuration from '@/pages/Configuration';
 import FleetDashboard from '@/pages/FleetDashboard';
+import Help from '@/pages/Help';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -104,6 +105,11 @@ function AppRoutes() {
         <Route path="/FleetDashboard" element={
           <ProtectedRoute allowedRole="dj">
             <FleetDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/Help" element={
+          <ProtectedRoute allowedRole="dj">
+            <Help />
           </ProtectedRoute>
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
