@@ -1051,7 +1051,7 @@ export default function DJBooth() {
     } catch { return null; }
   }, []);
 
-  const getDancerTracks = useCallback(async (dancer) => {
+  const getDancerTracks = useCallback(async (dancer, additionalExcludes = []) => {
     const count = songsPerSetRef.current;
     const alreadyAssigned = getAlreadyAssignedNames();
     const opts = djOptionsRef.current;
@@ -1062,7 +1062,7 @@ export default function DJBooth() {
     const cooldownNames = Object.entries(cooldowns)
       .filter(([, ts]) => ts && (now - ts) < COOLDOWN_MS)
       .map(([name]) => name);
-    const excludeNames = [...new Set([...cooldownNames, ...alreadyAssigned])];
+    const excludeNames = [...new Set([...cooldownNames, ...alreadyAssigned, ...additionalExcludes])];
 
     const activeGenres = opts?.activeGenres?.length > 0 ? opts.activeGenres : [];
     const rawPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
@@ -1088,15 +1088,16 @@ export default function DJBooth() {
       if (res.ok) {
         const data = await res.json();
         const result = data.tracks || [];
-        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks from server, playlist: ${dancerPlaylist.length})`);
+        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks from server, playlist: ${dancerPlaylist.length}, excluded: ${excludeNames.length})`);
         return result;
       }
     } catch (err) {
       console.warn(`⚠️ getDancerTracks: Server select failed for ${dancer?.name}: ${err.message}, using local fallback`);
     }
 
+    const excludeSet = new Set(excludeNames);
     const validTracks = tracks.filter(t => t && t.url);
-    const available = validTracks.filter(t => !alreadyAssigned.has(t.name));
+    const available = validTracks.filter(t => !excludeSet.has(t.name));
     const offCooldown = available.filter(t => {
       const lastPlayed = cooldowns[t.name] || 0;
       return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
@@ -1118,9 +1119,14 @@ export default function DJBooth() {
     const capturedRotation = [...rotation];
     (async () => {
       const selectedSongs = {};
+      const batchExcludes = [];
       for (const dancerId of capturedRotation) {
         const dancer = dancers.find(d => d.id === dancerId);
-        if (dancer) selectedSongs[dancerId] = await getDancerTracks(dancer);
+        if (dancer) {
+          const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+          selectedSongs[dancerId] = dancerTracks;
+          dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
+        }
       }
       if (JSON.stringify(rotationRef.current) !== JSON.stringify(capturedRotation)) {
         console.log('🔄 Rotation changed during restore, discarding stale results');
@@ -1243,6 +1249,7 @@ export default function DJBooth() {
     const cooldowns = songCooldownRef.current || {};
     const now = Date.now();
     const selectedSongs = {};
+    const batchExcludes = [];
     for (const dancerId of cleanRotation) {
       const dancer = dnc.find(d => d.id === dancerId);
       if (dancer) {
@@ -1255,8 +1262,11 @@ export default function DJBooth() {
         });
         if (hasManualPlaylist && existing && existing.length >= count && existing.every(t => t.url) && allOffCooldown) {
           selectedSongs[dancerId] = existing;
+          existing.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
         } else {
-          selectedSongs[dancerId] = await getDancerTracks(dancer);
+          const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+          selectedSongs[dancerId] = dancerTracks;
+          dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
         }
       }
     }
