@@ -28,6 +28,28 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Feb 28, 2026 — Session 8 (Script Generation Improvements)
+
+#### Feature: Script Model Selection
+- **Purpose**: Let the DJ choose which AI model generates announcement scripts
+- **Options**: Auto (built-in AI, no key needed), GPT-4o, GPT-4o Mini, GPT-4.1, GPT-4.1 Mini
+- **Config fields**: `scriptModel` stored in localStorage via `apiConfig.jsx`
+- **OpenAI direct call**: When model is not 'auto' and OpenAI key is set, `generateScript` in AnnouncementSystem calls OpenAI chat completions directly (temp 0.9, freq_penalty 0.6, pres_penalty 0.4, max_tokens 200). Falls back to InvokeLLM when model is 'auto' or no key.
+- **Pre-cache consistency**: Configuration.jsx pre-cache now uses the same OpenAI direct-call path when configured
+- **Files**: `src/components/dj/AnnouncementSystem.jsx`, `src/components/apiConfig.jsx`, `src/pages/DJBooth.jsx`, `src/pages/Configuration.jsx`
+
+#### Feature: Club Specials in Announcements
+- **Purpose**: Let the DJ enter drink specials, promotions, etc. that get woven into announcements naturally
+- **Config field**: `clubSpecials` stored as newline-separated text in localStorage via `apiConfig.jsx`
+- **Prompt integration**: `buildAnnouncementPrompt` in `energyLevels.js` accepts `clubSpecials[]` array and weaves them into the system prompt
+- **UI**: Textarea in both DJBooth settings and Configuration page, one special per line
+- **Files**: `src/utils/energyLevels.js`, `src/pages/DJBooth.jsx`, `src/pages/Configuration.jsx`
+
+#### Feature: Prompt Enhancements (Terminology Lock + Rhythm Rules)
+- **Terminology Lock**: System prompt enforces "round two"/"round three" instead of "around" (common AI mistake)
+- **Rhythm Rules**: Max 2 sentences per line, 6-16 words per sentence, speakable over bass music
+- **File**: `src/utils/energyLevels.js`
+
 ### Feb 28, 2026 — Session 7 (Break Song Ducking, Rotation Flip, Pre-Cache Fix)
 
 #### Bug Fix: Break Song Ducking

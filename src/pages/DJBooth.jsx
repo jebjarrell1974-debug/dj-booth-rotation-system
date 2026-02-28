@@ -319,8 +319,9 @@ export default function DJBooth() {
   const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [announcementsEnabled, setAnnouncementsEnabled] = useState(true);
+  const [scriptModel, setScriptModel] = useState('auto');
+  const [clubSpecials, setClubSpecials] = useState('');
 
-  // Announcement reference
   const announcementRef = useRef(null);
 
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -331,6 +332,8 @@ export default function DJBooth() {
       setOpenaiKey(config.openaiApiKey);
       setAnnouncementsEnabled(config.announcementsEnabled);
       setVoiceId(config.elevenLabsVoiceId);
+      setScriptModel(config.scriptModel || 'auto');
+      setClubSpecials(config.clubSpecials || '');
       setConfigLoaded(true);
     });
   }, []);
@@ -342,8 +345,10 @@ export default function DJBooth() {
       elevenLabsApiKey: elevenLabsKey,
       elevenLabsVoiceId: voiceId,
       announcementsEnabled,
+      scriptModel,
+      clubSpecials,
     });
-  }, [openaiKey, elevenLabsKey, voiceId, announcementsEnabled, configLoaded]);
+  }, [openaiKey, elevenLabsKey, voiceId, announcementsEnabled, scriptModel, clubSpecials, configLoaded]);
 
   const handleImportVoiceovers = async () => {
     if (!window.showDirectoryPicker) {
@@ -2766,7 +2771,26 @@ export default function DJBooth() {
                   placeholder="sk-..."
                   className="bg-[#151528] border-[#1e1e3a]"
                 />
-                <p className="text-xs text-gray-500">Used for generating announcement scripts</p>
+                <p className="text-xs text-gray-500">Optional — enables model selection below</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="script-model">Script Generation Model</Label>
+                <select
+                  id="script-model"
+                  value={scriptModel}
+                  onChange={(e) => setScriptModel(e.target.value)}
+                  className="w-full bg-[#151528] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2"
+                >
+                  <option value="auto">Auto (Built-in AI)</option>
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini</option>
+                  <option value="gpt-4.1">GPT-4.1</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  {scriptModel === 'auto' ? 'Uses built-in AI — no OpenAI key needed' : 'Requires OpenAI API key above'}
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -2812,6 +2836,19 @@ export default function DJBooth() {
                   onChange={(e) => setAnnouncementsEnabled(e.target.checked)}
                   className="w-10 h-6"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="club-specials">Club Specials</Label>
+                <textarea
+                  id="club-specials"
+                  value={clubSpecials}
+                  onChange={(e) => setClubSpecials(e.target.value)}
+                  placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
+                  rows={3}
+                  className="w-full bg-[#151528] border border-[#1e1e3a] text-white text-sm rounded-md px-3 py-2 resize-none"
+                />
+                <p className="text-xs text-gray-500">One per line — the DJ will weave these into announcements naturally</p>
               </div>
             </div>
 

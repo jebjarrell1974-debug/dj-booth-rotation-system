@@ -122,9 +122,27 @@ Keep it sounding like a real experienced DJ speaking over music.
 Keep adult tone suggestive but not explicit.
 
 Vary sentence length for rhythm.
-Do not reuse identical phrasing across announcements.`;
+Do not reuse identical phrasing across announcements.
 
-export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, clubName) => {
+---
+TERMINOLOGY LOCK (CRITICAL)
+---
+Use "round two" or "round three" when referring to the dancer's set progression.
+Never use the word "around" when announcing rounds.
+"Round" refers to the dancer's song rotation within her set.
+Example: "She's on round two." / "Let's finish strong on round three."
+
+---
+RHYTHM RULES
+---
+Maximum 2 sentences per line.
+6 to 16 words per sentence.
+Avoid complex grammar.
+Avoid more than 3 stressed syllables in a row.
+Lines must feel speakable over bass-heavy music.
+Use natural pause markers like "..." sparingly.`;
+
+export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, clubName, clubSpecials = []) => {
   const level = Math.max(1, Math.min(5, energyLevel || 3));
   const levelInfo = ENERGY_LEVELS[level];
   const shiftType = levelInfo.shiftType;
@@ -227,6 +245,11 @@ Confidence level: ${shift.confidence}`;
   ];
 
   if (clubLine) parts.push(clubLine);
+
+  if (clubSpecials && clubSpecials.length > 0) {
+    parts.push(`CLUB SPECIALS (weave naturally into the announcement — do not list mechanically):
+${clubSpecials.map(s => `- ${s}`).join('\n')}`);
+  }
 
   parts.push(`OUTPUT FORMAT:
 Write the announcement as flowing spoken text — exactly what the DJ would say over the mic.
