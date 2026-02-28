@@ -38,6 +38,7 @@ export default function RotationPlaylistManager({
   songsPerSet,
   onSongsPerSetChange,
   activeRotationSongs,
+  savedInterstitials,
   djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
@@ -49,7 +50,13 @@ export default function RotationPlaylistManager({
   const [activeGenre, setActiveGenre] = useState(null);
   const [localRotation, setLocalRotation] = useState(rotation);
   const [songAssignments, setSongAssignments] = useState({});
-  const [interstitialSongs, setInterstitialSongs] = useState({});
+  const [interstitialSongs, setInterstitialSongs] = useState(() => {
+    if (savedInterstitials && Object.keys(savedInterstitials).length > 0) return savedInterstitials;
+    try {
+      const saved = localStorage.getItem('djbooth_interstitial_songs');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [selectedDancerId, setSelectedDancerId] = useState(null);
   const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
   const appliedPlaylistsRef = React.useRef({});
@@ -71,6 +78,12 @@ export default function RotationPlaylistManager({
   useEffect(() => {
     setLocalRotation(rotation);
   }, [rotation]);
+
+  useEffect(() => {
+    if (Object.keys(interstitialSongs).length > 0) {
+      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongs)); } catch {}
+    }
+  }, [interstitialSongs]);
 
   useEffect(() => {
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {

@@ -96,7 +96,12 @@ export default function DJBooth() {
   const watchdogRecoveringRef = useRef(false);
   const rotationPendingRef = useRef(false);
   const [rotationPending, setRotationPending] = useState(false);
-  const interstitialSongsRef = useRef({});
+  const interstitialSongsRef = useRef((() => {
+    try {
+      const saved = localStorage.getItem('djbooth_interstitial_songs');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  })());
   const playingInterstitialRef = useRef(false);
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
@@ -2475,6 +2480,7 @@ export default function DJBooth() {
                 tracks={tracks}
                 djOptions={djOptions}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
+                savedInterstitials={interstitialSongsRef.current}
                 onAutoSavePlaylist={async (dancerId, newSongs) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
@@ -2501,6 +2507,7 @@ export default function DJBooth() {
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
+                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
                   Object.entries(playlists).forEach(([dancerId, newSongs]) => {
                     const dancer = dancers.find(d => d.id === dancerId);
                     const existingPlaylist = dancer?.playlist || [];

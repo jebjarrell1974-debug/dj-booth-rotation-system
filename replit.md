@@ -28,6 +28,18 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Feb 28, 2026 — Session 6 (Break Songs Persistence)
+
+#### Bug Fix: Break Songs Disappearing on Tab Switch
+- **Problem**: DJ sets break songs between each dancer's set, hits Save All, then navigates to another tab (Dancers, Options, etc.) and comes back — all break songs are gone
+- **Root Cause**: `interstitialSongs` state in `RotationPlaylistManager.jsx` was initialized as `{}` on every mount. Since the component unmounts when switching tabs, all break song data was lost. `interstitialSongsRef` in DJBooth.jsx kept the data in memory but never passed it back to the component on re-mount
+- **Fix**:
+  1. Break songs now persist to `localStorage` as `djbooth_interstitial_songs` (saved on every change and on Save All)
+  2. `RotationPlaylistManager` initializes from `savedInterstitials` prop (from DJBooth ref) or falls back to `localStorage`
+  3. `DJBooth.jsx` loads break songs from `localStorage` on mount via IIFE in `useRef`
+  4. New `savedInterstitials` prop passes current break songs from DJBooth into RotationPlaylistManager
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`
+
 ### Feb 27, 2026 — Session 5 (Music Library Scaling for 30k+ Songs)
 
 #### Feature: Incremental Music Scanner
