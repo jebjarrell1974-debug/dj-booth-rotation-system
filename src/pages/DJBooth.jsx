@@ -111,6 +111,7 @@ export default function DJBooth() {
     } catch { return {}; }
   })());
   const [interstitialSongsState, setInterstitialSongsState] = useState(() => interstitialSongsRef.current);
+  const [interstitialRemoteVersion, setInterstitialRemoteVersion] = useState(0);
   const playingInterstitialRef = useRef(false);
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
@@ -716,6 +717,7 @@ export default function DJBooth() {
                   }
                   interstitialSongsRef.current = current;
                   setInterstitialSongsState(current);
+                  setInterstitialRemoteVersion(v => v + 1);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(current)); } catch {}
                 } catch (err) {
                   console.warn('⚠️ Break song auto-populate failed:', err.message);
@@ -724,6 +726,7 @@ export default function DJBooth() {
             } else if (c === 0) {
               interstitialSongsRef.current = {};
               setInterstitialSongsState({});
+              setInterstitialRemoteVersion(v => v + 1);
               try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
             }
           }
@@ -2749,6 +2752,7 @@ export default function DJBooth() {
                 djOptions={djOptions}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
                 savedInterstitials={interstitialSongsState}
+                interstitialRemoteVersion={interstitialRemoteVersion}
                 onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
