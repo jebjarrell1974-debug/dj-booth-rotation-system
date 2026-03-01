@@ -1,0 +1,23 @@
+neonaidj001@raspberrypi:~ $ sudo nano /etc/systemd/system/djbooth.service
+neonaidj001@raspberrypi:~ $ sudo journalctl -u djbooth --no-pager -n 20
+Mar 01 07:24:18 raspberrypi node[12235]: 📁 index.html exists: true
+Mar 01 07:24:18 raspberrypi node[12235]: 🎵 NEON AI DJ server running on port 3001
+Mar 01 07:24:18 raspberrypi node[12235]: 🎵 MusicScanner: Incremental scan of /home/neonaidj001/Desktop/DJ MUSIC...
+Mar 01 07:24:18 raspberrypi node[12235]: 🎵 MusicScanner: Upserted 8970, removed 0, total 8970 in 0.3s
+Mar 01 07:25:34 raspberrypi systemd[1]: /etc/systemd/system/djbooth.service.d/override.conf:6: Invalid environment assignment, ignoring: MUSIC
+Mar 01 07:25:34 raspberrypi systemd[1]: Stopping djbooth.service - DJ Booth Rotation System...
+Mar 01 07:25:34 raspberrypi node[12235]: 🛑 Shutting down gracefully...
+Mar 01 07:25:34 raspberrypi node[12235]: 🔒 Database closed cleanly
+Mar 01 07:25:34 raspberrypi systemd[1]: djbooth.service: Deactivated successfully.
+Mar 01 07:25:34 raspberrypi systemd[1]: Stopped djbooth.service - DJ Booth Rotation System.
+Mar 01 07:25:34 raspberrypi systemd[1]: Started djbooth.service - DJ Booth Rotation System.
+Mar 01 07:25:34 raspberrypi node[12609]: 📂 Database path: /home/neonaidj001/data/djbooth.db
+Mar 01 07:25:34 raspberrypi node[12609]: 🎙️ Voiceover directory: /home/neonaidj001/Desktop/VOICE OVERS FOR AUTO DJ
+Mar 01 07:25:34 raspberrypi node[12609]: 📁 Serving static files from: /home/neonaidj001/djbooth/dist/public
+Mar 01 07:25:34 raspberrypi node[12609]: 📁 dist/public exists: true
+Mar 01 07:25:34 raspberrypi node[12609]: 📁 index.html exists: true
+Mar 01 07:25:34 raspberrypi node[12609]: 🎵 NEON AI DJ server running on port 3001
+Mar 01 07:25:34 raspberrypi node[12609]: 🎵 MusicScanner: Incremental scan of /home/neonaidj001/Desktop/NEONAIDJ...
+Mar 01 07:25:34 raspberrypi node[12609]: ⚠️ MusicScanner: Cannot read directory /home/neonaidj001/Desktop/NEONAIDJ: ENOENT: no such file or directory, scandir '/home/neonaidj001/Desktop/NEONAIDJ'
+Mar 01 07:25:34 raspberrypi node[12609]: 🎵 MusicScanner: Upserted 0, removed 0, total 0 in 0.0s
+neonaidj001@raspberrypi:~ $ 
