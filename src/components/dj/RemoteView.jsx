@@ -40,6 +40,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
   const voiceGainPercent = Math.round(currentVoiceGain * 100);
   const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
+  const interstitialSongs = liveBoothState?.interstitialSongs || {};
 
   const trackTime = liveBoothState?.trackTime || 0;
   const trackDuration = liveBoothState?.trackDuration || 0;
@@ -314,54 +315,64 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                       if (!dancer) return null;
                       const isCurrent = idx === currentDancerIndex && isRotationActive;
                       const dancerSongs = rotationSongs[dancerId] || [];
+                      const breakKey = `after-${dancerId}`;
+                      const breakSongs = interstitialSongs[breakKey] || [];
                       return (
-                        <div
-                          key={dancerId}
-                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
-                            isCurrent
-                              ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
-                              : 'bg-[#0d0d1f] border-[#1e293b]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-0 flex-shrink-0">
-                            <button
-                              onClick={() => boothApi.sendCommand('moveInRotation', { dancerId, direction: 'up' })}
-                              className="w-11 h-11 flex items-center justify-center text-gray-500 active:text-white rounded-lg"
-                              disabled={idx === 0}
-                            >
-                              <ChevronUp className="w-6 h-6" />
-                            </button>
-                            <button
-                              onClick={() => boothApi.sendCommand('moveInRotation', { dancerId, direction: 'down' })}
-                              className="w-11 h-11 flex items-center justify-center text-gray-500 active:text-white rounded-lg"
-                              disabled={idx === rotationList.length - 1}
-                            >
-                              <ChevronDown className="w-6 h-6" />
-                            </button>
-                          </div>
+                        <div key={dancerId} className="space-y-1">
                           <div
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0"
-                            style={{ backgroundColor: dancer.color || '#00d4ff' }}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
+                              isCurrent
+                                ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
+                                : 'bg-[#0d0d1f] border-[#1e293b]'
+                            }`}
                           >
-                            {dancer.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-base font-medium ${isCurrent ? 'text-[#00d4ff]' : 'text-white'}`}>
-                              {dancer.name}
-                              {isCurrent && <span className="ml-2 text-sm text-[#00d4ff]/70">◀ NOW</span>}
-                            </p>
-                            {dancerSongs.length > 0 && (
-                              <p className="text-sm text-gray-500 truncate">
-                                {dancerSongs.map(s => typeof s === 'string' ? s : s.name).join(', ')}
+                            <div className="flex items-center gap-0 flex-shrink-0">
+                              <button
+                                onClick={() => boothApi.sendCommand('moveInRotation', { dancerId, direction: 'up' })}
+                                className="w-11 h-11 flex items-center justify-center text-gray-500 active:text-white rounded-lg"
+                                disabled={idx === 0}
+                              >
+                                <ChevronUp className="w-6 h-6" />
+                              </button>
+                              <button
+                                onClick={() => boothApi.sendCommand('moveInRotation', { dancerId, direction: 'down' })}
+                                className="w-11 h-11 flex items-center justify-center text-gray-500 active:text-white rounded-lg"
+                                disabled={idx === rotationList.length - 1}
+                              >
+                                <ChevronDown className="w-6 h-6" />
+                              </button>
+                            </div>
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0"
+                              style={{ backgroundColor: dancer.color || '#00d4ff' }}
+                            >
+                              {dancer.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-base font-medium ${isCurrent ? 'text-[#00d4ff]' : 'text-white'}`}>
+                                {dancer.name}
+                                {isCurrent && <span className="ml-2 text-sm text-[#00d4ff]/70">◀ NOW</span>}
                               </p>
-                            )}
+                              {dancerSongs.length > 0 && (
+                                <p className="text-sm text-gray-500 truncate">
+                                  {dancerSongs.map(s => typeof s === 'string' ? s : s.name).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => boothApi.sendCommand('removeDancerFromRotation', { dancerId })}
+                              className="p-3 text-red-400/60 active:text-red-400 transition-colors flex-shrink-0"
+                            >
+                              <X className="w-6 h-6" />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => boothApi.sendCommand('removeDancerFromRotation', { dancerId })}
-                            className="p-3 text-red-400/60 active:text-red-400 transition-colors flex-shrink-0"
-                          >
-                            <X className="w-6 h-6" />
-                          </button>
+                          {breakSongs.length > 0 && (
+                            <div className="ml-14 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                              <p className="text-xs text-violet-400 truncate">
+                                ♫ {breakSongs.join(', ')}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
