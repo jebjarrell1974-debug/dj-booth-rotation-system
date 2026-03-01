@@ -39,6 +39,7 @@ export default function RotationPlaylistManager({
   onSongsPerSetChange,
   activeRotationSongs,
   savedInterstitials,
+  interstitialRemoteVersion,
   djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
@@ -89,12 +90,10 @@ export default function RotationPlaylistManager({
   }, [interstitialSongs]);
 
   useEffect(() => {
-    if (savedInterstitials && Object.keys(savedInterstitials).length > 0) {
-      setInterstitialSongs(savedInterstitials);
-    } else if (savedInterstitials && Object.keys(savedInterstitials).length === 0) {
-      setInterstitialSongs({});
+    if (interstitialRemoteVersion > 0) {
+      setInterstitialSongs(savedInterstitials || {});
     }
-  }, [savedInterstitials]);
+  }, [interstitialRemoteVersion]);
 
   useEffect(() => {
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
