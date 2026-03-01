@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { toast } from 'sonner';
@@ -52,6 +52,9 @@ export default function Configuration() {
   const [newFleetIp, setNewFleetIp] = useState('');
   const [fleetStatus, setFleetStatus] = useState({});
   const [fleetUpdating, setFleetUpdating] = useState(false);
+  const [r2Status, setR2Status] = useState(null);
+  const [r2Loading, setR2Loading] = useState(false);
+  const [r2Syncing, setR2Syncing] = useState({ voUp: false, voDown: false, muUp: false, muDown: false });
 
   const config = getApiConfig();
   const currentLevel = getCurrentEnergyLevel({ clubOpenHour, clubCloseHour, energyOverride: config.energyOverride });
@@ -1057,6 +1060,176 @@ export default function Configuration() {
                 {fleetUpdating ? 'Updating...' : 'Update All'}
               </Button>
             </div>
+          )}
+        </div>
+
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Cloud className="w-5 h-5 text-violet-400" />
+            <h2 className="text-lg font-semibold">Cloud Sync (R2)</h2>
+            {r2Status && r2Status.configured && !r2Status.error && (
+              <span className="ml-auto text-xs text-green-400">Connected</span>
+            )}
+          </div>
+          <p className="text-sm text-gray-400 mb-4">
+            Sync voiceovers and music across all Pi units via Cloudflare R2 cloud storage.
+          </p>
+
+          <div className="mb-4">
+            <Button
+              onClick={async () => {
+                setR2Loading(true);
+                try {
+                  const token = sessionStorage.getItem('djbooth_token');
+                  const res = await fetch('/api/r2/status', { headers: { Authorization: `Bearer ${token}` } });
+                  const data = await res.json();
+                  setR2Status(data);
+                  if (!data.configured) toast.error('R2 not configured — add R2 env vars to the server');
+                  else if (data.error) toast.error(`R2 error: ${data.error}`);
+                } catch (err) {
+                  toast.error('Failed to check R2 status');
+                }
+                setR2Loading(false);
+              }}
+              className="w-full bg-[#1e293b] hover:bg-[#1e293b]/80 text-white"
+              disabled={r2Loading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${r2Loading ? 'animate-spin' : ''}`} />
+              {r2Loading ? 'Checking...' : 'Check Cloud Status'}
+            </Button>
+          </div>
+
+          {r2Status && r2Status.configured && !r2Status.error && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="bg-[#08081a] rounded-lg p-3 border border-[#1e293b]">
+                  <p className="text-2xl font-bold text-violet-400">{r2Status.voiceovers?.count || 0}</p>
+                  <p className="text-xs text-gray-500">Voiceovers ({r2Status.voiceovers?.sizeMB || 0} MB)</p>
+                </div>
+                <div className="bg-[#08081a] rounded-lg p-3 border border-[#1e293b]">
+                  <p className="text-2xl font-bold text-[#00d4ff]">{r2Status.music?.count || 0}</p>
+                  <p className="text-xs text-gray-500">Music ({r2Status.music?.sizeMB >= 1024 ? `${(r2Status.music.sizeMB / 1024).toFixed(1)} GB` : `${r2Status.music?.sizeMB || 0} MB`})</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Voiceovers</p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={async () => {
+                      setR2Syncing(s => ({ ...s, voUp: true }));
+                      try {
+                        const token = sessionStorage.getItem('djbooth_token');
+                        const res = await fetch('/api/r2/sync/voiceovers', {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ direction: 'upload' }),
+                        });
+                        const data = await res.json();
+                        if (data.ok) toast.success(`Uploaded ${data.uploaded} voiceovers (${data.skipped} already in cloud)`);
+                        else toast.error(data.error);
+                      } catch { toast.error('Upload failed'); }
+                      setR2Syncing(s => ({ ...s, voUp: false }));
+                    }}
+                    className="flex-1 bg-violet-600 hover:bg-violet-500 text-white"
+                    disabled={r2Syncing.voUp}
+                  >
+                    <CloudUpload className={`w-4 h-4 mr-2 ${r2Syncing.voUp ? 'animate-pulse' : ''}`} />
+                    {r2Syncing.voUp ? 'Uploading...' : 'Upload to Cloud'}
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      setR2Syncing(s => ({ ...s, voDown: true }));
+                      try {
+                        const token = sessionStorage.getItem('djbooth_token');
+                        const res = await fetch('/api/r2/sync/voiceovers', {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ direction: 'download' }),
+                        });
+                        const data = await res.json();
+                        if (data.ok) toast.success(`Downloaded ${data.downloaded} voiceovers (${data.skipped} already local)`);
+                        else toast.error(data.error);
+                      } catch { toast.error('Download failed'); }
+                      setR2Syncing(s => ({ ...s, voDown: false }));
+                    }}
+                    className="flex-1 bg-[#1e293b] hover:bg-[#1e293b]/80 text-white"
+                    disabled={r2Syncing.voDown}
+                  >
+                    <CloudDownload className={`w-4 h-4 mr-2 ${r2Syncing.voDown ? 'animate-pulse' : ''}`} />
+                    {r2Syncing.voDown ? 'Downloading...' : 'Download from Cloud'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Music</p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={async () => {
+                      setR2Syncing(s => ({ ...s, muUp: true }));
+                      toast.info('Uploading music — this may take a while for large libraries...');
+                      try {
+                        const token = sessionStorage.getItem('djbooth_token');
+                        const res = await fetch('/api/r2/sync/music', {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ direction: 'upload' }),
+                        });
+                        const data = await res.json();
+                        if (data.ok) toast.success(`Uploaded ${data.uploaded} tracks (${data.skipped} already in cloud)`);
+                        else toast.error(data.error);
+                      } catch { toast.error('Upload failed'); }
+                      setR2Syncing(s => ({ ...s, muUp: false }));
+                    }}
+                    className="flex-1 bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+                    disabled={r2Syncing.muUp}
+                  >
+                    <CloudUpload className={`w-4 h-4 mr-2 ${r2Syncing.muUp ? 'animate-pulse' : ''}`} />
+                    {r2Syncing.muUp ? 'Uploading...' : 'Upload to Cloud'}
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      setR2Syncing(s => ({ ...s, muDown: true }));
+                      toast.info('Downloading music — this may take a while for large libraries...');
+                      try {
+                        const token = sessionStorage.getItem('djbooth_token');
+                        const res = await fetch('/api/r2/sync/music', {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ direction: 'download' }),
+                        });
+                        const data = await res.json();
+                        if (data.ok) toast.success(`Downloaded ${data.downloaded} tracks (${data.skipped} already local)`);
+                        else toast.error(data.error);
+                      } catch { toast.error('Download failed'); }
+                      setR2Syncing(s => ({ ...s, muDown: false }));
+                    }}
+                    className="flex-1 bg-[#1e293b] hover:bg-[#1e293b]/80 text-white"
+                    disabled={r2Syncing.muDown}
+                  >
+                    <CloudDownload className={`w-4 h-4 mr-2 ${r2Syncing.muDown ? 'animate-pulse' : ''}`} />
+                    {r2Syncing.muDown ? 'Downloading...' : 'Download from Cloud'}
+                  </Button>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-600 text-center">
+                Sync also runs automatically on every Pi boot
+              </p>
+            </div>
+          )}
+
+          {r2Status && !r2Status.configured && (
+            <p className="text-sm text-red-400 text-center py-3">
+              R2 is not configured. Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME to the server environment variables.
+            </p>
+          )}
+
+          {r2Status && r2Status.error && (
+            <p className="text-sm text-red-400 text-center py-3">
+              R2 error: {r2Status.error}
+            </p>
           )}
         </div>
 

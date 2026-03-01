@@ -149,7 +149,7 @@ curl -o ~/djbooth-update.sh https://raw.githubusercontent.com/jebjarrell1974-deb
 ~/djbooth-update.sh
 ```
 
-**6. Create the systemd service** (replace `neonaidj001` with the Pi's username)
+**6. Create the systemd service** (replace `neonaidj001` with the Pi's username, and fill in R2 keys)
 ```bash
 sudo tee /etc/systemd/system/djbooth.service > /dev/null << 'EOF'
 [Unit]
@@ -165,6 +165,10 @@ Environment=PORT=3001
 Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
 Environment=VOICEOVER_DIR=/home/neonaidj001/data/voiceovers
 Environment=MUSIC_PATH=/home/neonaidj001/Desktop/NEONAIDJ MUSIC
+Environment=R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
+Environment=R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
+Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
+Environment=R2_BUCKET_NAME=neonaidj
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
@@ -267,6 +271,10 @@ Environment=PORT=3001
 Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
 Environment=VOICEOVER_DIR=/home/neonaidj001/data/voiceovers
 Environment=MUSIC_PATH=/home/neonaidj001/Desktop/NEONAIDJ MUSIC
+Environment=R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
+Environment=R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
+Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
+Environment=R2_BUCKET_NAME=neonaidj
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
