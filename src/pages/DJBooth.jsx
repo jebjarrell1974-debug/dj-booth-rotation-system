@@ -24,6 +24,7 @@ import {
   Check,
   Wifi,
   Plus,
+  Minus,
   X,
   FolderOpen,
   SlidersHorizontal,
@@ -2318,20 +2319,33 @@ export default function DJBooth() {
                     <SkipForward className="w-4 h-4" />
                   </Button>
                   
-                  <div className="flex-1 flex items-center gap-2">
+                  <div className="flex-1 flex items-center gap-2 justify-end">
                     <Volume2 className="w-4 h-4 text-gray-500" />
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={volume * 100}
-                      onChange={(e) => {
-                        const vol = parseFloat(e.target.value) / 100;
+                    <button
+                      onClick={() => {
+                        const vol = Math.max(0, volume - 0.05);
                         setVolume(vol);
                         audioEngineRef.current?.setVolume(vol);
                       }}
-                      className="flex-1 h-1"
-                    />
+                      disabled={Math.round(volume * 100) <= 0}
+                      className="w-8 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <div className="w-12 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
+                      <span className="text-sm font-bold text-white tabular-nums">{Math.round(volume * 100)}%</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const vol = Math.min(1, volume + 0.05);
+                        setVolume(vol);
+                        audioEngineRef.current?.setVolume(vol);
+                      }}
+                      disabled={Math.round(volume * 100) >= 100}
+                      className="w-8 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
                 
