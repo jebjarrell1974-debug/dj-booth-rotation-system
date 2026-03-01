@@ -54,3 +54,8 @@ publicDir = "dist/public"
 
 [userenv.production]
 NODE_ENV = "production"
+
+[userenv.shared]
+R2_ACCOUNT_ID = "bb98a67dc31c28d8f39a55429bccb759"
+R2_BUCKET_NAME = "neonaidj"
+R2_ENDPOINT = "https://bb98a67dc31c28d8f39a55429bccb759.r2.cloudflarestorage.com"
