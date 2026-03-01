@@ -161,14 +161,16 @@ STRUCTURE — this is the big moment, build it up:
 1. Open with a commanding attention-grabber (address the crowd)
 2. Direct the audience to get their money ready (call-to-action)
 3. Build anticipation — she's coming to the stage
-4. Land her name at the END for maximum impact
+4. Land her name for maximum impact
+
+NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" 2-3 times total, spaced naturally throughout the announcement — NOT clustered together. Drop the name early to get attention, weave it into the middle for buildup, and land it again at the end. In a loud club people need to hear the name more than once.`}
 
 EXAMPLE (match this energy and structure, but create original lines):
-"Ladies and gentlemen, it's time to light that stage on fire. It's your chance to grab some dollars and make it rain on ${displayName}."
-"Right about now I need all eyes on the main stage. Fellas get those dollars ready because coming to the stage she goes by the name of ${displayName}."
-"Let's fire up the main stage gentlemen. We're doing it right on a ${dayOfWeek} night with the one and only ${displayName}."
+"All right ladies and gentlemen main stage get ready for the ultimate performance. ${displayName} is coming up to make some dreams come true. That's right gentlemen grab some cash and hit that stage. This is ${displayName}."
+"Right about now I need all eyes on the main stage for ${displayName}. Fellas get those dollars ready because she's about to set it off. Coming to the stage the one and only ${displayName}."
+"Let's fire up the main stage gentlemen. We're doing it right on a ${dayOfWeek} night. ${displayName} is heading your way so get those dollars out. Give it up for ${displayName}."
 
-Output should be 3-5 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
+Output should be 3-5 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — say it 2-3 times, spaced out naturally.`}`;
 
   } else if (type === 'round2') {
     const roundLabel = roundNumber >= 3 ? 'round three' : 'round two';
@@ -217,13 +219,15 @@ STRUCTURE — thank outgoing, hype incoming:
 1. Quick thank you / love for the outgoing dancer + VIP mention
 2. Transition phrase — keep the energy rolling
 3. Build up the incoming dancer
-4. Land the incoming dancer's name at the END
+4. Land the incoming dancer's name
+
+NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say the INCOMING dancer's name ("${nextName}") 2-3 times, spaced naturally throughout the hype-up portion. The outgoing dancer's name ("${outgoingRef}") only needs to be said once. In a loud club people need to hear the new name more than once.`}
 
 EXAMPLE (match this energy, create original lines):
-"One more time for the lovely ${outgoingRef}. She's heading to VIP so don't miss your chance. Now let's fire up the main stage. It's back to back with the one and only ${nextName}."
-"Show some love for ${outgoingRef} gentlemen. She's available for private dances. Right about now coming to the stage give it up for ${nextName}."
+"One more time for the lovely ${outgoingRef}. She's heading to VIP so don't miss your chance. Now let's fire up the main stage for ${nextName}. That's right gentlemen it's back to back. Get those dollars ready for the one and only ${nextName}."
+"Show some love for ${outgoingRef} gentlemen. She's available for private dances. Right about now ${nextName} is coming to the stage. Get your cash out because ${nextName} is about to make it happen."
 
-Output should be 3-5 sentences. Rhyming and wordplay encouraged if natural (e.g. "doing it right on a ${dayOfWeek} night"). ${isGeneric ? 'Do not use a specific name.' : ''}`;
+Output should be 3-5 sentences. Rhyming and wordplay encouraged if natural (e.g. "doing it right on a ${dayOfWeek} night"). ${isGeneric ? 'Do not use a specific name.' : `Say ${nextName} 2-3 times, spaced out naturally.`}`;
   }
 
   const shiftBlock = `SHIFT TYPE: ${shiftType}
