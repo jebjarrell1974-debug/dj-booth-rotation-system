@@ -82,7 +82,9 @@ npm prune --production 2>&1 | tail -1
 rm -rf "$TMPDIR"
 
 echo "[6/7] Restarting service..."
-if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
+  echo "Running as boot service — skipping restart (systemd will start djbooth next)"
+elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   sudo systemctl restart "$SERVICE_NAME"
   sleep 3
   if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then

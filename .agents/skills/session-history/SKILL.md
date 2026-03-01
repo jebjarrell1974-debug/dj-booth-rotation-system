@@ -216,6 +216,7 @@ Before=djbooth.service
 Type=oneshot
 User=USERNAME
 WorkingDirectory=/home/USERNAME/djbooth
+Environment=DJBOOTH_BOOT_UPDATE=1
 ExecStart=/home/USERNAME/djbooth-update.sh
 TimeoutStartSec=300
 StandardOutput=journal
