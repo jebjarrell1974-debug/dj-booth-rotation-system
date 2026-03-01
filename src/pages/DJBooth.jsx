@@ -724,7 +724,14 @@ export default function DJBooth() {
             const c = Math.max(0, Math.min(3, cmd.payload.count));
             setBreakSongsPerSet(c);
             breakSongsPerSetRef.current = c;
-            if (c > 0) autoPopulateBreakSongs(c);
+            if (c > 0) {
+              autoPopulateBreakSongs(c);
+            } else {
+              interstitialSongsRef.current = {};
+              setInterstitialSongsState({});
+              setInterstitialRemoteVersion(v => v + 1);
+              try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
+            }
           }
           break;
         case 'moveInRotation':
@@ -2906,7 +2913,14 @@ export default function DJBooth() {
                 onBreakSongsPerSetChange={(n) => {
                   setBreakSongsPerSet(n);
                   breakSongsPerSetRef.current = n;
-                  if (n > 0) autoPopulateBreakSongs(n);
+                  if (n > 0) {
+                    autoPopulateBreakSongs(n);
+                  } else {
+                    interstitialSongsRef.current = {};
+                    setInterstitialSongsState({});
+                    setInterstitialRemoteVersion(v => v + 1);
+                    try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
+                  }
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={(n) => {
