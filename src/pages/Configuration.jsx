@@ -162,7 +162,7 @@ export default function Configuration() {
     }
 
     if (rotation.length === 0) {
-      toast.error('No dancers in rotation to cache');
+      toast.error('No entertainers in rotation to cache');
       return;
     }
 
@@ -674,7 +674,7 @@ export default function Configuration() {
               <div>
                 <p className="text-sm font-medium text-white">Enable Automatic Announcements</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Play AI-generated voice announcements during dancer rotations
+                  Play AI-generated voice announcements during entertainer rotations
                 </p>
               </div>
               <Switch
@@ -883,7 +883,7 @@ export default function Configuration() {
               Pre-Cache Announcements
             </h3>
             <p className="text-sm text-gray-400 mb-4">
-              Generate and cache all announcements for dancers in rotation. Already cached announcements will be skipped.
+              Generate and cache all announcements for entertainers in rotation. Already cached announcements will be skipped.
             </p>
             <Button 
               onClick={handlePreCache} 
@@ -895,7 +895,7 @@ export default function Configuration() {
             </Button>
             {rotation.length > 0 && (
               <p className="text-xs text-gray-500 text-center mt-2">
-                {rotation.length} dancers in rotation ready to cache
+                {rotation.length} entertainers in rotation ready to cache
               </p>
             )}
           </div>

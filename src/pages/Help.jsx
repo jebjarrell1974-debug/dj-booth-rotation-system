@@ -11,7 +11,7 @@ const sections = [
     content: [
       {
         heading: 'Logging In',
-        text: 'From the main screen, tap "DJ Booth" and enter your 5-digit DJ PIN to access the booth controls. Dancers tap "Dancer Login" and enter their own PIN. The default DJ PIN is set up in Configuration.'
+        text: 'From the main screen, tap "DJ Booth" and enter your 5-digit DJ PIN to access the booth controls. Entertainers tap "Entertainer" and enter their own PIN. The default DJ PIN is set up in Configuration.'
       },
       {
         heading: 'First-Time Setup',
@@ -19,7 +19,7 @@ const sections = [
       },
       {
         heading: 'Quick Start',
-        text: 'Once your music path is set, the system scans your music automatically. Add dancers in the Dancers tab, build the rotation in the Rotation tab, and hit "Start Rotation" — the system handles the rest: music playback, announcements, and transitions.'
+        text: 'Once your music path is set, the system scans your music automatically. Add entertainers in the Entertainers tab, build the rotation in the Rotation tab, and hit "Start Rotation" — the system handles the rest: music playback, announcements, and transitions.'
       }
     ]
   },
@@ -30,7 +30,7 @@ const sections = [
     content: [
       {
         heading: 'Music Mode',
-        text: 'Choose between "Dancer First" (plays from the dancer\'s personal playlist first, then fills with random tracks) or "Random" (picks from the full library). Dancer First is the default and recommended mode.'
+        text: 'Choose between "Entertainer First" (plays from the entertainer\'s personal playlist first, then fills with random tracks) or "Random" (picks from the full library). Entertainer First is the default and recommended mode.'
       },
       {
         heading: 'Active Genres',
@@ -38,7 +38,7 @@ const sections = [
       },
       {
         heading: 'Songs Per Set',
-        text: 'Controls how many songs each dancer gets per rotation set. The system auto-advances to the next dancer when the set is complete.'
+        text: 'Controls how many songs each entertainer gets per rotation set. The system auto-advances to the next entertainer when the set is complete.'
       },
       {
         heading: 'Energy Level',
@@ -53,46 +53,46 @@ const sections = [
     content: [
       {
         heading: 'Building the Rotation',
-        text: 'The rotation is your lineup — the order dancers go on stage. Add dancers from the list at the bottom. Drag to reorder. The currently performing dancer is highlighted in cyan.'
+        text: 'The rotation is your lineup — the order entertainers go on stage. Add entertainers from the list at the bottom. Drag to reorder. The currently performing entertainer is highlighted in cyan.'
       },
       {
         heading: 'Starting & Stopping',
-        text: 'Hit "Start Rotation" in the header to begin. The system plays the first dancer\'s music, announces them, and automatically transitions to the next dancer when their set ends. Hit "Stop Rotation" to pause.'
+        text: 'Hit "Start Rotation" in the header to begin. The system plays the first entertainer\'s music, announces them, and automatically transitions to the next entertainer when their set ends. Hit "Stop Rotation" to pause.'
       },
       {
         heading: 'Skip & Remove',
-        text: 'Use the skip button (next track icon) to jump to the next dancer early. Remove a dancer from the rotation with the X button on their card without removing them from the system.'
+        text: 'Use the skip button (next track icon) to jump to the next entertainer early. Remove an entertainer from the rotation with the X button on their card without removing them from the system.'
       },
       {
         heading: 'Song Assignments',
-        text: 'Each dancer in the rotation shows their assigned songs underneath their name. These come from their personal playlist (set up in the Dancers tab) or are auto-filled from the library.'
+        text: 'Each entertainer in the rotation shows their assigned songs underneath their name. These come from their personal playlist (set up in the Entertainers tab) or are auto-filled from the library.'
       },
       {
         heading: 'Break Songs',
-        text: 'Set the number of break songs (0-3) between each dancer using the purple break buttons. When you press "Save All," empty break slots are automatically filled with random songs from the music library. If a genre folder is selected in Options, break songs come from that folder. Changing from 3 to 2 breaks and saving trims the extras. Setting to 0 and saving clears all break songs. You can also manually drag specific songs into break slots to override the auto-fill.'
+        text: 'Set the number of break songs (0-3) between each entertainer using the purple break buttons. When you press "Save All," empty break slots are automatically filled with random songs from the music library. If a genre folder is selected in Options, break songs come from that folder. Changing from 3 to 2 breaks and saving trims the extras. Setting to 0 and saving clears all break songs. You can also manually drag specific songs into break slots to override the auto-fill.'
       },
       {
         heading: 'Save All',
-        text: 'Press "Save All" to save the current rotation order, song assignments, and break songs all at once. This also auto-populates any empty break song slots and pre-caches voice announcements for upcoming dancers.'
+        text: 'Press "Save All" to save the current rotation order, song assignments, and break songs all at once. This also auto-populates any empty break song slots and pre-caches voice announcements for upcoming entertainers.'
       }
     ]
   },
   {
     id: 'dancers-tab',
     icon: Users,
-    title: 'Dancers Tab',
+    title: 'Entertainers Tab',
     content: [
       {
-        heading: 'Adding Dancers',
-        text: 'Tap "Add Dancer" and enter a stage name. Each dancer gets a unique color for easy identification. You can also set a dancer PIN so they can log in on their own device.'
+        heading: 'Adding Entertainers',
+        text: 'Tap "Add" and enter a stage name. Each entertainer gets a unique color for easy identification. You can also set an entertainer PIN so they can log in on their own device.'
       },
       {
         heading: 'Editing & Playlists',
-        text: 'Tap the music icon on a dancer\'s card to open their playlist editor. Search the music library and add songs — these are the tracks that play during their sets when Music Mode is "Dancer First."'
+        text: 'Tap the music icon on an entertainer\'s card to open their playlist editor. Search the music library and add songs — these are the tracks that play during their sets when Music Mode is "Entertainer First."'
       },
       {
         heading: 'Active vs Inactive',
-        text: 'Toggle a dancer as active or inactive. Inactive dancers stay in the system but won\'t show up when building rotations. Useful for dancers who only work certain nights.'
+        text: 'Toggle an entertainer as active or inactive. Inactive entertainers stay in the system but won\'t show up when building rotations. Useful for entertainers who only work certain nights.'
       }
     ]
   },
@@ -126,11 +126,11 @@ const sections = [
     content: [
       {
         heading: 'How It Works',
-        text: 'The system uses AI to generate DJ-style announcements — intros when a dancer takes the stage, round calls during their set, outros when they finish, and transitions between dancers. These are spoken aloud through ElevenLabs voice synthesis.'
+        text: 'The system uses AI to generate DJ-style announcements — intros when an entertainer takes the stage, round calls during their set, outros when they finish, and transitions between entertainers. These are spoken aloud through ElevenLabs voice synthesis.'
       },
       {
         heading: 'Automatic Announcements',
-        text: 'When rotation is running, announcements play automatically at the right moments. The AI adapts its energy level based on time of night — mellower early on, high-energy during peak hours. Intros say the dancer\'s name 2-3 times (varied naturally so it doesn\'t sound robotic). Round 2 calls acknowledge the dancer is still on stage. Outros are short sendoffs.'
+        text: 'When rotation is running, announcements play automatically at the right moments. The AI adapts its energy level based on time of night — mellower early on, high-energy during peak hours. Intros say the entertainer\'s name 2-3 times (varied naturally so it doesn\'t sound robotic). Round 2 calls acknowledge the entertainer is still on stage. Outros are short sendoffs.'
       },
       {
         heading: 'Manual Announcements',
@@ -146,7 +146,7 @@ const sections = [
       },
       {
         heading: 'Pronunciation',
-        text: 'Some dancer names get mispronounced by the AI voice. The system has a built-in pronunciation map that automatically corrects common names (like Mia, Chaunte, Charisse, etc.). If a name is still mispronounced, it can be added to the map.'
+        text: 'Some entertainer names get mispronounced by the AI voice. The system has a built-in pronunciation map that automatically corrects common names (like Mia, Chaunte, Charisse, etc.). If a name is still mispronounced, it can be added to the map.'
       },
       {
         heading: 'Requirements',
@@ -204,7 +204,7 @@ const sections = [
       },
       {
         heading: 'Voiceover Cache',
-        text: 'Pre-generate voice announcements for all dancers so they play instantly during the show instead of generating on-the-fly. Useful for reducing delays during rotation.'
+        text: 'Pre-generate voice announcements for all entertainers so they play instantly during the show instead of generating on-the-fly. Useful for reducing delays during rotation.'
       },
       {
         heading: 'Remote Fleet Update',
@@ -219,7 +219,7 @@ const sections = [
     content: [
       {
         heading: 'What It Is',
-        text: 'A full-screen display showing the current rotation lineup. Open it from the "Open Display" button in the DJ Booth header. It\'s designed to be shown on a separate monitor or TV where dancers and staff can see who\'s up next.'
+        text: 'A full-screen display showing the current rotation lineup. Open it from the "Open Display" button in the DJ Booth header. It\'s designed to be shown on a separate monitor or TV where entertainers and staff can see who\'s up next.'
       },
       {
         heading: 'Auto-Refresh',
@@ -230,23 +230,23 @@ const sections = [
   {
     id: 'dancer-view',
     icon: Smartphone,
-    title: 'Dancer View',
+    title: 'Entertainer View',
     content: [
       {
         heading: 'What It Is',
-        text: 'A separate interface for dancers to manage their own playlists from their phone. Dancers log in with their personal PIN from the main screen.'
+        text: 'A separate interface for entertainers to manage their own playlists from their phone. Entertainers log in with their personal PIN from the main screen.'
       },
       {
         heading: 'Building a Playlist',
-        text: 'Dancers can browse the music library, search by name, and add songs to their personal playlist. They can reorder songs by dragging, and remove songs they don\'t want.'
+        text: 'Entertainers can browse the music library, search by name, and add songs to their personal playlist. They can reorder songs by dragging, and remove songs they don\'t want.'
       },
       {
         heading: 'How It Connects',
-        text: 'When a dancer updates their playlist, it syncs to the DJ Booth automatically. The next time that dancer is up in rotation, their updated song choices are used.'
+        text: 'When an entertainer updates their playlist, it syncs to the DJ Booth automatically. The next time that entertainer is up in rotation, their updated song choices are used.'
       },
       {
         heading: 'Auto-Logout',
-        text: 'For security, the dancer view automatically logs out after 4 hours of inactivity.'
+        text: 'For security, the entertainer view automatically logs out after 4 hours of inactivity.'
       }
     ]
   },
@@ -261,7 +261,7 @@ const sections = [
       },
       {
         heading: 'What You Can Do Remotely',
-        text: 'From the remote, you can skip dancers, adjust music volume (+/-), adjust voice volume (+/-), toggle announcements, and see the current song with a live countdown timer. Volume and skip controls are instant via real-time connection. Rotation and song changes take effect after pressing "Save All."'
+        text: 'From the remote, you can skip entertainers, adjust music volume (+/-), adjust voice volume (+/-), toggle announcements, and see the current song with a live countdown timer. Volume and skip controls are instant via real-time connection. Rotation and song changes take effect after pressing "Save All."'
       },
       {
         heading: 'Setting the Booth IP',
@@ -292,11 +292,11 @@ const sections = [
       },
       {
         heading: 'Break Music',
-        text: 'Break songs play between dancer sets to keep music flowing during transitions. Set the number of breaks (0-3) in the Rotation tab. When you hit "Save All," empty break slots auto-fill with shuffled songs from the active genre. Songs already assigned to dancers or other break slots won\'t repeat.'
+        text: 'Break songs play between entertainer sets to keep music flowing during transitions. Set the number of breaks (0-3) in the Rotation tab. When you hit "Save All," empty break slots auto-fill with shuffled songs from the active genre. Songs already assigned to entertainers or other break slots won\'t repeat.'
       },
       {
         heading: 'Song Cooldown',
-        text: 'The system tracks every song played and enforces a 4-hour cooldown — no song repeats within a 4-hour window. This applies to both dancer sets and break songs, keeping the music fresh all night.'
+        text: 'The system tracks every song played and enforces a 4-hour cooldown — no song repeats within a 4-hour window. This applies to both entertainer sets and break songs, keeping the music fresh all night.'
       }
     ]
   }

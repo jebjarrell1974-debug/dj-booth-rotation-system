@@ -54,7 +54,7 @@ export default function DancerRoster({
         setIsAddOpen(false);
       } catch (error) {
         console.error('Failed to add dancer:', error);
-        setAddError(error.message || 'Failed to add dancer');
+        setAddError(error.message || 'Failed to add entertainer');
       } finally {
         setIsAdding(false);
       }
@@ -76,7 +76,7 @@ export default function DancerRoster({
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
-            Dancer Roster
+            Entertainer Roster
           </h3>
           <p className="text-xs text-gray-500 mt-1">{activeDancers.length} active</p>
         </div>
@@ -89,7 +89,7 @@ export default function DancerRoster({
           </DialogTrigger>
           <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
             <DialogHeader>
-              <DialogTitle>Add New Dancer</DialogTitle>
+              <DialogTitle>Add New Entertainer</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-4">
               <Input
@@ -112,7 +112,7 @@ export default function DancerRoster({
                   maxLength={5}
                   onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 />
-                <p className="text-xs text-gray-500 mt-1">Dancer uses this PIN to log in on their phone</p>
+                <p className="text-xs text-gray-500 mt-1">Entertainer uses this PIN to log in on their phone</p>
               </div>
               {addError && <p className="text-sm text-red-400">{addError}</p>}
               <Button 
@@ -120,7 +120,7 @@ export default function DancerRoster({
                 disabled={isAdding || !newDancerName.trim() || newDancerPin.length !== 5}
                 className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
               >
-                {isAdding ? 'Adding...' : 'Add Dancer'}
+                {isAdding ? 'Adding...' : 'Add Entertainer'}
               </Button>
             </div>
           </DialogContent>
@@ -210,7 +210,7 @@ export default function DancerRoster({
                   </DialogTrigger>
                   <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
                     <DialogHeader>
-                      <DialogTitle>Edit Dancer</DialogTitle>
+                      <DialogTitle>Edit Entertainer</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 pt-4">
                       <Input
@@ -230,7 +230,7 @@ export default function DancerRoster({
                   size="icon"
                   variant="ghost"
                   className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e293b]"
-                  title="Delete dancer"
+                  title="Delete entertainer"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeleteDancer(dancer.id);
@@ -245,7 +245,7 @@ export default function DancerRoster({
           {sortedDancers.length === 0 && (
             <div className="col-span-full text-center py-12">
               <User className="w-10 h-10 mx-auto text-gray-600 mb-3" />
-              <p className="text-gray-500 text-sm">No dancers added yet</p>
+              <p className="text-gray-500 text-sm">No entertainers added yet</p>
             </div>
           )}
         </div>

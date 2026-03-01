@@ -155,7 +155,7 @@ export default function Landing() {
                 className="h-16 text-lg font-semibold border-[#1e293b] bg-[#0d0d1f] text-white hover:bg-[#151528] hover:text-white"
               >
                 <Users className="w-5 h-5 mr-3" />
-                Dancer
+                Entertainer
               </Button>
             </div>
           </div>
@@ -188,7 +188,7 @@ export default function Landing() {
                   ? 'Enter DJ PIN'
                   : mode === 'dj-remote'
                   ? 'Enter DJ PIN (Remote)'
-                  : 'Enter your Dancer PIN'
+                  : 'Enter your Entertainer PIN'
               }
               onSubmit={mode === 'dj' || mode === 'dj-remote' ? handleDJLogin : handleDancerLogin}
               onBack={() => { setMode(null); setError(''); }}

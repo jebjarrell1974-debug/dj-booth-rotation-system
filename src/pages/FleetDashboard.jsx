@@ -165,7 +165,7 @@ function DeviceDetailModal({ device, onClose }) {
               </div>
               <div className="text-xs text-gray-500 mt-4">
                 <p>Last heartbeat: {formatDate(device.last_heartbeat)}</p>
-                <p>Active dancers: {latestHb?.active_dancers || 0}</p>
+                <p>Active entertainers: {latestHb?.active_dancers || 0}</p>
                 <p>Playing: {latestHb?.is_playing ? 'Yes' : 'No'}</p>
               </div>
             </div>

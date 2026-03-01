@@ -266,7 +266,7 @@ export default function DancerView() {
     <div className="min-h-screen bg-[#08081a] flex flex-col" style={{ maxHeight: '100dvh' }}>
       <div className="p-4 border-b border-[#1e293b] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
         <div>
-          <h1 className="text-lg font-bold text-white">{user?.name || 'Dancer'}</h1>
+          <h1 className="text-lg font-bold text-white">{user?.name || 'Entertainer'}</h1>
           <p className="text-xs text-gray-500">My Playlist</p>
         </div>
         <Button variant="ghost" size="sm" onClick={handleLogout} className="text-gray-400 hover:text-white">

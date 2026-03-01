@@ -34,7 +34,7 @@ export default function RotationBuilder({
               Build Rotation
             </h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              {rotationDancers.length} dancers in rotation
+              {rotationDancers.length} entertainers in rotation
             </p>
           </div>
           {!isActive && rotationDancers.length > 0 && (
@@ -119,7 +119,7 @@ export default function RotationBuilder({
           
           {rotationDancers.length === 0 && (
             <div className="text-center py-6 text-gray-500 text-sm">
-              Add dancers to start rotation
+              Add entertainers to start rotation
             </div>
           )}
         </div>
@@ -128,7 +128,7 @@ export default function RotationBuilder({
       {/* Add to Rotation */}
       {availableDancers.length > 0 && (
         <div className="p-4 border-t border-[#1e293b]">
-          <p className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Available Dancers:</p>
+          <p className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Available Entertainers:</p>
           <div className="grid grid-cols-2 gap-2">
             {availableDancers.map(dancer => (
               <Button

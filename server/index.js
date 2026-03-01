@@ -292,15 +292,15 @@ app.post('/api/dancers', authenticate, requireDJ, (req, res) => {
     res.json(safe);
   } catch (err) {
     if (err.message === 'PIN_TAKEN') {
-      return res.status(409).json({ error: 'That PIN is already used by another dancer' });
+      return res.status(409).json({ error: 'That PIN is already used by another entertainer' });
     }
-    return res.status(500).json({ error: 'Failed to create dancer' });
+    return res.status(500).json({ error: 'Failed to create entertainer' });
   }
 });
 
 app.put('/api/dancers/:id', authenticate, requireDJ, (req, res) => {
   const dancer = updateDancer(req.params.id, req.body);
-  if (!dancer) return res.status(404).json({ error: 'Dancer not found' });
+  if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   const { pin_hash, ...safe } = dancer;
   res.json(safe);
 });
@@ -313,18 +313,18 @@ app.delete('/api/dancers/:id', authenticate, requireDJ, (req, res) => {
 app.get('/api/playlist', authenticate, (req, res) => {
   if (req.session.role === 'dancer') {
     const dancer = getDancer(req.session.dancer_id);
-    if (!dancer) return res.status(404).json({ error: 'Dancer not found' });
+    if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
     return res.json({ playlist: dancer.playlist });
   }
-  return res.status(400).json({ error: 'Use dancer session' });
+  return res.status(400).json({ error: 'Use entertainer session' });
 });
 
 app.put('/api/playlist', authenticate, (req, res) => {
-  if (req.session.role !== 'dancer') return res.status(403).json({ error: 'Dancer access only' });
+  if (req.session.role !== 'dancer') return res.status(403).json({ error: 'Entertainer access only' });
   const { playlist } = req.body;
   if (!Array.isArray(playlist)) return res.status(400).json({ error: 'Playlist must be an array' });
   const dancer = updateDancer(req.session.dancer_id, { playlist });
-  if (!dancer) return res.status(404).json({ error: 'Dancer not found' });
+  if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   res.json({ playlist: dancer.playlist });
 });
 

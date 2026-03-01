@@ -126,10 +126,10 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
               </div>
               <div>
                 <p className={`text-base font-semibold ${musicMode === 'dancer_first' ? 'text-[#00d4ff]' : 'text-white'}`}>
-                  Dancer First
+                  Entertainer First
                 </p>
                 <p className="text-sm text-gray-400 mt-0.5">
-                  Play each dancer's saved playlist. Selected folders are used as fallback when a dancer has no songs or all songs are on cooldown.
+                  Play each entertainer's saved playlist. Selected folders are used as fallback when an entertainer has no songs or all songs are on cooldown.
                 </p>
               </div>
             </button>
@@ -151,7 +151,7 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
                   Folders Only
                 </p>
                 <p className="text-sm text-gray-400 mt-0.5">
-                  Ignore dancer playlists. All songs come from the selected folders below only.
+                  Ignore entertainer playlists. All songs come from the selected folders below only.
                 </p>
               </div>
             </button>

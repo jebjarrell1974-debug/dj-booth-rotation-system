@@ -144,7 +144,7 @@ export default function StageRotation({
           
           {rotationDancers.length === 0 && (
             <div className="text-center py-6 text-gray-500 text-sm">
-              Add dancers to start rotation
+              Add entertainers to start rotation
             </div>
           )}
         </div>

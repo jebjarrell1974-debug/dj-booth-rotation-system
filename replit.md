@@ -29,6 +29,21 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 1, 2026 — Session 11 (Deep Entertainer Rename)
+
+#### "Dancer" → "Entertainer" — Complete Pass
+- **Previous session**: Renamed display text in main UI components (DancerRoster, RemoteView, StageRotation, RotationBuilder, DJOptions, Landing, DancerView, DJBooth tabs)
+- **This session**: Deep pass catching all remaining user-facing "dancer" text across the entire codebase:
+  - **Help page** (`src/pages/Help.jsx`): All 12 sections updated — Getting Started, Options, Rotation, Entertainers Tab, Music Library, Announcements, Configuration, Rotation Display, Entertainer View, iPad Remote, Music Tips
+  - **Configuration page** (`src/pages/Configuration.jsx`): Toast messages, announcement descriptions, pre-cache labels
+  - **RotationPlaylistManager** (`src/components/dj/RotationPlaylistManager.jsx`): Rotation counter, empty state, toast messages
+  - **DJBooth** (`src/pages/DJBooth.jsx`): Tab label, skip toast message
+  - **RemoteView** (`src/components/dj/RemoteView.jsx`): Empty state message
+  - **FleetDashboard** (`src/pages/FleetDashboard.jsx`): Active entertainers label
+  - **AI prompts** (`src/utils/energyLevels.js`): System prompt style rules, terminology lock, transition structure instructions
+  - **Server error messages** (`server/index.js`): PIN taken, create/update/delete/playlist error responses
+- **Rule preserved**: Variable names, API routes, database fields, query keys all still use `dancer` — only user-facing display text changed
+
 ### Mar 1, 2026 — Session 10 (Break Songs on Remote, Playlist Stability, Song Reassignment Analysis)
 
 #### Feature: Break Songs Displayed on Remote
@@ -228,7 +243,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 #### Help Page
 - **Route**: `/Help` (DJ login required)
 - **Access**: Help button with question mark icon in the DJBooth tab bar, next to Options
-- **Content**: 12 collapsible sections covering every feature — Getting Started, Options, Rotation, Dancers, Music Library, Announcements, Settings, Configuration, Rotation Display, Dancer View, iPad Remote, Music Tips
+- **Content**: 12 collapsible sections covering every feature — Getting Started, Options, Rotation, Entertainers, Music Library, Announcements, Settings, Configuration, Rotation Display, Entertainer View, iPad Remote, Music Tips
 - **Design**: Matches app theme (neon cyan headers, navy-black backgrounds, accordion sections)
 - **File**: `src/pages/Help.jsx`
 

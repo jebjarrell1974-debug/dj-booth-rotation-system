@@ -2562,7 +2562,7 @@ export default function DJBooth() {
                 className={`${activeTab === 'dancers' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
               >
                 <Users className="w-4 h-4 mr-1" />
-                Dancers
+                Entertainers
               </Button>
               {!remoteMode && (
                 <>
@@ -2898,7 +2898,7 @@ export default function DJBooth() {
                   if (currentIdx < 0 || currentIdx >= rot.length) return;
                   const currentDancerId = rot[currentIdx];
                   if (dancerId === currentDancerId) {
-                    toast('Use the Skip button above to skip the current dancer', { icon: '⏭️' });
+                    toast('Use the Skip button above to skip the current entertainer', { icon: '⏭️' });
                     return;
                   }
                   rot.splice(skipIdx, 1);
@@ -2914,7 +2914,7 @@ export default function DJBooth() {
                   updateStageState(newCurrentIdx, rot);
                   const dancer = dancers.find(d => d.id === dancerId);
                   console.log('⏭️ Skipped dancer to bottom:', dancer?.name);
-                  toast(`${dancer?.name || 'Dancer'} moved to end of rotation`, { icon: '⏭️' });
+                  toast(`${dancer?.name || 'Entertainer'} moved to end of rotation`, { icon: '⏭️' });
                 }}
                 currentSongNumber={currentSongNumber}
                 breakSongsPerSet={breakSongsPerSet}

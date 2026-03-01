@@ -338,7 +338,7 @@ export default function RotationPlaylistManager({
   const handleLibraryTrackClick = useCallback((trackName) => {
     const targetId = selectedDancerId || (rotationDancers.length === 1 ? rotationDancers[0]?.id : null);
     if (!targetId) {
-      toast('Tap a dancer name first to select them', { icon: '👆' });
+      toast('Tap an entertainer name first to select them', { icon: '👆' });
       return;
     }
     addSongToDancer(targetId, trackName);
@@ -608,7 +608,7 @@ export default function RotationPlaylistManager({
                   Rotation
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {rotationDancers.length} dancers &bull; drag to reorder
+                  {rotationDancers.length} entertainers &bull; drag to reorder
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -881,7 +881,7 @@ export default function RotationPlaylistManager({
                   {rotationDancers.length === 0 && (
                     <div className="text-center py-12 text-gray-500">
                       <Music2 className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-                      <p className="text-sm">No dancers in rotation</p>
+                      <p className="text-sm">No entertainers in rotation</p>
                     </div>
                   )}
                 </div>

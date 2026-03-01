@@ -281,7 +281,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               }`}
             >
               <Users className="w-5 h-5" />
-              Dancers
+              Entertainers
             </button>
           </div>
 
@@ -305,8 +305,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 {rotationList.length === 0 ? (
                   <div className="text-center py-12">
                     <Layers className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                    <p className="text-base text-gray-500">No dancers in rotation</p>
-                    <p className="text-sm text-gray-600 mt-1">Add dancers from the Dancers tab</p>
+                    <p className="text-base text-gray-500">No entertainers in rotation</p>
+                    <p className="text-sm text-gray-600 mt-1">Add entertainers from the Entertainers tab</p>
                   </div>
                 ) : (
                   <>
@@ -410,7 +410,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 {dancers.filter(d => d.is_active).length === 0 ? (
                   <div className="text-center py-12">
                     <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                    <p className="text-base text-gray-500">No active dancers</p>
+                    <p className="text-base text-gray-500">No active entertainers</p>
                   </div>
                 ) : (
                   dancers.filter(d => d.is_active).map(dancer => {
