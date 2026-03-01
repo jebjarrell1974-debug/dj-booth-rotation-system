@@ -30,7 +30,8 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Username pattern: `neonaidj001`, `neonaidj002`, etc.
 - App directory: `/home/<user>/djbooth`
 - Data directory: `/home/<user>/data/` (database + voiceovers)
-- Music directory: `/home/<user>/Desktop/NEONAIDJ MUSIC`
+- Music directory: `/home/<user>/Desktop/DJ MUSIC`
+- Voiceover directory: `/home/<user>/Desktop/VOICE OVERS FOR AUTO DJ`
 
 ## GitHub Backup System
 - **Repo**: https://github.com/jebjarrell1974-debug/dj-booth-rotation-system (PUBLIC)
@@ -136,7 +137,7 @@ sudo apt-get install -y nodejs
 
 **3. Create directories**
 ```bash
-mkdir -p ~/djbooth ~/data ~/data/voiceovers ~/Desktop/"NEONAIDJ MUSIC"
+mkdir -p ~/djbooth ~/data ~/Desktop/"DJ MUSIC" ~/Desktop/"VOICE OVERS FOR AUTO DJ"
 ```
 
 **4. Download the update script**
@@ -164,11 +165,8 @@ Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
 Environment=VOICEOVER_DIR=/home/neonaidj001/data/voiceovers
-Environment=MUSIC_PATH=/home/neonaidj001/Desktop/NEONAIDJ MUSIC
-Environment=R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
-Environment=R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
-Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
-Environment=R2_BUCKET_NAME=neonaidj
+Environment="MUSIC_PATH=/home/neonaidj001/Desktop/DJ MUSIC"
+Environment="VOICEOVER_PATH=/home/neonaidj001/Desktop/VOICE OVERS FOR AUTO DJ"
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
@@ -180,6 +178,19 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable djbooth.service
 sudo systemctl start djbooth.service
+```
+
+**6b. Add R2 cloud sync credentials** (override file)
+```bash
+sudo mkdir -p /etc/systemd/system/djbooth.service.d
+sudo bash -c 'cat > /etc/systemd/system/djbooth.service.d/override.conf << EOF
+[Service]
+Environment=R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
+Environment=R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
+Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
+Environment=R2_BUCKET_NAME=neonaidj
+EOF'
+sudo systemctl daemon-reload
 ```
 
 **7. Create the auto-update service** (updates from GitHub on every boot, replace `neonaidj001`)
@@ -234,7 +245,7 @@ EOF
 chmod +x ~/Desktop/DJBooth.desktop
 ```
 
-**10. Copy music files** to `/home/<user>/Desktop/NEONAIDJ MUSIC/`
+**10. Copy music files** to `/home/<user>/Desktop/DJ MUSIC/`
 - Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
 
 **11. Update browserslist** (optional, one-time, inside djbooth folder)
@@ -269,12 +280,8 @@ WorkingDirectory=/home/neonaidj001/djbooth
 Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
-Environment=VOICEOVER_DIR=/home/neonaidj001/data/voiceovers
-Environment=MUSIC_PATH=/home/neonaidj001/Desktop/NEONAIDJ MUSIC
-Environment=R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
-Environment=R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
-Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
-Environment=R2_BUCKET_NAME=neonaidj
+Environment="MUSIC_PATH=/home/neonaidj001/Desktop/DJ MUSIC"
+Environment="VOICEOVER_PATH=/home/neonaidj001/Desktop/VOICE OVERS FOR AUTO DJ"
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
@@ -282,6 +289,8 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 ```
+
+R2 credentials go in a separate override file — see step 6b in the setup guide.
 
 ### Pi Kiosk Autostart
 ```ini
