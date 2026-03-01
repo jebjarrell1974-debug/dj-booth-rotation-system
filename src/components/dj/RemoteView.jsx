@@ -36,6 +36,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const rotationSongs = liveBoothState?.rotationSongs || {};
   const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
   const volumePercent = Math.round(currentVolume * 100);
+  const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
+  const voiceGainPercent = Math.round(currentVoiceGain * 100);
   const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
 
   const currentDancer = isRotationActive
@@ -166,10 +168,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           </div>
 
           <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex-shrink-0">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-gray-400" />
-                <span className="text-sm font-semibold text-gray-400">Volume</span>
+                <span className="text-sm font-semibold text-gray-400">Music</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -186,6 +188,31 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })}
                   disabled={volumePercent >= 100}
                   className="w-12 h-12 rounded-lg bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mic className="w-4 h-4 text-[#a855f7]" />
+                <span className="text-sm font-semibold text-[#a855f7]">Voice</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })}
+                  disabled={voiceGainPercent <= 50}
+                  className="w-12 h-12 rounded-lg bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                >
+                  <Minus className="w-6 h-6" />
+                </button>
+                <div className="w-16 h-12 rounded-lg bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center">
+                  <span className="text-lg font-bold text-[#a855f7] tabular-nums">{voiceGainPercent}%</span>
+                </div>
+                <button
+                  onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(3, currentVoiceGain + 0.1) })}
+                  disabled={voiceGainPercent >= 300}
+                  className="w-12 h-12 rounded-lg bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                 >
                   <Plus className="w-6 h-6" />
                 </button>

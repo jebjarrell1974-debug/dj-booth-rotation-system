@@ -72,6 +72,9 @@ export default function DJBooth() {
   const isPlayingRef = useRef(false);
   const timeDisplayRef = useRef(null);
   const [volume, setVolume] = useState(0.8);
+  const [voiceGain, setVoiceGain] = useState(() => {
+    try { return parseFloat(localStorage.getItem('djbooth_voice_gain')) || 1.5; } catch { return 1.5; }
+  });
   const updateThrottleRef = useRef(0);
   
   // Rotation state
@@ -634,6 +637,14 @@ export default function DJBooth() {
             audioEngineRef.current?.setVolume(vol);
           }
           break;
+        case 'setVoiceGain':
+          if (cmd.payload.gain != null) {
+            const g = Math.max(0.5, Math.min(3, Math.round(cmd.payload.gain * 20) / 20));
+            setVoiceGain(g);
+            audioEngineRef.current?.setVoiceGain(g);
+            try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+          }
+          break;
         case 'setBreakSongsPerSet':
           if (cmd.payload.count != null) {
             const c = Math.max(0, Math.min(3, cmd.payload.count));
@@ -714,13 +725,14 @@ export default function DJBooth() {
           announcementsEnabled,
           rotationSongs,
           volume,
+          voiceGain,
         });
       } catch {}
     };
     broadcast();
     const interval = setInterval(broadcast, 5000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain]);
 
   useEffect(() => {
     if (!activeStage) return;
@@ -2231,28 +2243,9 @@ export default function DJBooth() {
               const level = getCurrentEnergyLevel({ ...config, energyOverride });
               const info = ENERGY_LEVELS[level];
               return (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={energyOverride}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setEnergyOverride(val);
-                      saveApiConfig({ energyOverride: val });
-                    }}
-                    className="h-8 rounded-md bg-[#0d0d1f] border border-[#1e293b] text-xs px-2"
-                    style={{ color: info.color }}
-                  >
-                    <option value="auto">Auto</option>
-                    <option value="1">L1</option>
-                    <option value="2">L2</option>
-                    <option value="3">L3</option>
-                    <option value="4">L4</option>
-                    <option value="5">L5</option>
-                  </select>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
-                    <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
-                  </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
+                  <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
                 </div>
               );
             })()}
@@ -2330,7 +2323,7 @@ export default function DJBooth() {
                     <SkipForward className="w-4 h-4" />
                   </Button>
                   
-                  <div className="flex-1 flex items-center gap-2 justify-end">
+                  <div className="flex-1 flex items-center gap-1.5 justify-end">
                     <Volume2 className="w-4 h-4 text-gray-500" />
                     <button
                       onClick={() => {
@@ -2339,12 +2332,12 @@ export default function DJBooth() {
                         audioEngineRef.current?.setVolume(vol);
                       }}
                       disabled={Math.round(volume * 100) <= 0}
-                      className="w-8 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                     >
-                      <Minus className="w-4 h-4" />
+                      <Minus className="w-3.5 h-3.5" />
                     </button>
-                    <div className="w-12 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
-                      <span className="text-sm font-bold text-white tabular-nums">{Math.round(volume * 100)}%</span>
+                    <div className="w-11 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
+                      <span className="text-xs font-bold text-white tabular-nums">{Math.round(volume * 100)}%</span>
                     </div>
                     <button
                       onClick={() => {
@@ -2353,9 +2346,40 @@ export default function DJBooth() {
                         audioEngineRef.current?.setVolume(vol);
                       }}
                       disabled={Math.round(volume * 100) >= 100}
-                      className="w-8 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="w-px h-5 bg-[#2e2e5a] mx-0.5" />
+
+                    <Mic className="w-4 h-4 text-[#a855f7]" />
+                    <button
+                      onClick={() => {
+                        const g = Math.max(0.5, voiceGain - 0.1);
+                        setVoiceGain(g);
+                        audioEngineRef.current?.setVoiceGain(g);
+                        try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+                      }}
+                      disabled={Math.round(voiceGain * 100) <= 50}
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="w-11 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center">
+                      <span className="text-xs font-bold text-[#a855f7] tabular-nums">{Math.round(voiceGain * 100)}%</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const g = Math.min(3, voiceGain + 0.1);
+                        setVoiceGain(g);
+                        audioEngineRef.current?.setVoiceGain(g);
+                        try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+                      }}
+                      disabled={Math.round(voiceGain * 100) >= 300}
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -2522,6 +2546,8 @@ export default function DJBooth() {
                     setDjOptions(opts);
                     djOptionsRef.current = opts;
                   }}
+                  energyOverride={energyOverride}
+                  onEnergyOverrideChange={setEnergyOverride}
                 />
               </div>
             )}

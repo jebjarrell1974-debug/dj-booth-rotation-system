@@ -9,7 +9,7 @@ NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent
 - Neon dancer color palette for club atmosphere
 - App name: "NEON AI DJ" (logo at `/public/neon-ai-dj-logo.jpeg`)
 - Minimize CPU/GPU usage for local hardware operation
-- Do not modify `AudioEngine.jsx` audio behavior (crossfade, ducking, volume levels are finalized). The `loadTrack` method accepts both URL strings and FileSystemFileHandle objects.
+- Do not modify `AudioEngine.jsx` audio behavior (crossfade, ducking, gain bus architecture are finalized). The `loadTrack` method accepts both URL strings and FileSystemFileHandle objects. Voice announcements route through a separate GainNode (`voiceGainRef`) for independent volume boost (default 1.5x / 150%).
 - Production database stored at `/home/runner/data/djbooth.db` (outside project directory) to survive republishing. Development uses `./djbooth.db`. Configurable via `DB_PATH` env var.
 
 ## System Architecture
@@ -29,7 +29,32 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 1, 2026 — Session 9 (Remote Sync, Volume Controls, Break Songs, Announcements)
+### Mar 1, 2026 — Session 9 (Remote Sync, Volume Controls, Break Songs, Announcements, Song Repeat Fix)
+
+#### Fix: Song Repetition (Cooldown Bypass)
+- **Problem**: Dancers with manual playlists (e.g. Cameron with 2 Joan Jett songs) got the exact same songs every rotation cycle. Code was reusing cached songs for playlist dancers without checking 4-hour cooldown
+- **Fix**: Removed all `hasManualPlaylist + cached songs` shortcuts from `beginRotation`, `handleTrackEnd` (both break-song and no-break paths), and `handleSkip`. All transitions now always call `getDancerTracks()` which properly enforces cooldown exclusions
+- **File**: `src/pages/DJBooth.jsx`
+
+#### Feature: Voice Gain Boost (Mic Volume)
+- **Purpose**: Announcements now route through a Web Audio API GainNode, allowing volume boost above 100% (up to 300%)
+- **Default**: 150% gain. Persisted to localStorage as `djbooth_voice_gain`
+- **Pi UI**: Purple mic icon with +/- buttons next to music volume controls (10% increments, min 50%, max 300%)
+- **Remote UI**: Separate "Voice" row with purple mic icon and +/- buttons in volume section. Sends `setVoiceGain` command
+- **AudioEngine changes**: Added `voiceGainRef`, `voiceSourceRef`, voice element routed through gain node on first announcement play. `setVoiceGain()` exposed via imperative handle
+- **Server**: `liveBoothState` now stores `voiceGain` field for remote sync
+- **Files**: `src/components/dj/AudioEngine.jsx`, `src/pages/DJBooth.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### UI: Energy Level Controls Moved to Options Tab
+- **Before**: Energy level dropdown + badge in header bar (took space)
+- **After**: Energy level buttons (Auto/L1/L2/L3/L4/L5) in Options tab above Music Selection Mode. Header still shows current level badge (read-only indicator)
+- **Files**: `src/components/dj/DJOptions.jsx`, `src/pages/DJBooth.jsx`
+
+#### Fix: Announcement Script Improvements
+- **Shift type references removed**: AI was literally saying "mid shift" / "prime shift" in announcements. Prompt now labels shift info as "internal guidance only — NEVER say these words out loud"
+- **Round 2 context fix**: AI was saying "coming back to the stage" during round 2 when dancer never left. Prompt now explicitly states she's STILL ON STAGE with BAD EXAMPLES of what NOT to say
+- **Pronunciation map**: Added phonetic mappings for dancer names ElevenLabs mispronounces (Mia→Mee-ah, Chaunte→Shawn-tay, Charisse→Sha-reese, Tatianna→Tah-tee-ah-nah, Nadia→Nah-dee-ah). Applied in `generateAudio()` before sending to TTS. Possessive forms also mapped
+- **Files**: `src/utils/energyLevels.js`, `src/components/dj/AnnouncementSystem.jsx`
 
 #### Fix: Playlist Song Resolution (RotationPlaylistManager)
 - **Problem**: Initial song assignment matched playlist songs against client-side `tracks` array (only 200 of 8,875 loaded); dancers' playlist songs failed to match, fell through to random
