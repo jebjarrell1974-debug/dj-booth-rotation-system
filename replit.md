@@ -29,6 +29,49 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 1, 2026 — Session 10 (Break Songs on Remote, Playlist Stability, Song Reassignment Analysis)
+
+#### Feature: Break Songs Displayed on Remote
+- **Purpose**: iPad remote now shows break songs under each dancer in the rotation list
+- **UI**: Violet bar with ♫ icon below each dancer card showing their assigned break song names
+- **Data flow**: `interstitialSongs` state broadcast from DJBooth to remote via `liveBoothState`; `interstitialRemoteVersion` counter syncs state to RotationPlaylistManager without triggering on local Save All
+- **Files**: `src/components/dj/RemoteView.jsx`, `src/pages/DJBooth.jsx`
+
+#### Fix: Break Song Auto-Population
+- **Problem**: Break songs weren't auto-populating when count changed from remote or Pi
+- **Fix**: Shared `autoPopulateBreakSongs(count)` function used by both local UI and remote command handlers. Setting count to 0 clears all break songs. Fires immediately on change
+- **State sync**: `interstitialSongsState` + `interstitialRemoteVersion` counter pattern ensures React re-renders RotationPlaylistManager when remote changes break count, without re-triggering when local Save All fires
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Fix: Playlist Stability (Save All No Longer Reshuffles)
+- **Problem**: Save All was triggering auto-population and reshuffling existing song assignments
+- **Fixes applied**:
+  1. Save All now just saves — no auto-population side effects
+  2. Song assignment effect only fires for new dancers (skips those with existing songs via `songAssignmentsRef`)
+  3. Songs-per-set changes preserve existing songs, only add/trim at the end
+  4. Second effect guarded by `prevSongsPerSetRef` to prevent reshuffling on `dancers` prop changes
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Feature: Remote Display — Dancer Song Lists + Break Songs
+- **Purpose**: Remote rotation tab now shows each dancer's assigned song list and break songs
+- **Data flow**: `plannedSongAssignments` state in DJBooth receives song assignments from RotationPlaylistManager via `onSongAssignmentsChange` prop; merged with `rotationSongs` in broadcast
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`, `src/components/dj/RemoteView.jsx`
+
+#### Fix: Club Day Name in Announcements
+- **Problem**: After midnight, announcements said "Sunday night" instead of "Saturday night" (the club is still operating Saturday's shift)
+- **Fix**: Before 6 AM, use `now - 6hrs` for day name so Saturday night stays Saturday until close
+- **File**: `src/utils/energyLevels.js`
+
+#### Analysis: Song Reassignment Timing (Not Fixed — Monitoring)
+- **Observation**: With 2 dancers and 1-song sets, when dancer A finishes and flips to bottom, her new song doesn't appear until ~5 seconds before dancer B finishes
+- **Root Cause**: Assignment system skips dancers who still have old (played) songs in `songAssignmentsRef`. Old songs aren't cleared on flip, so new assignment waits for a different trigger
+- **Decision**: Left as-is per user request — works acceptably in real-world rotations with more dancers. Second cycle was faster (cached data). Will revisit if needed
+
+#### Voiceover Cost Analysis
+- 300 names × 5 energy levels = 453,000 max voiceovers (~$1,632 pre-generated at ElevenLabs rates)
+- Practical cost much lower since transitions are generated on-demand and cached
+- Only intro/outro/round2 pre-cached; transitions cached as they occur
+
 ### Mar 1, 2026 — Session 9 (Remote Sync, Volume Controls, Break Songs, Announcements, Song Repeat Fix)
 
 #### Fix: Song Repetition (Cooldown Bypass)
