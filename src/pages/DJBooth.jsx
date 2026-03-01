@@ -617,6 +617,13 @@ export default function DJBooth() {
             });
           }
           break;
+        case 'setVolume':
+          if (cmd.payload.volume != null) {
+            const vol = Math.max(0, Math.min(1, cmd.payload.volume));
+            setVolume(vol);
+            audioEngineRef.current?.setVolume(vol);
+          }
+          break;
         default:
           console.log('Unknown remote command:', cmd.action);
       }
@@ -681,13 +688,14 @@ export default function DJBooth() {
           rotation,
           announcementsEnabled,
           rotationSongs,
+          volume,
         });
       } catch {}
     };
     broadcast();
     const interval = setInterval(broadcast, 5000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume]);
 
   useEffect(() => {
     if (!activeStage) return;
