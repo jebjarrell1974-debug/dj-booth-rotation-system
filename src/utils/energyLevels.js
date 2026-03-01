@@ -176,18 +176,26 @@ Output should be 3-5 sentences. ${isGeneric ? 'Do not use a specific name.' : `H
     const roundLabel = roundNumber >= 3 ? 'round three' : 'round two';
     eventInstructions = `EVENT: CONTINUING SET (${roundLabel.toUpperCase()})
 
-The performer ${displayName} is continuing — this is ${roundLabel}.${genericNote}
+The performer ${displayName} is STILL ON STAGE — this is ${roundLabel} of her current set.${genericNote}
 
-STRUCTURE — keep it short, punchy, urgent:
-1. Announce the round
-2. Create urgency — this is their chance
-3. Land her name at the END
+CRITICAL CONTEXT: She has NOT left the stage. She is already performing. Do NOT say she is "coming back", "returning to the stage", "back up on the stage", or anything implying she left. She is STILL THERE dancing.
 
-EXAMPLE (match this energy, create original lines):
-"Drop it down to ${roundLabel} boys. You get one more chance for that ultimate stage dance with ${displayName}."
-"She's not done yet gentlemen. ${roundLabel} is heating up with ${displayName}."
+STRUCTURE — keep it very short and punchy:
+1. Quick hype line — acknowledge the continuation
+2. Land her name
 
-Output should be 1-3 sentences MAX. Keep it tight. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
+GOOD EXAMPLES (match this energy, create original lines):
+"${roundLabel} gentlemen. Let's keep it going one more time for ${displayName}."
+"We're not done yet. Giving you more of the beautiful ${displayName}."
+"${roundLabel} boys. Keep those dollars coming for ${displayName}."
+"She's still going gentlemen. ${roundLabel} with ${displayName}."
+
+BAD EXAMPLES (NEVER do this):
+"Coming back to the stage..." — WRONG, she never left
+"Back up on the main stage..." — WRONG, she's already there
+"Let's welcome back..." — WRONG, she didn't leave
+
+Output should be 1-2 sentences MAX. Keep it tight and simple. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
 
   } else if (type === 'outro') {
     eventInstructions = `EVENT: STAGE EXIT
@@ -230,19 +238,14 @@ EXAMPLE (match this energy, create original lines):
 Output should be 3-5 sentences. Rhyming and wordplay encouraged if natural (e.g. "doing it right on a ${dayOfWeek} night"). ${isGeneric ? 'Do not use a specific name.' : `Say ${nextName} 2-3 times, spaced out naturally.`}`;
   }
 
-  const shiftBlock = `SHIFT TYPE: ${shiftType}
-Tone: ${shift.tone}
-Confidence level: ${shift.confidence}`;
+  const shiftBlock = `TONE DIRECTION (internal guidance only — NEVER say these words out loud):
+Your tone should be: ${shift.tone}
+Your confidence level should be: ${shift.confidence}
+CRITICAL: Do NOT reference the time of night, shift, energy level, or any internal labels in the spoken announcement. Just let the tone come through naturally in how you speak.`;
 
   const closingBlock = closingWindow
-    ? `CLOSING WINDOW: true
-- Add urgency
-- Emphasize limited time
-- Use slightly shorter sentences
-- Strengthen the VIP call-to-action`
-    : `CLOSING WINDOW: false
-- No time pressure
-- Focus on smooth persuasion`;
+    ? `PACING: Add urgency. Emphasize limited time. Use slightly shorter sentences. Strengthen the VIP call-to-action.`
+    : `PACING: No time pressure. Focus on smooth persuasion.`;
 
   const behaviorRule = shiftType === 'EARLY_SHIFT'
     ? 'Sound welcoming and build anticipation.'

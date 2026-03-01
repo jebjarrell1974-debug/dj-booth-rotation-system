@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { boothApi } from '@/api/serverApi';
 import DJOptions from '@/components/dj/DJOptions';
@@ -36,6 +36,31 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const rotationSongs = liveBoothState?.rotationSongs || {};
   const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
   const volumePercent = Math.round(currentVolume * 100);
+  const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
+  const voiceGainPercent = Math.round(currentVoiceGain * 100);
+  const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
+
+  const trackTime = liveBoothState?.trackTime || 0;
+  const trackDuration = liveBoothState?.trackDuration || 0;
+  const trackTimeAt = liveBoothState?.trackTimeAt || 0;
+
+  const countdownRef = useRef(null);
+  useEffect(() => {
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const interval = setInterval(() => {
+      if (!countdownRef.current) return;
+      if (trackDuration > 0 && trackTimeAt > 0) {
+        const elapsed = isPlaying ? (Date.now() - trackTimeAt) / 1000 : 0;
+        const currentPos = Math.min(trackTime + elapsed, trackDuration);
+        const remaining = Math.max(0, trackDuration - currentPos);
+        countdownRef.current.textContent = fmt(remaining);
+        countdownRef.current.style.display = '';
+      } else {
+        countdownRef.current.style.display = 'none';
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [trackTime, trackDuration, trackTimeAt, isPlaying]);
 
   const currentDancer = isRotationActive
     ? dancers.find(d => d.id === rotationList[currentDancerIndex])
@@ -89,9 +114,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   </div>
                 </div>
                 {currentTrack && (
-                  <p className="text-sm text-gray-300 truncate bg-[#151528] rounded-lg px-3 py-2">
-                    {isPlaying ? '▶' : '⏸'} {currentTrack}
-                  </p>
+                  <div className="flex items-center gap-2 bg-[#151528] rounded-lg px-3 py-2">
+                    <p className="text-sm text-gray-300 truncate flex-1">
+                      {isPlaying ? '▶' : '⏸'} {currentTrack}
+                    </p>
+                    <span ref={countdownRef} className="text-sm font-mono text-[#00d4ff] tabular-nums flex-shrink-0" style={{ display: 'none' }} />
+                  </div>
                 )}
               </>
             ) : (
@@ -144,13 +172,31 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 ))}
               </div>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-400">Break Songs</span>
+              <div className="flex items-center gap-1">
+                {[0,1,2,3].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => boothApi.sendCommand('setBreakSongsPerSet', { count: n })}
+                    className={`w-10 h-10 rounded-lg text-base font-bold transition-colors ${
+                      n === breakSongsPerSet
+                        ? 'bg-violet-500 text-white'
+                        : 'bg-[#151528] text-gray-400 active:bg-[#2e2e5a]'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex-shrink-0">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-gray-400" />
-                <span className="text-sm font-semibold text-gray-400">Volume</span>
+                <span className="text-sm font-semibold text-gray-400">Music</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -167,6 +213,31 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })}
                   disabled={volumePercent >= 100}
                   className="w-12 h-12 rounded-lg bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mic className="w-4 h-4 text-[#a855f7]" />
+                <span className="text-sm font-semibold text-[#a855f7]">Voice</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })}
+                  disabled={voiceGainPercent <= 50}
+                  className="w-12 h-12 rounded-lg bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                >
+                  <Minus className="w-6 h-6" />
+                </button>
+                <div className="w-16 h-12 rounded-lg bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center">
+                  <span className="text-lg font-bold text-[#a855f7] tabular-nums">{voiceGainPercent}%</span>
+                </div>
+                <button
+                  onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(3, currentVoiceGain + 0.1) })}
+                  disabled={voiceGainPercent >= 300}
+                  className="w-12 h-12 rounded-lg bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                 >
                   <Plus className="w-6 h-6" />
                 </button>

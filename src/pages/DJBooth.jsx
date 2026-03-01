@@ -71,7 +71,11 @@ export default function DJBooth() {
   const lastTimeStampRef = useRef(performance.now());
   const isPlayingRef = useRef(false);
   const timeDisplayRef = useRef(null);
+  const remoteTimeDisplayRef = useRef(null);
   const [volume, setVolume] = useState(0.8);
+  const [voiceGain, setVoiceGain] = useState(() => {
+    try { return parseFloat(localStorage.getItem('djbooth_voice_gain')) || 1.5; } catch { return 1.5; }
+  });
   const updateThrottleRef = useRef(0);
   
   // Rotation state
@@ -86,6 +90,8 @@ export default function DJBooth() {
   const rotationSongsRef = useRef({});
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
+  const [breakSongsPerSet, setBreakSongsPerSet] = useState(0);
+  const breakSongsPerSetRef = useRef(0);
   const [energyOverride, setEnergyOverride] = useState(() => getApiConfig().energyOverride || 'auto');
   const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
   const djOptionsRef = useRef({ activeGenres: [], musicMode: 'dancer_first' });
@@ -478,9 +484,36 @@ export default function DJBooth() {
 
   useEffect(() => {
     if (!remoteMode) return;
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const interval = setInterval(() => {
+      if (!remoteTimeDisplayRef.current) return;
+      const dur = liveBoothState?.trackDuration || 0;
+      const timeAt = liveBoothState?.trackTimeAt || 0;
+      if (dur > 0 && timeAt > 0) {
+        const elapsed = liveBoothState?.isPlaying ? (Date.now() - timeAt) / 1000 : 0;
+        const currentPos = Math.min((liveBoothState?.trackTime || 0) + elapsed, dur);
+        const remaining = Math.max(0, dur - currentPos);
+        remoteTimeDisplayRef.current.textContent = fmt(remaining);
+        remoteTimeDisplayRef.current.style.display = '';
+      } else {
+        remoteTimeDisplayRef.current.style.display = 'none';
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [remoteMode, liveBoothState?.trackTime, liveBoothState?.trackDuration, liveBoothState?.trackTimeAt, liveBoothState?.isPlaying]);
+
+  useEffect(() => {
+    if (!remoteMode) return;
     let active = true;
 
-    boothApi.getState().then(state => { if (active) setLiveBoothState(state); }).catch(() => {});
+    const pollState = () => {
+      if (!active) return;
+      boothApi.getState().then(state => {
+        if (active && state && state.updatedAt) setLiveBoothState(state);
+      }).catch(() => {});
+    };
+
+    pollState();
 
     const es = connectBoothSSE((data) => {
       if (!active) return;
@@ -497,13 +530,13 @@ export default function DJBooth() {
     });
     sseRef.current = es;
 
-    if (remoteMode) {
-      djOptionsApi.get()
-        .then(opts => { if (active) { setDjOptions(opts); djOptionsRef.current = opts; } })
-        .catch(() => {});
-    }
+    const statePollInterval = setInterval(pollState, 1000);
 
-    return () => { active = false; sseRef.current?.close(); sseRef.current = null; };
+    djOptionsApi.get()
+      .then(opts => { if (active) { setDjOptions(opts); djOptionsRef.current = opts; } })
+      .catch(() => {});
+
+    return () => { active = false; clearInterval(statePollInterval); sseRef.current?.close(); sseRef.current = null; };
   }, [remoteMode]);
 
   // Fetch dancers
@@ -625,6 +658,21 @@ export default function DJBooth() {
             audioEngineRef.current?.setVolume(vol);
           }
           break;
+        case 'setVoiceGain':
+          if (cmd.payload.gain != null) {
+            const g = Math.max(0.5, Math.min(3, Math.round(cmd.payload.gain * 20) / 20));
+            setVoiceGain(g);
+            audioEngineRef.current?.setVoiceGain(g);
+            try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+          }
+          break;
+        case 'setBreakSongsPerSet':
+          if (cmd.payload.count != null) {
+            const c = Math.max(0, Math.min(3, cmd.payload.count));
+            setBreakSongsPerSet(c);
+            breakSongsPerSetRef.current = c;
+          }
+          break;
         default:
           console.log('Unknown remote command:', cmd.action);
       }
@@ -637,11 +685,16 @@ export default function DJBooth() {
     if (remoteMode) return;
     let active = true;
 
-    boothApi.getCommands(lastCommandIdRef.current).then(({ commands }) => {
-      if (!active || !commands) return;
-      commands.forEach(executeCommand);
-      if (commands.length > 0) boothApi.ackCommands(lastCommandIdRef.current).catch(() => {});
-    }).catch(() => {});
+    const pollCommands = () => {
+      if (!active) return;
+      boothApi.getCommands(lastCommandIdRef.current).then(({ commands }) => {
+        if (!active || !commands) return;
+        commands.forEach(executeCommand);
+        if (commands.length > 0) boothApi.ackCommands(lastCommandIdRef.current).catch(() => {});
+      }).catch(() => {});
+    };
+
+    pollCommands();
 
     const es = connectBoothSSE((data) => {
       if (!active) return;
@@ -659,7 +712,9 @@ export default function DJBooth() {
     });
     commandSseRef.current = es;
 
-    return () => { active = false; commandSseRef.current?.close(); commandSseRef.current = null; };
+    const commandPollInterval = setInterval(pollCommands, 1000);
+
+    return () => { active = false; clearInterval(commandPollInterval); commandSseRef.current?.close(); commandSseRef.current = null; };
   }, [remoteMode, executeCommand]);
 
   // Pi mode: broadcast live state to server every 5 seconds
@@ -685,18 +740,23 @@ export default function DJBooth() {
           currentTrack,
           currentSongNumber,
           songsPerSet,
+          breakSongsPerSet,
           isPlaying,
           rotation,
           announcementsEnabled,
           rotationSongs,
           volume,
+          voiceGain,
+          trackTime: currentTimeRef.current || 0,
+          trackDuration: durationRef.current || 0,
+          trackTimeAt: Date.now(),
         });
       } catch {}
     };
     broadcast();
-    const interval = setInterval(broadcast, 5000);
+    const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain]);
 
   useEffect(() => {
     if (!activeStage) return;
@@ -1263,29 +1323,14 @@ export default function DJBooth() {
     
     try {
     
-    const existingSongs = rotationSongsRef.current || {};
-    const cooldowns = songCooldownRef.current || {};
-    const now = Date.now();
     const selectedSongs = {};
     const batchExcludes = [];
     for (const dancerId of cleanRotation) {
       const dancer = dnc.find(d => d.id === dancerId);
       if (dancer) {
-        const existing = existingSongs[dancerId];
-        const hasManualPlaylist = dancer.playlist && dancer.playlist.length > 0;
-        const count = songsPerSetRef.current;
-        const allOffCooldown = existing?.every(t => {
-          const lastPlayed = cooldowns[t.name] || 0;
-          return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
-        });
-        if (hasManualPlaylist && existing && existing.length >= count && existing.every(t => t.url) && allOffCooldown) {
-          selectedSongs[dancerId] = existing;
-          existing.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
-        } else {
-          const dancerTracks = await getDancerTracks(dancer, batchExcludes);
-          selectedSongs[dancerId] = dancerTracks;
-          dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
-        }
+        const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+        selectedSongs[dancerId] = dancerTracks;
+        dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
       }
     }
     setRotationSongs(selectedSongs);
@@ -1501,18 +1546,7 @@ export default function DJBooth() {
           return;
         }
 
-        const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
-        const skipCount = songsPerSetRef.current;
-        const cachedTracks = rotationSongsRef.current[newRotation[newIdx]];
-        const skipCooldowns = songCooldownRef.current || {};
-        const skipNow = Date.now();
-        const cachedAllOffCooldown = cachedTracks?.every(t => {
-          const lp = skipCooldowns[t.name] || 0;
-          return !lp || (skipNow - lp) >= COOLDOWN_MS;
-        });
-        let freshTracks = (hasManualPlaylist && cachedTracks?.length >= skipCount && cachedAllOffCooldown)
-          ? cachedTracks
-          : await getDancerTracks(nextDancer);
+        let freshTracks = await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
@@ -1650,18 +1684,7 @@ export default function DJBooth() {
 
       try {
         lastAudioActivityRef.current = Date.now();
-        const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
-        const endCount = songsPerSetRef.current;
-        const endCached = rotationSongsRef.current[newRotation[newIdx]];
-        const endCooldowns = songCooldownRef.current || {};
-        const endNow = Date.now();
-        const endAllOffCooldown = endCached?.every(t => {
-          const lp = endCooldowns[t.name] || 0;
-          return !lp || (endNow - lp) >= COOLDOWN_MS;
-        });
-        let freshTracks = (hasManualPlaylist && endCached?.length >= endCount && endAllOffCooldown)
-          ? endCached
-          : await getDancerTracks(nextDancer);
+        let freshTracks = await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         delete updatedSongs[finishedDancerId];
@@ -1797,7 +1820,34 @@ export default function DJBooth() {
         }
       } else {
         const breakKey = `after-${rot[idx]}`;
-        const breakSongs = interstitialSongsRef.current[breakKey] || [];
+        let breakSongs = interstitialSongsRef.current[breakKey] || [];
+
+        if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+          try {
+            const token = sessionStorage.getItem('djbooth_token');
+            const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+            const excludeNames = [...new Set(Object.values(rotationSongsRef.current).flat().map(t => t.name))];
+            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const res = await fetch('/api/music/select', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                count: breakSongsPerSetRef.current,
+                excludeNames,
+                genres: activeGenres,
+                dancerPlaylist: []
+              }),
+              signal: AbortSignal.timeout(5000)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              breakSongs = (data.tracks || []).map(t => t.name);
+              console.log('🎵 Auto-selected', breakSongs.length, 'break song(s):', breakSongs);
+            }
+          } catch (err) {
+            console.warn('⚠️ Failed to auto-select break songs:', err.message);
+          }
+        }
 
         if (breakSongs.length > 0) {
           console.log('🎵 HandleTrackEnd: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
@@ -1874,10 +1924,7 @@ export default function DJBooth() {
           return;
         }
 
-        const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
-        let freshTracks = (hasManualPlaylist && rotationSongsRef.current[newRotation[newIdx]]?.length > 0)
-          ? rotationSongsRef.current[newRotation[newIdx]]
-          : await getDancerTracks(nextDancer);
+        let freshTracks = await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
@@ -2220,28 +2267,9 @@ export default function DJBooth() {
               const level = getCurrentEnergyLevel({ ...config, energyOverride });
               const info = ENERGY_LEVELS[level];
               return (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={energyOverride}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setEnergyOverride(val);
-                      saveApiConfig({ energyOverride: val });
-                    }}
-                    className="h-8 rounded-md bg-[#0d0d1f] border border-[#1e293b] text-xs px-2"
-                    style={{ color: info.color }}
-                  >
-                    <option value="auto">Auto</option>
-                    <option value="1">L1</option>
-                    <option value="2">L2</option>
-                    <option value="3">L3</option>
-                    <option value="4">L4</option>
-                    <option value="5">L5</option>
-                  </select>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
-                    <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
-                  </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
+                  <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
                 </div>
               );
             })()}
@@ -2259,10 +2287,13 @@ export default function DJBooth() {
                     </div>
                     {liveBoothState?.updatedAt > 0 ? (
                       liveBoothState.isRotationActive ? (
-                        <p className="text-xs text-gray-300 truncate">
-                          {liveBoothState.isPlaying ? '▶' : '⏸'} {liveBoothState.currentDancerName || 'Unknown'} — Song {liveBoothState.currentSongNumber}/{liveBoothState.songsPerSet}
-                          {liveBoothState.currentTrack ? ` · ${liveBoothState.currentTrack}` : ''}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-300 truncate">
+                            {liveBoothState.isPlaying ? '▶' : '⏸'} {liveBoothState.currentDancerName || 'Unknown'} — Song {liveBoothState.currentSongNumber}/{liveBoothState.songsPerSet}
+                            {liveBoothState.currentTrack ? ` · ${liveBoothState.currentTrack}` : ''}
+                          </p>
+                          <span ref={remoteTimeDisplayRef} className="text-xs font-mono text-[#00d4ff] tabular-nums flex-shrink-0" style={{ display: 'none' }} />
+                        </div>
                       ) : (
                         <p className="text-xs text-gray-400">Booth connected · Rotation stopped</p>
                       )
@@ -2319,7 +2350,7 @@ export default function DJBooth() {
                     <SkipForward className="w-4 h-4" />
                   </Button>
                   
-                  <div className="flex-1 flex items-center gap-2 justify-end">
+                  <div className="flex-1 flex items-center gap-1.5 justify-end">
                     <Volume2 className="w-4 h-4 text-gray-500" />
                     <button
                       onClick={() => {
@@ -2328,12 +2359,12 @@ export default function DJBooth() {
                         audioEngineRef.current?.setVolume(vol);
                       }}
                       disabled={Math.round(volume * 100) <= 0}
-                      className="w-8 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                     >
-                      <Minus className="w-4 h-4" />
+                      <Minus className="w-3.5 h-3.5" />
                     </button>
-                    <div className="w-12 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
-                      <span className="text-sm font-bold text-white tabular-nums">{Math.round(volume * 100)}%</span>
+                    <div className="w-11 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
+                      <span className="text-xs font-bold text-white tabular-nums">{Math.round(volume * 100)}%</span>
                     </div>
                     <button
                       onClick={() => {
@@ -2342,9 +2373,40 @@ export default function DJBooth() {
                         audioEngineRef.current?.setVolume(vol);
                       }}
                       disabled={Math.round(volume * 100) >= 100}
-                      className="w-8 h-8 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="w-px h-5 bg-[#2e2e5a] mx-0.5" />
+
+                    <Mic className="w-4 h-4 text-[#a855f7]" />
+                    <button
+                      onClick={() => {
+                        const g = Math.max(0.5, voiceGain - 0.1);
+                        setVoiceGain(g);
+                        audioEngineRef.current?.setVoiceGain(g);
+                        try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+                      }}
+                      disabled={Math.round(voiceGain * 100) <= 50}
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="w-11 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center">
+                      <span className="text-xs font-bold text-[#a855f7] tabular-nums">{Math.round(voiceGain * 100)}%</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const g = Math.min(3, voiceGain + 0.1);
+                        setVoiceGain(g);
+                        audioEngineRef.current?.setVoiceGain(g);
+                        try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+                      }}
+                      disabled={Math.round(voiceGain * 100) >= 300}
+                      className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -2511,6 +2573,8 @@ export default function DJBooth() {
                     setDjOptions(opts);
                     djOptionsRef.current = opts;
                   }}
+                  energyOverride={energyOverride}
+                  onEnergyOverrideChange={setEnergyOverride}
                 />
               </div>
             )}
@@ -2742,6 +2806,11 @@ export default function DJBooth() {
                   const dancer = dancers.find(d => d.id === dancerId);
                   console.log('⏭️ Skipped dancer to bottom:', dancer?.name);
                   toast(`${dancer?.name || 'Dancer'} moved to end of rotation`, { icon: '⏭️' });
+                }}
+                breakSongsPerSet={breakSongsPerSet}
+                onBreakSongsPerSetChange={(n) => {
+                  setBreakSongsPerSet(n);
+                  breakSongsPerSetRef.current = n;
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={(n) => {

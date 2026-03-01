@@ -43,7 +43,9 @@ export default function RotationPlaylistManager({
   announcementsEnabled,
   onAnnouncementsToggle,
   onSkipDancer,
-  currentDancerIndex
+  currentDancerIndex,
+  breakSongsPerSet,
+  onBreakSongsPerSetChange
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -594,6 +596,22 @@ export default function RotationPlaylistManager({
                     </button>
                   ))}
                   <span className="text-xs text-gray-500 px-1">songs</span>
+                </div>
+                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
+                  {[0, 1, 2, 3].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => onBreakSongsPerSetChange?.(n)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        breakSongsPerSet === n
+                          ? 'bg-violet-500 text-white'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-xs text-gray-500 px-1">breaks</span>
                 </div>
                 <button
                   onClick={() => onAnnouncementsToggle?.(!announcementsEnabled)}

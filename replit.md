@@ -9,7 +9,7 @@ NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent
 - Neon dancer color palette for club atmosphere
 - App name: "NEON AI DJ" (logo at `/public/neon-ai-dj-logo.jpeg`)
 - Minimize CPU/GPU usage for local hardware operation
-- Do not modify `AudioEngine.jsx` audio behavior (crossfade, ducking, volume levels are finalized). The `loadTrack` method accepts both URL strings and FileSystemFileHandle objects.
+- Do not modify `AudioEngine.jsx` audio behavior (crossfade, ducking, gain bus architecture are finalized). The `loadTrack` method accepts both URL strings and FileSystemFileHandle objects. Voice announcements route through a separate GainNode (`voiceGainRef`) for independent volume boost (default 1.5x / 150%).
 - Production database stored at `/home/runner/data/djbooth.db` (outside project directory) to survive republishing. Development uses `./djbooth.db`. Configurable via `DB_PATH` env var.
 
 ## System Architecture
@@ -28,6 +28,81 @@ A fleet management system enables centralized control of multiple Pi units, prov
 The application is deployed via Replit as an autoscale target, with Vite building to `dist/public/`. Production Express servers static files from `dist/public/` with SPA fallback.
 
 ## Session Notes
+
+### Mar 1, 2026 — Session 9 (Remote Sync, Volume Controls, Break Songs, Announcements, Song Repeat Fix)
+
+#### Fix: Song Repetition (Cooldown Bypass)
+- **Problem**: Dancers with manual playlists (e.g. Cameron with 2 Joan Jett songs) got the exact same songs every rotation cycle. Code was reusing cached songs for playlist dancers without checking 4-hour cooldown
+- **Fix**: Removed all `hasManualPlaylist + cached songs` shortcuts from `beginRotation`, `handleTrackEnd` (both break-song and no-break paths), and `handleSkip`. All transitions now always call `getDancerTracks()` which properly enforces cooldown exclusions
+- **File**: `src/pages/DJBooth.jsx`
+
+#### Feature: Voice Gain Boost (Mic Volume)
+- **Purpose**: Announcements now route through a Web Audio API GainNode, allowing volume boost above 100% (up to 300%)
+- **Default**: 150% gain. Persisted to localStorage as `djbooth_voice_gain`
+- **Pi UI**: Purple mic icon with +/- buttons next to music volume controls (10% increments, min 50%, max 300%)
+- **Remote UI**: Separate "Voice" row with purple mic icon and +/- buttons in volume section. Sends `setVoiceGain` command
+- **AudioEngine changes**: Added `voiceGainRef`, `voiceSourceRef`, voice element routed through gain node on first announcement play. `setVoiceGain()` exposed via imperative handle
+- **Server**: `liveBoothState` now stores `voiceGain` field for remote sync
+- **Files**: `src/components/dj/AudioEngine.jsx`, `src/pages/DJBooth.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### UI: Energy Level Controls Moved to Options Tab
+- **Before**: Energy level dropdown + badge in header bar (took space)
+- **After**: Energy level buttons (Auto/L1/L2/L3/L4/L5) in Options tab above Music Selection Mode. Header still shows current level badge (read-only indicator)
+- **Files**: `src/components/dj/DJOptions.jsx`, `src/pages/DJBooth.jsx`
+
+#### Fix: Announcement Script Improvements
+- **Shift type references removed**: AI was literally saying "mid shift" / "prime shift" in announcements. Prompt now labels shift info as "internal guidance only — NEVER say these words out loud"
+- **Round 2 context fix**: AI was saying "coming back to the stage" during round 2 when dancer never left. Prompt now explicitly states she's STILL ON STAGE with BAD EXAMPLES of what NOT to say. Output capped to 1-2 sentences
+- **Pronunciation map**: Added phonetic mappings for dancer names ElevenLabs mispronounces (Mia→Mee-ah, Chaunte→Shawn-tay, Charisse→Sha-reese, Tatianna→Tah-tee-ah-nah, Nadia→Nah-dee-ah). Applied in `generateAudio()` before sending to TTS. Possessive forms also mapped
+- **Name repetition**: Intro and transition say dancer name 2-3 times (varies naturally, not fixed). Round 2 and outro say name once
+- **Files**: `src/utils/energyLevels.js`, `src/components/dj/AnnouncementSystem.jsx`
+
+#### Feature: Song Countdown Timer on Remote
+- **Purpose**: Remote (iPad) now shows the same countdown timer as the Pi player bar
+- **Data flow**: Pi broadcasts `trackTime`, `trackDuration`, `trackTimeAt` in booth state. Remote interpolates locally every 250ms for smooth countdown between updates
+- **UI**: Cyan countdown next to track name on RemoteView player and DJBooth remote-mode header
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### Fix: Remote Responsiveness
+- **Command polling** (remote → Pi): 3s → 1s fallback when SSE drops
+- **State polling** (Pi → remote): 3s → 1s fallback when SSE drops
+- **State broadcast interval**: 5s → 2s heartbeat (also fires immediately on any state change via React deps)
+- SSE delivers commands/state instantly when connected; polling is safety net only
+- **File**: `src/pages/DJBooth.jsx`
+
+#### Fix: Playlist Song Resolution (RotationPlaylistManager)
+- **Problem**: Initial song assignment matched playlist songs against client-side `tracks` array (only 200 of 8,875 loaded); dancers' playlist songs failed to match, fell through to random
+- **Fix**: useEffect now calls `/api/music/select` server endpoint for initial assignment, resolving against full database. Batch excludes prevent cross-dancer duplicates. Falls back to client-side tracks only if server fails
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Feature: Master Volume Control (Plus/Minus Buttons)
+- **Pi interface**: Replaced slider with `[ - ] 80% [ + ]` buttons (5% increments) in playback controls bar
+- **Manager Remote**: Same plus/minus buttons in left sidebar, sends `setVolume` command via SSE
+- **Architecture**: App volume controls `masterGain` node (music only); voice announcements use separate `<audio>` element bypassing masterGain (intentional — Pi system volume controls voice level independently)
+- **Server**: `liveBoothState` now stores `volume` field for remote sync
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### Feature: Break Songs Count Selector (0/1/2/3)
+- **Purpose**: Set how many auto-selected break songs play between dancers during transitions
+- **State**: `breakSongsPerSet` (default 0) with ref, stored in `liveBoothState` for remote sync
+- **UI**: Purple-highlighted buttons next to Songs/Set selector on both Pi (RotationPlaylistManager) and Remote
+- **Auto-selection**: When `breakSongsPerSet > 0` and no manual break songs assigned, calls `/api/music/select` to pick random songs during transition. Manual break song assignments take priority
+- **Remote command**: `setBreakSongsPerSet` with `{ count }` payload
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### Fix: Remote Sync Reliability (Polling Fallback)
+- **Problem**: SSE connections silently die on club WiFi; remote shows stale state and commands don't reach Pi
+- **Fix**: Added 3-second polling fallback on both sides as backup to SSE:
+  - **Pi mode**: Polls `/booth/commands` every 3s (in addition to SSE listener). Command deduplication via `lastCommandIdRef.current` prevents double execution
+  - **Remote mode**: Polls `/booth/state` every 3s (in addition to SSE listener). Only updates if `state.updatedAt` is present
+- **Files**: `src/pages/DJBooth.jsx`
+
+#### Feature: Announcement Name Repetition
+- **Intro announcements**: Dancer name now said 2-3 times, spaced naturally throughout (not clustered)
+- **Transition announcements**: Incoming dancer name 2-3 times; outgoing dancer name once
+- **Round 2 / Outro**: Unchanged (single name mention)
+- **Implementation**: Added `NAME REPETITION RULE` instruction block to intro and transition templates, plus updated example scripts
+- **File**: `src/utils/energyLevels.js`
 
 ### Feb 28, 2026 — Session 8 (Script Generation Improvements)
 

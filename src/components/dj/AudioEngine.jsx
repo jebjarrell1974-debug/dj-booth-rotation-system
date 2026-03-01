@@ -35,6 +35,10 @@ const AudioEngine = forwardRef(({
   const limiterRef = useRef(null);
   const masterGainRef = useRef(null);
   const voiceElRef = useRef(null);
+  const voiceGainRef = useRef(null);
+  const voiceSourceRef = useRef(null);
+  const voiceSourceElRef = useRef(null);
+  const voiceGainLevel = useRef(1.5);
   const autoGainEnabledRef = useRef(true);
   const autoGainCacheRef = useRef(new Map());
 
@@ -99,6 +103,10 @@ const AudioEngine = forwardRef(({
 
       deckASourceElRef.current = null;
       deckBSourceElRef.current = null;
+
+      voiceGainRef.current = audioCtxRef.current.createGain();
+      voiceGainRef.current.gain.value = voiceGainLevel.current;
+      voiceGainRef.current.connect(audioCtxRef.current.destination);
     }
     if (audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
@@ -129,6 +137,7 @@ const AudioEngine = forwardRef(({
 
     deckA.crossOrigin = 'anonymous';
     deckB.crossOrigin = 'anonymous';
+    voice.crossOrigin = 'anonymous';
 
     deckA.volume = 1.0;
     deckB.volume = 1.0;
@@ -149,6 +158,7 @@ const AudioEngine = forwardRef(({
       if (safetyFadeRef.current) cancelAnimationFrame(safetyFadeRef.current);
       if (deckASourceRef.current) { try { deckASourceRef.current.disconnect(); } catch {} }
       if (deckBSourceRef.current) { try { deckBSourceRef.current.disconnect(); } catch {} }
+      if (voiceSourceRef.current) { try { voiceSourceRef.current.disconnect(); } catch {} }
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         audioCtxRef.current.close().catch(() => {});
       }
@@ -551,6 +561,20 @@ const AudioEngine = forwardRef(({
       voice.volume = 1.0;
       voice.loop = false;
 
+      if (voiceGainRef.current && audioCtxRef.current) {
+        if (voiceSourceElRef.current !== voice) {
+          if (voiceSourceRef.current) {
+            try { voiceSourceRef.current.disconnect(); } catch {}
+          }
+          const ctx = ensureAudioContext();
+          const src = ctx.createMediaElementSource(voice);
+          src.connect(voiceGainRef.current);
+          voiceSourceRef.current = src;
+          voiceSourceElRef.current = voice;
+        }
+        voiceGainRef.current.gain.setValueAtTime(voiceGainLevel.current, audioCtxRef.current.currentTime);
+      }
+
       voice.ontimeupdate = () => {
         if (nearEndFired || !onNearEnd) return;
         if (voice && voice.duration && voice.duration > NEAR_END_SECONDS && voice.currentTime >= voice.duration - NEAR_END_SECONDS) {
@@ -601,6 +625,14 @@ const AudioEngine = forwardRef(({
     }
   }, []);
 
+  const setVoiceGain = useCallback((gain) => {
+    const g = Math.max(0, Math.min(3, gain));
+    voiceGainLevel.current = g;
+    if (voiceGainRef.current && audioCtxRef.current) {
+      voiceGainRef.current.gain.setValueAtTime(g, audioCtxRef.current.currentTime);
+    }
+  }, []);
+
   const seek = useCallback((time) => {
     const deck = getActiveDeck();
     deck.currentTime = Math.min(time, MAX_SONG_DURATION);
@@ -614,6 +646,7 @@ const AudioEngine = forwardRef(({
     unduck,
     playAnnouncement,
     setVolume,
+    setVoiceGain,
     seek,
     setMaxDuration: (seconds) => { maxDurationOverrideRef.current = seconds; },
     setAutoGain: (enabled) => { autoGainEnabledRef.current = enabled; },

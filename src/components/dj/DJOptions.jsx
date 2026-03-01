@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
 import { Settings, FolderOpen, Check, Wifi } from 'lucide-react';
+import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
+import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
-export default function DJOptions({ djOptions, onOptionsChange }) {
+export default function DJOptions({ djOptions, onOptionsChange, energyOverride, onEnergyOverrideChange }) {
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -64,6 +66,48 @@ export default function DJOptions({ djOptions, onOptionsChange }) {
   return (
     <div className="h-full overflow-auto">
       <div className="max-w-2xl mx-auto space-y-6">
+        {energyOverride !== undefined && onEnergyOverrideChange && (() => {
+          const config = getApiConfig();
+          const level = getCurrentEnergyLevel({ ...config, energyOverride });
+          const info = ENERGY_LEVELS[level];
+          return (
+            <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Energy Level</h3>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  {['auto', '1', '2', '3', '4', '5'].map(val => {
+                    const isActive = energyOverride === val;
+                    const label = val === 'auto' ? 'Auto' : `L${val}`;
+                    const levelInfo = val === 'auto' ? info : ENERGY_LEVELS[parseInt(val)];
+                    const btnColor = isActive ? levelInfo.color : undefined;
+                    return (
+                      <button
+                        key={val}
+                        onClick={() => {
+                          onEnergyOverrideChange(val);
+                          saveApiConfig({ energyOverride: val });
+                        }}
+                        className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                          isActive
+                            ? 'text-black'
+                            : 'bg-[#151528] text-gray-400 hover:text-white border border-[#1e293b]'
+                        }`}
+                        style={isActive ? { backgroundColor: btnColor } : undefined}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border ml-auto" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
+                  <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Music Selection Mode</h3>
           <div className="space-y-3">
