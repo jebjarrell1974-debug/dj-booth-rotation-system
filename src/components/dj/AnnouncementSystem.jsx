@@ -203,6 +203,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
     const voiceSettings = VOICE_SETTINGS[energyLevel] || VOICE_SETTINGS[3];
 
+    const PRONUNCIATION_MAP = {
+      'Mia': 'Mee-ah',
+    };
+    let ttsText = script;
+    for (const [name, phonetic] of Object.entries(PRONUNCIATION_MAP)) {
+      ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'g'), phonetic);
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
@@ -213,7 +221,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         'xi-api-key': apiKey
       },
       body: JSON.stringify({
-        text: script,
+        text: ttsText,
         model_id: 'eleven_monolingual_v1',
         voice_settings: {
           stability: voiceSettings.stability,
