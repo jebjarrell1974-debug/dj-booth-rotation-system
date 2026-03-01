@@ -696,6 +696,57 @@ export default function DJBooth() {
             setRotation(newRot);
             rotationRef.current = newRot;
             saveRotationRef.current?.(newRot);
+            const bps = breakSongsPerSetRef.current;
+            if (bps > 0) {
+              (async () => {
+                try {
+                  const current = interstitialSongsRef.current || {};
+                  const slotsNeeding = [];
+                  let totalNeeded = 0;
+                  for (const dancerId of newRot) {
+                    const key = `after-${dancerId}`;
+                    const existing = current[key] || [];
+                    const need = bps - existing.length;
+                    if (need > 0) {
+                      slotsNeeding.push({ key, existing, need });
+                      totalNeeded += need;
+                    }
+                    if (existing.length > bps) {
+                      current[key] = existing.slice(0, bps);
+                    }
+                  }
+                  if (totalNeeded > 0) {
+                    const token = sessionStorage.getItem('djbooth_token');
+                    const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+                    const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+                    const excludeNames = [...new Set(Object.values(current).flat())];
+                    const res = await fetch('/api/music/select', {
+                      method: 'POST', headers,
+                      body: JSON.stringify({ count: totalNeeded, excludeNames, genres: activeGenres, dancerPlaylist: [] }),
+                      signal: AbortSignal.timeout(8000)
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      const pool = (data.tracks || []).map(t => t.name).sort(() => Math.random() - 0.5);
+                      let pi = 0;
+                      for (const slot of slotsNeeding) {
+                        const filled = [...slot.existing];
+                        for (let i = 0; i < slot.need && pi < pool.length; i++) filled.push(pool[pi++]);
+                        current[slot.key] = filled;
+                      }
+                      console.log('🎵 Remote Save: auto-populated', slotsNeeding.length, 'break slots');
+                    }
+                  }
+                  interstitialSongsRef.current = current;
+                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(current)); } catch {}
+                } catch (err) {
+                  console.warn('⚠️ Remote Save: break song auto-populate failed:', err.message);
+                }
+              })();
+            } else {
+              interstitialSongsRef.current = {};
+              try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
+            }
           }
           break;
         default:
