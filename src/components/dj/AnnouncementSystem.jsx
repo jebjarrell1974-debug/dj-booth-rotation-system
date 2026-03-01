@@ -205,6 +205,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
     const PRONUNCIATION_MAP = {
       'Mia': 'Mee-ah',
+      'Mia\'s': 'Mee-ah\'s',
+      'Chaunte': 'Shawn-tay',
+      'Chaunte\'s': 'Shawn-tay\'s',
+      'Charisse': 'Sha-reese',
+      'Charisse\'s': 'Sha-reese\'s',
+      'Tatianna': 'Tah-tee-ah-nah',
+      'Tatianna\'s': 'Tah-tee-ah-nah\'s',
+      'Nadia': 'Nah-dee-ah',
+      'Nadia\'s': 'Nah-dee-ah\'s',
     };
     let ttsText = script;
     for (const [name, phonetic] of Object.entries(PRONUNCIATION_MAP)) {
