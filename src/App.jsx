@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import BootScreen from '@/components/BootScreen';
 import Landing from '@/pages/Landing';
 import DJBooth from '@/pages/DJBooth';
 import DancerView from '@/pages/DancerView';
@@ -119,10 +120,14 @@ function AppRoutes() {
 }
 
 function App() {
+  const [bootComplete, setBootComplete] = useState(false);
+  const handleBootReady = useCallback(() => setBootComplete(true), []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>
         <QueryClientProvider client={queryClientInstance}>
+          {!bootComplete && <BootScreen onReady={handleBootReady} />}
           <Router>
             <AppRoutes />
           </Router>

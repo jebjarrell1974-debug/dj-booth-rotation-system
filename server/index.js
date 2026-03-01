@@ -24,6 +24,26 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
+const bootStatus = {
+  ready: false,
+  startedAt: Date.now(),
+  steps: {
+    server: { status: 'running', label: 'Starting server' },
+    musicScan: { status: 'pending', label: 'Scanning music library', detail: '' },
+    voiceoverSync: { status: 'pending', label: 'Syncing voiceovers', detail: '' },
+    voiceoverUpload: { status: 'pending', label: 'Uploading voiceovers', detail: '' },
+    musicSync: { status: 'pending', label: 'Syncing music from cloud', detail: '' },
+    musicUpload: { status: 'pending', label: 'Uploading music to cloud', detail: '' },
+  }
+};
+
+function updateBootStep(step, status, detail) {
+  if (bootStatus.steps[step]) {
+    bootStatus.steps[step].status = status;
+    if (detail !== undefined) bootStatus.steps[step].detail = detail;
+  }
+}
+
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
     if (req.url === '/' || req.url === '/__health') {
@@ -98,6 +118,17 @@ function getMasterPin() {
 
 app.get('/__health', (req, res) => {
   res.status(200).send('OK');
+});
+
+app.get('/api/boot-status', (req, res) => {
+  const steps = Object.entries(bootStatus.steps)
+    .filter(([, s]) => s.status !== 'skipped')
+    .map(([key, s]) => ({ id: key, ...s }));
+  res.json({
+    ready: bootStatus.ready,
+    elapsed: Math.round((Date.now() - bootStatus.startedAt) / 1000),
+    steps,
+  });
 });
 
 app.get('/api/server-info', (req, res) => {
@@ -938,12 +969,17 @@ app.use((err, req, res, next) => {
 function initMusicScanner() {
   if (MUSIC_PATH) {
     try {
-      scanMusicFolder(MUSIC_PATH);
+      updateBootStep('musicScan', 'running', 'Scanning...');
+      const result = scanMusicFolder(MUSIC_PATH);
+      const count = getMusicTrackCount();
+      updateBootStep('musicScan', 'done', `${count.toLocaleString()} tracks found`);
       startPeriodicScan(MUSIC_PATH, 5);
     } catch (err) {
+      updateBootStep('musicScan', 'error', err.message);
       console.error('❌ Initial music scan failed:', err.message);
     }
   } else {
+    updateBootStep('musicScan', 'skipped');
     console.log('ℹ️ MUSIC_PATH not set — music catalog will be empty until configured');
   }
 }
@@ -951,28 +987,54 @@ function initMusicScanner() {
 async function initR2Sync() {
   if (!isR2Configured()) {
     console.log('ℹ️ R2 not configured — cloud sync disabled');
+    updateBootStep('voiceoverSync', 'skipped');
+    updateBootStep('voiceoverUpload', 'skipped');
+    updateBootStep('musicSync', 'skipped');
+    updateBootStep('musicUpload', 'skipped');
+    bootStatus.ready = true;
     return;
   }
   console.log('☁️ R2 cloud sync enabled — starting background sync...');
   try {
     const voiceoverDir = getVoiceoverDirPath();
+    updateBootStep('voiceoverSync', 'running', 'Downloading...');
     const voResult = await syncVoiceoversFromR2(voiceoverDir);
+    updateBootStep('voiceoverSync', 'done', `${voResult.downloaded} new, ${voResult.skipped} cached`);
     console.log(`☁️ Voiceover sync: ${voResult.downloaded} new, ${voResult.skipped} cached`);
+
+    updateBootStep('voiceoverUpload', 'running', 'Uploading...');
     const voUpResult = await syncVoiceoversToR2(voiceoverDir);
+    updateBootStep('voiceoverUpload', 'done', `${voUpResult.uploaded} shared to cloud`);
     console.log(`☁️ Voiceover upload: ${voUpResult.uploaded} shared to cloud`);
   } catch (err) {
+    updateBootStep('voiceoverSync', 'error', err.message);
+    updateBootStep('voiceoverUpload', 'error', err.message);
     console.error('☁️ R2 voiceover sync error:', err.message);
   }
   try {
     if (MUSIC_PATH) {
+      updateBootStep('musicSync', 'running', 'Downloading...');
       const musicResult = await syncMusicFromR2(MUSIC_PATH);
+      updateBootStep('musicSync', 'done', `${musicResult.downloaded} new, ${musicResult.skipped} cached`);
       console.log(`☁️ Music sync: ${musicResult.downloaded} new, ${musicResult.skipped} cached`);
       if (musicResult.downloaded > 0) {
         scanMusicFolder(MUSIC_PATH, true);
       }
+
+      updateBootStep('musicUpload', 'running', 'Uploading...');
+      const musicUpResult = await syncMusicToR2(MUSIC_PATH);
+      updateBootStep('musicUpload', 'done', `${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+      console.log(`☁️ Music upload: ${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+    } else {
+      updateBootStep('musicSync', 'skipped');
+      updateBootStep('musicUpload', 'skipped');
     }
   } catch (err) {
+    updateBootStep('musicSync', 'error', err.message);
+    updateBootStep('musicUpload', 'error', err.message);
     console.error('☁️ R2 music sync error:', err.message);
+  } finally {
+    bootStatus.ready = true;
   }
 }
 
@@ -984,8 +1046,12 @@ if (isDirectRun) {
   const PORT = process.env.PORT || 3001;
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
+    updateBootStep('server', 'done', `Port ${PORT}`);
     initMusicScanner();
-    initR2Sync().catch(err => console.error('☁️ R2 init error:', err.message));
+    initR2Sync().catch(err => {
+      console.error('☁️ R2 init error:', err.message);
+      bootStatus.ready = true;
+    });
   });
 
   const gracefulShutdown = () => {

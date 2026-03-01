@@ -79,6 +79,13 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **New dependency**: `@aws-sdk/client-s3`
 - **Files modified**: `server/index.js` (import, voiceover upload hook, API endpoints, boot sync), `server/db.js` (exported `getVoiceoverDirPath`)
 
+#### Feature: Boot Status Screen
+- **Purpose**: Shows visual progress during startup so the user knows the app is loading and can wait before using it
+- **Server**: `bootStatus` object tracks each phase (server, music scan, voiceover sync/upload, music sync/upload); exposed via `GET /api/boot-status`
+- **Frontend**: `BootScreen` component polls `/api/boot-status` every 1.5s, shows NEON AI DJ branding with step-by-step progress (pending/running/done/error icons), fades out when all steps complete
+- **Music auto-upload on boot**: Music now uploads to R2 on every boot (in addition to downloading), so new tracks on any Pi get shared to the fleet
+- **Files**: `server/index.js` (boot status tracking), `src/components/BootScreen.jsx` (new), `src/App.jsx` (renders BootScreen overlay)
+
 #### Analysis: Song Reassignment Timing (Not Fixed — Monitoring)
 - **Observation**: With 2 dancers and 1-song sets, when dancer A finishes and flips to bottom, her new song doesn't appear until ~5 seconds before dancer B finishes
 - **Root Cause**: Assignment system skips dancers who still have old (played) songs in `songAssignmentsRef`. Old songs aren't cleared on flip, so new assignment waits for a different trigger
