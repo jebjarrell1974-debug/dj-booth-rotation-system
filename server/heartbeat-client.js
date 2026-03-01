@@ -91,7 +91,7 @@ async function sendHeartbeat(extraData = {}) {
   };
 
   try {
-    const res = await fetch(`${FLEET_SERVER_URL}/api/fleet/heartbeat`, {
+    const res = await fetch(`${FLEET_SERVER_URL}/api/monitor/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

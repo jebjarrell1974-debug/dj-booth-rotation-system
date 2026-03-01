@@ -113,18 +113,18 @@ function stopMonitoring() {
 }
 
 function setupFleetMonitorRoutes(app) {
-  app.post('/api/fleet/heartbeat', (req, res) => {
+  app.post('/api/monitor/heartbeat', (req, res) => {
     const { deviceId, ...data } = req.body;
     if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
     registerHeartbeat(deviceId, data);
     res.json({ ok: true, timestamp: Date.now() });
   });
 
-  app.get('/api/fleet/status', (req, res) => {
+  app.get('/api/monitor/status', (req, res) => {
     res.json({ devices: getFleetStatus(), telegramActive: isTelegramConfigured() });
   });
 
-  app.post('/api/fleet/test-telegram', async (req, res) => {
+  app.post('/api/monitor/test-telegram', async (req, res) => {
     if (!isTelegramConfigured()) {
       return res.status(400).json({ error: 'Telegram not configured' });
     }
@@ -132,7 +132,7 @@ function setupFleetMonitorRoutes(app) {
     res.json({ ok: true, message: 'Test message sent' });
   });
 
-  app.post('/api/fleet/broadcast', async (req, res) => {
+  app.post('/api/monitor/broadcast', async (req, res) => {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: 'message required' });
     await sendTelegram(`📢 <b>Broadcast</b>\n${message}`);
