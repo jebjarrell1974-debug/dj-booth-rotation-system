@@ -10,12 +10,14 @@ import {
   Users,
   Layers,
   Plus,
+  Minus,
   X,
   LogOut,
   Radio,
   ChevronUp,
   ChevronDown,
   SlidersHorizontal,
+  Volume2,
 } from 'lucide-react';
 
 export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange }) {
@@ -32,6 +34,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const rotationList = liveBoothState?.rotation || [];
   const currentDancerIndex = liveBoothState?.currentDancerIndex || 0;
   const rotationSongs = liveBoothState?.rotationSongs || {};
+  const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
+  const volumePercent = Math.round(currentVolume * 100);
 
   const currentDancer = isRotationActive
     ? dancers.find(d => d.id === rotationList[currentDancerIndex])
@@ -138,6 +142,34 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     {n}
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-semibold text-gray-400">Volume</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => boothApi.sendCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })}
+                  disabled={volumePercent <= 0}
+                  className="w-12 h-12 rounded-lg bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                >
+                  <Minus className="w-6 h-6" />
+                </button>
+                <div className="w-16 h-12 rounded-lg bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
+                  <span className="text-lg font-bold text-white tabular-nums">{volumePercent}%</span>
+                </div>
+                <button
+                  onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })}
+                  disabled={volumePercent >= 100}
+                  className="w-12 h-12 rounded-lg bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
               </div>
             </div>
           </div>
