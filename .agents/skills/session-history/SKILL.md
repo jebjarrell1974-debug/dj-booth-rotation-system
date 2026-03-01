@@ -119,6 +119,139 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Calls `POST /api/kiosk/exit` with DJ auth
 - Red styling, positioned at bottom of Settings modal
 
+### New Fleet Member Setup Guide (Step-by-Step)
+
+Follow these steps in order when prepping a brand new Raspberry Pi for the fleet.
+
+**1. Install Raspberry Pi OS Bookworm (64-bit)** on the SD card
+- Set username to `neonaidj###` (e.g., `neonaidj001`, `neonaidj002`)
+- Enable SSH during setup
+- Connect to club WiFi
+
+**2. Install Node.js**
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+**3. Create directories**
+```bash
+mkdir -p ~/djbooth ~/data ~/data/voiceovers ~/Desktop/"NEONAIDJ MUSIC"
+```
+
+**4. Download the update script**
+```bash
+curl -o ~/djbooth-update.sh https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/public/djbooth-update-github.sh && chmod +x ~/djbooth-update.sh
+```
+
+**5. Run the first update** (downloads code, builds, installs dependencies)
+```bash
+~/djbooth-update.sh
+```
+
+**6. Create the systemd service** (replace `neonaidj001` with the Pi's username)
+```bash
+sudo tee /etc/systemd/system/djbooth.service > /dev/null << 'EOF'
+[Unit]
+Description=DJ Booth Rotation System
+After=network.target
+
+[Service]
+Type=simple
+User=neonaidj001
+WorkingDirectory=/home/neonaidj001/djbooth
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
+Environment=VOICEOVER_DIR=/home/neonaidj001/data/voiceovers
+Environment=MUSIC_PATH=/home/neonaidj001/Desktop/NEONAIDJ MUSIC
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable djbooth.service
+sudo systemctl start djbooth.service
+```
+
+**7. Create the auto-update service** (updates from GitHub on every boot, replace `neonaidj001`)
+```bash
+sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << 'EOF'
+[Unit]
+Description=NEON AI DJ Auto-Update
+After=network-online.target
+Wants=network-online.target
+Before=djbooth.service
+
+[Service]
+Type=oneshot
+User=neonaidj001
+WorkingDirectory=/home/neonaidj001/djbooth
+ExecStart=/home/neonaidj001/djbooth-update.sh
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable djbooth-update.service
+```
+
+**8. Set up kiosk autostart** (Chromium opens fullscreen on boot, replace `neonaidj001`)
+```bash
+mkdir -p ~/.config/autostart
+tee ~/.config/autostart/djbooth-kiosk.desktop > /dev/null << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=DJ Booth Kiosk
+Exec=chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001
+EOF
+```
+
+**9. Create desktop shortcut** (for manual launching)
+```bash
+tee ~/Desktop/DJBooth.desktop > /dev/null << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=DJ Booth
+Comment=Launch DJ Booth Kiosk
+Exec=chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001
+Icon=chromium
+Terminal=false
+Categories=AudioVideo;
+EOF
+chmod +x ~/Desktop/DJBooth.desktop
+```
+
+**10. Copy music files** to `/home/<user>/Desktop/NEONAIDJ MUSIC/`
+- Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
+
+**11. Update browserslist** (optional, one-time, inside djbooth folder)
+```bash
+cd ~/djbooth && npx update-browserslist-db@latest
+```
+
+**12. Configure the app** in the browser
+- Open `http://localhost:3001` on the Pi
+- Go to Configuration (master PIN: `36669`)
+- Set club name, ElevenLabs API key, OpenAI API key, voice ID
+- These are stored in the browser's localStorage on each Pi
+
+**13. Reboot and verify**
+```bash
+sudo reboot
+```
+After reboot: auto-update runs, app starts, Chromium opens to the DJ booth.
+
+---
+
 ### Pi Systemd Service Template
 ```ini
 [Unit]
