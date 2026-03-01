@@ -1,0 +1,21 @@
+:~ $ sudo journalctl -u djbooth --no-pager -n 20
+Mar 01 08:48:27 raspberrypi node[21271]: Error: The module '/home/jebjarrell/djbooth/node_modules/better-sqlite3/build/Release/better_sqlite3.node'
+Mar 01 08:48:27 raspberrypi node[21271]: was compiled against a different Node.js version using
+Mar 01 08:48:27 raspberrypi node[21271]: NODE_MODULE_VERSION 127. This version of Node.js requires
+Mar 01 08:48:27 raspberrypi node[21271]: NODE_MODULE_VERSION 115. Please try re-compiling or re-installing
+Mar 01 08:48:27 raspberrypi node[21271]: the module (for instance, using `npm rebuild` or `npm install`).
+Mar 01 08:48:27 raspberrypi node[21271]:     at Module._extensions..node (node:internal/modules/cjs/loader:1661:18)
+Mar 01 08:48:27 raspberrypi node[21271]:     at Module.load (node:internal/modules/cjs/loader:1266:32)
+Mar 01 08:48:27 raspberrypi node[21271]:     at Module._load (node:internal/modules/cjs/loader:1091:12)
+Mar 01 08:48:27 raspberrypi node[21271]:     at Module.require (node:internal/modules/cjs/loader:1289:19)
+Mar 01 08:48:27 raspberrypi node[21271]:     at require (node:internal/modules/helpers:182:18)
+Mar 01 08:48:27 raspberrypi node[21271]:     at bindings (/home/jebjarrell/djbooth/node_modules/bindings/bindings.js:112:48)
+Mar 01 08:48:27 raspberrypi node[21271]:     at new Database (/home/jebjarrell/djbooth/node_modules/better-sqlite3/lib/database.js:48:64)
+Mar 01 08:48:27 raspberrypi node[21271]:     at file:///home/jebjarrell/djbooth/server/db.js:27:12
+Mar 01 08:48:27 raspberrypi node[21271]:     at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+Mar 01 08:48:27 raspberrypi node[21271]:     at async ModuleLoader.import (node:internal/modules/esm/loader:606:24) {
+Mar 01 08:48:27 raspberrypi node[21271]:   code: 'ERR_DLOPEN_FAILED'
+Mar 01 08:48:27 raspberrypi node[21271]: }
+Mar 01 08:48:27 raspberrypi node[21271]: Node.js v20.20.0
+Mar 01 08:48:27 raspberrypi systemd[1]: djbooth.service: Main process exited, code=exited, status=1/FAILURE
+Mar 01 08:48:27 raspberrypi systemd[1]: djbooth.service: Failed with result 'exit-code'.
