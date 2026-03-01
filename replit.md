@@ -52,9 +52,23 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 #### Fix: Announcement Script Improvements
 - **Shift type references removed**: AI was literally saying "mid shift" / "prime shift" in announcements. Prompt now labels shift info as "internal guidance only — NEVER say these words out loud"
-- **Round 2 context fix**: AI was saying "coming back to the stage" during round 2 when dancer never left. Prompt now explicitly states she's STILL ON STAGE with BAD EXAMPLES of what NOT to say
+- **Round 2 context fix**: AI was saying "coming back to the stage" during round 2 when dancer never left. Prompt now explicitly states she's STILL ON STAGE with BAD EXAMPLES of what NOT to say. Output capped to 1-2 sentences
 - **Pronunciation map**: Added phonetic mappings for dancer names ElevenLabs mispronounces (Mia→Mee-ah, Chaunte→Shawn-tay, Charisse→Sha-reese, Tatianna→Tah-tee-ah-nah, Nadia→Nah-dee-ah). Applied in `generateAudio()` before sending to TTS. Possessive forms also mapped
+- **Name repetition**: Intro and transition say dancer name 2-3 times (varies naturally, not fixed). Round 2 and outro say name once
 - **Files**: `src/utils/energyLevels.js`, `src/components/dj/AnnouncementSystem.jsx`
+
+#### Feature: Song Countdown Timer on Remote
+- **Purpose**: Remote (iPad) now shows the same countdown timer as the Pi player bar
+- **Data flow**: Pi broadcasts `trackTime`, `trackDuration`, `trackTimeAt` in booth state. Remote interpolates locally every 250ms for smooth countdown between updates
+- **UI**: Cyan countdown next to track name on RemoteView player and DJBooth remote-mode header
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### Fix: Remote Responsiveness
+- **Command polling** (remote → Pi): 3s → 1s fallback when SSE drops
+- **State polling** (Pi → remote): 3s → 1s fallback when SSE drops
+- **State broadcast interval**: 5s → 2s heartbeat (also fires immediately on any state change via React deps)
+- SSE delivers commands/state instantly when connected; polling is safety net only
+- **File**: `src/pages/DJBooth.jsx`
 
 #### Fix: Playlist Song Resolution (RotationPlaylistManager)
 - **Problem**: Initial song assignment matched playlist songs against client-side `tracks` array (only 200 of 8,875 loaded); dancers' playlist songs failed to match, fell through to random
