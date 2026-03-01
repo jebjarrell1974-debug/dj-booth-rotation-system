@@ -230,14 +230,14 @@ sudo systemctl enable djbooth-update.service
 ```
 
 ### Step 9: Set up Chromium kiosk autostart
-Opens fullscreen browser to the app on every boot (10s delay for server to start).
+Opens fullscreen browser to the app on every boot. Waits for server to be ready before launching.
 ```bash
 mkdir -p ~/.config/autostart
 cat > ~/.config/autostart/djbooth-kiosk.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=NEON AI DJ Kiosk
-Exec=bash -c 'sleep 10 && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001'
+Exec=bash -c 'until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001'
 X-GNOME-Autostart-enabled=true
 EOF
 ```
