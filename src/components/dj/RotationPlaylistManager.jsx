@@ -93,91 +93,98 @@ export default function RotationPlaylistManager({
           if (djOverridesRef.current.has(dancerId)) return;
           if (trackList) fromActive[dancerId] = trackList.map(t => t.name);
         });
-        localRotation.forEach(dancerId => {
-          if (djOverridesRef.current.has(dancerId)) return;
-          if (!fromActive[dancerId] || fromActive[dancerId].length === 0) {
-            if (tracks.length > 0) {
-              const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
-              const shuffled = fisherYatesShuffle(genrePool);
-              fromActive[dancerId] = shuffled.slice(0, songsPerSet).map(t => t.name);
-            }
-          }
-        });
         return fromActive;
       });
       return;
     }
-    if (tracks.length === 0) return;
-    setSongAssignments(prev => {
-      const updated = { ...prev };
-      const usedNames = new Set();
-      Object.values(updated).forEach(songs => {
-        if (songs) songs.forEach(n => usedNames.add(n));
+
+    const dancersNeedingAssignment = localRotation.filter(dancerId => {
+      if (djOverridesRef.current.has(dancerId)) return false;
+      return true;
+    });
+    if (dancersNeedingAssignment.length === 0) return;
+
+    const isFoldersOnly = djOptions?.musicMode === 'folders_only';
+    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+
+    (async () => {
+      const token = sessionStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const batchExcludes = [];
+
+      setSongAssignments(prev => {
+        Object.values(prev).forEach(songs => {
+          if (songs) songs.forEach(n => batchExcludes.push(n));
+        });
+        return prev;
       });
 
-      localRotation.forEach(dancerId => {
-        if (djOverridesRef.current.has(dancerId)) return;
-
+      const newAssignments = {};
+      for (const dancerId of dancersNeedingAssignment) {
         const dancer = dancers.find(d => d.id === dancerId);
+        if (!dancer) continue;
+
         const serverPlaylist = dancer?.playlist || [];
         const serverHash = serverPlaylist.join(',');
         const lastApplied = appliedPlaylistsRef.current[dancerId];
         const hasNewServerPlaylist = serverPlaylist.length > 0 && serverHash !== lastApplied;
 
-        const isFoldersOnly = djOptions?.musicMode === 'folders_only';
-        const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
-
-        if (!isFoldersOnly && hasNewServerPlaylist) {
-          const matched = serverPlaylist
-            .map(name => tracks.find(t => t.name === name))
-            .filter(Boolean);
-          if (matched.length > 0) {
-            const names = matched.map(t => t.name);
-            if (names.length < songsPerSet) {
-              const usedSet = new Set([...usedNames, ...names]);
-              const available = genrePool.filter(t => !usedSet.has(t.name));
-              const filler = fisherYatesShuffle(available).slice(0, songsPerSet - names.length).map(t => t.name);
-              names.push(...filler);
-            }
-            updated[dancerId] = names.slice(0, songsPerSet);
-            appliedPlaylistsRef.current[dancerId] = serverHash;
-            updated[dancerId].forEach(n => usedNames.add(n));
-            return;
-          }
+        const currentSongs = newAssignments[dancerId];
+        if (currentSongs && currentSongs.length >= songsPerSet && !hasNewServerPlaylist) {
+          currentSongs.forEach(n => batchExcludes.push(n));
+          continue;
         }
 
-        if (updated[dancerId] && updated[dancerId].length >= songsPerSet) return;
+        const dancerPlaylist = (!isFoldersOnly && serverPlaylist.length > 0)
+          ? fisherYatesShuffle(serverPlaylist) : [];
 
-        if (!isFoldersOnly && serverPlaylist.length > 0) {
-          const matched = serverPlaylist
-            .map(name => tracks.find(t => t.name === name))
-            .filter(Boolean);
-          if (matched.length > 0) {
-            const names = matched.map(t => t.name);
-            if (names.length < songsPerSet) {
-              const usedSet = new Set([...usedNames, ...names]);
-              const available = genrePool.filter(t => !usedSet.has(t.name));
-              const filler = fisherYatesShuffle(available).slice(0, songsPerSet - names.length).map(t => t.name);
-              names.push(...filler);
+        try {
+          const res = await fetch('/api/music/select', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              count: songsPerSet,
+              excludeNames: [...new Set(batchExcludes)],
+              genres: activeGenres,
+              dancerPlaylist
+            }),
+            signal: AbortSignal.timeout(5000)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const selected = (data.tracks || []).map(t => t.name);
+            newAssignments[dancerId] = selected;
+            selected.forEach(n => batchExcludes.push(n));
+            if (serverPlaylist.length > 0) {
+              appliedPlaylistsRef.current[dancerId] = serverHash;
             }
-            updated[dancerId] = names.slice(0, songsPerSet);
-            appliedPlaylistsRef.current[dancerId] = serverHash;
-            updated[dancerId].forEach(n => usedNames.add(n));
-            return;
+            continue;
           }
+        } catch (err) {
+          console.warn(`⚠️ RotationPlaylist: Server select failed for ${dancer.name}: ${err.message}`);
         }
 
-        const existing = updated[dancerId] || [];
-        const available = genrePool.filter(t => !usedNames.has(t.name) && !existing.includes(t.name));
-        const pool = available.length >= songsPerSet ? available : genrePool.filter(t => !existing.includes(t.name));
-        const shuffled = fisherYatesShuffle(pool);
-        const needed = songsPerSet - existing.length;
-        const assigned = [...existing, ...shuffled.slice(0, needed).map(t => t.name)];
-        updated[dancerId] = assigned.slice(0, songsPerSet);
-        assigned.forEach(n => usedNames.add(n));
-      });
-      return updated;
-    });
+        const genrePool = filterByGenres(tracks, activeGenres);
+        const excludeSet = new Set(batchExcludes);
+        const available = genrePool.filter(t => !excludeSet.has(t.name));
+        const shuffled = fisherYatesShuffle(available);
+        const assigned = shuffled.slice(0, songsPerSet).map(t => t.name);
+        newAssignments[dancerId] = assigned;
+        assigned.forEach(n => batchExcludes.push(n));
+      }
+
+      if (Object.keys(newAssignments).length > 0) {
+        setSongAssignments(prev => {
+          const updated = { ...prev };
+          for (const [dancerId, songs] of Object.entries(newAssignments)) {
+            if (!djOverridesRef.current.has(dancerId)) {
+              updated[dancerId] = songs;
+            }
+          }
+          return updated;
+        });
+      }
+    })();
   }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs, djOptions]);
 
   useEffect(() => {
