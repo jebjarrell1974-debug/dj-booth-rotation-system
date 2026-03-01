@@ -417,6 +417,9 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     rotationSongs: state.rotationSongs || {},
     volume: state.volume != null ? state.volume : 0.8,
     voiceGain: state.voiceGain != null ? state.voiceGain : 1.5,
+    trackTime: state.trackTime || 0,
+    trackDuration: state.trackDuration || 0,
+    trackTimeAt: state.trackTimeAt || 0,
     breakSongsPerSet: state.breakSongsPerSet || 0,
     updatedAt: Date.now(),
   };

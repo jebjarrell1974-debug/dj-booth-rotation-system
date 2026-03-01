@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { boothApi } from '@/api/serverApi';
 import DJOptions from '@/components/dj/DJOptions';
@@ -39,6 +39,28 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
   const voiceGainPercent = Math.round(currentVoiceGain * 100);
   const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
+
+  const trackTime = liveBoothState?.trackTime || 0;
+  const trackDuration = liveBoothState?.trackDuration || 0;
+  const trackTimeAt = liveBoothState?.trackTimeAt || 0;
+
+  const countdownRef = useRef(null);
+  useEffect(() => {
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const interval = setInterval(() => {
+      if (!countdownRef.current) return;
+      if (trackDuration > 0 && trackTimeAt > 0) {
+        const elapsed = isPlaying ? (Date.now() - trackTimeAt) / 1000 : 0;
+        const currentPos = Math.min(trackTime + elapsed, trackDuration);
+        const remaining = Math.max(0, trackDuration - currentPos);
+        countdownRef.current.textContent = fmt(remaining);
+        countdownRef.current.style.display = '';
+      } else {
+        countdownRef.current.style.display = 'none';
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [trackTime, trackDuration, trackTimeAt, isPlaying]);
 
   const currentDancer = isRotationActive
     ? dancers.find(d => d.id === rotationList[currentDancerIndex])
@@ -92,9 +114,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   </div>
                 </div>
                 {currentTrack && (
-                  <p className="text-sm text-gray-300 truncate bg-[#151528] rounded-lg px-3 py-2">
-                    {isPlaying ? '▶' : '⏸'} {currentTrack}
-                  </p>
+                  <div className="flex items-center gap-2 bg-[#151528] rounded-lg px-3 py-2">
+                    <p className="text-sm text-gray-300 truncate flex-1">
+                      {isPlaying ? '▶' : '⏸'} {currentTrack}
+                    </p>
+                    <span ref={countdownRef} className="text-sm font-mono text-[#00d4ff] tabular-nums flex-shrink-0" style={{ display: 'none' }} />
+                  </div>
                 )}
               </>
             ) : (

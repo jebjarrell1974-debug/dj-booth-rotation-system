@@ -71,6 +71,7 @@ export default function DJBooth() {
   const lastTimeStampRef = useRef(performance.now());
   const isPlayingRef = useRef(false);
   const timeDisplayRef = useRef(null);
+  const remoteTimeDisplayRef = useRef(null);
   const [volume, setVolume] = useState(0.8);
   const [voiceGain, setVoiceGain] = useState(() => {
     try { return parseFloat(localStorage.getItem('djbooth_voice_gain')) || 1.5; } catch { return 1.5; }
@@ -483,6 +484,26 @@ export default function DJBooth() {
 
   useEffect(() => {
     if (!remoteMode) return;
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const interval = setInterval(() => {
+      if (!remoteTimeDisplayRef.current) return;
+      const dur = liveBoothState?.trackDuration || 0;
+      const timeAt = liveBoothState?.trackTimeAt || 0;
+      if (dur > 0 && timeAt > 0) {
+        const elapsed = liveBoothState?.isPlaying ? (Date.now() - timeAt) / 1000 : 0;
+        const currentPos = Math.min((liveBoothState?.trackTime || 0) + elapsed, dur);
+        const remaining = Math.max(0, dur - currentPos);
+        remoteTimeDisplayRef.current.textContent = fmt(remaining);
+        remoteTimeDisplayRef.current.style.display = '';
+      } else {
+        remoteTimeDisplayRef.current.style.display = 'none';
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [remoteMode, liveBoothState?.trackTime, liveBoothState?.trackDuration, liveBoothState?.trackTimeAt, liveBoothState?.isPlaying]);
+
+  useEffect(() => {
+    if (!remoteMode) return;
     let active = true;
 
     const pollState = () => {
@@ -726,6 +747,9 @@ export default function DJBooth() {
           rotationSongs,
           volume,
           voiceGain,
+          trackTime: currentTimeRef.current || 0,
+          trackDuration: durationRef.current || 0,
+          trackTimeAt: Date.now(),
         });
       } catch {}
     };
@@ -2263,10 +2287,13 @@ export default function DJBooth() {
                     </div>
                     {liveBoothState?.updatedAt > 0 ? (
                       liveBoothState.isRotationActive ? (
-                        <p className="text-xs text-gray-300 truncate">
-                          {liveBoothState.isPlaying ? '▶' : '⏸'} {liveBoothState.currentDancerName || 'Unknown'} — Song {liveBoothState.currentSongNumber}/{liveBoothState.songsPerSet}
-                          {liveBoothState.currentTrack ? ` · ${liveBoothState.currentTrack}` : ''}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-300 truncate">
+                            {liveBoothState.isPlaying ? '▶' : '⏸'} {liveBoothState.currentDancerName || 'Unknown'} — Song {liveBoothState.currentSongNumber}/{liveBoothState.songsPerSet}
+                            {liveBoothState.currentTrack ? ` · ${liveBoothState.currentTrack}` : ''}
+                          </p>
+                          <span ref={remoteTimeDisplayRef} className="text-xs font-mono text-[#00d4ff] tabular-nums flex-shrink-0" style={{ display: 'none' }} />
+                        </div>
                       ) : (
                         <p className="text-xs text-gray-400">Booth connected · Rotation stopped</p>
                       )
