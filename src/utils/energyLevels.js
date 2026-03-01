@@ -147,7 +147,9 @@ export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energy
   const isGeneric = dancerName === '_GENERIC_';
   const displayName = isGeneric ? 'your next entertainer' : dancerName;
   const genericNote = isGeneric ? '\nIMPORTANT: Do NOT use a specific name. Refer to her as "your next entertainer", "this beauty", "she", or similar generic references.' : '';
-  const dayOfWeek = DAY_NAMES[new Date().getDay()];
+  const now = new Date();
+  const clubDay = now.getHours() < 6 ? new Date(now.getTime() - 6 * 60 * 60 * 1000) : now;
+  const dayOfWeek = DAY_NAMES[clubDay.getDay()];
 
   let eventInstructions = '';
 
