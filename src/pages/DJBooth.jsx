@@ -2570,17 +2570,31 @@ export default function DJBooth() {
                 djOptions={djOptions}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
                 savedInterstitials={interstitialSongsRef.current}
-                onAutoSavePlaylist={async (dancerId, newSongs) => {
+                onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
-                  const merged = [...existingPlaylist];
-                  for (const song of newSongs) {
-                    if (!merged.includes(song)) merged.push(song);
+
+                  let updatedPlaylist;
+                  if (action?.type === 'add' && action.song) {
+                    updatedPlaylist = [...existingPlaylist];
+                    if (!updatedPlaylist.includes(action.song)) {
+                      updatedPlaylist.push(action.song);
+                    }
+                  } else if (action?.type === 'remove' && action.song) {
+                    updatedPlaylist = existingPlaylist.filter(s => s !== action.song);
+                  } else if (action?.type === 'reorder') {
+                    const playlistSet = new Set(existingPlaylist);
+                    updatedPlaylist = displayedSongs.filter(s => playlistSet.has(s));
+                  } else {
+                    updatedPlaylist = existingPlaylist;
                   }
-                  updateDancerMutation.mutate({ id: dancerId, data: { playlist: merged } });
+
+                  if (updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i])) {
+                    updateDancerMutation.mutate({ id: dancerId, data: { playlist: updatedPlaylist } });
+                  }
                   if (isRotationActive && tracks.length > 0) {
                     const resolved = [];
-                    for (const name of newSongs) {
+                    for (const name of displayedSongs) {
                       let track = tracks.find(t => t.name === name);
                       if (!track) track = await resolveTrackByName(name);
                       if (track) resolved.push(track);
@@ -2597,17 +2611,17 @@ export default function DJBooth() {
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
-                  Object.entries(playlists).forEach(([dancerId, newSongs]) => {
+                  Object.entries(playlists).forEach(([dancerId, displayedSongs]) => {
                     const dancer = dancers.find(d => d.id === dancerId);
                     const existingPlaylist = dancer?.playlist || [];
-                    const merged = [...existingPlaylist];
-                    for (const song of newSongs) {
-                      if (!merged.includes(song)) merged.push(song);
+                    const playlistSet = new Set(existingPlaylist);
+                    const playlistSongs = displayedSongs.filter(s => playlistSet.has(s));
+                    if (playlistSongs.length !== existingPlaylist.length || !playlistSongs.every((s, i) => s === existingPlaylist[i])) {
+                      updateDancerMutation.mutate({ 
+                        id: dancerId, 
+                        data: { playlist: playlistSongs } 
+                      });
                     }
-                    updateDancerMutation.mutate({ 
-                      id: dancerId, 
-                      data: { playlist: merged } 
-                    });
                   });
                   if (tracks.length > 0) {
                     const updatedSongs = { ...(rotationSongsRef.current || {}) };

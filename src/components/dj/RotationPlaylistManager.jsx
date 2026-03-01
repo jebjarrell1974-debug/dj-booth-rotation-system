@@ -293,7 +293,7 @@ export default function RotationPlaylistManager({
       }
       current.push(trackName);
       const updated = { ...prev, [dancerId]: current };
-      onAutoSavePlaylist?.(dancerId, current);
+      onAutoSavePlaylist?.(dancerId, current, { type: 'add', song: trackName });
       return updated;
     });
   }, [onAutoSavePlaylist]);
@@ -334,7 +334,7 @@ export default function RotationPlaylistManager({
         }
         current.splice(destination.index, 0, track.name);
         const updated = { ...prev, [dancerId]: current };
-        onAutoSavePlaylist?.(dancerId, current);
+        onAutoSavePlaylist?.(dancerId, current, { type: 'add', song: track.name });
         return updated;
       });
       return;
@@ -365,7 +365,7 @@ export default function RotationPlaylistManager({
         const [removed] = current.splice(source.index, 1);
         current.splice(destination.index, 0, removed);
         const updated = { ...prev, [dancerId]: current };
-        onAutoSavePlaylist?.(dancerId, current);
+        onAutoSavePlaylist?.(dancerId, current, { type: 'reorder' });
         return updated;
       });
       return;
@@ -376,9 +376,10 @@ export default function RotationPlaylistManager({
     djOverridesRef.current.add(dancerId);
     setSongAssignments(prev => {
       const current = [...(prev[dancerId] || [])];
+      const removedSong = current[songIndex];
       current.splice(songIndex, 1);
       const updated = { ...prev, [dancerId]: current };
-      onAutoSavePlaylist?.(dancerId, current);
+      onAutoSavePlaylist?.(dancerId, current, { type: 'remove', song: removedSong });
       return updated;
     });
   };
