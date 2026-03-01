@@ -10,12 +10,14 @@ import {
   createSession, getSession, touchSession, deleteSession, cleanExpiredSessions,
   syncSongs, listSongs,
   saveVoiceover, getVoiceover, getVoiceoverFilePath, listVoiceovers, deleteVoiceover,
+  getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory
 } from './db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
+import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats } from './r2sync.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -343,6 +345,10 @@ app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
     const audioBuffer = Buffer.from(audio_base64, 'base64');
     const result = saveVoiceover(cache_key, audioBuffer, script || null, type, dancer_name || null, parseInt(energy_level) || 3);
     res.json({ ok: true, ...result });
+    if (isR2Configured() && result.fileName) {
+      const voiceoverPath = getVoiceoverFilePath(cache_key);
+      if (voiceoverPath) uploadVoiceover(cache_key, voiceoverPath).catch(() => {});
+    }
   } catch (err) {
     console.error('Failed to save voiceover:', err.message);
     res.status(500).json({ error: 'Failed to save voiceover' });
@@ -355,6 +361,49 @@ app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {
 });
 
 app.use('/api/fleet', fleetRoutes);
+
+app.get('/api/r2/status', authenticate, requireDJ, async (req, res) => {
+  try {
+    const stats = await getR2Stats();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/r2/sync/voiceovers', authenticate, requireDJ, async (req, res) => {
+  if (!isR2Configured()) return res.status(400).json({ error: 'R2 not configured' });
+  const { direction } = req.body;
+  try {
+    const voiceoverDir = getVoiceoverDirPath();
+    if (direction === 'upload') {
+      const result = await syncVoiceoversToR2(voiceoverDir);
+      res.json({ ok: true, ...result });
+    } else {
+      const result = await syncVoiceoversFromR2(voiceoverDir);
+      res.json({ ok: true, ...result });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/r2/sync/music', authenticate, requireDJ, async (req, res) => {
+  if (!isR2Configured()) return res.status(400).json({ error: 'R2 not configured' });
+  const { direction } = req.body;
+  try {
+    if (!MUSIC_PATH) return res.status(400).json({ error: 'MUSIC_PATH not configured' });
+    if (direction === 'upload') {
+      const result = await syncMusicToR2(MUSIC_PATH);
+      res.json({ ok: true, ...result });
+    } else {
+      const result = await syncMusicFromR2(MUSIC_PATH);
+      res.json({ ok: true, ...result });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -899,6 +948,34 @@ function initMusicScanner() {
   }
 }
 
+async function initR2Sync() {
+  if (!isR2Configured()) {
+    console.log('ℹ️ R2 not configured — cloud sync disabled');
+    return;
+  }
+  console.log('☁️ R2 cloud sync enabled — starting background sync...');
+  try {
+    const voiceoverDir = getVoiceoverDirPath();
+    const voResult = await syncVoiceoversFromR2(voiceoverDir);
+    console.log(`☁️ Voiceover sync: ${voResult.downloaded} new, ${voResult.skipped} cached`);
+    const voUpResult = await syncVoiceoversToR2(voiceoverDir);
+    console.log(`☁️ Voiceover upload: ${voUpResult.uploaded} shared to cloud`);
+  } catch (err) {
+    console.error('☁️ R2 voiceover sync error:', err.message);
+  }
+  try {
+    if (MUSIC_PATH) {
+      const musicResult = await syncMusicFromR2(MUSIC_PATH);
+      console.log(`☁️ Music sync: ${musicResult.downloaded} new, ${musicResult.skipped} cached`);
+      if (musicResult.downloaded > 0) {
+        scanMusicFolder(MUSIC_PATH, true);
+      }
+    }
+  } catch (err) {
+    console.error('☁️ R2 music sync error:', err.message);
+  }
+}
+
 const isDirectRun = process.argv[1] && (
   process.argv[1].endsWith('/index.js') || process.argv[1].endsWith('\\index.js')
 );
@@ -908,6 +985,7 @@ if (isDirectRun) {
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
     initMusicScanner();
+    initR2Sync().catch(err => console.error('☁️ R2 init error:', err.message));
   });
 
   const gracefulShutdown = () => {

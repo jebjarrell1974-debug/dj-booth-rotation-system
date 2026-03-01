@@ -62,6 +62,23 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Fix**: Before 6 AM, use `now - 6hrs` for day name so Saturday night stays Saturday until close
 - **File**: `src/utils/energyLevels.js`
 
+#### Feature: Cloudflare R2 Cloud Sync (Voiceovers + Music)
+- **Purpose**: Centralized cloud storage for voiceovers and music across all Pi fleet units in different cities/states
+- **Service**: Cloudflare R2 (S3-compatible, zero download fees, ~$7.50/month at 500 GB)
+- **Bucket**: `neonaidj` in Eastern North America (ENAM)
+- **Credentials**: Stored as env vars — `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` (secret), `R2_SECRET_ACCESS_KEY` (secret), `R2_BUCKET_NAME`
+- **Auto-sync on boot**: Server startup runs `initR2Sync()` — downloads missing voiceovers from cloud, uploads local voiceovers to cloud, downloads missing music files
+- **Auto-upload on save**: Every new voiceover saved via `/api/voiceovers` is automatically uploaded to R2 in the background
+- **Sync logic**: Compares file names and sizes — skips files that already exist locally/remotely with matching size
+- **API endpoints**:
+  - `GET /api/r2/status` — shows cloud storage stats (file counts, sizes)
+  - `POST /api/r2/sync/voiceovers` — manual sync (direction: upload/download)
+  - `POST /api/r2/sync/music` — manual sync (direction: upload/download)
+- **Storage layout**: `voiceovers/` prefix for voice MP3s, `music/` prefix for song files (preserves folder structure for genres)
+- **New file**: `server/r2sync.js` — S3Client wrapper with upload/download/list/sync functions
+- **New dependency**: `@aws-sdk/client-s3`
+- **Files modified**: `server/index.js` (import, voiceover upload hook, API endpoints, boot sync), `server/db.js` (exported `getVoiceoverDirPath`)
+
 #### Analysis: Song Reassignment Timing (Not Fixed — Monitoring)
 - **Observation**: With 2 dancers and 1-song sets, when dancer A finishes and flips to bottom, her new song doesn't appear until ~5 seconds before dancer B finishes
 - **Root Cause**: Assignment system skips dancers who still have old (played) songs in `songAssignmentsRef`. Old songs aren't cleared on flip, so new assignment waits for a different trigger

@@ -154,6 +154,10 @@ function getVoiceoverDir() {
 const VOICEOVER_DIR = getVoiceoverDir();
 console.log(`🎙️ Voiceover directory: ${VOICEOVER_DIR}`);
 
+export function getVoiceoverDirPath() {
+  return VOICEOVER_DIR;
+}
+
 export function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row ? row.value : null;
