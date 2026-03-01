@@ -112,6 +112,7 @@ export default function DJBooth() {
   })());
   const [interstitialSongsState, setInterstitialSongsState] = useState(() => interstitialSongsRef.current);
   const [interstitialRemoteVersion, setInterstitialRemoteVersion] = useState(0);
+  const [plannedSongAssignments, setPlannedSongAssignments] = useState({});
   const playingInterstitialRef = useRef(false);
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
@@ -818,6 +819,12 @@ export default function DJBooth() {
         const currentDancer = rotation.length > 0 && dancers.length > 0
           ? dancers.find(d => d.id === rotation[currentDancerIndex])
           : null;
+        const mergedSongs = { ...plannedSongAssignments };
+        if (rotationSongs && Object.keys(rotationSongs).length > 0) {
+          Object.entries(rotationSongs).forEach(([id, tracks]) => {
+            if (tracks && tracks.length > 0) mergedSongs[id] = tracks;
+          });
+        }
         await boothApi.postState({
           isRotationActive,
           currentDancerIndex,
@@ -829,7 +836,7 @@ export default function DJBooth() {
           isPlaying,
           rotation,
           announcementsEnabled,
-          rotationSongs,
+          rotationSongs: mergedSongs,
           volume,
           voiceGain,
           trackTime: currentTimeRef.current || 0,
@@ -841,7 +848,7 @@ export default function DJBooth() {
     broadcast();
     const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments]);
 
   useEffect(() => {
     if (!activeStage) return;
@@ -2943,6 +2950,7 @@ export default function DJBooth() {
                     rotationSongsRef.current = currentSongs;
                   }
                 }}
+                onSongAssignmentsChange={setPlannedSongAssignments}
               />
             )}
             

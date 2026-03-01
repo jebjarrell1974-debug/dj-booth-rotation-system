@@ -47,7 +47,8 @@ export default function RotationPlaylistManager({
   currentDancerIndex,
   currentSongNumber,
   breakSongsPerSet,
-  onBreakSongsPerSetChange
+  onBreakSongsPerSetChange,
+  onSongAssignmentsChange
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -86,6 +87,7 @@ export default function RotationPlaylistManager({
 
   useEffect(() => {
     songAssignmentsRef.current = songAssignments;
+    onSongAssignmentsChange?.(songAssignments);
   }, [songAssignments]);
 
   useEffect(() => {
