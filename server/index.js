@@ -18,6 +18,8 @@ import {
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats } from './r2sync.js';
+import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
+import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -392,6 +394,7 @@ app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {
 });
 
 app.use('/api/fleet', fleetRoutes);
+setupFleetMonitorRoutes(app);
 
 app.get('/api/r2/status', authenticate, requireDJ, async (req, res) => {
   try {
@@ -1048,6 +1051,12 @@ if (isDirectRun) {
     console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
     updateBootStep('server', 'done', `Port ${PORT}`);
     initMusicScanner();
+    startMonitoring();
+    startHeartbeat(() => ({
+      trackCount: getMusicTrackCount(),
+      clubName: getSetting('club_name') || '',
+      version: getSetting('app_version') || '',
+    }));
     initR2Sync().catch(err => {
       console.error('☁️ R2 init error:', err.message);
       bootStatus.ready = true;
@@ -1058,6 +1067,8 @@ if (isDirectRun) {
     console.log('🛑 Shutting down gracefully...');
     stopPeriodicScan();
     stopCheckpoints();
+    stopMonitoring();
+    stopHeartbeat();
     server.close(() => {
       closeDatabase();
       process.exit(0);

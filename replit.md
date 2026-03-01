@@ -86,6 +86,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Music auto-upload on boot**: Music now uploads to R2 on every boot (in addition to downloading), so new tracks on any Pi get shared to the fleet
 - **Files**: `server/index.js` (boot status tracking), `src/components/BootScreen.jsx` (new), `src/App.jsx` (renders BootScreen overlay)
 
+#### Feature: Fleet Monitoring with Telegram Alerts
+- **Purpose**: Proactive monitoring — get notified on your phone when a Pi goes offline or comes back online
+- **Telegram bot**: @NEONAIDJ_bot sends alerts to user's Telegram
+- **Heartbeat system**: Each Pi sends a heartbeat every 5 minutes to its local server (includes CPU temp, disk space, uptime, track count, app status)
+- **Alerting**: If a Pi misses 2 heartbeats (10 min), Telegram alert fires. Recovery notification when it comes back
+- **Env vars**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (stored as Replit env vars + Pi override), `FLEET_SERVER_URL` (Pi only), `DEVICE_ID`, `CLUB_NAME`
+- **API endpoints**: `POST /api/fleet/heartbeat` (Pi → server), `GET /api/fleet/status` (dashboard), `POST /api/fleet/test-telegram` (test alert)
+- **New files**: `server/fleet-monitor.js` (monitoring server + Telegram sender), `server/heartbeat-client.js` (Pi heartbeat client)
+- **Files modified**: `server/index.js` (imports, route setup, start/stop in boot/shutdown)
+
 #### Pending: ElevenLabs Voice Upgrade
 - **Status**: User is redoing their personal voice clone on ElevenLabs
 - **When ready**: Upgrade TTS model from `eleven_monolingual_v1` to v2 or v3, tune stability/similarity_boost values, update voice ID if it changes

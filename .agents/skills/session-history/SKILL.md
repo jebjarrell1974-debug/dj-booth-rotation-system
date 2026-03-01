@@ -180,7 +180,7 @@ sudo systemctl enable djbooth.service
 sudo systemctl start djbooth.service
 ```
 
-**6b. Add R2 cloud sync credentials** (override file)
+**6b. Add R2 cloud sync + fleet monitoring credentials** (override file)
 ```bash
 sudo mkdir -p /etc/systemd/system/djbooth.service.d
 sudo bash -c 'cat > /etc/systemd/system/djbooth.service.d/override.conf << EOF
@@ -189,6 +189,11 @@ Environment=R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
 Environment=R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
 Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
 Environment=R2_BUCKET_NAME=neonaidj
+Environment=TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA
+Environment=TELEGRAM_CHAT_ID=8567217273
+Environment=FLEET_SERVER_URL=http://localhost:3001
+Environment=DEVICE_ID=neonaidj001
+Environment="CLUB_NAME=Club Name Here"
 EOF'
 sudo systemctl daemon-reload
 ```
