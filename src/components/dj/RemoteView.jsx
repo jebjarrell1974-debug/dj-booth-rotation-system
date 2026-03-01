@@ -18,6 +18,7 @@ import {
   ChevronDown,
   SlidersHorizontal,
   Volume2,
+  Save,
 } from 'lucide-react';
 
 export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange }) {
@@ -293,6 +294,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
             {activePanel === 'rotation' && (
               <div className="space-y-2">
+                <button
+                  onClick={() => boothApi.sendCommand('saveRotation', { rotation: rotationList })}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#00d4ff] text-black font-semibold text-base active:bg-[#00a3cc] transition-colors"
+                >
+                  <Save className="w-5 h-5" />
+                  Save All
+                </button>
                 {rotationList.length === 0 ? (
                   <div className="text-center py-12">
                     <Layers className="w-10 h-10 text-gray-600 mx-auto mb-3" />

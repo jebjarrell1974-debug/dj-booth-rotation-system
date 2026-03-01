@@ -113,6 +113,7 @@ export default function DJBooth() {
   const playingInterstitialRef = useRef(false);
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
+  const saveRotationRef = useRef(null);
   
   const DUCK_SETTLE_MS = 300;
   const SONG_OVERLAP_DELAY_MS = 10000;
@@ -671,6 +672,30 @@ export default function DJBooth() {
             const c = Math.max(0, Math.min(3, cmd.payload.count));
             setBreakSongsPerSet(c);
             breakSongsPerSetRef.current = c;
+          }
+          break;
+        case 'moveInRotation':
+          if (cmd.payload.dancerId && cmd.payload.direction) {
+            setRotation(prev => {
+              const rot = [...prev];
+              const idx = rot.indexOf(cmd.payload.dancerId);
+              if (idx === -1) return prev;
+              if (cmd.payload.direction === 'up' && idx > 0) {
+                [rot[idx - 1], rot[idx]] = [rot[idx], rot[idx - 1]];
+              } else if (cmd.payload.direction === 'down' && idx < rot.length - 1) {
+                [rot[idx], rot[idx + 1]] = [rot[idx + 1], rot[idx]];
+              }
+              rotationRef.current = rot;
+              return rot;
+            });
+          }
+          break;
+        case 'saveRotation':
+          if (cmd.payload.rotation) {
+            const newRot = cmd.payload.rotation;
+            setRotation(newRot);
+            rotationRef.current = newRot;
+            saveRotationRef.current?.(newRot);
           }
           break;
         default:
@@ -1293,6 +1318,20 @@ export default function DJBooth() {
       queryClient.invalidateQueries({ queryKey: ['stages'] });
     }
   }, [activeStage, rotation, updateStageMutation, queryClient]);
+
+  saveRotationRef.current = async (newRot) => {
+    try {
+      if (activeStage) {
+        await updateStageMutation.mutateAsync({
+          id: activeStage.id,
+          data: { rotation_order: newRot, current_dancer_index: currentDancerIndexRef.current, is_active: true }
+        });
+      }
+      console.log('💾 Remote saveRotation: persisted to DB');
+    } catch (err) {
+      console.error('❌ Remote saveRotation failed:', err);
+    }
+  };
 
   const beginRotation = useCallback(async () => {
     rotationPendingRef.current = false;
