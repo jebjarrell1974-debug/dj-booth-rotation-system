@@ -181,15 +181,13 @@ The performer ${displayName} is continuing — this is ${roundLabel}.${genericNo
 STRUCTURE — keep it short, punchy, urgent:
 1. Announce the round
 2. Create urgency — this is their chance
-3. Land her name
-
-NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" 2 times — once at the start and once at the end. Even in short announcements, repeating the name helps in a loud club.`}
+3. Land her name at the END
 
 EXAMPLE (match this energy, create original lines):
-"${displayName} is dropping it down to ${roundLabel} boys. You get one more chance for that ultimate stage dance with ${displayName}."
-"She's not done yet gentlemen. ${displayName} is heating up with ${roundLabel}. Get those dollars out for ${displayName}."
+"Drop it down to ${roundLabel} boys. You get one more chance for that ultimate stage dance with ${displayName}."
+"She's not done yet gentlemen. ${roundLabel} is heating up with ${displayName}."
 
-Output should be 1-3 sentences MAX. Keep it tight. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — say it twice.`}`;
+Output should be 1-3 sentences MAX. Keep it tight. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
 
   } else if (type === 'outro') {
     eventInstructions = `EVENT: STAGE EXIT
@@ -202,14 +200,12 @@ STRUCTURE — wrap it up and drive VIP:
 3. Push VIP / one-on-one / private dances — this is the upsell moment
 4. Land her name naturally
 
-NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" 2 times, spaced naturally. Once when thanking her, once when pushing VIP. People need to remember who to ask for.`}
-
 EXAMPLE (match this energy, create original lines):
-"Well gentlemen that's all the time you get with the amazing ${displayName}. She's finishing up her main stage and now available for some one-on-one VIP time. Don't let ${displayName} walk away lonely."
-"Show some love for the beautiful ${displayName}. Main stage is done but your chance for a private dance with ${displayName} is just getting started."
-"One more time make some noise for ${displayName}. She's heading off the main stage but ${displayName} is available for that private VIP experience."
+"Well gentlemen that's all the time you get with the amazing ${displayName}. She's finishing up her main stage and now available for some one-on-one VIP time."
+"Show some love for the beautiful ${displayName}. Don't let her walk away lonely gentlemen. She's available for that private VIP experience."
+"One more time make some noise for ${displayName}. Main stage is done but your chance for a private dance is just getting started."
 
-Output should be 2-4 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — say it 2 times, spaced out naturally.`}`;
+Output should be 2-4 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
 
   } else if (type === 'transition') {
     const nextName = isGeneric ? 'the next entertainer' : (nextDancerName || 'the next performer');
