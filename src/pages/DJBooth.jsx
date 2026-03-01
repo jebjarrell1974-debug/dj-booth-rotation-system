@@ -530,7 +530,7 @@ export default function DJBooth() {
     });
     sseRef.current = es;
 
-    const statePollInterval = setInterval(pollState, 3000);
+    const statePollInterval = setInterval(pollState, 1000);
 
     djOptionsApi.get()
       .then(opts => { if (active) { setDjOptions(opts); djOptionsRef.current = opts; } })
@@ -712,7 +712,7 @@ export default function DJBooth() {
     });
     commandSseRef.current = es;
 
-    const commandPollInterval = setInterval(pollCommands, 3000);
+    const commandPollInterval = setInterval(pollCommands, 1000);
 
     return () => { active = false; clearInterval(commandPollInterval); commandSseRef.current?.close(); commandSseRef.current = null; };
   }, [remoteMode, executeCommand]);
@@ -754,7 +754,7 @@ export default function DJBooth() {
       } catch {}
     };
     broadcast();
-    const interval = setInterval(broadcast, 5000);
+    const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
   }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain]);
 
