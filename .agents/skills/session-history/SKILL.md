@@ -120,37 +120,42 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Calls `POST /api/kiosk/exit` with DJ auth
 - Red styling, positioned at bottom of Settings modal
 
-### New Fleet Member Setup Guide (Step-by-Step)
+---
 
-Follow these steps in order when prepping a brand new Raspberry Pi for the fleet.
+## NEON AI DJ — Complete Pi Setup Checklist
 
-**1. Install Raspberry Pi OS Bookworm (64-bit)** on the SD card
+Follow these steps in order when setting up a new Raspberry Pi. Replace `USERNAME` with the Pi's actual username (e.g., `neonaidj001`). Replace `CLUBNAME` with the actual club name.
+
+### Step 1: Install Raspberry Pi OS
+- Flash **Raspberry Pi OS Bookworm (64-bit)** to SD card (or NVMe for fleet units)
 - Set username to `neonaidj###` (e.g., `neonaidj001`, `neonaidj002`)
 - Enable SSH during setup
 - Connect to club WiFi
 
-**2. Install Node.js**
+### Step 2: Install Node.js 22
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
 ```
+Verify: `node --version` should show v22.x
 
-**3. Create directories**
+### Step 3: Create directories
 ```bash
 mkdir -p ~/djbooth ~/data ~/Desktop/"DJ MUSIC" ~/Desktop/"VOICE OVERS FOR AUTO DJ"
 ```
 
-**4. Download the update script**
+### Step 4: Download the update script
 ```bash
 curl -o ~/djbooth-update.sh https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/public/djbooth-update-github.sh && chmod +x ~/djbooth-update.sh
 ```
 
-**5. Run the first update** (downloads code, builds, installs dependencies)
+### Step 5: Run the first update
+Downloads all code from GitHub, builds frontend, installs dependencies.
 ```bash
 ~/djbooth-update.sh
 ```
 
-**6. Create the systemd service** (replace `neonaidj001` with the Pi's username, and fill in R2 keys)
+### Step 6: Create the systemd service
+Replace `USERNAME` below with the Pi's username.
 ```bash
 sudo tee /etc/systemd/system/djbooth.service > /dev/null << 'EOF'
 [Unit]
@@ -159,14 +164,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=neonaidj001
-WorkingDirectory=/home/neonaidj001/djbooth
+User=USERNAME
+WorkingDirectory=/home/USERNAME/djbooth
 Environment=NODE_ENV=production
 Environment=PORT=3001
-Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
-Environment=VOICEOVER_DIR=/home/neonaidj001/data/voiceovers
-Environment="MUSIC_PATH=/home/neonaidj001/Desktop/DJ MUSIC"
-Environment="VOICEOVER_PATH=/home/neonaidj001/Desktop/VOICE OVERS FOR AUTO DJ"
+Environment=DB_PATH=/home/USERNAME/data/djbooth.db
+Environment="MUSIC_PATH=/home/USERNAME/Desktop/DJ MUSIC"
+Environment="VOICEOVER_PATH=/home/USERNAME/Desktop/VOICE OVERS FOR AUTO DJ"
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
@@ -177,10 +181,10 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable djbooth.service
-sudo systemctl start djbooth.service
 ```
 
-**6b. Add R2 cloud sync + fleet monitoring credentials** (override file)
+### Step 7: Add cloud sync + monitoring credentials
+Replace `USERNAME`, `DEVICEID`, and `CLUBNAME` below.
 ```bash
 sudo mkdir -p /etc/systemd/system/djbooth.service.d
 sudo bash -c 'cat > /etc/systemd/system/djbooth.service.d/override.conf << EOF
@@ -192,13 +196,14 @@ Environment=R2_BUCKET_NAME=neonaidj
 Environment=TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA
 Environment=TELEGRAM_CHAT_ID=8567217273
 Environment=FLEET_SERVER_URL=http://localhost:3001
-Environment=DEVICE_ID=neonaidj001
-Environment="CLUB_NAME=Club Name Here"
+Environment=DEVICE_ID=DEVICEID
+Environment="CLUB_NAME=CLUBNAME"
 EOF'
 sudo systemctl daemon-reload
 ```
 
-**7. Create the auto-update service** (updates from GitHub on every boot, replace `neonaidj001`)
+### Step 8: Create the auto-update service
+Pulls latest code from GitHub on every boot before the app starts. Replace `USERNAME`.
 ```bash
 sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << 'EOF'
 [Unit]
@@ -209,9 +214,9 @@ Before=djbooth.service
 
 [Service]
 Type=oneshot
-User=neonaidj001
-WorkingDirectory=/home/neonaidj001/djbooth
-ExecStart=/home/neonaidj001/djbooth-update.sh
+User=USERNAME
+WorkingDirectory=/home/USERNAME/djbooth
+ExecStart=/home/USERNAME/djbooth-update.sh
 TimeoutStartSec=300
 StandardOutput=journal
 StandardError=journal
@@ -224,102 +229,79 @@ sudo systemctl daemon-reload
 sudo systemctl enable djbooth-update.service
 ```
 
-**8. Set up kiosk autostart** (Chromium opens fullscreen on boot, replace `neonaidj001`)
+### Step 9: Set up Chromium kiosk autostart
+Opens fullscreen browser to the app on every boot (10s delay for server to start).
 ```bash
 mkdir -p ~/.config/autostart
-tee ~/.config/autostart/djbooth-kiosk.desktop > /dev/null << 'EOF'
+cat > ~/.config/autostart/djbooth-kiosk.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
-Name=DJ Booth Kiosk
-Exec=chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001
+Name=NEON AI DJ Kiosk
+Exec=bash -c 'sleep 10 && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001'
+X-GNOME-Autostart-enabled=true
 EOF
 ```
 
-**9. Create desktop shortcut** (for manual launching)
+### Step 10: Create desktop shortcut (optional)
+For manually launching the app from the desktop.
 ```bash
-tee ~/Desktop/DJBooth.desktop > /dev/null << 'EOF'
+cat > ~/Desktop/DJBooth.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
-Name=DJ Booth
-Comment=Launch DJ Booth Kiosk
+Name=NEON AI DJ
 Exec=chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001
-Icon=chromium
+Icon=audio-headphones
 Terminal=false
-Categories=AudioVideo;
 EOF
 chmod +x ~/Desktop/DJBooth.desktop
 ```
 
-**10. Copy music files** to `/home/<user>/Desktop/DJ MUSIC/`
-- Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
-
-**11. Update browserslist** (optional, one-time, inside djbooth folder)
+### Step 11: Disable screen blanking
+Keeps the Pi screen on all night (no sleep/screensaver).
 ```bash
-cd ~/djbooth && npx update-browserslist-db@latest
+sudo raspi-config nonint do_blanking 1
 ```
 
-**12. Configure the app** in the browser
+### Step 12: Copy music files
+Copy music to `/home/USERNAME/Desktop/DJ MUSIC/`
+- Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
+- Songs in the `FEATURE/` folder play to completion (no 3-minute cap)
+
+### Step 13: Start the app and verify
+```bash
+sudo systemctl start djbooth && sudo journalctl -u djbooth --no-pager -n 20
+```
+You should see:
+- Music scanner finding tracks
+- Telegram fleet monitoring active
+- Heartbeat client active
+- R2 cloud sync downloading/uploading voiceovers
+
+### Step 14: Configure the app in the browser
 - Open `http://localhost:3001` on the Pi
 - Go to Configuration (master PIN: `36669`)
 - Set club name, ElevenLabs API key, OpenAI API key, voice ID
-- These are stored in the browser's localStorage on each Pi
+- These settings are stored in the browser's localStorage on each Pi
 
-**13. Reboot and verify**
+### Step 15: Reboot and verify full boot sequence
 ```bash
 sudo reboot
 ```
-After reboot: auto-update runs, app starts, Chromium opens to the DJ booth.
+After reboot: auto-update runs → app starts → boot screen shows progress → Chromium opens → login page appears.
+
+### Troubleshooting
+- **Node version mismatch** (`ERR_DLOPEN_FAILED`): Run `cd ~/djbooth && rm -rf node_modules && npm install`
+- **nvm users**: If Node is installed via nvm, update `ExecStart` in the service file to use the nvm path: `/home/USERNAME/.nvm/versions/node/vXX.XX.X/bin/node`
+- **Check logs**: `sudo journalctl -u djbooth --no-pager -n 30`
+- **Check service status**: `sudo systemctl status djbooth`
+- **Manual update**: `~/djbooth-update.sh`
+- **Restart service**: `sudo systemctl restart djbooth`
 
 ---
 
-### Pi Systemd Service Template
-```ini
-[Unit]
-Description=DJ Booth Rotation System
-After=network.target
-
-[Service]
-Type=simple
-User=neonaidj001
-WorkingDirectory=/home/neonaidj001/djbooth
-Environment=NODE_ENV=production
-Environment=PORT=3001
-Environment=DB_PATH=/home/neonaidj001/data/djbooth.db
-Environment="MUSIC_PATH=/home/neonaidj001/Desktop/DJ MUSIC"
-Environment="VOICEOVER_PATH=/home/neonaidj001/Desktop/VOICE OVERS FOR AUTO DJ"
-ExecStart=/usr/bin/node server/index.js
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-R2 credentials go in a separate override file — see step 6b in the setup guide.
-
-### Pi Kiosk Autostart
-```ini
-[Desktop Entry]
-Type=Application
-Name=DJ Booth Kiosk
-Exec=chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001
-```
-
-### Pi Desktop Shortcut
-```ini
-[Desktop Entry]
-Type=Application
-Name=DJ Booth
-Comment=Launch DJ Booth Kiosk
-Exec=chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001
-Icon=chromium
-Terminal=false
-Categories=AudioVideo;
-```
-
 ## User Preferences & Style
-- Nightclub dark theme: electric magenta (#e040fb), violet secondary (#7c3aed)
-- Deep navy-black backgrounds (#08081a, #0d0d1f), purple-tinged borders (#1e1e3a)
+- Nightclub dark theme: neon cyan (#00d4ff), blue secondary (#2563eb)
+- Deep navy-black backgrounds (#08081a, #0d0d1f), blue-tinged borders (#1e293b)
 - Neon dancer color palette
 - Minimize CPU/GPU usage for Pi hardware
 - User is non-technical — give clear terminal commands, avoid jargon
@@ -333,8 +315,12 @@ Categories=AudioVideo;
 | `server/boot.cjs` | Fast CommonJS entry point for deployment (binds port before ESM loads) |
 | `server/db.js` | SQLite database setup and queries |
 | `server/musicScanner.js` | Recursive music folder scanner, SQLite indexing |
+| `server/r2sync.js` | Cloudflare R2 cloud sync (voiceovers + music) |
+| `server/fleet-monitor.js` | Fleet monitoring server + Telegram alerts |
+| `server/heartbeat-client.js` | Pi heartbeat client (sends status every 5 min) |
 | `src/pages/DJBooth.jsx` | Main DJ control panel (very large file) |
 | `src/components/dj/AudioEngine.jsx` | Audio playback engine (DO NOT MODIFY behavior) |
+| `src/components/BootScreen.jsx` | Boot progress screen shown during startup |
 | `src/pages/DancerView.jsx` | Dancer-facing mobile view |
 | `src/pages/Landing.jsx` | PIN login page |
 | `src/pages/Configuration.jsx` | Venue configuration page |
@@ -348,3 +334,5 @@ Categories=AudioVideo;
 - **ElevenLabs TTS**: Voice announcements (API key stored in browser localStorage per Pi)
 - **OpenAI**: Announcement script generation (API key stored in browser localStorage per Pi)
 - **GitHub**: Code backup and Pi update distribution (Replit integration, @octokit/rest)
+- **Cloudflare R2**: Cloud storage for voiceovers + music sync across fleet
+- **Telegram**: Fleet monitoring alerts via @NEONAIDJ_bot
