@@ -503,11 +503,16 @@ export default function RotationPlaylistManager({
         }
       }
 
+      let trimmed = false;
       for (const dancerId of localRotation) {
         const key = `after-${dancerId}`;
         if (finalInterstitials[key] && finalInterstitials[key].length > breakSongsPerSet) {
           finalInterstitials[key] = finalInterstitials[key].slice(0, breakSongsPerSet);
+          trimmed = true;
         }
+      }
+      if (trimmed) {
+        setInterstitialSongs(finalInterstitials);
       }
     }
 
