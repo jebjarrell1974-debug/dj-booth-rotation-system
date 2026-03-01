@@ -86,6 +86,11 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Music auto-upload on boot**: Music now uploads to R2 on every boot (in addition to downloading), so new tracks on any Pi get shared to the fleet
 - **Files**: `server/index.js` (boot status tracking), `src/components/BootScreen.jsx` (new), `src/App.jsx` (renders BootScreen overlay)
 
+#### Pending: ElevenLabs Voice Upgrade
+- **Status**: User is redoing their personal voice clone on ElevenLabs
+- **When ready**: Upgrade TTS model from `eleven_monolingual_v1` to v2 or v3, tune stability/similarity_boost values, update voice ID if it changes
+- **File to change**: `src/components/dj/AnnouncementSystem.jsx` (model_id, stability, similarity_boost)
+
 #### Analysis: Song Reassignment Timing (Not Fixed — Monitoring)
 - **Observation**: With 2 dancers and 1-song sets, when dancer A finishes and flips to bottom, her new song doesn't appear until ~5 seconds before dancer B finishes
 - **Root Cause**: Assignment system skips dancers who still have old (played) songs in `songAssignmentsRef`. Old songs aren't cleared on flip, so new assignment waits for a different trigger
