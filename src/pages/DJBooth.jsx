@@ -837,6 +837,7 @@ export default function DJBooth() {
           rotation,
           announcementsEnabled,
           rotationSongs: mergedSongs,
+          interstitialSongs: interstitialSongsRef.current || {},
           volume,
           voiceGain,
           trackTime: currentTimeRef.current || 0,
