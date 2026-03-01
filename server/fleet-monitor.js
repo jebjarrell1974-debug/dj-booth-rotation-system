@@ -1,9 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import db from './db.js';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -34,6 +29,53 @@ async function sendTelegram(message) {
   }
 }
 
+function ensureDeviceInDb(deviceId, data) {
+  try {
+    const existing = db.prepare('SELECT device_id FROM fleet_devices WHERE device_id = ?').get(deviceId);
+    if (!existing) {
+      const apiKey = 'auto_' + deviceId + '_' + Date.now().toString(36);
+      db.prepare(`
+        INSERT INTO fleet_devices (device_id, device_name, club_name, api_key, status, last_heartbeat)
+        VALUES (?, ?, ?, ?, 'online', ?)
+      `).run(deviceId, data.name || deviceId, data.clubName || '', apiKey, Date.now());
+      console.log(`📋 Auto-registered fleet device: ${deviceId}`);
+    }
+  } catch (err) {
+    console.error('Fleet DB auto-register error:', err.message);
+  }
+}
+
+function recordHeartbeatInDb(deviceId, data) {
+  try {
+    const now = Date.now();
+    db.prepare('UPDATE fleet_devices SET last_heartbeat = ?, status = ?, app_version = ?, club_name = ? WHERE device_id = ?')
+      .run(now, 'online', data.version || '1.0.0', data.clubName || '', deviceId);
+
+    const diskPercent = (data.diskTotal && data.diskFree)
+      ? Math.round(((data.diskTotal - data.diskFree) / data.diskTotal) * 100)
+      : 0;
+
+    db.prepare(`
+      INSERT INTO fleet_heartbeats (device_id, timestamp, app_version, cpu_percent, memory_percent, disk_percent, uptime_seconds, active_dancers, is_playing)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      deviceId, now,
+      data.version || '1.0.0',
+      data.cpuTemp ? parseFloat(data.cpuTemp) : 0,
+      0,
+      diskPercent,
+      data.uptime || 0,
+      0,
+      0
+    );
+
+    const cutoff = now - (7 * 24 * 60 * 60 * 1000);
+    db.prepare('DELETE FROM fleet_heartbeats WHERE timestamp < ?').run(cutoff);
+  } catch (err) {
+    console.error('Fleet DB heartbeat error:', err.message);
+  }
+}
+
 function registerHeartbeat(deviceId, data) {
   const now = Date.now();
   const existing = devices.get(deviceId);
@@ -60,6 +102,9 @@ function registerHeartbeat(deviceId, data) {
     lastError: data.lastError || null,
   });
 
+  ensureDeviceInDb(deviceId, data);
+  recordHeartbeatInDb(deviceId, data);
+
   if (wasOffline) {
     const dev = devices.get(deviceId);
     const downtime = existing ? Math.round((now - existing.lastHeartbeat) / 60000) : 0;
@@ -76,6 +121,9 @@ function checkDevices() {
   for (const [id, dev] of devices) {
     if (dev.status === 'online' && (now - dev.lastHeartbeat) > HEARTBEAT_TIMEOUT_MS) {
       dev.status = 'offline';
+      try {
+        db.prepare("UPDATE fleet_devices SET status = 'offline' WHERE device_id = ?").run(id);
+      } catch {}
       const lastSeen = Math.round((now - dev.lastHeartbeat) / 60000);
       sendTelegram(
         `🔴 <b>ALERT</b>\n` +
