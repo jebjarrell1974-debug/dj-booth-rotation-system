@@ -39,6 +39,10 @@ const sections = [
       {
         heading: 'Songs Per Set',
         text: 'Controls how many songs each dancer gets per rotation set. The system auto-advances to the next dancer when the set is complete.'
+      },
+      {
+        heading: 'Energy Level',
+        text: 'Controls the energy level of AI announcements. "Auto" adjusts based on time of night — mellower early, higher energy during peak hours. You can override it manually with levels L1 (chill) through L5 (hype). The current level shows as a colored badge in the header.'
       }
     ]
   },
@@ -62,6 +66,14 @@ const sections = [
       {
         heading: 'Song Assignments',
         text: 'Each dancer in the rotation shows their assigned songs underneath their name. These come from their personal playlist (set up in the Dancers tab) or are auto-filled from the library.'
+      },
+      {
+        heading: 'Break Songs',
+        text: 'Set the number of break songs (0-3) between each dancer using the purple break buttons. When you press "Save All," empty break slots are automatically filled with random songs from the music library. If a genre folder is selected in Options, break songs come from that folder. Changing from 3 to 2 breaks and saving trims the extras. Setting to 0 and saving clears all break songs. You can also manually drag specific songs into break slots to override the auto-fill.'
+      },
+      {
+        heading: 'Save All',
+        text: 'Press "Save All" to save the current rotation order, song assignments, and break songs all at once. This also auto-populates any empty break song slots and pre-caches voice announcements for upcoming dancers.'
       }
     ]
   },
@@ -118,7 +130,7 @@ const sections = [
       },
       {
         heading: 'Automatic Announcements',
-        text: 'When rotation is running, announcements play automatically at the right moments. The AI adapts its energy level based on time of night — mellower early on, high-energy during peak hours.'
+        text: 'When rotation is running, announcements play automatically at the right moments. The AI adapts its energy level based on time of night — mellower early on, high-energy during peak hours. Intros say the dancer\'s name 2-3 times (varied naturally so it doesn\'t sound robotic). Round 2 calls acknowledge the dancer is still on stage. Outros are short sendoffs.'
       },
       {
         heading: 'Manual Announcements',
@@ -127,6 +139,14 @@ const sections = [
       {
         heading: 'Club Specials',
         text: 'Enter your current specials (drink deals, VIP promos) in the Club Specials field on the Announcements tab. The AI weaves these into announcements naturally — especially during outro and transition calls.'
+      },
+      {
+        heading: 'Voice Volume (Gain)',
+        text: 'Announcements have a separate volume control from the music. The purple mic icon with +/- buttons adjusts voice gain from 50% to 300%. Default is 150% so announcements cut through the club noise. This setting is saved and syncs to the remote.'
+      },
+      {
+        heading: 'Pronunciation',
+        text: 'Some dancer names get mispronounced by the AI voice. The system has a built-in pronunciation map that automatically corrects common names (like Mia, Chaunte, Charisse, etc.). If a name is still mispronounced, it can be added to the map.'
       },
       {
         heading: 'Requirements',
@@ -241,7 +261,7 @@ const sections = [
       },
       {
         heading: 'What You Can Do Remotely',
-        text: 'From the remote, you can manage the rotation (add/remove dancers, reorder), skip to the next dancer, change songs per set, and see the current state of the booth in real time.'
+        text: 'From the remote, you can skip dancers, adjust music volume (+/-), adjust voice volume (+/-), toggle announcements, and see the current song with a live countdown timer. Volume and skip controls are instant via real-time connection. Rotation and song changes take effect after pressing "Save All."'
       },
       {
         heading: 'Setting the Booth IP',
@@ -272,7 +292,11 @@ const sections = [
       },
       {
         heading: 'Break Music',
-        text: 'You can set interstitial (break) songs that play between dancer sets. These keep music flowing during transitions.'
+        text: 'Break songs play between dancer sets to keep music flowing during transitions. Set the number of breaks (0-3) in the Rotation tab. When you hit "Save All," empty break slots auto-fill with shuffled songs from the active genre. Songs already assigned to dancers or other break slots won\'t repeat.'
+      },
+      {
+        heading: 'Song Cooldown',
+        text: 'The system tracks every song played and enforces a 4-hour cooldown — no song repeats within a 4-hour window. This applies to both dancer sets and break songs, keeping the music fresh all night.'
       }
     ]
   }
