@@ -613,6 +613,56 @@ export default function DJBooth() {
   const lastCommandIdRef = useRef(0);
   const commandSseRef = useRef(null);
 
+  const autoPopulateBreakSongs = useCallback(async (count) => {
+    const rot = rotationRef.current || [];
+    if (count <= 0 || rot.length === 0) return;
+    try {
+      const current = { ...(interstitialSongsRef.current || {}) };
+      const slotsNeeding = [];
+      let totalNeeded = 0;
+      for (const dancerId of rot) {
+        const key = `after-${dancerId}`;
+        const existing = current[key] || [];
+        if (existing.length > count) {
+          current[key] = existing.slice(0, count);
+        }
+        const need = count - (current[key] || []).length;
+        if (need > 0) {
+          slotsNeeding.push({ key, existing: current[key] || [], need });
+          totalNeeded += need;
+        }
+      }
+      if (totalNeeded > 0) {
+        const token = sessionStorage.getItem('djbooth_token');
+        const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+        const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+        const excludeNames = [...new Set(Object.values(current).flat())];
+        const res = await fetch('/api/music/select', {
+          method: 'POST', headers,
+          body: JSON.stringify({ count: totalNeeded, excludeNames, genres: activeGenres, dancerPlaylist: [] }),
+          signal: AbortSignal.timeout(8000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const pool = (data.tracks || []).map(t => t.name).sort(() => Math.random() - 0.5);
+          let pi = 0;
+          for (const slot of slotsNeeding) {
+            const filled = [...slot.existing];
+            for (let i = 0; i < slot.need && pi < pool.length; i++) filled.push(pool[pi++]);
+            current[slot.key] = filled;
+          }
+          console.log('🎵 Break songs auto-populated:', slotsNeeding.length, 'slots,', count, 'per set');
+        }
+      }
+      interstitialSongsRef.current = current;
+      setInterstitialSongsState(current);
+      setInterstitialRemoteVersion(v => v + 1);
+      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(current)); } catch {}
+    } catch (err) {
+      console.warn('⚠️ Break song auto-populate failed:', err.message);
+    }
+  }, []);
+
   const executeCommand = useCallback((cmd) => {
     try {
       lastCommandIdRef.current = Math.max(lastCommandIdRef.current, cmd.id);
@@ -674,56 +724,7 @@ export default function DJBooth() {
             const c = Math.max(0, Math.min(3, cmd.payload.count));
             setBreakSongsPerSet(c);
             breakSongsPerSetRef.current = c;
-            const rot = rotationRef.current || [];
-            if (c > 0 && rot.length > 0) {
-              (async () => {
-                try {
-                  const current = { ...(interstitialSongsRef.current || {}) };
-                  const slotsNeeding = [];
-                  let totalNeeded = 0;
-                  for (const dancerId of rot) {
-                    const key = `after-${dancerId}`;
-                    const existing = current[key] || [];
-                    if (existing.length > c) {
-                      current[key] = existing.slice(0, c);
-                    }
-                    const need = c - (current[key] || []).length;
-                    if (need > 0) {
-                      slotsNeeding.push({ key, existing: current[key] || [], need });
-                      totalNeeded += need;
-                    }
-                  }
-                  if (totalNeeded > 0) {
-                    const token = sessionStorage.getItem('djbooth_token');
-                    const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-                    const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
-                    const excludeNames = [...new Set(Object.values(current).flat())];
-                    const res = await fetch('/api/music/select', {
-                      method: 'POST', headers,
-                      body: JSON.stringify({ count: totalNeeded, excludeNames, genres: activeGenres, dancerPlaylist: [] }),
-                      signal: AbortSignal.timeout(8000)
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      const pool = (data.tracks || []).map(t => t.name).sort(() => Math.random() - 0.5);
-                      let pi = 0;
-                      for (const slot of slotsNeeding) {
-                        const filled = [...slot.existing];
-                        for (let i = 0; i < slot.need && pi < pool.length; i++) filled.push(pool[pi++]);
-                        current[slot.key] = filled;
-                      }
-                      console.log('🎵 Break songs auto-populated:', slotsNeeding.length, 'slots,', c, 'per set');
-                    }
-                  }
-                  interstitialSongsRef.current = current;
-                  setInterstitialSongsState(current);
-                  setInterstitialRemoteVersion(v => v + 1);
-                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(current)); } catch {}
-                } catch (err) {
-                  console.warn('⚠️ Break song auto-populate failed:', err.message);
-                }
-              })();
-            }
+            if (c > 0) autoPopulateBreakSongs(c);
           }
           break;
         case 'moveInRotation':
@@ -2905,6 +2906,7 @@ export default function DJBooth() {
                 onBreakSongsPerSetChange={(n) => {
                   setBreakSongsPerSet(n);
                   breakSongsPerSetRef.current = n;
+                  if (n > 0) autoPopulateBreakSongs(n);
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={(n) => {
