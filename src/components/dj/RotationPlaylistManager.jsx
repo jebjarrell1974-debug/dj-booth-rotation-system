@@ -204,7 +204,10 @@ export default function RotationPlaylistManager({
     })();
   }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs, djOptions]);
 
+  const prevSongsPerSetRef = useRef(songsPerSet);
   useEffect(() => {
+    if (prevSongsPerSetRef.current === songsPerSet) return;
+    prevSongsPerSetRef.current = songsPerSet;
     if (tracks.length === 0) return;
     const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
     setSongAssignments(prev => {

@@ -723,11 +723,6 @@ export default function DJBooth() {
                   console.warn('⚠️ Break song auto-populate failed:', err.message);
                 }
               })();
-            } else if (c === 0) {
-              interstitialSongsRef.current = {};
-              setInterstitialSongsState({});
-              setInterstitialRemoteVersion(v => v + 1);
-              try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
             }
           }
           break;
