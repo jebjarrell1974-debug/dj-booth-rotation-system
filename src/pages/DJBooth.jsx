@@ -110,6 +110,7 @@ export default function DJBooth() {
       return saved ? JSON.parse(saved) : {};
     } catch { return {}; }
   })());
+  const [interstitialSongsState, setInterstitialSongsState] = useState(() => interstitialSongsRef.current);
   const playingInterstitialRef = useRef(false);
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
@@ -714,6 +715,7 @@ export default function DJBooth() {
                     }
                   }
                   interstitialSongsRef.current = current;
+                  setInterstitialSongsState(current);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(current)); } catch {}
                 } catch (err) {
                   console.warn('⚠️ Break song auto-populate failed:', err.message);
@@ -721,6 +723,7 @@ export default function DJBooth() {
               })();
             } else if (c === 0) {
               interstitialSongsRef.current = {};
+              setInterstitialSongsState({});
               try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
             }
           }
@@ -2745,7 +2748,7 @@ export default function DJBooth() {
                 tracks={tracks}
                 djOptions={djOptions}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
-                savedInterstitials={interstitialSongsRef.current}
+                savedInterstitials={interstitialSongsState}
                 onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
@@ -2786,6 +2789,7 @@ export default function DJBooth() {
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
+                  setInterstitialSongsState(interstitials);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
                   Object.entries(playlists).forEach(([dancerId, displayedSongs]) => {
                     const dancer = dancers.find(d => d.id === dancerId);

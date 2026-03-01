@@ -89,6 +89,14 @@ export default function RotationPlaylistManager({
   }, [interstitialSongs]);
 
   useEffect(() => {
+    if (savedInterstitials && Object.keys(savedInterstitials).length > 0) {
+      setInterstitialSongs(savedInterstitials);
+    } else if (savedInterstitials && Object.keys(savedInterstitials).length === 0) {
+      setInterstitialSongs({});
+    }
+  }, [savedInterstitials]);
+
+  useEffect(() => {
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
       setSongAssignments(prev => {
         const fromActive = { ...prev };
