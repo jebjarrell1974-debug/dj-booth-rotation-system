@@ -8,7 +8,14 @@
     <title>NEON AI DJ</title>
   </head>
   <body style="margin:0;background:#08081a;">
-    <div id="root"></div>
+    <div id="root">
+      <div id="preload-splash" style="position:fixed;inset:0;z-index:99999;background:#08081a;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Inter','Segoe UI',sans-serif;">
+        <h1 style="font-size:3rem;font-weight:800;color:#00d4ff;text-shadow:0 0 40px rgba(0,212,255,0.5),0 0 80px rgba(0,212,255,0.2);margin:0;letter-spacing:0.05em;">NEON AI DJ</h1>
+        <p style="color:#555;font-size:0.85rem;margin-top:0.75rem;letter-spacing:0.15em;text-transform:uppercase;">Loading</p>
+        <div style="margin-top:2rem;width:2rem;height:2rem;border:3px solid #1a1a3a;border-top:3px solid #00d4ff;border-radius:50%;animation:_s 1s linear infinite;"></div>
+        <style>@keyframes _s{to{transform:rotate(360deg)}}</style>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
