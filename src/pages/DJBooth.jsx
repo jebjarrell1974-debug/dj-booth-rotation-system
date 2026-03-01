@@ -1287,29 +1287,14 @@ export default function DJBooth() {
     
     try {
     
-    const existingSongs = rotationSongsRef.current || {};
-    const cooldowns = songCooldownRef.current || {};
-    const now = Date.now();
     const selectedSongs = {};
     const batchExcludes = [];
     for (const dancerId of cleanRotation) {
       const dancer = dnc.find(d => d.id === dancerId);
       if (dancer) {
-        const existing = existingSongs[dancerId];
-        const hasManualPlaylist = dancer.playlist && dancer.playlist.length > 0;
-        const count = songsPerSetRef.current;
-        const allOffCooldown = existing?.every(t => {
-          const lastPlayed = cooldowns[t.name] || 0;
-          return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
-        });
-        if (hasManualPlaylist && existing && existing.length >= count && existing.every(t => t.url) && allOffCooldown) {
-          selectedSongs[dancerId] = existing;
-          existing.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
-        } else {
-          const dancerTracks = await getDancerTracks(dancer, batchExcludes);
-          selectedSongs[dancerId] = dancerTracks;
-          dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
-        }
+        const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+        selectedSongs[dancerId] = dancerTracks;
+        dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
       }
     }
     setRotationSongs(selectedSongs);
@@ -1525,18 +1510,7 @@ export default function DJBooth() {
           return;
         }
 
-        const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
-        const skipCount = songsPerSetRef.current;
-        const cachedTracks = rotationSongsRef.current[newRotation[newIdx]];
-        const skipCooldowns = songCooldownRef.current || {};
-        const skipNow = Date.now();
-        const cachedAllOffCooldown = cachedTracks?.every(t => {
-          const lp = skipCooldowns[t.name] || 0;
-          return !lp || (skipNow - lp) >= COOLDOWN_MS;
-        });
-        let freshTracks = (hasManualPlaylist && cachedTracks?.length >= skipCount && cachedAllOffCooldown)
-          ? cachedTracks
-          : await getDancerTracks(nextDancer);
+        let freshTracks = await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
@@ -1674,18 +1648,7 @@ export default function DJBooth() {
 
       try {
         lastAudioActivityRef.current = Date.now();
-        const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
-        const endCount = songsPerSetRef.current;
-        const endCached = rotationSongsRef.current[newRotation[newIdx]];
-        const endCooldowns = songCooldownRef.current || {};
-        const endNow = Date.now();
-        const endAllOffCooldown = endCached?.every(t => {
-          const lp = endCooldowns[t.name] || 0;
-          return !lp || (endNow - lp) >= COOLDOWN_MS;
-        });
-        let freshTracks = (hasManualPlaylist && endCached?.length >= endCount && endAllOffCooldown)
-          ? endCached
-          : await getDancerTracks(nextDancer);
+        let freshTracks = await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         delete updatedSongs[finishedDancerId];
@@ -1925,10 +1888,7 @@ export default function DJBooth() {
           return;
         }
 
-        const hasManualPlaylist = nextDancer.playlist && nextDancer.playlist.length > 0;
-        let freshTracks = (hasManualPlaylist && rotationSongsRef.current[newRotation[newIdx]]?.length > 0)
-          ? rotationSongsRef.current[newRotation[newIdx]]
-          : await getDancerTracks(nextDancer);
+        let freshTracks = await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
