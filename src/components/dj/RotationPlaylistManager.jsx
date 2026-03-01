@@ -210,24 +210,32 @@ export default function RotationPlaylistManager({
     prevSongsPerSetRef.current = songsPerSet;
     if (tracks.length === 0) return;
     const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
+    const allUsed = new Set(Object.values(songAssignmentsRef.current).flat());
     setSongAssignments(prev => {
       const updated = { ...prev };
       let changed = false;
       Object.keys(updated).forEach(dancerId => {
-        if (djOverridesRef.current.has(dancerId)) return;
-        const dancer = dancers.find(d => d.id === dancerId);
-        if (dancer?.playlist?.length > 0 && djOptions?.musicMode !== 'folders_only') return;
         const songs = updated[dancerId];
         if (!songs) return;
         if (songs.length > songsPerSet) {
           updated[dancerId] = songs.slice(0, songsPerSet);
           changed = true;
         } else if (songs.length < songsPerSet) {
-          const usedNames = new Set(songs);
-          const available = genrePool.filter(t => !usedNames.has(t.name));
-          const shuffled = fisherYatesShuffle(available);
+          const usedNames = new Set([...allUsed, ...songs]);
+          const dancer = dancers.find(d => d.id === dancerId);
+          const dancerPlaylist = dancer?.playlist || [];
+          let extras = [];
+          if (dancerPlaylist.length > 0) {
+            const unusedFromPlaylist = dancerPlaylist.filter(n => !usedNames.has(n));
+            extras = fisherYatesShuffle(unusedFromPlaylist);
+          }
+          if (extras.length < songsPerSet - songs.length) {
+            const available = genrePool.filter(t => !usedNames.has(t.name));
+            extras = [...extras, ...fisherYatesShuffle(available).map(t => t.name)];
+          }
           const needed = songsPerSet - songs.length;
-          updated[dancerId] = [...songs, ...shuffled.slice(0, needed).map(t => t.name)];
+          updated[dancerId] = [...songs, ...extras.slice(0, needed)];
+          updated[dancerId].forEach(n => allUsed.add(n));
           changed = true;
         }
       });
