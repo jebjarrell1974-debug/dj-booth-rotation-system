@@ -416,6 +416,7 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     announcementsEnabled: state.announcementsEnabled !== false,
     rotationSongs: state.rotationSongs || {},
     volume: state.volume != null ? state.volume : 0.8,
+    breakSongsPerSet: state.breakSongsPerSet || 0,
     updatedAt: Date.now(),
   };
   broadcastSSE('boothState', { state: liveBoothState });

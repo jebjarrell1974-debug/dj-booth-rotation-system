@@ -29,6 +29,42 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 1, 2026 — Session 9 (Remote Sync, Volume Controls, Break Songs, Announcements)
+
+#### Fix: Playlist Song Resolution (RotationPlaylistManager)
+- **Problem**: Initial song assignment matched playlist songs against client-side `tracks` array (only 200 of 8,875 loaded); dancers' playlist songs failed to match, fell through to random
+- **Fix**: useEffect now calls `/api/music/select` server endpoint for initial assignment, resolving against full database. Batch excludes prevent cross-dancer duplicates. Falls back to client-side tracks only if server fails
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Feature: Master Volume Control (Plus/Minus Buttons)
+- **Pi interface**: Replaced slider with `[ - ] 80% [ + ]` buttons (5% increments) in playback controls bar
+- **Manager Remote**: Same plus/minus buttons in left sidebar, sends `setVolume` command via SSE
+- **Architecture**: App volume controls `masterGain` node (music only); voice announcements use separate `<audio>` element bypassing masterGain (intentional — Pi system volume controls voice level independently)
+- **Server**: `liveBoothState` now stores `volume` field for remote sync
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### Feature: Break Songs Count Selector (0/1/2/3)
+- **Purpose**: Set how many auto-selected break songs play between dancers during transitions
+- **State**: `breakSongsPerSet` (default 0) with ref, stored in `liveBoothState` for remote sync
+- **UI**: Purple-highlighted buttons next to Songs/Set selector on both Pi (RotationPlaylistManager) and Remote
+- **Auto-selection**: When `breakSongsPerSet > 0` and no manual break songs assigned, calls `/api/music/select` to pick random songs during transition. Manual break song assignments take priority
+- **Remote command**: `setBreakSongsPerSet` with `{ count }` payload
+- **Files**: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`, `src/components/dj/RemoteView.jsx`, `server/index.js`
+
+#### Fix: Remote Sync Reliability (Polling Fallback)
+- **Problem**: SSE connections silently die on club WiFi; remote shows stale state and commands don't reach Pi
+- **Fix**: Added 3-second polling fallback on both sides as backup to SSE:
+  - **Pi mode**: Polls `/booth/commands` every 3s (in addition to SSE listener). Command deduplication via `lastCommandIdRef.current` prevents double execution
+  - **Remote mode**: Polls `/booth/state` every 3s (in addition to SSE listener). Only updates if `state.updatedAt` is present
+- **Files**: `src/pages/DJBooth.jsx`
+
+#### Feature: Announcement Name Repetition
+- **Intro announcements**: Dancer name now said 2-3 times, spaced naturally throughout (not clustered)
+- **Transition announcements**: Incoming dancer name 2-3 times; outgoing dancer name once
+- **Round 2 / Outro**: Unchanged (single name mention)
+- **Implementation**: Added `NAME REPETITION RULE` instruction block to intro and transition templates, plus updated example scripts
+- **File**: `src/utils/energyLevels.js`
+
 ### Feb 28, 2026 — Session 8 (Script Generation Improvements)
 
 #### Feature: Script Model Selection

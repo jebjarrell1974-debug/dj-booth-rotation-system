@@ -86,6 +86,8 @@ export default function DJBooth() {
   const rotationSongsRef = useRef({});
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
+  const [breakSongsPerSet, setBreakSongsPerSet] = useState(0);
+  const breakSongsPerSetRef = useRef(0);
   const [energyOverride, setEnergyOverride] = useState(() => getApiConfig().energyOverride || 'auto');
   const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
   const djOptionsRef = useRef({ activeGenres: [], musicMode: 'dancer_first' });
@@ -480,7 +482,14 @@ export default function DJBooth() {
     if (!remoteMode) return;
     let active = true;
 
-    boothApi.getState().then(state => { if (active) setLiveBoothState(state); }).catch(() => {});
+    const pollState = () => {
+      if (!active) return;
+      boothApi.getState().then(state => {
+        if (active && state && state.updatedAt) setLiveBoothState(state);
+      }).catch(() => {});
+    };
+
+    pollState();
 
     const es = connectBoothSSE((data) => {
       if (!active) return;
@@ -497,13 +506,13 @@ export default function DJBooth() {
     });
     sseRef.current = es;
 
-    if (remoteMode) {
-      djOptionsApi.get()
-        .then(opts => { if (active) { setDjOptions(opts); djOptionsRef.current = opts; } })
-        .catch(() => {});
-    }
+    const statePollInterval = setInterval(pollState, 3000);
 
-    return () => { active = false; sseRef.current?.close(); sseRef.current = null; };
+    djOptionsApi.get()
+      .then(opts => { if (active) { setDjOptions(opts); djOptionsRef.current = opts; } })
+      .catch(() => {});
+
+    return () => { active = false; clearInterval(statePollInterval); sseRef.current?.close(); sseRef.current = null; };
   }, [remoteMode]);
 
   // Fetch dancers
@@ -625,6 +634,13 @@ export default function DJBooth() {
             audioEngineRef.current?.setVolume(vol);
           }
           break;
+        case 'setBreakSongsPerSet':
+          if (cmd.payload.count != null) {
+            const c = Math.max(0, Math.min(3, cmd.payload.count));
+            setBreakSongsPerSet(c);
+            breakSongsPerSetRef.current = c;
+          }
+          break;
         default:
           console.log('Unknown remote command:', cmd.action);
       }
@@ -637,11 +653,16 @@ export default function DJBooth() {
     if (remoteMode) return;
     let active = true;
 
-    boothApi.getCommands(lastCommandIdRef.current).then(({ commands }) => {
-      if (!active || !commands) return;
-      commands.forEach(executeCommand);
-      if (commands.length > 0) boothApi.ackCommands(lastCommandIdRef.current).catch(() => {});
-    }).catch(() => {});
+    const pollCommands = () => {
+      if (!active) return;
+      boothApi.getCommands(lastCommandIdRef.current).then(({ commands }) => {
+        if (!active || !commands) return;
+        commands.forEach(executeCommand);
+        if (commands.length > 0) boothApi.ackCommands(lastCommandIdRef.current).catch(() => {});
+      }).catch(() => {});
+    };
+
+    pollCommands();
 
     const es = connectBoothSSE((data) => {
       if (!active) return;
@@ -659,7 +680,9 @@ export default function DJBooth() {
     });
     commandSseRef.current = es;
 
-    return () => { active = false; commandSseRef.current?.close(); commandSseRef.current = null; };
+    const commandPollInterval = setInterval(pollCommands, 3000);
+
+    return () => { active = false; clearInterval(commandPollInterval); commandSseRef.current?.close(); commandSseRef.current = null; };
   }, [remoteMode, executeCommand]);
 
   // Pi mode: broadcast live state to server every 5 seconds
@@ -685,6 +708,7 @@ export default function DJBooth() {
           currentTrack,
           currentSongNumber,
           songsPerSet,
+          breakSongsPerSet,
           isPlaying,
           rotation,
           announcementsEnabled,
@@ -696,7 +720,7 @@ export default function DJBooth() {
     broadcast();
     const interval = setInterval(broadcast, 5000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume]);
 
   useEffect(() => {
     if (!activeStage) return;
@@ -1797,7 +1821,34 @@ export default function DJBooth() {
         }
       } else {
         const breakKey = `after-${rot[idx]}`;
-        const breakSongs = interstitialSongsRef.current[breakKey] || [];
+        let breakSongs = interstitialSongsRef.current[breakKey] || [];
+
+        if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+          try {
+            const token = sessionStorage.getItem('djbooth_token');
+            const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+            const excludeNames = [...new Set(Object.values(rotationSongsRef.current).flat().map(t => t.name))];
+            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const res = await fetch('/api/music/select', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                count: breakSongsPerSetRef.current,
+                excludeNames,
+                genres: activeGenres,
+                dancerPlaylist: []
+              }),
+              signal: AbortSignal.timeout(5000)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              breakSongs = (data.tracks || []).map(t => t.name);
+              console.log('🎵 Auto-selected', breakSongs.length, 'break song(s):', breakSongs);
+            }
+          } catch (err) {
+            console.warn('⚠️ Failed to auto-select break songs:', err.message);
+          }
+        }
 
         if (breakSongs.length > 0) {
           console.log('🎵 HandleTrackEnd: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
@@ -2742,6 +2793,11 @@ export default function DJBooth() {
                   const dancer = dancers.find(d => d.id === dancerId);
                   console.log('⏭️ Skipped dancer to bottom:', dancer?.name);
                   toast(`${dancer?.name || 'Dancer'} moved to end of rotation`, { icon: '⏭️' });
+                }}
+                breakSongsPerSet={breakSongsPerSet}
+                onBreakSongsPerSetChange={(n) => {
+                  setBreakSongsPerSet(n);
+                  breakSongsPerSetRef.current = n;
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={(n) => {

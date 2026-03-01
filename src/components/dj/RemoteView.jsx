@@ -36,6 +36,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const rotationSongs = liveBoothState?.rotationSongs || {};
   const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
   const volumePercent = Math.round(currentVolume * 100);
+  const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
 
   const currentDancer = isRotationActive
     ? dancers.find(d => d.id === rotationList[currentDancerIndex])
@@ -136,6 +137,24 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     className={`w-10 h-10 rounded-lg text-base font-bold transition-colors ${
                       n === songsPerSet
                         ? 'bg-[#00d4ff] text-black'
+                        : 'bg-[#151528] text-gray-400 active:bg-[#2e2e5a]'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-400">Break Songs</span>
+              <div className="flex items-center gap-1">
+                {[0,1,2,3].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => boothApi.sendCommand('setBreakSongsPerSet', { count: n })}
+                    className={`w-10 h-10 rounded-lg text-base font-bold transition-colors ${
+                      n === breakSongsPerSet
+                        ? 'bg-violet-500 text-white'
                         : 'bg-[#151528] text-gray-400 active:bg-[#2e2e5a]'
                     }`}
                   >
