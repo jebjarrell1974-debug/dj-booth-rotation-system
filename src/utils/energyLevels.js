@@ -230,19 +230,14 @@ EXAMPLE (match this energy, create original lines):
 Output should be 3-5 sentences. Rhyming and wordplay encouraged if natural (e.g. "doing it right on a ${dayOfWeek} night"). ${isGeneric ? 'Do not use a specific name.' : `Say ${nextName} 2-3 times, spaced out naturally.`}`;
   }
 
-  const shiftBlock = `SHIFT TYPE: ${shiftType}
-Tone: ${shift.tone}
-Confidence level: ${shift.confidence}`;
+  const shiftBlock = `TONE DIRECTION (internal guidance only — NEVER say these words out loud):
+Your tone should be: ${shift.tone}
+Your confidence level should be: ${shift.confidence}
+CRITICAL: Do NOT reference the time of night, shift, energy level, or any internal labels in the spoken announcement. Just let the tone come through naturally in how you speak.`;
 
   const closingBlock = closingWindow
-    ? `CLOSING WINDOW: true
-- Add urgency
-- Emphasize limited time
-- Use slightly shorter sentences
-- Strengthen the VIP call-to-action`
-    : `CLOSING WINDOW: false
-- No time pressure
-- Focus on smooth persuasion`;
+    ? `PACING: Add urgency. Emphasize limited time. Use slightly shorter sentences. Strengthen the VIP call-to-action.`
+    : `PACING: No time pressure. Focus on smooth persuasion.`;
 
   const behaviorRule = shiftType === 'EARLY_SHIFT'
     ? 'Sound welcoming and build anticipation.'
