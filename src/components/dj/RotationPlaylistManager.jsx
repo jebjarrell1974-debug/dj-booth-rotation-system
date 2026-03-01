@@ -64,6 +64,7 @@ export default function RotationPlaylistManager({
   const [selectedDancerId, setSelectedDancerId] = useState(null);
   const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
   const appliedPlaylistsRef = React.useRef({});
+  const songAssignmentsRef = React.useRef({});
   const djOverridesRef = React.useRef(new Set());
   const [serverTracks, setServerTracks] = useState([]);
   const [serverGenres, setServerGenres] = useState([]);
@@ -82,6 +83,10 @@ export default function RotationPlaylistManager({
   useEffect(() => {
     setLocalRotation(rotation);
   }, [rotation]);
+
+  useEffect(() => {
+    songAssignmentsRef.current = songAssignments;
+  }, [songAssignments]);
 
   useEffect(() => {
     if (Object.keys(interstitialSongs).length > 0) {
@@ -110,6 +115,8 @@ export default function RotationPlaylistManager({
 
     const dancersNeedingAssignment = localRotation.filter(dancerId => {
       if (djOverridesRef.current.has(dancerId)) return false;
+      const current = songAssignmentsRef.current[dancerId];
+      if (current && current.length > 0) return false;
       return true;
     });
     if (dancersNeedingAssignment.length === 0) return;
