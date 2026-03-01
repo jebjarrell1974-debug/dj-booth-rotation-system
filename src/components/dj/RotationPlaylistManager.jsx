@@ -44,6 +44,7 @@ export default function RotationPlaylistManager({
   onAnnouncementsToggle,
   onSkipDancer,
   currentDancerIndex,
+  currentSongNumber,
   breakSongsPerSet,
   onBreakSongsPerSetChange
 }) {
@@ -822,32 +823,40 @@ export default function RotationPlaylistManager({
                                 >
                                   {assigned.length > 0 ? (
                                     <div className="space-y-1">
-                                      {assigned.map((songName, songIdx) => (
-                                        <Draggable key={`${dancer.id}-${songName}`} draggableId={`assigned-${dancer.id}-${songName}`} index={songIdx}>
-                                          {(songDragProvided, songDragSnapshot) => (
-                                            <div
-                                              ref={songDragProvided.innerRef}
-                                              {...songDragProvided.draggableProps}
-                                              {...songDragProvided.dragHandleProps}
-                                              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${
-                                                songDragSnapshot.isDragging
-                                                  ? 'bg-[#00d4ff]/20 border-[#00d4ff]'
-                                                  : 'bg-[#0d0d1f] border-[#1e293b]'
-                                              }`}
-                                            >
-                                              <span className="text-xs text-[#00d4ff] font-bold w-4 flex-shrink-0">{songIdx + 1}</span>
-                                              <Music2 className="w-3 h-3 text-gray-500 flex-shrink-0" />
-                                              <span className="text-xs text-gray-300 truncate flex-1">{songName}</span>
-                                              <button
-                                                onClick={() => removeSong(dancer.id, songIdx)}
-                                                className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                      {assigned.map((songName, songIdx) => {
+                                        const isCurrentDancer = isRotationActive && index === currentDancerIndex;
+                                        const isPlayed = isCurrentDancer && songIdx < (currentSongNumber - 1);
+                                        const isNowPlaying = isCurrentDancer && songIdx === (currentSongNumber - 1);
+                                        if (isPlayed) return null;
+                                        return (
+                                          <Draggable key={`${dancer.id}-${songName}`} draggableId={`assigned-${dancer.id}-${songName}`} index={songIdx}>
+                                            {(songDragProvided, songDragSnapshot) => (
+                                              <div
+                                                ref={songDragProvided.innerRef}
+                                                {...songDragProvided.draggableProps}
+                                                {...songDragProvided.dragHandleProps}
+                                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${
+                                                  songDragSnapshot.isDragging
+                                                    ? 'bg-[#00d4ff]/20 border-[#00d4ff]'
+                                                    : isNowPlaying
+                                                      ? 'bg-[#00d4ff]/15 border-[#00d4ff]/50'
+                                                      : 'bg-[#0d0d1f] border-[#1e293b]'
+                                                }`}
                                               >
-                                                <X className="w-5 h-5" />
-                                              </button>
-                                            </div>
-                                          )}
-                                        </Draggable>
-                                      ))}
+                                                <span className="text-xs font-bold w-4 flex-shrink-0 text-[#00d4ff]">{isNowPlaying ? '▶' : songIdx + 1}</span>
+                                                <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-500'}`} />
+                                                <span className={`text-xs truncate flex-1 ${isNowPlaying ? 'text-white font-medium' : 'text-gray-300'}`}>{songName}</span>
+                                                <button
+                                                  onClick={() => removeSong(dancer.id, songIdx)}
+                                                  className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                                >
+                                                  <X className="w-5 h-5" />
+                                                </button>
+                                              </div>
+                                            )}
+                                          </Draggable>
+                                        );
+                                      })}
                                     </div>
                                   ) : (
                                     <div className="flex items-center justify-center h-[36px] border-2 border-dashed border-[#1e293b] rounded-lg">
