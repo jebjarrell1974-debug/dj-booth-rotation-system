@@ -2807,6 +2807,7 @@ export default function DJBooth() {
                   console.log('⏭️ Skipped dancer to bottom:', dancer?.name);
                   toast(`${dancer?.name || 'Dancer'} moved to end of rotation`, { icon: '⏭️' });
                 }}
+                currentSongNumber={currentSongNumber}
                 breakSongsPerSet={breakSongsPerSet}
                 onBreakSongsPerSetChange={(n) => {
                   setBreakSongsPerSet(n);
