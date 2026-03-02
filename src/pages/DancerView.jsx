@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { playlistApi, musicApi, auth as authApi } from '@/api/serverApi';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen, ChevronLeft } from 'lucide-react';
+import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen } from 'lucide-react';
 
 const INACTIVITY_TIMEOUT = 4 * 60 * 60 * 1000;
 const LONG_PRESS_MS = 200;
@@ -19,7 +18,6 @@ export default function DancerView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [tracksLoading, setTracksLoading] = useState(false);
-  const [showLibrary, setShowLibrary] = useState(false);
   const [page, setPage] = useState(1);
   const [totalTracks, setTotalTracks] = useState(0);
   const lastActivityRef = useRef(Date.now());
@@ -76,14 +74,13 @@ export default function DancerView() {
   }, []);
 
   useEffect(() => {
-    if (!showLibrary) return;
     setPage(1);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       fetchTracks(searchQuery, selectedGenre, 1);
     }, 300);
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [showLibrary, searchQuery, selectedGenre, fetchTracks]);
+  }, [searchQuery, selectedGenre, fetchTracks]);
 
   useEffect(() => {
     const resetTimer = () => { lastActivityRef.current = Date.now(); };
@@ -263,11 +260,11 @@ export default function DancerView() {
   }
 
   return (
-    <div className="min-h-screen bg-[#08081a] flex flex-col" style={{ maxHeight: '100dvh' }}>
-      <div className="p-4 border-b border-[#1e293b] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
+    <div className="h-[100dvh] bg-[#08081a] flex flex-col overflow-hidden">
+      <div className="px-4 py-2 border-b border-[#1e293b] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
         <div>
           <h1 className="text-lg font-bold text-white">{user?.name || 'Entertainer'}</h1>
-          <p className="text-xs text-gray-500">My Playlist</p>
+          <p className="text-[10px] text-gray-500">My Playlist</p>
         </div>
         <Button variant="ghost" size="sm" onClick={handleLogout} className="text-gray-400 hover:text-white">
           <LogOut className="w-4 h-4 mr-1" />
@@ -275,27 +272,20 @@ export default function DancerView() {
         </Button>
       </div>
 
-      {!showLibrary ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-4 flex items-center justify-between flex-shrink-0">
-            <span className="text-sm text-gray-400">{playlist.length} songs</span>
-            <Button
-              size="sm"
-              onClick={() => setShowLibrary(true)}
-              className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black font-medium"
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Add Songs
-            </Button>
+      <div className="flex flex-1 min-h-0">
+        <div className="w-[33%] flex flex-col border-r border-[#1e293b]">
+          <div className="px-3 py-2 flex items-center justify-between flex-shrink-0 border-b border-[#1e293b]/50">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">My Songs</span>
+            <span className="text-[10px] text-gray-500">{playlist.length}</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div className="px-4 pb-4 space-y-1">
+          <div ref={listRef} className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="px-2 py-2 space-y-0.5">
               {playlist.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <Music className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">Your playlist is empty</p>
-                  <p className="text-xs mt-1">Tap "Add Songs" to browse music</p>
+                <div className="text-center py-8 text-gray-500">
+                  <Music className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-xs">Your playlist is empty</p>
+                  <p className="text-[10px] mt-1 text-gray-600">Tap songs from the library to add</p>
                 </div>
               ) : (
                 playlist.map((song, idx) => (
@@ -310,17 +300,17 @@ export default function DancerView() {
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
                     onTouchCancel={handleTouchCancel}
-                    className={`flex items-center gap-2 px-3 py-3 rounded-lg transition-colors select-none ${
+                    className={`flex items-center gap-1.5 px-2 py-2 rounded-lg transition-colors select-none ${
                       dragIdx === idx ? 'bg-[#00d4ff]/20 border border-[#00d4ff]/40' : 'bg-[#151528]'
                     }`}
                   >
-                    <GripVertical className="w-4 h-4 text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
-                    <span className="text-sm text-gray-200 flex-1 truncate">{song}</span>
+                    <GripVertical className="w-3.5 h-3.5 text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+                    <span className="text-[11px] text-gray-200 flex-1 truncate leading-tight">{song}</span>
                     <button
                       onClick={() => removeSong(idx)}
-                      className="p-2 text-red-400/70 hover:text-red-400 active:text-red-300 transition-colors flex-shrink-0"
+                      className="p-1 text-red-400/60 active:text-red-400 transition-colors flex-shrink-0"
                     >
-                      <X className="w-5 h-5" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ))
@@ -328,76 +318,54 @@ export default function DancerView() {
             </div>
           </div>
         </div>
-      ) : (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-3 space-y-3 flex-shrink-0 border-b border-[#1e293b]">
+
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="px-3 py-2 flex-shrink-0 border-b border-[#1e293b]/50 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Song Library</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => { setShowLibrary(false); setSearchQuery(''); setSelectedGenre(''); }}
-                className="text-gray-400 hover:text-white"
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                My Playlist
-              </Button>
+              <span className="text-xs font-semibold text-[#00d4ff] uppercase tracking-wider">Music Library</span>
+              <span className="text-[10px] text-gray-500">
+                {totalTracks.toLocaleString()} songs{selectedGenre ? ` in ${selectedGenre}` : ''}
+              </span>
             </div>
-
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search songs..."
-                className="pl-9 bg-[#151528] border-[#1e293b] text-white placeholder:text-gray-500 h-10"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {genres.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
-                <button
-                  onClick={() => setSelectedGenre('')}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    selectedGenre === ''
-                      ? 'bg-[#00d4ff] text-black'
-                      : 'bg-[#151528] text-gray-400 border border-[#1e293b] hover:text-white'
-                  }`}
-                >
-                  All
-                </button>
-                {genres.map(genre => (
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search songs..."
+                  className="w-full bg-[#151528] border border-[#1e293b] rounded-lg pl-8 pr-8 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#00d4ff]"
+                />
+                {searchQuery && (
                   <button
-                    key={genre}
-                    onClick={() => setSelectedGenre(selectedGenre === genre ? '' : genre)}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      selectedGenre === genre
-                        ? 'bg-[#00d4ff] text-black'
-                        : 'bg-[#151528] text-gray-400 border border-[#1e293b] hover:text-white'
-                    }`}
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 active:text-white"
                   >
-                    <FolderOpen className="w-3 h-3 inline mr-1" />
-                    {genre}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ))}
+                )}
               </div>
-            )}
-
-            <div className="text-xs text-gray-500">
-              {totalTracks} songs{selectedGenre ? ` in ${selectedGenre}` : ''}{searchQuery ? ` matching "${searchQuery}"` : ''}
+              {genres.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <FolderOpen className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                  <select
+                    value={selectedGenre}
+                    onChange={(e) => setSelectedGenre(e.target.value)}
+                    className="bg-[#151528] border border-[#1e293b] rounded-lg px-2 py-1.5 text-xs text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff] min-w-[120px]"
+                    style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px' }}
+                  >
+                    <option value="">All Genres</option>
+                    {genres.map(genre => (
+                      <option key={genre} value={genre}>{genre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div className="px-3 pb-4 pt-2 space-y-0.5">
+            <div className="px-2 pb-3 pt-1 space-y-0.5">
               {tracksLoading && tracks.length === 0 ? (
                 <div className="text-center py-12">
                   <div className="w-6 h-6 border-3 border-[#00d4ff]/30 border-t-[#00d4ff] rounded-full animate-spin mx-auto" />
@@ -420,15 +388,15 @@ export default function DancerView() {
                           addSong(track.name);
                         }
                       }}
-                      className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left transition-colors ${
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
                         inPlaylist
                           ? 'bg-[#00d4ff]/10 text-[#00d4ff] active:bg-red-500/20'
-                          : 'text-gray-300 hover:bg-[#151528] hover:text-white active:bg-[#00d4ff]/20'
+                          : 'text-gray-300 active:bg-[#00d4ff]/20'
                       }`}
                     >
-                      <Music className="w-4 h-4 flex-shrink-0 opacity-50" />
+                      <Music className="w-3.5 h-3.5 flex-shrink-0 opacity-50" />
                       <div className="flex-1 min-w-0">
-                        <span className="truncate text-sm block">{track.name}</span>
+                        <span className="truncate text-xs block">{track.name}</span>
                         {track.genre && (
                           <span className="text-[10px] text-gray-600 block">{track.genre}</span>
                         )}
@@ -438,7 +406,7 @@ export default function DancerView() {
                           <X className="w-3.5 h-3.5" />
                         </span>
                       ) : (
-                        <Plus className="w-5 h-5 text-[#00d4ff] flex-shrink-0" />
+                        <Plus className="w-4 h-4 text-[#00d4ff] flex-shrink-0" />
                       )}
                     </button>
                   );
@@ -449,7 +417,7 @@ export default function DancerView() {
                   <button
                     onClick={loadMore}
                     disabled={tracksLoading}
-                    className="px-4 py-2.5 text-xs font-medium text-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 rounded-lg transition-colors active:bg-[#00d4ff]/30"
+                    className="px-4 py-2 text-xs font-medium text-[#00d4ff] bg-[#00d4ff]/10 active:bg-[#00d4ff]/30 rounded-lg transition-colors"
                   >
                     {tracksLoading ? 'Loading...' : `Show More (${tracks.length} of ${totalTracks})`}
                   </button>
@@ -458,7 +426,7 @@ export default function DancerView() {
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
