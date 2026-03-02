@@ -85,6 +85,7 @@ export default function DJBooth() {
   const [currentSongNumber, setCurrentSongNumber] = useState(1);
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
+  const tracksRef = useRef([]);
   const [rotationSongs, setRotationSongs] = useState({});
   const currentDancerIndexRef = useRef(0);
   const currentSongNumberRef = useRef(1);
@@ -760,6 +761,21 @@ export default function DJBooth() {
             saveRotationRef.current?.(newRot);
           }
           break;
+        case 'updateSongAssignments':
+          if (cmd.payload.assignments) {
+            const allTracks = tracksRef.current || [];
+            const newSongs = { ...rotationSongsRef.current };
+            Object.entries(cmd.payload.assignments).forEach(([dancerId, songNames]) => {
+              newSongs[dancerId] = songNames.map(name => {
+                const found = allTracks.find(t => t.name === name);
+                return found || { name, path: name };
+              });
+            });
+            setRotationSongs(newSongs);
+            rotationSongsRef.current = newSongs;
+            console.log('🎵 Remote updateSongAssignments: updated songs for', Object.keys(cmd.payload.assignments).length, 'entertainers');
+          }
+          break;
         default:
           console.log('Unknown remote command:', cmd.action);
       }
@@ -983,6 +999,7 @@ export default function DJBooth() {
       const data = await res.json();
       const withUrls = data.tracks.map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
       setTracks(withUrls);
+      tracksRef.current = withUrls;
       trackCountRef.current = data.total || withUrls.length;
       return withUrls;
     } catch (err) {
