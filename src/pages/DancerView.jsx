@@ -7,6 +7,7 @@ import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen } from 'lucide
 
 const INACTIVITY_TIMEOUT = 4 * 60 * 60 * 1000;
 const LONG_PRESS_MS = 200;
+const PHONE_BREAKPOINT = 768;
 
 export default function DancerView() {
   const { user, role, isAuthenticated, logout } = useAuth();
@@ -23,6 +24,13 @@ export default function DancerView() {
   const lastActivityRef = useRef(Date.now());
   const [dragIdx, setDragIdx] = useState(null);
   const searchTimerRef = useRef(null);
+  const [isPhone, setIsPhone] = useState(() => window.innerWidth < PHONE_BREAKPOINT);
+
+  useEffect(() => {
+    const check = () => setIsPhone(window.innerWidth < PHONE_BREAKPOINT);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const touchState = useRef({ active: false, idx: null, startY: 0, currentY: 0, timer: null });
   const listRef = useRef(null);
@@ -272,8 +280,8 @@ export default function DancerView() {
         </Button>
       </div>
 
-      <div className="flex flex-1 min-h-0">
-        <div className="w-[33%] flex flex-col border-r border-[#1e293b]">
+      <div className={`flex flex-1 min-h-0 ${isPhone ? 'flex-col' : 'flex-row'}`}>
+        <div className={`flex flex-col ${isPhone ? 'h-[38%] border-b' : 'w-[33%] border-r'} border-[#1e293b]`}>
           <div className="px-3 py-2 flex items-center justify-between flex-shrink-0 border-b border-[#1e293b]/50">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">My Songs</span>
             <span className="text-[10px] text-gray-500">{playlist.length}</span>
@@ -282,8 +290,8 @@ export default function DancerView() {
           <div ref={listRef} className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="px-2 py-2 space-y-0.5">
               {playlist.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Music className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <div className={`text-center text-gray-500 ${isPhone ? 'py-4' : 'py-8'}`}>
+                  <Music className={`mx-auto mb-2 opacity-50 ${isPhone ? 'w-6 h-6' : 'w-8 h-8'}`} />
                   <p className="text-xs">Your playlist is empty</p>
                   <p className="text-[10px] mt-1 text-gray-600">Tap songs from the library to add</p>
                 </div>
@@ -327,8 +335,8 @@ export default function DancerView() {
                 {totalTracks.toLocaleString()} songs{selectedGenre ? ` in ${selectedGenre}` : ''}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
+            <div className={`flex items-center gap-2 ${isPhone ? 'flex-col' : ''}`}>
+              <div className="relative flex-1 w-full">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
                 <input
                   value={searchQuery}
@@ -346,12 +354,12 @@ export default function DancerView() {
                 )}
               </div>
               {genres.length > 0 && (
-                <div className="flex items-center gap-1.5">
+                <div className={`flex items-center gap-1.5 ${isPhone ? 'w-full' : ''}`}>
                   <FolderOpen className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                   <select
                     value={selectedGenre}
                     onChange={(e) => setSelectedGenre(e.target.value)}
-                    className="bg-[#151528] border border-[#1e293b] rounded-lg px-2 py-1.5 text-xs text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff] min-w-[120px]"
+                    className={`bg-[#151528] border border-[#1e293b] rounded-lg px-2 py-1.5 text-xs text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff] ${isPhone ? 'flex-1' : 'min-w-[120px]'}`}
                     style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px' }}
                   >
                     <option value="">All Genres</option>
