@@ -68,9 +68,6 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
     ? dancers.find(d => d.id === rotationList[currentDancerIndex])
     : null;
 
-  const availableDancers = dancers.filter(
-    d => d.is_active && !rotationList.includes(d.id)
-  );
 
   return (
     <div className="remote-view h-[100dvh] bg-[#08081a] text-white flex flex-col overflow-hidden select-none">
@@ -379,29 +376,6 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   </>
                 )}
 
-                {availableDancers.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-[#1e293b]">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">Add to Rotation</h4>
-                    <div className="space-y-1">
-                      {availableDancers.map(dancer => (
-                        <button
-                          key={dancer.id}
-                          onClick={() => boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id })}
-                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left active:bg-[#151528] transition-colors"
-                        >
-                          <div
-                            className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold text-sm"
-                            style={{ backgroundColor: dancer.color || '#00d4ff' }}
-                          >
-                            {dancer.name.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="text-base text-gray-300 flex-1">{dancer.name}</span>
-                          <Plus className="w-6 h-6 text-[#00d4ff]" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
