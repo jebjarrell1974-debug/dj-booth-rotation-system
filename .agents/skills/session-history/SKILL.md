@@ -263,12 +263,20 @@ Keeps the Pi screen on all night (no sleep/screensaver).
 sudo raspi-config nonint do_blanking 1
 ```
 
-### Step 12: Copy music files
+### Step 12: Set timezone and daily reboot
+Set the Pi to Central time and schedule a daily reboot at 8:30 AM to keep things fresh.
+```bash
+sudo timedatectl set-timezone America/Chicago
+(sudo crontab -l 2>/dev/null; echo "30 8 * * * /sbin/reboot") | sudo crontab -
+```
+Verify: `sudo crontab -l` should show the reboot line. `timedatectl` should show `America/Chicago`.
+
+### Step 13: Copy music files
 Copy music to `/home/USERNAME/Desktop/DJ MUSIC/`
 - Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
 - Songs in the `FEATURE/` folder play to completion (no 3-minute cap)
 
-### Step 13: Start the app and verify
+### Step 14: Start the app and verify
 ```bash
 sudo systemctl start djbooth && sudo journalctl -u djbooth --no-pager -n 20
 ```
@@ -278,13 +286,13 @@ You should see:
 - Heartbeat client active
 - R2 cloud sync downloading/uploading voiceovers
 
-### Step 14: Configure the app in the browser
+### Step 15: Configure the app in the browser
 - Open `http://localhost:3001` on the Pi
 - Go to Configuration (master PIN: `36669`)
 - Set club name, ElevenLabs API key, OpenAI API key, voice ID
 - These settings are stored in the browser's localStorage on each Pi
 
-### Step 15: Reboot and verify full boot sequence
+### Step 16: Reboot and verify full boot sequence
 ```bash
 sudo reboot
 ```
