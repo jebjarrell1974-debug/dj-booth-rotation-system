@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { toast } from 'sonner';
@@ -55,6 +55,8 @@ export default function Configuration() {
   const [r2Status, setR2Status] = useState(null);
   const [r2Loading, setR2Loading] = useState(false);
   const [r2Syncing, setR2Syncing] = useState({ voUp: false, voDown: false, muUp: false, muDown: false });
+  const [blockedTracks, setBlockedTracks] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
 
   const config = getApiConfig();
   const currentLevel = getCurrentEnergyLevel({ clubOpenHour, clubCloseHour, energyOverride: config.energyOverride });
@@ -93,6 +95,12 @@ export default function Configuration() {
         setMusicTrackCount(data.totalTracks || 0);
         setMusicLastScan(data.lastScan || null);
       }
+    }).catch(() => {});
+
+    fetch('/api/music/blocked', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (data?.tracks) setBlockedTracks(data.tracks);
     }).catch(() => {});
   }, [isUnlocked]);
 
@@ -638,6 +646,62 @@ export default function Configuration() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Ban className="w-5 h-5 text-red-400" />
+              <h2 className="text-lg font-semibold">Deactivated Songs</h2>
+              <span className="text-sm text-gray-500 ml-auto">{blockedTracks.length} song{blockedTracks.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            {blockedTracks.length === 0 ? (
+              <p className="text-sm text-gray-500">No deactivated songs. Use the Deactivate button in the DJ booth to block the currently playing song.</p>
+            ) : (
+              <div className="space-y-1 max-h-80 overflow-y-auto">
+                {blockedTracks.map((track) => (
+                  <div key={track.name} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#08081a] border border-[#1e293b] group">
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="text-sm text-white truncate">{track.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {track.genre && <span className="mr-3">{track.genre}</span>}
+                        {track.blocked_at && <span>Blocked {new Date(track.blocked_at).toLocaleDateString()}</span>}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-green-500/50 text-green-400 hover:bg-green-500/20 hover:text-green-300 shrink-0"
+                      disabled={blockedLoading}
+                      onClick={async () => {
+                        setBlockedLoading(true);
+                        try {
+                          const token = sessionStorage.getItem('djbooth_token');
+                          const res = await fetch('/api/music/unblock', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                            body: JSON.stringify({ trackName: track.name })
+                          });
+                          if (res.ok) {
+                            setBlockedTracks(prev => prev.filter(t => t.name !== track.name));
+                            toast.success(`Reactivated: ${track.name}`);
+                          } else {
+                            toast.error('Failed to reactivate');
+                          }
+                        } catch {
+                          toast.error('Failed to reactivate');
+                        } finally {
+                          setBlockedLoading(false);
+                        }
+                      }}
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Reactivate
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6">

@@ -29,7 +29,8 @@ import {
   FolderOpen,
   SlidersHorizontal,
   MonitorOff,
-  HelpCircle
+  HelpCircle,
+  Ban
 } from 'lucide-react';
 import {
   Dialog,
@@ -1802,6 +1803,32 @@ export default function DJBooth() {
   }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
 
+  const handleDeactivateTrack = useCallback(async () => {
+    if (!currentTrack) {
+      toast.error('No song currently playing');
+      return;
+    }
+    const trackName = currentTrack;
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const res = await fetch('/api/music/block', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ trackName })
+      });
+      if (res.ok) {
+        toast.success(`Deactivated: ${trackName}`);
+        handleSkipRef.current?.();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to deactivate');
+      }
+    } catch (err) {
+      toast.error('Failed to deactivate: ' + err.message);
+    }
+  }, [currentTrack]);
+
   const handleTrackEnd = useCallback(async () => {
     if (watchdogRecoveringRef.current) {
       console.log('⏳ HandleTrackEnd: Watchdog recovery in progress, skipping');
@@ -2690,6 +2717,19 @@ export default function DJBooth() {
               )}
             </div>
             
+            {!remoteMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDeactivateTrack}
+                className="border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                title="Deactivate the currently playing song"
+              >
+                <Ban className="w-4 h-4 mr-1" />
+                Deactivate
+              </Button>
+            )}
+
             {!remoteMode && (!elevenLabsKey || !openaiKey) && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg">
                 <AlertCircle className="w-4 h-4 text-amber-500" />

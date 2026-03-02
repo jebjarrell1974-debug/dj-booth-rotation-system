@@ -29,7 +29,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 2, 2026 — Session 12 (Break Song Playback Fix)
+### Mar 2, 2026 — Session 12 (Break Song Fix + Song Deactivation)
 
 #### Fix: Break Songs Completely Ignored During Playback
 - **Problem**: Break songs assigned in the rotation (manually or via auto-select) were never played. System skipped directly from one entertainer to the next
@@ -37,6 +37,15 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Fix 1**: Added full break song support to `handleSkip`'s else branch — checks for manual break songs, falls back to auto-selecting from `/api/music/select` if `breakSongsPerSet > 0`, plays first break song with outro announcement, sets `playingInterstitialRef` so subsequent break songs play via `handleTrackEnd`
 - **Fix 2**: Auto-selected break songs now persisted in both `handleSkip` AND `handleTrackEnd` — previously auto-selected songs were stored only in a local variable, so multi-break sequences (2+ songs) would lose track after the first. Both paths now write to `interstitialSongsRef`, `interstitialSongsState`, `interstitialRemoteVersion`, and localStorage
 - **File**: `src/pages/DJBooth.jsx`
+
+#### Feature: Song Deactivation (Per-Club Song Blocking)
+- **Purpose**: Each club can permanently block songs from playing — deactivated songs are excluded from all music selection, random fills, and genre counts
+- **Database**: Added `blocked` (INTEGER DEFAULT 0) and `blocked_at` (TEXT) columns to `music_tracks` table with migration for existing databases. The `bulkUpsertTracks` upsert only updates name/genre/size/modified_at on conflict, so the blocked flag survives daily rescans
+- **Queries updated**: `getMusicTracks`, `getMusicGenres`, `getRandomTracks`, `selectTracksForSet`, `getMusicTrackCount` all filter `WHERE blocked = 0`
+- **API endpoints**: `POST /api/music/block` (DJ only), `POST /api/music/unblock` (DJ only), `GET /api/music/blocked` (authenticated)
+- **DJ Booth UI**: Red "Deactivate" button in the tab bar (between Announcements and Stop Rotation). Pressing it blocks the currently playing song and immediately skips to the next track
+- **Configuration UI**: "Deactivated Songs" section shows all blocked tracks with song name, genre, date blocked, and a green "Reactivate" button to restore each one
+- **Files**: `server/db.js`, `server/index.js`, `src/pages/DJBooth.jsx`, `src/pages/Configuration.jsx`
 
 ### Mar 1, 2026 — Session 11 (Deep Entertainer Rename)
 

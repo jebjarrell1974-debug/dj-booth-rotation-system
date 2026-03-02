@@ -13,7 +13,8 @@ import {
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
-  logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory
+  logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory,
+  blockTrack, unblockTrack, getBlockedTracks
 } from './db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
@@ -661,6 +662,37 @@ app.post('/api/music/rescan', authenticate, requireDJ, (req, res) => {
   try {
     const result = scanMusicFolder(MUSIC_PATH, true);
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/music/block', authenticate, requireDJ, (req, res) => {
+  const { trackName } = req.body;
+  if (!trackName) return res.status(400).json({ error: 'trackName required' });
+  try {
+    blockTrack(trackName);
+    res.json({ success: true, message: `Deactivated: ${trackName}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/music/unblock', authenticate, requireDJ, (req, res) => {
+  const { trackName } = req.body;
+  if (!trackName) return res.status(400).json({ error: 'trackName required' });
+  try {
+    unblockTrack(trackName);
+    res.json({ success: true, message: `Reactivated: ${trackName}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/music/blocked', authenticate, (req, res) => {
+  try {
+    const tracks = getBlockedTracks();
+    res.json({ tracks });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -111,7 +111,9 @@ db.exec(`
     path TEXT NOT NULL UNIQUE,
     genre TEXT,
     size INTEGER DEFAULT 0,
-    modified_at TEXT
+    modified_at TEXT,
+    blocked INTEGER DEFAULT 0,
+    blocked_at TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_music_tracks_name ON music_tracks(name);
@@ -129,6 +131,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at);
   CREATE INDEX IF NOT EXISTS idx_play_history_dancer ON play_history(dancer_name);
 `);
+
+try {
+  db.prepare("SELECT blocked FROM music_tracks LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE music_tracks ADD COLUMN blocked INTEGER DEFAULT 0");
+  db.exec("ALTER TABLE music_tracks ADD COLUMN blocked_at TEXT");
+}
 
 function getVoiceoverDir() {
   if (process.env.VOICEOVER_PATH) {
@@ -363,8 +372,20 @@ export function bulkUpsertTracks(tracksArray) {
   txn(tracksArray);
 }
 
+export function blockTrack(trackName) {
+  db.prepare("UPDATE music_tracks SET blocked = 1, blocked_at = datetime('now', 'localtime') WHERE name = ?").run(trackName);
+}
+
+export function unblockTrack(trackName) {
+  db.prepare("UPDATE music_tracks SET blocked = 0, blocked_at = NULL WHERE name = ?").run(trackName);
+}
+
+export function getBlockedTracks() {
+  return readDb.prepare("SELECT MIN(id) as id, name, MIN(genre) as genre, MIN(blocked_at) as blocked_at FROM music_tracks WHERE blocked = 1 GROUP BY name ORDER BY blocked_at DESC").all();
+}
+
 export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '' } = {}) {
-  let where = [];
+  let where = ['blocked = 0'];
   let params = [];
   if (search) {
     where.push('(name LIKE ? OR path LIKE ?)');
@@ -374,7 +395,7 @@ export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '' 
     where.push('genre = ?');
     params.push(genre);
   }
-  const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+  const whereClause = 'WHERE ' + where.join(' AND ');
   const total = readDb.prepare(`SELECT COUNT(DISTINCT name) as count FROM music_tracks ${whereClause}`).get(...params).count;
   const offset = (page - 1) * limit;
   const tracks = readDb.prepare(`SELECT MIN(id) as id, name, MIN(path) as path, MIN(genre) as genre FROM music_tracks ${whereClause} GROUP BY name ORDER BY name ASC LIMIT ? OFFSET ?`).all(...params, limit, offset);
@@ -382,7 +403,7 @@ export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '' 
 }
 
 export function getMusicGenres() {
-  return readDb.prepare('SELECT genre as name, COUNT(DISTINCT name) as count FROM music_tracks WHERE genre IS NOT NULL AND genre != \'\' GROUP BY genre ORDER BY genre ASC').all();
+  return readDb.prepare("SELECT genre as name, COUNT(DISTINCT name) as count FROM music_tracks WHERE genre IS NOT NULL AND genre != '' AND blocked = 0 GROUP BY genre ORDER BY genre ASC").all();
 }
 
 export function getMusicTrackById(id) {
@@ -394,7 +415,7 @@ export function getMusicTrackByName(name) {
 }
 
 export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
-  const conditions = [];
+  const conditions = ['blocked = 0'];
   const params = [];
 
   if (excludeNames.length > 0) {
@@ -406,7 +427,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
     params.push(...genres);
   }
 
-  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+  const where = ' WHERE ' + conditions.join(' AND ');
   params.push(count);
   return readDb.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
 }
@@ -419,7 +440,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     for (const trackName of dancerPlaylist) {
       if (result.length >= count) break;
       if (usedNames.has(trackName)) continue;
-      const track = readDb.prepare('SELECT id, name, path, genre FROM music_tracks WHERE name = ?').get(trackName);
+      const track = readDb.prepare('SELECT id, name, path, genre FROM music_tracks WHERE name = ? AND blocked = 0').get(trackName);
       if (track) {
         result.push(track);
         usedNames.add(track.name);
@@ -449,7 +470,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
 }
 
 export function getMusicTrackCount() {
-  return readDb.prepare('SELECT COUNT(*) as count FROM music_tracks').get().count;
+  return readDb.prepare('SELECT COUNT(*) as count FROM music_tracks WHERE blocked = 0').get().count;
 }
 
 export function getLastScanTime() {
