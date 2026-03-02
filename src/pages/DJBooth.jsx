@@ -1639,6 +1639,104 @@ export default function DJBooth() {
           }
         }
       } else {
+        const breakKey = `after-${rot[idx]}`;
+        let breakSongs = interstitialSongsRef.current[breakKey] || [];
+
+        if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+          try {
+            const token = sessionStorage.getItem('djbooth_token');
+            const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+            const excludeNames = [...new Set(Object.values(rotationSongsRef.current).flat().map(t => t.name))];
+            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const res = await fetch('/api/music/select', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                count: breakSongsPerSetRef.current,
+                excludeNames,
+                genres: activeGenres,
+                dancerPlaylist: []
+              }),
+              signal: AbortSignal.timeout(5000)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              breakSongs = (data.tracks || []).map(t => t.name);
+              console.log('🎵 HandleSkip: Auto-selected', breakSongs.length, 'break song(s):', breakSongs);
+              interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: breakSongs };
+              setInterstitialSongsState({ ...interstitialSongsRef.current });
+              setInterstitialRemoteVersion(v => v + 1);
+              try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
+            }
+          } catch (err) {
+            console.warn('⚠️ HandleSkip: Failed to auto-select break songs:', err.message);
+          }
+        }
+
+        if (breakSongs.length > 0) {
+          console.log('🎵 HandleSkip: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
+
+          const flippedRotation = [...rot];
+          const [finishedId] = flippedRotation.splice(idx, 1);
+          flippedRotation.push(finishedId);
+          setRotation(flippedRotation);
+          rotationRef.current = flippedRotation;
+          setCurrentDancerIndex(0);
+          currentDancerIndexRef.current = 0;
+          setCurrentSongNumber(0);
+          currentSongNumberRef.current = 0;
+          const clearedSongs = { ...rotationSongsRef.current };
+          delete clearedSongs[finishedId];
+          rotationSongsRef.current = clearedSongs;
+          updateStageState(0, flippedRotation);
+
+          playingInterstitialRef.current = true;
+          interstitialIndexRef.current = 1;
+          const firstBreakName = breakSongs[0];
+          let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = tracks.find(t => t.url && (
+              t.name === firstBreakName || 
+              t.name.replace(/\.[^.]+$/, '') === firstBreakName.replace(/\.[^.]+$/, '')
+            ));
+          }
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = await resolveTrackByName(firstBreakName);
+          }
+
+          if (announcementsEnabled) {
+            const announcementPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+            audioEngineRef.current?.duck();
+            const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
+            const announcementDone = playPrefetchedAnnouncement(announcementUrl);
+            await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+            if (firstBreakTrack?.url) {
+              console.log('🎵 HandleSkip: Playing break song during outro:', firstBreakTrack.name);
+              lastAudioActivityRef.current = Date.now();
+              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name, firstBreakTrack.genre);
+              if (!ok) await playFallbackTrack(false);
+            } else {
+              console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
+              await playFallbackTrack(false);
+            }
+            await announcementDone;
+            audioEngineRef.current?.unduck();
+          } else {
+            if (firstBreakTrack?.url) {
+              console.log('🎵 HandleSkip: Playing break song:', firstBreakTrack.name);
+              lastAudioActivityRef.current = Date.now();
+              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre);
+              if (!ok) await playFallbackTrack(true);
+            } else {
+              console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
+              await playFallbackTrack(true);
+            }
+          }
+
+          transitionInProgressRef.current = false;
+          return;
+        }
+
         const newRotation = [...rot];
         const [finishedDancerId] = newRotation.splice(idx, 1);
         newRotation.push(finishedDancerId);
@@ -1950,6 +2048,10 @@ export default function DJBooth() {
               const data = await res.json();
               breakSongs = (data.tracks || []).map(t => t.name);
               console.log('🎵 Auto-selected', breakSongs.length, 'break song(s):', breakSongs);
+              interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: breakSongs };
+              setInterstitialSongsState({ ...interstitialSongsRef.current });
+              setInterstitialRemoteVersion(v => v + 1);
+              try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
             }
           } catch (err) {
             console.warn('⚠️ Failed to auto-select break songs:', err.message);
