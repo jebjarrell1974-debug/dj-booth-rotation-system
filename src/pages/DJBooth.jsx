@@ -1820,12 +1820,45 @@ export default function DJBooth() {
   }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
 
-  const handleDeactivateTrack = useCallback(async () => {
+  const [showDeactivatePin, setShowDeactivatePin] = useState(false);
+  const [deactivatePin, setDeactivatePin] = useState('');
+  const deactivatePinInputRef = useRef(null);
+
+  const handleDeactivateClick = useCallback(() => {
     if (!currentTrack) {
       toast.error('No song currently playing');
       return;
     }
+    setDeactivatePin('');
+    setShowDeactivatePin(true);
+    setTimeout(() => deactivatePinInputRef.current?.focus(), 100);
+  }, [currentTrack]);
+
+  const handleDeactivateConfirm = useCallback(async () => {
+    if (!deactivatePin || deactivatePin.length !== 5) {
+      toast.error('Enter your 5-digit PIN');
+      return;
+    }
+    try {
+      const verifyRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'dj', pin: deactivatePin })
+      });
+      if (!verifyRes.ok) {
+        toast.error('Incorrect PIN');
+        setDeactivatePin('');
+        deactivatePinInputRef.current?.focus();
+        return;
+      }
+    } catch {
+      toast.error('PIN verification failed');
+      return;
+    }
+    setShowDeactivatePin(false);
+    setDeactivatePin('');
     const trackName = currentTrack;
+    if (!trackName) return;
     try {
       const token = sessionStorage.getItem('djbooth_token');
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -1844,7 +1877,7 @@ export default function DJBooth() {
     } catch (err) {
       toast.error('Failed to deactivate: ' + err.message);
     }
-  }, [currentTrack]);
+  }, [currentTrack, deactivatePin]);
 
   const handleTrackEnd = useCallback(async () => {
     if (watchdogRecoveringRef.current) {
@@ -2738,7 +2771,7 @@ export default function DJBooth() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleDeactivateTrack}
+                onClick={handleDeactivateClick}
                 className="border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300"
                 title="Deactivate the currently playing song"
               >
@@ -3351,6 +3384,44 @@ export default function DJBooth() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {showDeactivatePin && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={() => setShowDeactivatePin(false)}>
+          <div className="bg-[#0d0d1f] border border-red-500/40 rounded-2xl p-6 w-[320px] shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-red-400 mb-1">Confirm Deactivation</h3>
+            <p className="text-xs text-gray-400 mb-4 truncate">
+              {currentTrack || 'Current song'}
+            </p>
+            <p className="text-sm text-gray-300 mb-3">Enter your DJ PIN to deactivate:</p>
+            <input
+              ref={deactivatePinInputRef}
+              type="password"
+              inputMode="numeric"
+              maxLength={5}
+              value={deactivatePin}
+              onChange={e => setDeactivatePin(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => { if (e.key === 'Enter') handleDeactivateConfirm(); }}
+              className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-4 py-3 text-center text-2xl font-mono text-white tracking-[0.5em] focus:outline-none focus:border-red-500/60 mb-4"
+              placeholder="•••••"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }}
+                className="flex-1 py-2.5 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-semibold active:bg-[#2e2e5a] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeactivateConfirm}
+                disabled={deactivatePin.length !== 5}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 text-white text-sm font-semibold active:bg-red-600 disabled:opacity-30 transition-colors"
+              >
+                Deactivate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
