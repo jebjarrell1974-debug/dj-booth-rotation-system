@@ -265,8 +265,19 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}`;
   };
 
+  const getSpecialsHash = () => {
+    const config = getApiConfig();
+    const specials = (config.clubSpecials || '').trim();
+    if (!specials) return '';
+    let h = 0;
+    for (let i = 0; i < specials.length; i++) {
+      h = ((h << 5) - h + specials.charCodeAt(i)) | 0;
+    }
+    return `-S${Math.abs(h).toString(36)}`;
+  };
+
   const getCacheKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return getAnnouncementKey(type, dancerName, nextDancerName, energyLevel);
+    return getAnnouncementKey(type, dancerName, nextDancerName, energyLevel) + getSpecialsHash();
   };
 
   const saveToServer = useCallback(async (cacheKey, audioBlob, script, type, dancerName, energyLevel) => {
@@ -350,7 +361,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, energyLevel = null, roundNumber = 1) => {
     const config = getApiConfig();
     const level = energyLevel ?? getCurrentEnergyLevel(config);
-    const key = getAnnouncementKey(type, dancerName, nextDancerName, level);
+    const specialsSuffix = getSpecialsHash();
+    const hasSpecials = specialsSuffix.length > 0;
+    const key = getAnnouncementKey(type, dancerName, nextDancerName, level) + specialsSuffix;
 
     const idbCached = await getCachedFromIndexedDB(key);
     if (idbCached) {
@@ -359,28 +372,34 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       return { url: URL.createObjectURL(idbCached), fromCache: true };
     }
 
-    const serverBlob = await loadFromServer(key);
-    if (serverBlob) {
-      await cacheToIndexedDB(key, serverBlob);
-      setCacheStatus(prev => ({ ...prev, [key]: true }));
-      return { url: URL.createObjectURL(serverBlob), fromCache: true };
+    if (!hasSpecials) {
+      const serverBlob = await loadFromServer(key);
+      if (serverBlob) {
+        await cacheToIndexedDB(key, serverBlob);
+        setCacheStatus(prev => ({ ...prev, [key]: true }));
+        return { url: URL.createObjectURL(serverBlob), fromCache: true };
+      }
     }
 
     try {
-      console.log(`🎙️ Generating new announcement: ${key} (Energy L${level})`);
+      console.log(`🎙️ Generating new announcement: ${key} (Energy L${level})${hasSpecials ? ' [with specials]' : ''}`);
       setGeneratingType(type);
       const script = await generateScript(type, dancerName, nextDancerName, level, roundNumber);
       const audioBlob = await generateAudio(script, level);
 
       await cacheToIndexedDB(key, audioBlob);
 
-      await saveToServer(key, audioBlob, script, type, dancerName, level);
+      if (!hasSpecials) {
+        await saveToServer(key, audioBlob, script, type, dancerName, level);
+      } else {
+        console.log(`📢 Specials active — voiceover saved to session only (not permanent cache)`);
+      }
 
       setCacheStatus(prev => ({ ...prev, [key]: true }));
-      setServerCacheCount(prev => prev + 1);
+      if (!hasSpecials) setServerCacheCount(prev => prev + 1);
       setGeneratingType(null);
 
-      console.log(`✅ Cached announcement: ${key} (L${level}) — saved to server`);
+      console.log(`✅ Cached announcement: ${key} (L${level})${hasSpecials ? ' [session only]' : ' — saved to server'}`);
       return { url: URL.createObjectURL(audioBlob), fromCache: false };
     } catch (genError) {
       setGeneratingType(null);

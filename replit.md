@@ -31,6 +31,14 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ### Mar 1, 2026 — Session 11 (Deep Entertainer Rename)
 
+#### Fix: Club Specials Sticking in Voiceovers After Removal
+- **Problem**: When a club special (e.g. "Tonight is Teena's birthday") was entered, voiceovers were cached with that special baked in. After removing the special, cached voiceovers still mentioned it
+- **Root cause**: Cache key was `type-name-L#` — didn't include club specials, so clearing specials still hit the old cached version
+- **Fix**: Cache key now includes a hash of the active specials (`-S<hash>` suffix). When specials change or are cleared, the key changes and fresh voiceovers are generated
+- **Temporary by design**: Voiceovers with specials are only cached in the browser session (IndexedDB), NOT saved to the permanent server cache. This prevents temporary promotions from polluting the long-term voiceover library
+- **No specials = normal behavior**: When the specials box is empty, the key has no suffix and voiceovers load from the permanent server cache as before
+- **File**: `src/components/dj/AnnouncementSystem.jsx`
+
 #### "Dancer" → "Entertainer" — Complete Pass
 - **Previous session**: Renamed display text in main UI components (DancerRoster, RemoteView, StageRotation, RotationBuilder, DJOptions, Landing, DancerView, DJBooth tabs)
 - **This session**: Deep pass catching all remaining user-facing "dancer" text across the entire codebase:
