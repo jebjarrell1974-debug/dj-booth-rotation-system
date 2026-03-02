@@ -29,6 +29,15 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 2, 2026 — Session 12 (Break Song Playback Fix)
+
+#### Fix: Break Songs Completely Ignored During Playback
+- **Problem**: Break songs assigned in the rotation (manually or via auto-select) were never played. System skipped directly from one entertainer to the next
+- **Root cause**: `handleSkip` (which runs on skip button press and remote skip commands) had zero break song logic in its "last song of set" branch. It jumped straight to the next entertainer without checking `interstitialSongsRef` for assigned break songs
+- **Fix 1**: Added full break song support to `handleSkip`'s else branch — checks for manual break songs, falls back to auto-selecting from `/api/music/select` if `breakSongsPerSet > 0`, plays first break song with outro announcement, sets `playingInterstitialRef` so subsequent break songs play via `handleTrackEnd`
+- **Fix 2**: Auto-selected break songs now persisted in both `handleSkip` AND `handleTrackEnd` — previously auto-selected songs were stored only in a local variable, so multi-break sequences (2+ songs) would lose track after the first. Both paths now write to `interstitialSongsRef`, `interstitialSongsState`, `interstitialRemoteVersion`, and localStorage
+- **File**: `src/pages/DJBooth.jsx`
+
 ### Mar 1, 2026 — Session 11 (Deep Entertainer Rename)
 
 #### Fix: Club Specials Sticking in Voiceovers After Removal
