@@ -145,7 +145,7 @@ app.get('/api/server-info', (req, res) => {
       }
     }
   }
-  res.json({ ips, port: PORT });
+  res.json({ ips, port: process.env.PORT || 3001 });
 });
 
 app.post('/api/auth/login', (req, res) => {
