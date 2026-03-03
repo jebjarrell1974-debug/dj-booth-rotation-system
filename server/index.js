@@ -447,6 +447,51 @@ app.post('/api/r2/sync/music', authenticate, requireDJ, async (req, res) => {
   }
 });
 
+app.post('/api/admin/update', async (req, res) => {
+  const { pin } = req.body || {};
+  if (!pin || pin !== getMasterPin()) {
+    return res.status(403).json({ error: 'Invalid PIN' });
+  }
+  const { spawn } = await import('child_process');
+  const home = process.env.HOME || '/home/' + (process.env.USER || 'pi');
+  const script = `${home}/djbooth-update.sh`;
+  if (!existsSync(script)) {
+    return res.status(404).json({ error: 'Update script not found' });
+  }
+  res.json({ ok: true, message: 'Update started' });
+  const child = spawn('bash', [script], { cwd: home, detached: true, stdio: 'ignore' });
+  child.unref();
+});
+
+app.post('/api/admin/restart', async (req, res) => {
+  const { pin } = req.body || {};
+  if (!pin || pin !== getMasterPin()) {
+    return res.status(403).json({ error: 'Invalid PIN' });
+  }
+  res.json({ ok: true, message: 'Restarting...' });
+  setTimeout(async () => {
+    const { spawn } = await import('child_process');
+    const child = spawn('sudo', ['systemctl', 'restart', 'djbooth'], { detached: true, stdio: 'ignore' });
+    child.unref();
+  }, 500);
+});
+
+app.post('/api/admin/sync', async (req, res) => {
+  const { pin } = req.body || {};
+  if (!pin || pin !== getMasterPin()) {
+    return res.status(403).json({ error: 'Invalid PIN' });
+  }
+  if (!isR2Configured()) return res.status(400).json({ error: 'R2 not configured' });
+  try {
+    const voiceoverDir = getVoiceoverDirPath();
+    const downloaded = await syncVoiceoversFromR2(voiceoverDir);
+    const uploaded = await syncVoiceoversToR2(voiceoverDir);
+    res.json({ ok: true, downloaded, uploaded });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 

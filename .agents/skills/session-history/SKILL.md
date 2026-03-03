@@ -29,9 +29,9 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Raspberry Pi 5, Raspberry Pi OS Bookworm
 - Username pattern: `neonaidj001`, `neonaidj002`, etc.
 - App directory: `/home/<user>/djbooth`
-- Data directory: `/home/<user>/data/` (database + voiceovers)
+- Data directory: `/home/<user>/data/` (database)
 - Music directory: `/home/<user>/Desktop/DJ MUSIC`
-- Voiceover directory: `/home/<user>/Desktop/VOICE OVERS FOR AUTO DJ`
+- Voiceover directory: `/home/<user>/djbooth/voiceovers` (inside app dir, survives updates, R2 syncs to/from here)
 
 ## GitHub Backup System
 - **Repo**: https://github.com/jebjarrell1974-debug/dj-booth-rotation-system (PUBLIC)

@@ -29,7 +29,28 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 3, 2026 — Session 15 (Fleet Monitor on Home Pi)
+### Mar 3, 2026 — Session 15 (Fleet Command Center)
+
+#### Feature: Fleet Command Center Dashboard
+- **Purpose**: Web-based dashboard on HOMEBASE to monitor and control all Pi fleet units from any device (phone, laptop, tablet)
+- **URL**: `http://100.70.172.8:3001/` (HOMEBASE Tailscale IP)
+- **Features**:
+  - Real-time device cards: name, club, status, CPU temp, disk space, uptime, track count, voiceover count, current song/entertainer, last heartbeat
+  - Remote commands per device: Update (pulls from GitHub), Restart (systemd restart), Sync Voiceovers (R2 sync)
+  - "Update All" and "Sync All" global actions for all online devices
+  - Telegram test alert button
+  - PIN entry (stored in browser, forwarded to Pi for validation)
+  - Auto-refreshes every 30 seconds
+  - Mobile-responsive neon dark theme
+- **Architecture**: HOMEBASE fleet monitor relays commands to each Pi's Tailscale IP on port 3001. Pi validates the master PIN locally.
+- **Files**: `public/fleet-monitor-standalone.js` (enhanced with command relay + dashboard serving), `public/fleet-dashboard.html` (new)
+
+#### Feature: Admin Command Endpoints on Pi Server
+- **Endpoints** (all PIN-protected via master PIN):
+  - `POST /api/admin/update` — runs `~/djbooth-update.sh` in background
+  - `POST /api/admin/restart` — restarts djbooth systemd service
+  - `POST /api/admin/sync` — triggers full R2 voiceover sync (download + upload)
+- **File**: `server/index.js`
 
 #### Feature: Standalone Fleet Monitor on "raspberrypi"
 - **Problem**: Fleet monitoring was running on the same Pi it was supposed to watch — if the Pi goes offline, it can't alert about itself. Replit deployment kept failing at the "promotion" stage.
@@ -39,14 +60,15 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - `djbooth` service disabled on HOMEBASE — it only runs `fleet-monitor` service now
   - Systemd service runs without `User=` directive (runs as root) to avoid 217/USER errors
   - Ponynation's `FLEET_SERVER_URL` updated from `localhost:3001` to `http://100.70.172.8:3001`
-- **Endpoints**: `POST /api/monitor/heartbeat`, `GET /api/monitor/status`, `POST /api/monitor/test-telegram`
+- **Endpoints**: `POST /api/monitor/heartbeat`, `GET /api/monitor/status`, `POST /api/monitor/test-telegram`, `POST /api/monitor/command/:deviceId/:action` (relay)
 - **File**: `public/fleet-monitor-standalone.js`
 - **Setup guide**: See "Fleet Monitor Server Setup" section in session-history skill
 
 #### Fix: Voiceover Path Standardized to ~/djbooth/voiceovers
 - **Problem**: Voiceovers were saved to `~/Desktop/VOICE OVERS FOR AUTO DJ` — outside the app directory, hard to find, and inconsistent across fleet
 - **Fix**: Changed `VOICEOVER_PATH` in systemd service to `/home/USERNAME/djbooth/voiceovers`. This is inside the app directory, survives updates (the update script doesn't touch it), and is the folder R2 syncs to/from
-- **Migration for existing Pi**: Move voiceovers from Desktop to `~/djbooth/voiceovers/`, update systemd service, restart
+- **Migration for existing Pi**: Update systemd service VOICEOVER_PATH, restart — R2 auto-downloads all voiceovers to new folder
+- **Ponynation (neonaidj001)**: Migrated successfully — 829 voiceovers downloaded from R2 to ~/djbooth/voiceovers/
 - **Files**: `.agents/skills/session-history/SKILL.md` (setup guide updated)
 
 ### Mar 3, 2026 — Session 14 (Telegram Fix, Genre Dropdown, Voice Tuning)

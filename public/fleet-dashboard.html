@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>NEON AI DJ — Fleet Command Center</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #08081a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .header {
+      background: linear-gradient(135deg, #0d0d2b 0%, #08081a 100%);
+      border-bottom: 1px solid #1e293b;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: #00d4ff;
+      text-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
+      letter-spacing: 1px;
+    }
+    .logo-sub {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 400;
+      letter-spacing: 0.5px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status-dot.active { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); }
+    .status-dot.inactive { background: #ef4444; }
+    .refresh-timer {
+      font-size: 11px;
+      color: #475569;
+    }
+    .pin-bar {
+      background: #0d0d1f;
+      border-bottom: 1px solid #1e293b;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pin-bar label {
+      font-size: 12px;
+      color: #64748b;
+      white-space: nowrap;
+    }
+    .pin-input {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4a;
+      border-radius: 6px;
+      color: #e2e8f0;
+      padding: 6px 10px;
+      font-size: 14px;
+      width: 100px;
+      -webkit-text-security: disc;
+      outline: none;
+    }
+    .pin-input:focus { border-color: #00d4ff; }
+    .pin-saved {
+      font-size: 11px;
+      color: #22c55e;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .pin-saved.show { opacity: 1; }
+    .container {
+      padding: 16px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .summary-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .summary-card {
+      background: #0d0d1f;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 12px 16px;
+      flex: 1;
+      min-width: 80px;
+      text-align: center;
+    }
+    .summary-card .value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #00d4ff;
+    }
+    .summary-card .label {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .summary-card.online .value { color: #22c55e; }
+    .summary-card.offline .value { color: #ef4444; }
+    .device-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    @media (min-width: 640px) {
+      .device-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .device-card {
+      background: #0d0d1f;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .device-card.online { border-color: #1a3a2a; }
+    .device-card.offline { border-color: #3a1a1a; }
+    .card-header {
+      padding: 14px 16px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .device-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+    .device-club {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .status-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .status-badge.online {
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .status-badge.offline {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      animation: pulse-red 2s infinite;
+    }
+    @keyframes pulse-red {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .card-stats {
+      padding: 0 16px 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 16px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .stat-label { color: #64748b; }
+    .stat-value { color: #cbd5e1; font-weight: 500; }
+    .stat-value.warn { color: #f59e0b; }
+    .stat-value.danger { color: #ef4444; }
+    .now-playing {
+      padding: 0 16px 10px;
+      font-size: 12px;
+    }
+    .now-playing-label { color: #64748b; }
+    .now-playing-info {
+      color: #a78bfa;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-actions {
+      border-top: 1px solid #1e293b;
+      padding: 10px 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #2d2d4a;
+      border-radius: 8px;
+      background: #1a1a2e;
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      transition: all 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn.update {
+      border-color: rgba(37, 99, 235, 0.4);
+      color: #60a5fa;
+    }
+    .btn.update:hover { background: rgba(37, 99, 235, 0.15); }
+    .btn.restart {
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+    }
+    .btn.restart:hover { background: rgba(245, 158, 11, 0.15); }
+    .btn.sync {
+      border-color: rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+    .btn.sync:hover { background: rgba(168, 85, 247, 0.15); }
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn .spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .toast {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      animation: toast-in 0.3s ease-out;
+      pointer-events: auto;
+      max-width: 320px;
+      text-align: center;
+    }
+    .toast.success {
+      background: rgba(34, 197, 94, 0.9);
+      color: #fff;
+    }
+    .toast.error {
+      background: rgba(239, 68, 68, 0.9);
+      color: #fff;
+    }
+    .toast.info {
+      background: rgba(37, 99, 235, 0.9);
+      color: #fff;
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #475569;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state .title {
+      font-size: 18px;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+    .empty-state .subtitle { font-size: 13px; }
+    .global-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .btn-global {
+      padding: 10px 16px;
+      border: 1px solid #2d2d4a;
+      border-radius: 8px;
+      background: #1a1a2e;
+      color: #e2e8f0;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-global:hover { background: #252540; }
+    .btn-global:active { transform: scale(0.97); }
+    .btn-global:disabled { opacity: 0.4; cursor: not-allowed; }
+    .last-seen {
+      font-size: 11px;
+      color: #475569;
+      padding: 0 16px 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div>
+        <div class="logo">NEON AI DJ</div>
+        <div class="logo-sub">Fleet Command Center</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="refresh-timer" id="refreshTimer"></span>
+      <span class="status-dot" id="connectionDot"></span>
+    </div>
+  </div>
+
+  <div class="pin-bar">
+    <label>PIN:</label>
+    <input type="password" class="pin-input" id="pinInput" placeholder="Enter PIN" inputmode="numeric" maxlength="10">
+    <span class="pin-saved" id="pinSaved">Saved</span>
+  </div>
+
+  <div class="container">
+    <div class="summary-bar" id="summaryBar"></div>
+    <div class="global-actions">
+      <button class="btn-global" onclick="updateAll()" id="btnUpdateAll">
+        <span>⬆</span> Update All
+      </button>
+      <button class="btn-global" onclick="syncAll()" id="btnSyncAll">
+        <span>☁</span> Sync All
+      </button>
+      <button class="btn-global" onclick="testTelegram()">
+        <span>📱</span> Test Alert
+      </button>
+    </div>
+    <div id="deviceGrid" class="device-grid"></div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    const REFRESH_INTERVAL = 30;
+    let refreshCountdown = REFRESH_INTERVAL;
+    let devices = [];
+    let pendingCommands = new Set();
+
+    const pinInput = document.getElementById('pinInput');
+    const pinSaved = document.getElementById('pinSaved');
+
+    const savedPin = localStorage.getItem('fleet_pin');
+    if (savedPin) pinInput.value = savedPin;
+
+    pinInput.addEventListener('input', () => {
+      localStorage.setItem('fleet_pin', pinInput.value);
+      pinSaved.classList.add('show');
+      setTimeout(() => pinSaved.classList.remove('show'), 1500);
+    });
+
+    function getPin() {
+      return pinInput.value || localStorage.getItem('fleet_pin') || '';
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function formatUptime(seconds) {
+      if (!seconds) return '--';
+      const d = Math.floor(seconds / 86400);
+      const h = Math.floor((seconds % 86400) / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      if (d > 0) return `${d}d ${h}h`;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    }
+
+    function formatDisk(free, total) {
+      if (!free || !total) return '--';
+      const freeGB = (free / 1073741824).toFixed(1);
+      const totalGB = (total / 1073741824).toFixed(1);
+      const pct = Math.round((free / total) * 100);
+      return `${freeGB}/${totalGB} GB (${pct}%)`;
+    }
+
+    function diskClass(free, total) {
+      if (!free || !total) return '';
+      const pct = (free / total) * 100;
+      if (pct < 10) return 'danger';
+      if (pct < 25) return 'warn';
+      return '';
+    }
+
+    function tempClass(temp) {
+      if (!temp) return '';
+      const t = parseFloat(temp);
+      if (t > 80) return 'danger';
+      if (t > 70) return 'warn';
+      return '';
+    }
+
+    function formatAgo(seconds) {
+      if (seconds < 60) return `${seconds}s ago`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+      return `${Math.floor(seconds / 86400)}d ago`;
+    }
+
+    function renderSummary() {
+      const online = devices.filter(d => d.status === 'online').length;
+      const offline = devices.filter(d => d.status === 'offline').length;
+      const total = devices.length;
+      const totalTracks = devices.reduce((s, d) => s + (d.trackCount || 0), 0);
+      const totalVoiceovers = devices.reduce((s, d) => s + (d.voiceoverCount || 0), 0);
+
+      document.getElementById('summaryBar').innerHTML = `
+        <div class="summary-card"><div class="value">${total}</div><div class="label">Devices</div></div>
+        <div class="summary-card online"><div class="value">${online}</div><div class="label">Online</div></div>
+        <div class="summary-card offline"><div class="value">${offline}</div><div class="label">Offline</div></div>
+        <div class="summary-card"><div class="value">${totalVoiceovers}</div><div class="label">Voiceovers</div></div>
+      `;
+    }
+
+    function renderDevices() {
+      const grid = document.getElementById('deviceGrid');
+      if (devices.length === 0) {
+        grid.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">📡</div>
+            <div class="title">No devices yet</div>
+            <div class="subtitle">Waiting for Pi units to send heartbeats...</div>
+          </div>
+        `;
+        return;
+      }
+
+      const sorted = [...devices].sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      grid.innerHTML = sorted.map(d => {
+        const cmdKey = d.deviceId;
+        const isUpdating = pendingCommands.has(`${cmdKey}-update`);
+        const isRestarting = pendingCommands.has(`${cmdKey}-restart`);
+        const isSyncing = pendingCommands.has(`${cmdKey}-sync`);
+        const isOffline = d.status === 'offline';
+
+        return `
+          <div class="device-card ${d.status}">
+            <div class="card-header">
+              <div>
+                <div class="device-name">${esc(d.name || d.deviceId)}</div>
+                <div class="device-club">${esc(d.clubName || 'Unknown Club')}</div>
+              </div>
+              <span class="status-badge ${d.status}">${d.status}</span>
+            </div>
+            <div class="card-stats">
+              <div class="stat-row">
+                <span class="stat-label">CPU Temp</span>
+                <span class="stat-value ${tempClass(d.cpuTemp)}">${d.cpuTemp ? d.cpuTemp + '°C' : '--'}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Uptime</span>
+                <span class="stat-value">${formatUptime(d.uptime)}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Disk</span>
+                <span class="stat-value ${diskClass(d.diskFree, d.diskTotal)}">${formatDisk(d.diskFree, d.diskTotal)}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Tracks</span>
+                <span class="stat-value">${d.trackCount || 0}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Voiceovers</span>
+                <span class="stat-value">${d.voiceoverCount || 0}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">IP</span>
+                <span class="stat-value">${esc(d.tailscaleIp || d.ip || '--')}</span>
+              </div>
+            </div>
+            ${d.currentDancer || d.currentSong ? `
+              <div class="now-playing">
+                <div class="now-playing-label">Now Playing</div>
+                <div class="now-playing-info">${esc(d.currentDancer || '')}${d.currentDancer && d.currentSong ? ' — ' : ''}${esc(d.currentSong || '')}</div>
+              </div>
+            ` : ''}
+            <div class="last-seen">Last seen: ${formatAgo(d.secondsAgo || 0)}</div>
+            <div class="card-actions">
+              <button class="btn update" onclick="sendCommand('${esc(d.deviceId)}', 'update')" ${isUpdating || isOffline ? 'disabled' : ''}>
+                ${isUpdating ? '<span class="spinner"></span>' : '<span>⬆</span>'} Update
+              </button>
+              <button class="btn restart" onclick="sendCommand('${esc(d.deviceId)}', 'restart')" ${isRestarting || isOffline ? 'disabled' : ''}>
+                ${isRestarting ? '<span class="spinner"></span>' : '<span>↻</span>'} Restart
+              </button>
+              <button class="btn sync" onclick="sendCommand('${esc(d.deviceId)}', 'sync')" ${isSyncing || isOffline ? 'disabled' : ''}>
+                ${isSyncing ? '<span class="spinner"></span>' : '<span>☁</span>'} Sync
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function esc(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/monitor/status');
+        const data = await res.json();
+        devices = data.devices || [];
+        document.getElementById('connectionDot').className = 'status-dot active';
+        renderSummary();
+        renderDevices();
+      } catch (err) {
+        document.getElementById('connectionDot').className = 'status-dot inactive';
+        console.error('Failed to fetch status:', err);
+      }
+    }
+
+    async function sendCommand(deviceId, action) {
+      const pin = getPin();
+      if (!pin) {
+        showToast('Enter your PIN first', 'error');
+        pinInput.focus();
+        return;
+      }
+
+      const key = `${deviceId}-${action}`;
+      pendingCommands.add(key);
+      renderDevices();
+
+      try {
+        const res = await fetch(`/api/monitor/command/${encodeURIComponent(deviceId)}/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          const labels = { update: 'Update started', restart: 'Restarting...', sync: 'Sync complete' };
+          showToast(`${labels[action] || 'Done'} — ${deviceId}`, 'success');
+        } else {
+          showToast(data.error || 'Command failed', 'error');
+        }
+      } catch (err) {
+        showToast(`Failed: ${err.message}`, 'error');
+      }
+
+      setTimeout(() => {
+        pendingCommands.delete(key);
+        renderDevices();
+      }, action === 'update' ? 5000 : 3000);
+    }
+
+    async function updateAll() {
+      const onlineDevices = devices.filter(d => d.status === 'online');
+      if (onlineDevices.length === 0) {
+        showToast('No online devices', 'error');
+        return;
+      }
+      if (!confirm(`Update all ${onlineDevices.length} online device(s)?`)) return;
+      for (const d of onlineDevices) {
+        sendCommand(d.deviceId, 'update');
+      }
+    }
+
+    async function syncAll() {
+      const onlineDevices = devices.filter(d => d.status === 'online');
+      if (onlineDevices.length === 0) {
+        showToast('No online devices', 'error');
+        return;
+      }
+      for (const d of onlineDevices) {
+        sendCommand(d.deviceId, 'sync');
+      }
+    }
+
+    async function testTelegram() {
+      try {
+        const res = await fetch('/api/monitor/test-telegram', { method: 'POST' });
+        if (res.ok) showToast('Test alert sent to Telegram', 'success');
+        else showToast('Telegram test failed', 'error');
+      } catch (err) {
+        showToast(`Telegram error: ${err.message}`, 'error');
+      }
+    }
+
+    function updateRefreshTimer() {
+      refreshCountdown--;
+      if (refreshCountdown <= 0) {
+        refreshCountdown = REFRESH_INTERVAL;
+        fetchStatus();
+      }
+      document.getElementById('refreshTimer').textContent = `${refreshCountdown}s`;
+    }
+
+    fetchStatus();
+    setInterval(updateRefreshTimer, 1000);
+  </script>
+</body>
+</html>
