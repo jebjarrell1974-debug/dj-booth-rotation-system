@@ -64,31 +64,31 @@ export const VOICE_SETTINGS = {
     stability: 0.75,
     similarity_boost: 0.80,
     style: 0.15,
-    speed: 0.92,
+    speed: 0.82,
   },
   2: {
     stability: 0.60,
     similarity_boost: 0.78,
     style: 0.25,
-    speed: 1.0,
+    speed: 0.88,
   },
   3: {
-    stability: 0.50,
+    stability: 0.45,
     similarity_boost: 0.75,
-    style: 0.35,
-    speed: 1.05,
+    style: 0.50,
+    speed: 0.92,
   },
   4: {
-    stability: 0.42,
+    stability: 0.38,
     similarity_boost: 0.72,
-    style: 0.40,
-    speed: 0.92,
+    style: 0.55,
+    speed: 0.90,
   },
   5: {
     stability: 0.65,
     similarity_boost: 0.80,
     style: 0.20,
-    speed: 0.95,
+    speed: 0.85,
   },
 };
 
@@ -96,18 +96,22 @@ const SHIFT_TYPES = {
   EARLY_SHIFT: {
     tone: 'welcoming, playful, lightly suggestive',
     confidence: 'moderate',
+    excitement: 'Keep energy warm and inviting — easy pace, smooth delivery.',
   },
   MID_SHIFT: {
     tone: 'sharper, more assertive',
     confidence: 'building',
+    excitement: 'Bring more punch and attitude. Project your voice like the room is filling up.',
   },
   PRIME_SHIFT: {
-    tone: 'dominant, magnetic, high authority',
-    confidence: 'strong',
+    tone: 'dominant, magnetic, high authority, HYPED',
+    confidence: 'strong and commanding',
+    excitement: 'THIS IS THE PEAK — deliver with maximum excitement and energy! Use emphatic phrasing, exclamation points, and charged language. Sound like you are FIRED UP and the crowd is going wild. Draw out key words for dramatic effect. This should feel like the biggest moment of the night.',
   },
   LATE_SHIFT: {
     tone: 'smooth, intimate, persuasive',
     confidence: 'controlled and confident',
+    excitement: 'Cool it down. Slower cadence, smoother delivery. Intimate and enticing.',
   },
 };
 
@@ -245,6 +249,7 @@ Output should be 3-5 sentences. Rhyming and wordplay encouraged if natural (e.g.
   const shiftBlock = `TONE DIRECTION (internal guidance only — NEVER say these words out loud):
 Your tone should be: ${shift.tone}
 Your confidence level should be: ${shift.confidence}
+ENERGY CUE: ${shift.excitement}
 CRITICAL: Do NOT reference the time of night, shift, energy level, or any internal labels in the spoken announcement. Just let the tone come through naturally in how you speak.`;
 
   const closingBlock = closingWindow

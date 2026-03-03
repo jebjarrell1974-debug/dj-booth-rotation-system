@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, Wifi } from 'lucide-react';
+import { Settings, FolderOpen, Check, Wifi, ChevronDown } from 'lucide-react';
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -9,6 +9,8 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [serverIps, setServerIps] = useState([]);
+  const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   const activeGenres = djOptions?.activeGenres || [];
   const musicMode = djOptions?.musicMode || 'dancer_first';
@@ -54,6 +56,20 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const clearAll = useCallback(() => {
     saveOptions({ activeGenres: [] });
   }, [saveOptions]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setFolderDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -159,13 +175,13 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
         </div>
 
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Active Music Folders</h3>
               <p className="text-xs text-gray-500 mt-1">
                 {activeGenres.length === 0
                   ? 'No folders selected — all folders are used'
-                  : `${activeGenres.length} folder${activeGenres.length !== 1 ? 's' : ''} selected`}
+                  : `${activeGenres.length} of ${genres.length} folder${genres.length !== 1 ? 's' : ''} selected`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -173,51 +189,69 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
                 onClick={selectAll}
                 className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-[#151528] rounded-lg transition-colors"
               >
-                Select All
+                All
               </button>
               <button
                 onClick={clearAll}
                 className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-[#151528] rounded-lg transition-colors"
               >
-                Clear All
+                None
               </button>
             </div>
           </div>
 
           {genres.length === 0 ? (
-            <div className="text-center py-8">
-              <FolderOpen className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+            <div className="text-center py-6">
+              <FolderOpen className="w-6 h-6 text-gray-600 mx-auto mb-2" />
               <p className="text-sm text-gray-500">No music folders found</p>
               <p className="text-xs text-gray-600 mt-1">Set your music path in Configuration first</p>
             </div>
           ) : (
-            <div className="space-y-1.5">
-              {genres.map(g => {
-                const isActive = activeGenres.includes(g.name);
-                return (
-                  <button
-                    key={g.name}
-                    onClick={() => toggleGenre(g.name)}
-                    disabled={saving}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
-                      isActive
-                        ? 'bg-[#2563eb]/10 border-[#2563eb]/40'
-                        : 'bg-[#151528] border-[#1e293b] hover:border-[#2e2e5a]'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                      isActive ? 'border-[#2563eb] bg-[#2563eb]' : 'border-gray-600'
-                    }`}>
-                      {isActive && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-[#2563eb]' : 'text-gray-500'}`} />
-                    <span className={`text-sm font-medium flex-1 ${isActive ? 'text-white' : 'text-gray-300'}`}>
-                      {g.name || '(Root folder)'}
-                    </span>
-                    <span className="text-xs text-gray-500">{g.count} tracks</span>
-                  </button>
-                );
-              })}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setFolderDropdownOpen(!folderDropdownOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border bg-[#151528] border-[#1e293b] hover:border-[#2e2e5a] text-left transition-colors"
+              >
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <FolderOpen className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                  <span className="text-sm text-gray-300 truncate">
+                    {activeGenres.length === 0
+                      ? 'All folders (tap to select)'
+                      : activeGenres.length <= 3
+                        ? activeGenres.join(', ')
+                        : `${activeGenres.slice(0, 2).join(', ')} +${activeGenres.length - 2} more`}
+                  </span>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${folderDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {folderDropdownOpen && (
+                <div className="absolute z-50 left-0 right-0 mt-1 bg-[#0d0d1f] border border-[#2e2e5a] rounded-xl shadow-xl max-h-64 overflow-auto">
+                  {genres.map(g => {
+                    const isActive = activeGenres.includes(g.name);
+                    return (
+                      <button
+                        key={g.name}
+                        onClick={() => toggleGenre(g.name)}
+                        disabled={saving}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-[#1e293b] last:border-b-0 ${
+                          isActive ? 'bg-[#2563eb]/10' : 'hover:bg-[#151528]'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                          isActive ? 'border-[#2563eb] bg-[#2563eb]' : 'border-gray-600'
+                        }`}>
+                          {isActive && <Check className="w-2.5 h-2.5 text-white" />}
+                        </div>
+                        <span className={`text-sm flex-1 ${isActive ? 'text-white font-medium' : 'text-gray-300'}`}>
+                          {g.name || '(Root folder)'}
+                        </span>
+                        <span className="text-[10px] text-gray-500">{g.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

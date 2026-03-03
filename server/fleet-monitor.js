@@ -143,8 +143,46 @@ function getFleetStatus() {
   return result;
 }
 
+function loadDevicesFromDb() {
+  try {
+    const rows = db.prepare('SELECT * FROM fleet_devices').all();
+    const now = Date.now();
+    for (const row of rows) {
+      if (!devices.has(row.device_id)) {
+        const lastHb = row.last_heartbeat || (now - HEARTBEAT_TIMEOUT_MS - 60000);
+        devices.set(row.device_id, {
+          deviceId: row.device_id,
+          name: row.device_name || row.device_id,
+          clubName: row.club_name || 'Unknown',
+          ip: '',
+          tailscaleIp: '',
+          cpuTemp: null,
+          diskFree: null,
+          diskTotal: null,
+          uptime: null,
+          appRunning: false,
+          trackCount: 0,
+          voiceoverCount: 0,
+          currentDancer: null,
+          currentSong: null,
+          version: null,
+          lastHeartbeat: lastHb,
+          status: (now - lastHb) > HEARTBEAT_TIMEOUT_MS ? 'offline' : row.status || 'offline',
+          lastError: null,
+        });
+      }
+    }
+    if (rows.length > 0) {
+      console.log(`📋 Loaded ${rows.length} fleet device(s) from database`);
+    }
+  } catch (err) {
+    console.error('Fleet DB load error:', err.message);
+  }
+}
+
 function startMonitoring() {
   if (checkInterval) return;
+  loadDevicesFromDb();
   checkInterval = setInterval(checkDevices, CHECK_INTERVAL_MS);
   if (isTelegramConfigured()) {
     console.log('📱 Telegram fleet monitoring active');

@@ -316,7 +316,7 @@ export function saveVoiceover(cacheKey, audioBuffer, script, type, dancerName, e
   return { cacheKey, fileName };
 }
 
-const VOICEOVER_VALID_AFTER = '2026-03-03';
+const VOICEOVER_VALID_AFTER = '2026-03-04';
 
 export function getVoiceover(cacheKey) {
   const row = db.prepare('SELECT * FROM voiceovers WHERE cache_key = ?').get(cacheKey);
