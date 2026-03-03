@@ -231,7 +231,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       },
       body: JSON.stringify({
         text: ttsText,
-        model_id: 'eleven_monolingual_v1',
+        model_id: 'eleven_turbo_v2_5',
         voice_settings: {
           stability: voiceSettings.stability,
           similarity_boost: voiceSettings.similarity_boost,
