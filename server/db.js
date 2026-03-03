@@ -316,9 +316,15 @@ export function saveVoiceover(cacheKey, audioBuffer, script, type, dancerName, e
   return { cacheKey, fileName };
 }
 
+const VOICEOVER_VALID_AFTER = '2026-03-03';
+
 export function getVoiceover(cacheKey) {
   const row = db.prepare('SELECT * FROM voiceovers WHERE cache_key = ?').get(cacheKey);
   if (!row) return null;
+  if (row.created_at && row.created_at < VOICEOVER_VALID_AFTER) {
+    db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(cacheKey);
+    return null;
+  }
   const filePath = join(VOICEOVER_DIR, row.file_name);
   if (!existsSync(filePath)) {
     db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(cacheKey);
@@ -328,7 +334,7 @@ export function getVoiceover(cacheKey) {
 }
 
 export function listVoiceovers() {
-  return db.prepare('SELECT cache_key, type, dancer_name, energy_level, created_at FROM voiceovers ORDER BY created_at DESC').all();
+  return db.prepare('SELECT cache_key, type, dancer_name, energy_level, created_at FROM voiceovers WHERE created_at >= ? ORDER BY created_at DESC').all(VOICEOVER_VALID_AFTER);
 }
 
 export function deleteVoiceover(cacheKey) {
@@ -565,8 +571,9 @@ export function cleanOldPlayHistory(daysToKeep = 90) {
 }
 
 export function getVoiceoverFilePath(cacheKey) {
-  const row = db.prepare('SELECT file_name FROM voiceovers WHERE cache_key = ?').get(cacheKey);
+  const row = db.prepare('SELECT file_name, created_at FROM voiceovers WHERE cache_key = ?').get(cacheKey);
   if (!row) return null;
+  if (row.created_at && row.created_at < VOICEOVER_VALID_AFTER) return null;
   const filePath = join(VOICEOVER_DIR, row.file_name);
   if (!existsSync(filePath)) return null;
   return filePath;
