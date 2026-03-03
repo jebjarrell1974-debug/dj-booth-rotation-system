@@ -1769,7 +1769,8 @@ export default function DJBooth() {
           return;
         }
 
-        let freshTracks = await getDancerTracks(nextDancer);
+        const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
+        let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
@@ -1966,7 +1967,8 @@ export default function DJBooth() {
 
       try {
         lastAudioActivityRef.current = Date.now();
-        let freshTracks = await getDancerTracks(nextDancer);
+        const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
+        let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         delete updatedSongs[finishedDancerId];
@@ -2210,7 +2212,8 @@ export default function DJBooth() {
           return;
         }
 
-        let freshTracks = await getDancerTracks(nextDancer);
+        const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
+        let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
@@ -2421,7 +2424,8 @@ export default function DJBooth() {
         const nextDancerId = rotation[nextIdx];
         const nextDancer = dancers.find(d => d.id === nextDancerId);
         if (!nextDancer) return;
-        const nextTracks = await getDancerTracks(nextDancer);
+        const existingTracks = rotationSongsRef.current[nextDancerId];
+        const nextTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
         const firstTrack = nextTracks?.[0];
         if (firstTrack?.url) {
           preloadedTrackRef.current = { dancerId: nextDancerId, track: firstTrack };
