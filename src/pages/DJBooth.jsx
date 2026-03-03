@@ -1448,12 +1448,14 @@ export default function DJBooth() {
     
     try {
     
+    const existingSongs = rotationSongsRef.current || {};
     const selectedSongs = {};
     const batchExcludes = [];
     for (const dancerId of cleanRotation) {
       const dancer = dnc.find(d => d.id === dancerId);
       if (dancer) {
-        const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+        const existing = existingSongs[dancerId];
+        const dancerTracks = (existing && existing.length > 0) ? existing : await getDancerTracks(dancer, batchExcludes);
         selectedSongs[dancerId] = dancerTracks;
         dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
       }
