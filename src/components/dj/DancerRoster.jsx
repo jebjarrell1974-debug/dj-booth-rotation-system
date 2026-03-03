@@ -33,6 +33,35 @@ export default function DancerRoster({
   const [addError, setAddError] = useState('');
   const [editingDancer, setEditingDancer] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletePin, setDeletePin] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget || deletePin.length !== 5) return;
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'dj', pin: deletePin })
+      });
+      const data = await res.json();
+      if (!data.success || data.role !== 'dj') {
+        setDeleteError('Invalid manager PIN');
+        setIsDeleting(false);
+        return;
+      }
+      onDeleteDancer(deleteTarget.id);
+      setDeleteTarget(null);
+      setDeletePin('');
+    } catch {
+      setDeleteError('Verification failed');
+    }
+    setIsDeleting(false);
+  };
 
   const handleAdd = async () => {
     if (newDancerName.trim() && newDancerPin.length === 5 && !isAdding) {
@@ -233,7 +262,9 @@ export default function DancerRoster({
                   title="Delete entertainer"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDeleteDancer(dancer.id);
+                    setDeleteTarget(dancer);
+                    setDeletePin('');
+                    setDeleteError('');
                   }}
                 >
                   <Trash2 className="w-3 h-3" />
@@ -250,6 +281,47 @@ export default function DancerRoster({
           )}
         </div>
       </ScrollArea>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeletePin(''); setDeleteError(''); } }}>
+        <DialogContent className="bg-[#0d0d1f] border-[#1e293b] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete Entertainer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-gray-300 text-sm">
+              Enter manager PIN to delete <span className="font-semibold text-white">{deleteTarget?.name}</span>
+            </p>
+            <Input
+              type="password"
+              inputMode="numeric"
+              maxLength={5}
+              placeholder="5-digit manager PIN"
+              value={deletePin}
+              onChange={(e) => setDeletePin(e.target.value.replace(/\D/g, '').slice(0, 5))}
+              onKeyDown={(e) => e.key === 'Enter' && handleDeleteConfirm()}
+              className="bg-[#08081a] border-[#1e293b] text-center text-lg tracking-[0.5em]"
+              autoFocus
+            />
+            {deleteError && <p className="text-red-400 text-xs text-center">{deleteError}</p>}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 border-[#1e293b] text-gray-400"
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                disabled={deletePin.length !== 5 || isDeleting}
+                onClick={handleDeleteConfirm}
+              >
+                {isDeleting ? 'Verifying...' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

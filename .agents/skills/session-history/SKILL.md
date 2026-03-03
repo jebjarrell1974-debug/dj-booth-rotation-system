@@ -309,9 +309,9 @@ After reboot: auto-update runs → app starts → boot screen shows progress →
 
 ---
 
-## Fleet Monitor Server Setup (on "raspberrypi")
+## Fleet Monitor Server Setup (on HOMEBASE)
 
-The fleet monitor is a standalone lightweight Node.js script that runs on a separate always-on Pi ("raspberrypi", Tailscale IP `100.70.172.8`). It does NOT run the full DJ Booth app — it only receives heartbeats from fleet Pi units and sends Telegram alerts when devices go offline.
+The fleet monitor is a standalone lightweight Node.js script that runs on a separate always-on Pi called "HOMEBASE" (hostname: raspberrypi, Tailscale IP `100.70.172.8`). It does NOT run the full DJ Booth app — it only receives heartbeats from fleet Pi units and sends Telegram alerts when devices go offline.
 
 ### Setup Steps
 
@@ -373,7 +373,7 @@ Should show "Fleet Monitor Started" with port 3001 and Telegram active.
 - Test Telegram: `POST http://100.70.172.8:3001/api/monitor/test-telegram`
 
 ### Current Fleet Monitor Host
-- **Pi**: "raspberrypi" (home Pi)
+- **Pi**: HOMEBASE (hostname: raspberrypi)
 - **Tailscale IP**: `100.70.172.8`
 - **Username**: `jebjarrell`
 - **Node path**: `/home/jebjarrell/.nvm/versions/node/v22.22.0/bin/node`
