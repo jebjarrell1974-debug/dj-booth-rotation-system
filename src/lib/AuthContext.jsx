@@ -12,9 +12,27 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings, setAppPublicSettings] = useState({});
 
+  const autoLoginAttemptedRef = React.useRef(false);
+
   const checkSession = useCallback(async () => {
     const info = getSessionInfo();
     if (!info.token) {
+      if (!autoLoginAttemptedRef.current && !isRemoteMode()) {
+        autoLoginAttemptedRef.current = true;
+        try {
+          const res = await fetch('/api/auth/auto-login', { method: 'POST' });
+          if (res.ok) {
+            const data = await res.json();
+            setSessionInfo(data);
+            setUser({ name: 'DJ' });
+            setRole('dj');
+            setIsAuthenticated(true);
+            setIsLoadingAuth(false);
+            return;
+          }
+        } catch {
+        }
+      }
       setIsLoadingAuth(false);
       return;
     }

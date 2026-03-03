@@ -266,18 +266,37 @@ EOF
 chmod +x ~/Desktop/DJBooth.desktop
 ```
 
-### Step 11: Enable VNC remote desktop access
-Allows you to see and control the Pi's full desktop remotely from your phone or laptop using a VNC viewer app (e.g. RealVNC Viewer). Connect via the Pi's Tailscale IP.
+### Step 11: Enable VNC remote desktop access (TigerVNC)
+Raspberry Pi OS Trixie uses Wayland, so the built-in RealVNC server doesn't work properly. Use TigerVNC's scraping server instead.
 ```bash
-sudo raspi-config nonint do_vnc 0
+sudo apt install -y tigervnc-scraping-server
+mkdir -p ~/.vnc
+tigervncpasswd ~/.vnc/passwd
 ```
-To set a VNC password (required for direct connections):
-```bash
-sudo vncpasswd -service
-```
-Connect from any device with Tailscale using a VNC viewer app at `TAILSCALE_IP:5900` (e.g. `100.115.212.34:5900`).
+Enter your VNC password twice (e.g. `neon2026`), say `n` to view-only.
 
-### Step 12: Disable screen blanking
+To start VNC manually:
+```bash
+killall x0vncserver x0tigervncserver 2>/dev/null
+rm -f ~/.vnc/*.pid /tmp/.X*-lock
+x0vncserver -display :0 -rfbauth ~/.vnc/passwd -rfbport 5901 -localhost no &
+```
+Connect from any device with Tailscale using a VNC viewer app at `TAILSCALE_IP:5901` (e.g. `100.115.212.34:5901`). Leave username blank, enter your VNC password.
+
+Note: Uses port 5901 (not 5900) to avoid conflicts with the built-in RealVNC service. Disable the built-in RealVNC to prevent conflicts:
+```bash
+sudo systemctl stop vncserver-x11-serviced
+sudo systemctl disable vncserver-x11-serviced
+```
+
+### Step 12: Disable Wi-Fi (if using Ethernet)
+If the Pi is connected via Ethernet cable, disable Wi-Fi to prevent Wi-Fi authentication popups from freezing the kiosk. The Wayland compositor can hang when these dialogs appear over fullscreen Chromium.
+```bash
+sudo nmcli radio wifi off
+```
+To re-enable Wi-Fi later if needed: `sudo nmcli radio wifi on`
+
+### Step 13: Disable screen blanking
 Keeps the Pi screen on all night (no sleep/screensaver).
 ```bash
 sudo raspi-config nonint do_blanking 1

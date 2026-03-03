@@ -29,6 +29,20 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 3, 2026 — Session 17 (Auto-Play on Boot)
+
+#### Feature: Auto-Play Music on Boot
+- **Purpose**: Music plays immediately when the Pi boots — no DJ login required. The login screen stays visible for anyone who needs to access controls, but the DJBooth and AudioEngine are already running behind it
+- **How it works**:
+  1. `AuthContext` auto-calls `POST /api/auth/auto-login` on startup (localhost-only, no PIN needed)
+  2. Server creates a DJ session, returns token — PersistentDJBooth renders and AudioEngine starts
+  3. DJBooth's existing auto-play logic picks a random track and starts playing
+  4. Landing page does NOT auto-redirect on auto-login — only redirects after manual PIN entry
+  5. When a DJ enters their PIN, they navigate to `/DJBooth` and see the already-running session
+- **Security**: `/api/auth/auto-login` is locked to localhost only (checks `req.ip` for 127.0.0.1/::1). Remote clients get 403
+- **Pi requirement**: Chromium must have `--autoplay-policy=no-user-gesture-required` flag (already in kiosk setup)
+- **Files**: `src/lib/AuthContext.jsx` (auto-login attempt), `src/pages/Landing.jsx` (manual-only redirect), `server/index.js` (auto-login endpoint)
+
 ### Mar 3, 2026 — Session 16 (EQ, Specials Timing, Pronunciation)
 
 #### Feature: 3-Band EQ for Music and Voice

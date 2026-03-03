@@ -148,6 +148,16 @@ app.get('/api/server-info', (req, res) => {
   res.json({ ips, port: process.env.PORT || 3001 });
 });
 
+app.post('/api/auth/auto-login', (req, res) => {
+  const clientIp = req.ip || req.connection?.remoteAddress || '';
+  const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
+  if (!isLocal) {
+    return res.status(403).json({ error: 'Auto-login only available from localhost' });
+  }
+  const token = createSession('dj');
+  return res.json({ token, role: 'dj' });
+});
+
 app.post('/api/auth/login', (req, res) => {
   const { role, pin } = req.body;
   
@@ -789,6 +799,17 @@ app.get('/api/history/stats', authenticate, requireDJ, (req, res) => {
   const { date } = req.query;
   const stats = getPlayHistoryStats(date || null);
   res.json(stats);
+});
+
+app.get('/api/music/ambient', (req, res) => {
+  try {
+    const tracks = getRandomTracks(1);
+    if (!tracks || tracks.length === 0) return res.status(404).json({ error: 'No tracks available' });
+    const track = tracks[0];
+    res.json({ id: track.id, name: track.name, genre: track.genre, url: `/api/music/stream/${track.id}` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get ambient track' });
+  }
 });
 
 app.get('/api/music/stream/:id', (req, res) => {

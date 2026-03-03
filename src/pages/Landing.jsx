@@ -82,8 +82,10 @@ export default function Landing() {
   const { login, initDjPin, isAuthenticated, role } = useAuth();
   const navigate = useNavigate();
 
+  const manualLoginRef = React.useRef(false);
+
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && manualLoginRef.current) {
       if (role === 'dj') navigate('/DJBooth');
       else if (role === 'dancer') navigate('/DancerView');
     }
@@ -92,6 +94,7 @@ export default function Landing() {
   const handleDJLogin = useCallback(async (pin) => {
     setError('');
     setLoading(true);
+    manualLoginRef.current = true;
     try {
       const isRemote = mode === 'dj-remote';
       if (isRemote) {
@@ -115,6 +118,7 @@ export default function Landing() {
   const handleDancerLogin = useCallback(async (pin) => {
     setError('');
     setLoading(true);
+    manualLoginRef.current = true;
     try {
       await login('dancer', pin);
     } catch (err) {
