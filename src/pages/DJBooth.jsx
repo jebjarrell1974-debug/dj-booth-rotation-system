@@ -2537,14 +2537,14 @@ export default function DJBooth() {
       {/* Header */}
       <header className="border-b border-[#151528] px-4 py-2 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#00d4ff] flex items-center justify-center">
-                <Radio className="w-5 h-5 text-black" />
+          <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-[#00d4ff] flex items-center justify-center">
+                <Radio className="w-4 h-4 text-black" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight">NEON AI DJ</h1>
-                <p className="text-xs text-gray-500">Automated Intelligent Disc Jockey</p>
+                <h1 className="text-lg font-bold tracking-tight leading-tight">NEON AI DJ</h1>
+                <p className="text-[10px] text-gray-500">Automated Intelligent Disc Jockey</p>
               </div>
             </div>
 
@@ -2553,9 +2553,9 @@ export default function DJBooth() {
               const level = getCurrentEnergyLevel({ ...config, energyOverride });
               const info = ENERGY_LEVELS[level];
               return (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
-                  <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border" style={{ borderColor: info.color + '40', backgroundColor: info.color + '10' }}>
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: info.color }} />
+                  <span className="text-[10px] font-medium leading-tight whitespace-nowrap" style={{ color: info.color }}>{info.name}</span>
                 </div>
               );
             })()}
@@ -2608,7 +2608,7 @@ export default function DJBooth() {
                 </div>
               </div>
             ) : (
-              <div className="bg-[#0d0d1f] rounded-lg border border-[#1e293b] p-3 min-w-[320px]">
+              <div className="bg-[#0d0d1f] rounded-lg border border-[#1e293b] p-2 min-w-0 flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   {currentDancer && (
                     <div 
@@ -2702,7 +2702,7 @@ export default function DJBooth() {
             )}
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {/* Tab Navigation */}
             <div className="flex items-center gap-1 bg-[#0d0d1f] rounded-lg p-1 border border-[#151528]">
               <Button

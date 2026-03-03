@@ -29,6 +29,25 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 3, 2026 — Session 13 (Voiceover Cleanup + Settings Tab)
+
+#### Feature: Clear All Voiceovers Button
+- **Purpose**: One-click reset of all cached voiceovers so they regenerate fresh with the current voice engine (eleven_turbo_v2_5)
+- **Configuration UI**: Red "Clear All Voiceovers (N)" button appears below Voiceover Library stats when count > 0. Confirmation prompt before deletion
+- **API**: `DELETE /api/voiceovers` endpoint clears all voiceover files from disk and database records
+- **Files**: `src/pages/Configuration.jsx`, `server/index.js`, `server/db.js`
+
+#### Feature: Startup Orphan Voiceover Cleanup
+- **Purpose**: Automatically detect and remove database entries for voiceover files that no longer exist on disk (e.g., manually deleted files)
+- **Implementation**: `cleanupOrphanedVoiceovers()` runs at startup in `initR2Sync()`, before cloud sync begins
+- **Files**: `server/db.js`, `server/index.js`
+
+#### UI: Settings Tab in Nav Bar
+- **Change**: Moved "Settings" from a small gear icon in the top-right corner to a proper labeled tab in the main nav bar, placed right after "Options"
+- **Behavior**: Opens the same Settings modal (API keys, voice config, announcement settings)
+- **Only shown in non-remote mode** (not on iPad DJ Remote)
+- **File**: `src/pages/DJBooth.jsx`
+
 ### Mar 2, 2026 — Session 12 (Break Song Fix + Song Deactivation)
 
 #### Fix: Break Songs Completely Ignored During Playback
