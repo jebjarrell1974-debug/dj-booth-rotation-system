@@ -43,6 +43,12 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **File**: `public/fleet-monitor-standalone.js`
 - **Setup guide**: See "Fleet Monitor Server Setup" section in session-history skill
 
+#### Fix: Voiceover Path Standardized to ~/djbooth/voiceovers
+- **Problem**: Voiceovers were saved to `~/Desktop/VOICE OVERS FOR AUTO DJ` — outside the app directory, hard to find, and inconsistent across fleet
+- **Fix**: Changed `VOICEOVER_PATH` in systemd service to `/home/USERNAME/djbooth/voiceovers`. This is inside the app directory, survives updates (the update script doesn't touch it), and is the folder R2 syncs to/from
+- **Migration for existing Pi**: Move voiceovers from Desktop to `~/djbooth/voiceovers/`, update systemd service, restart
+- **Files**: `.agents/skills/session-history/SKILL.md` (setup guide updated)
+
 ### Mar 3, 2026 — Session 14 (Telegram Fix, Genre Dropdown, Voice Tuning)
 
 #### Fix: Fleet Monitor DB Recovery on Startup

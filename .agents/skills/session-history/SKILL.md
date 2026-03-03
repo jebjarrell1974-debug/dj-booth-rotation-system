@@ -140,7 +140,7 @@ Verify: `node --version` should show v22.x
 
 ### Step 3: Create directories
 ```bash
-mkdir -p ~/djbooth ~/data ~/Desktop/"DJ MUSIC" ~/Desktop/"VOICE OVERS FOR AUTO DJ"
+mkdir -p ~/djbooth ~/data ~/Desktop/"DJ MUSIC"
 ```
 
 ### Step 4: Download the update script
@@ -170,7 +170,7 @@ Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=DB_PATH=/home/USERNAME/data/djbooth.db
 Environment="MUSIC_PATH=/home/USERNAME/Desktop/DJ MUSIC"
-Environment="VOICEOVER_PATH=/home/USERNAME/Desktop/VOICE OVERS FOR AUTO DJ"
+Environment="VOICEOVER_PATH=/home/USERNAME/djbooth/voiceovers"
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
