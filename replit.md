@@ -29,6 +29,20 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 3, 2026 — Session 15 (Fleet Monitor on Home Pi)
+
+#### Feature: Standalone Fleet Monitor on "raspberrypi"
+- **Problem**: Fleet monitoring was running on the same Pi it was supposed to watch — if the Pi goes offline, it can't alert about itself. Replit deployment kept failing at the "promotion" stage.
+- **Solution**: Created a standalone fleet monitor script (`public/fleet-monitor-standalone.js`) that runs on the home Pi ("raspberrypi", Tailscale IP `100.70.172.8`). This is a zero-dependency Node.js script (no npm install needed) that receives heartbeats and sends Telegram alerts.
+- **Setup details**:
+  - "raspberrypi" username: `jebjarrell`, Node via nvm at `/home/jebjarrell/.nvm/versions/node/v22.22.0/bin/node`
+  - `djbooth` service disabled on "raspberrypi" — it only runs `fleet-monitor` service now
+  - Systemd service runs without `User=` directive (runs as root) to avoid 217/USER errors
+  - Ponynation's `FLEET_SERVER_URL` updated from `localhost:3001` to `http://100.70.172.8:3001`
+- **Endpoints**: `POST /api/monitor/heartbeat`, `GET /api/monitor/status`, `POST /api/monitor/test-telegram`
+- **File**: `public/fleet-monitor-standalone.js`
+- **Setup guide**: See "Fleet Monitor Server Setup" section in session-history skill
+
 ### Mar 3, 2026 — Session 14 (Telegram Fix, Genre Dropdown, Voice Tuning)
 
 #### Fix: Fleet Monitor DB Recovery on Startup

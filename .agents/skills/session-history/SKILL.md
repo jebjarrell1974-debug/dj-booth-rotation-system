@@ -195,12 +195,13 @@ Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f5
 Environment=R2_BUCKET_NAME=neonaidj
 Environment=TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA
 Environment=TELEGRAM_CHAT_ID=8567217273
-Environment=FLEET_SERVER_URL=http://localhost:3001
+Environment=FLEET_SERVER_URL=http://100.70.172.8:3001
 Environment=DEVICE_ID=DEVICEID
 Environment="CLUB_NAME=CLUBNAME"
 EOF'
 sudo systemctl daemon-reload
 ```
+Note: `FLEET_SERVER_URL` points to the fleet monitor server running on "raspberrypi" (Tailscale IP `100.70.172.8`). This is the always-on Pi that monitors all fleet devices and sends Telegram alerts when a device goes offline. If the fleet monitor moves to a different machine, update this IP.
 
 ### Step 8: Create the auto-update service
 Pulls latest code from GitHub on every boot before the app starts. Replace `USERNAME`.
@@ -305,6 +306,78 @@ After reboot: auto-update runs → app starts → boot screen shows progress →
 - **Check service status**: `sudo systemctl status djbooth`
 - **Manual update**: `~/djbooth-update.sh`
 - **Restart service**: `sudo systemctl restart djbooth`
+
+---
+
+## Fleet Monitor Server Setup (on "raspberrypi")
+
+The fleet monitor is a standalone lightweight Node.js script that runs on a separate always-on Pi ("raspberrypi", Tailscale IP `100.70.172.8`). It does NOT run the full DJ Booth app — it only receives heartbeats from fleet Pi units and sends Telegram alerts when devices go offline.
+
+### Setup Steps
+
+**Step 1: Create directory and download the script**
+```bash
+mkdir -p ~/fleet-monitor
+curl -sL "https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/public/fleet-monitor-standalone.js" -o ~/fleet-monitor/monitor.js
+```
+
+**Step 2: Test it manually**
+```bash
+TELEGRAM_BOT_TOKEN="8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA" \
+TELEGRAM_CHAT_ID="8567217273" \
+node ~/fleet-monitor/monitor.js
+```
+You should see the "Fleet Monitor Started" banner and receive a Telegram message. Press `Ctrl+C` to stop.
+
+**Step 3: Create the systemd service**
+Replace `USERNAME` with the Pi's username (e.g., `jebjarrell`). Also replace the Node path if needed — run `which node` to find it.
+```bash
+sudo tee /etc/systemd/system/fleet-monitor.service > /dev/null << 'EOF'
+[Unit]
+Description=NEON AI DJ Fleet Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USERNAME/fleet-monitor
+ExecStart=/home/USERNAME/.nvm/versions/node/v22.22.0/bin/node /home/USERNAME/fleet-monitor/monitor.js
+Restart=always
+RestartSec=10
+Environment=TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA
+Environment=TELEGRAM_CHAT_ID=8567217273
+Environment=PORT=3001
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable fleet-monitor
+sudo systemctl start fleet-monitor
+```
+
+**Step 4: Verify**
+```bash
+journalctl -u fleet-monitor --no-pager -n 15
+```
+Should show "Fleet Monitor Started" with port 3001 and Telegram active.
+
+### Important Notes
+- If `djbooth` service was previously running on this Pi, stop and disable it first: `sudo systemctl stop djbooth && sudo systemctl disable djbooth`
+- If Node is installed via system package instead of nvm, use `/usr/bin/node` for ExecStart
+- Do NOT include `User=` in the service file if the username causes 217/USER errors — omitting it runs as root
+- The monitor checks every 5 minutes. If a device misses 2 heartbeats (10 min), it sends a Telegram alert
+- When a device recovers, it sends a recovery notification
+- Status endpoint: `GET http://100.70.172.8:3001/api/monitor/status`
+- Test Telegram: `POST http://100.70.172.8:3001/api/monitor/test-telegram`
+
+### Current Fleet Monitor Host
+- **Pi**: "raspberrypi" (home Pi)
+- **Tailscale IP**: `100.70.172.8`
+- **Username**: `jebjarrell`
+- **Node path**: `/home/jebjarrell/.nvm/versions/node/v22.22.0/bin/node`
+- **Port**: 3001
 
 ---
 
