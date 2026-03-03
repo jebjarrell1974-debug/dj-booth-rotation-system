@@ -9,7 +9,6 @@ import { getApiConfig, saveApiConfig, loadApiConfig } from '@/components/apiConf
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { toast } from 'sonner';
 import { 
-  Settings, 
   Music2, 
   Users, 
   Radio,
@@ -26,21 +25,10 @@ import {
   Plus,
   Minus,
   X,
-  FolderOpen,
   SlidersHorizontal,
-  MonitorOff,
   HelpCircle,
   Ban
 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
 import AudioEngine from '@/components/dj/AudioEngine';
 import MusicLibrary from '@/components/dj/MusicLibrary';
 import { isRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
@@ -324,9 +312,6 @@ export default function DJBooth() {
   const [selectedDancer, setSelectedDancer] = useState(null);
   const [editingPlaylist, setEditingPlaylist] = useState(null);
   const [activeTab, setActiveTab] = useState('rotation');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [isImportingVoiceovers, setIsImportingVoiceovers] = useState(false);
-  const [voImportProgress, setVoImportProgress] = useState('');
   const [voiceId, setVoiceId] = useState('');
   
   // Configuration (from config file)
@@ -364,105 +349,6 @@ export default function DJBooth() {
     });
   }, [openaiKey, elevenLabsKey, voiceId, announcementsEnabled, scriptModel, clubSpecials, configLoaded]);
 
-  const handleImportVoiceovers = async () => {
-    if (!window.showDirectoryPicker) {
-      toast.error('Folder picker not supported — use Chromium/Chrome');
-      return;
-    }
-    try {
-      const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
-      setIsImportingVoiceovers(true);
-      setVoImportProgress('Scanning folder...');
-
-      const token = sessionStorage.getItem('djbooth_token');
-      const authHeaders = {};
-      if (token) authHeaders['Authorization'] = `Bearer ${token}`;
-
-      const mp3Files = [];
-      for await (const entry of dirHandle.values()) {
-        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.mp3')) {
-          mp3Files.push(entry);
-        }
-      }
-
-      if (mp3Files.length === 0) {
-        toast.error('No MP3 files found in the selected folder');
-        setIsImportingVoiceovers(false);
-        setVoImportProgress('');
-        return;
-      }
-
-      const checkKeys = mp3Files.map(f => f.name.replace(/\.mp3$/i, ''));
-      let existingKeys = new Set();
-      try {
-        const checkRes = await fetch(`/api/voiceovers/check?keys=${encodeURIComponent(checkKeys.join(','))}`, { headers: authHeaders });
-        if (checkRes.ok) {
-          const { cached } = await checkRes.json();
-          existingKeys = new Set(Object.keys(cached).filter(k => cached[k]));
-        }
-      } catch {}
-
-      const toImport = mp3Files.filter(f => !existingKeys.has(f.name.replace(/\.mp3$/i, '')));
-      const skipped = mp3Files.length - toImport.length;
-
-      let imported = 0;
-      let failed = 0;
-
-      for (const fileHandle of toImport) {
-        const cacheKey = fileHandle.name.replace(/\.mp3$/i, '');
-        setVoImportProgress(`Importing ${imported + 1}/${toImport.length}: ${cacheKey}`);
-
-        try {
-          const file = await fileHandle.getFile();
-          const reader = new FileReader();
-          const audio_base64 = await new Promise((resolve, reject) => {
-            reader.onloadend = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-
-          let type = 'unknown';
-          let dancer_name = '';
-          let energy_level = 3;
-          const parts = cacheKey.split('-');
-          if (parts.length >= 3) {
-            type = parts[0];
-            energy_level = parseInt(parts[parts.length - 1].replace('L', ''), 10) || 3;
-            dancer_name = parts.slice(1, -1).join('-');
-            if (type === 'transition' && dancer_name.includes('-')) {
-              const nameParts = dancer_name.split('-');
-              dancer_name = nameParts[0];
-            }
-          }
-
-          const res = await fetch('/api/voiceovers', {
-            method: 'POST',
-            headers: { ...authHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cache_key: cacheKey, audio_base64, script: '', type, dancer_name, energy_level })
-          });
-
-          if (!res.ok) throw new Error('Upload failed');
-          imported++;
-        } catch (err) {
-          console.error(`Failed to import ${cacheKey}:`, err);
-          failed++;
-        }
-      }
-
-      const msg = [`Imported ${imported} voiceovers`];
-      if (skipped > 0) msg.push(`${skipped} already existed`);
-      if (failed > 0) msg.push(`${failed} failed`);
-      toast.success(msg.join(', '));
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error('Import voiceovers error:', err);
-        toast.error('Failed to import voiceovers');
-      }
-    } finally {
-      setIsImportingVoiceovers(false);
-      setVoImportProgress('');
-    }
-  };
 
   useEffect(() => {
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -2714,37 +2600,6 @@ export default function DJBooth() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setActiveTab('options')}
-                className={`${activeTab === 'options' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-              >
-                <SlidersHorizontal className="w-4 h-4 mr-1" />
-                Options
-              </Button>
-              {!remoteMode && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSettingsOpen(true)}
-                  className="text-gray-400 hover:text-white"
-                >
-                  <Settings className="w-4 h-4 mr-1" />
-                  Settings
-                </Button>
-              )}
-              <Link to={createPageUrl('Help')}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-gray-400 hover:text-white"
-                  title="Help"
-                >
-                  <HelpCircle className="w-4 h-4 mr-1" />
-                  Help
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                size="sm"
                 onClick={() => setActiveTab('rotation')}
                 className={`${activeTab === 'rotation' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
               >
@@ -2760,6 +2615,15 @@ export default function DJBooth() {
                 <Users className="w-4 h-4 mr-1" />
                 Entertainers
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab('options')}
+                className={`${activeTab === 'options' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
+              >
+                <SlidersHorizontal className="w-4 h-4 mr-1" />
+                Options
+              </Button>
               {!remoteMode && (
                 <Button
                   variant="ghost"
@@ -2771,6 +2635,17 @@ export default function DJBooth() {
                   Announcements
                 </Button>
               )}
+              <Link to={createPageUrl('Help')}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-gray-400 hover:text-white"
+                  title="Help"
+                >
+                  <HelpCircle className="w-4 h-4 mr-1" />
+                  Help
+                </Button>
+              </Link>
             </div>
             
             {!remoteMode && (
@@ -3212,175 +3087,6 @@ export default function DJBooth() {
         />
       )}
 
-      {/* Settings Modal */}
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="bg-[#0d0d1f] border-[#1e293b] text-white max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
-          </DialogHeader>
-          
-          <div className="space-y-6 py-4">
-            <div className="px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-              <div className="flex items-center gap-2">
-                <Check className="w-3 h-3 text-green-400" />
-                <span className="text-xs text-green-400">
-                  Settings save automatically - enter once, never again
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">API Keys</h3>
-              
-              <div className="space-y-2">
-                <Label htmlFor="openai-key">OpenAI API Key</Label>
-                <Input
-                  id="openai-key"
-                  type="password"
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="bg-[#151528] border-[#1e293b]"
-                />
-                <p className="text-xs text-gray-500">Optional — enables model selection below</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="script-model">Script Generation Model</Label>
-                <select
-                  id="script-model"
-                  value={scriptModel}
-                  onChange={(e) => setScriptModel(e.target.value)}
-                  className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2"
-                >
-                  <option value="auto">Auto (Built-in AI)</option>
-                  <option value="gpt-4o">GPT-4o</option>
-                  <option value="gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="gpt-4.1">GPT-4.1</option>
-                  <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
-                </select>
-                <p className="text-xs text-gray-500">
-                  {scriptModel === 'auto' ? 'Uses built-in AI — no OpenAI key needed' : 'Requires OpenAI API key above'}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="elevenlabs-key">ElevenLabs API Key</Label>
-                <Input
-                  id="elevenlabs-key"
-                  type="password"
-                  value={elevenLabsKey}
-                  onChange={(e) => setElevenLabsKey(e.target.value)}
-                  placeholder="sk_..."
-                  className="bg-[#151528] border-[#1e293b]"
-                />
-                <p className="text-xs text-gray-500">Used for text-to-speech announcements</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="voice-id">ElevenLabs Voice ID (optional)</Label>
-                <Input
-                  id="voice-id"
-                  value={voiceId}
-                  onChange={(e) => setVoiceId(e.target.value)}
-                  placeholder="21m00Tcm4TlvDq8ikWAM"
-                  className="bg-[#151528] border-[#1e293b]"
-                />
-                <p className="text-xs text-gray-500">Leave empty for default voice</p>
-              </div>
-            </div>
-
-            {/* Announcement Settings */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Announcements</h3>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Enable Voiceover Announcements</Label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Automatically announce dancers during rotation
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={announcementsEnabled}
-                  onChange={(e) => setAnnouncementsEnabled(e.target.checked)}
-                  className="w-10 h-6"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="club-specials">Club Specials</Label>
-                <textarea
-                  id="club-specials"
-                  value={clubSpecials}
-                  onChange={(e) => setClubSpecials(e.target.value)}
-                  placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
-                  rows={3}
-                  className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
-                />
-                <p className="text-xs text-gray-500">One per line — the DJ will weave these into announcements naturally</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Import Voiceovers</h3>
-              <p className="text-xs text-gray-400">
-                Select a folder containing voiceover MP3 files from another device to import them into this system.
-              </p>
-              <Button
-                onClick={handleImportVoiceovers}
-                disabled={isImportingVoiceovers}
-                className="w-full bg-[#2563eb] hover:bg-[#2563eb]/80 text-white"
-              >
-                <FolderOpen className="w-4 h-4 mr-2" />
-                {isImportingVoiceovers ? 'Importing...' : 'Import Voiceovers Folder'}
-              </Button>
-              {voImportProgress && (
-                <p className="text-xs text-[#00d4ff] text-center animate-pulse">
-                  {voImportProgress}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-red-400 uppercase tracking-wider">Kiosk Control</h3>
-              <Button
-                onClick={async () => {
-                  if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
-                  try {
-                    const token = sessionStorage.getItem('djbooth_token');
-                    await fetch('/api/kiosk/exit', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        ...(token ? { Authorization: `Bearer ${token}` } : {})
-                      }
-                    });
-                  } catch {}
-                }}
-                variant="outline"
-                className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-              >
-                <MonitorOff className="w-4 h-4 mr-2" />
-                Exit Kiosk Mode
-              </Button>
-              <p className="text-xs text-gray-500">
-                Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.
-              </p>
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-[#1e293b]">
-              <Button
-                onClick={() => setSettingsOpen(false)}
-                className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
-              >
-                Done
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {showDeactivatePin && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" onClick={() => setShowDeactivatePin(false)}>

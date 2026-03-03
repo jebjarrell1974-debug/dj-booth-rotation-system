@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, Wifi, ChevronDown } from 'lucide-react';
+import { Settings, FolderOpen, Check, Wifi, ChevronDown, MonitorOff } from 'lucide-react';
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -10,6 +10,7 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const [saving, setSaving] = useState(false);
   const [serverIps, setServerIps] = useState([]);
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
+  const [clubSpecials, setClubSpecials] = useState('');
   const dropdownRef = useRef(null);
 
   const activeGenres = djOptions?.activeGenres || [];
@@ -24,6 +25,8 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
       .then(r => r.json())
       .then(data => setServerIps(data.ips || []))
       .catch(() => {});
+    const cfg = getApiConfig();
+    setClubSpecials(cfg.clubSpecials || '');
   }, []);
 
   const saveOptions = useCallback(async (updates) => {
@@ -263,6 +266,21 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
         </div>
       </div>
 
+      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+        <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">Club Specials</h3>
+        <textarea
+          value={clubSpecials}
+          onChange={(e) => {
+            setClubSpecials(e.target.value);
+            saveApiConfig({ clubSpecials: e.target.value });
+          }}
+          placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
+          rows={3}
+          className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
+        />
+        <p className="text-xs text-gray-500 mt-1">One per line — the DJ will weave these into announcements naturally</p>
+      </div>
+
       {serverIps.length > 0 && (
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <div className="flex items-center gap-2 mb-3">
@@ -278,6 +296,30 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
           ))}
         </div>
       )}
+
+      <div className="bg-[#0d0d1f] rounded-xl border border-red-500/20 p-5">
+        <h3 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">Kiosk Control</h3>
+        <button
+          onClick={async () => {
+            if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
+            try {
+              const token = sessionStorage.getItem('djbooth_token');
+              await fetch('/api/kiosk/exit', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {})
+                }
+              });
+            } catch {}
+          }}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm font-medium"
+        >
+          <MonitorOff className="w-4 h-4" />
+          Exit Kiosk Mode
+        </button>
+        <p className="text-xs text-gray-500 mt-2">Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.</p>
+      </div>
     </div>
   );
 }
