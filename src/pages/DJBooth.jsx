@@ -323,7 +323,7 @@ export default function DJBooth() {
   // UI state
   const [selectedDancer, setSelectedDancer] = useState(null);
   const [editingPlaylist, setEditingPlaylist] = useState(null);
-  const [activeTab, setActiveTab] = useState(remoteMode ? 'rotation' : 'library');
+  const [activeTab, setActiveTab] = useState('rotation');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isImportingVoiceovers, setIsImportingVoiceovers] = useState(false);
   const [voImportProgress, setVoImportProgress] = useState('');
@@ -2755,26 +2755,15 @@ export default function DJBooth() {
                 Entertainers
               </Button>
               {!remoteMode && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setActiveTab('library')}
-                    className={`${activeTab === 'library' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    <Music2 className="w-4 h-4 mr-1" />
-                    Library
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setActiveTab('announcements')}
-                    className={`${activeTab === 'announcements' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    <Mic className="w-4 h-4 mr-1" />
-                    Announcements
-                  </Button>
-                </>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setActiveTab('announcements')}
+                  className={`${activeTab === 'announcements' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
+                >
+                  <Mic className="w-4 h-4 mr-1" />
+                  Announcements
+                </Button>
               )}
             </div>
             
