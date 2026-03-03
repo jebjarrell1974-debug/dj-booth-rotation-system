@@ -2382,10 +2382,8 @@ export default function DJBooth() {
           setDjOptions(opts);
           djOptionsRef.current = opts;
         }}
-        onLogout={async () => {
-          const { clearToken } = await import('@/api/serverApi');
-          clearToken();
-          window.location.href = '/';
+        onLogout={() => {
+          navigate('/');
         }}
       />
     );
@@ -2718,11 +2716,7 @@ export default function DJBooth() {
               variant="ghost"
               size="sm"
               className="text-gray-400 hover:text-white hover:bg-[#151528] ml-1"
-              onClick={async () => {
-                const { clearToken } = await import('@/api/serverApi');
-                clearToken();
-                window.location.href = '/';
-              }}
+              onClick={() => navigate('/')}
             >
               <span className="text-xs">Logout</span>
             </Button>

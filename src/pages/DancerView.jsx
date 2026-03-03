@@ -97,7 +97,6 @@ export default function DancerView() {
     
     const checker = setInterval(async () => {
       if (Date.now() - lastActivityRef.current > INACTIVITY_TIMEOUT) {
-        await logout();
         navigate('/');
       } else {
         authApi.ping().catch(() => {});
@@ -245,9 +244,8 @@ export default function DancerView() {
     setDragIdx(null);
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     flushSave();
-    await logout();
     navigate('/');
   };
 
