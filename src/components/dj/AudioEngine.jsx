@@ -42,6 +42,13 @@ const AudioEngine = forwardRef(({
   const autoGainEnabledRef = useRef(true);
   const autoGainCacheRef = useRef(new Map());
 
+  const musicEqBassRef = useRef(null);
+  const musicEqMidRef = useRef(null);
+  const musicEqTrebleRef = useRef(null);
+  const voiceEqBassRef = useRef(null);
+  const voiceEqMidRef = useRef(null);
+  const voiceEqTrebleRef = useRef(null);
+
   const activeDeck = useRef('A');
   const masterVolume = useRef(0.8);
   const isPlayingRef = useRef(false);
@@ -89,9 +96,31 @@ const AudioEngine = forwardRef(({
       limiterRef.current.release.value = 0.1;
       limiterRef.current.connect(masterGainRef.current);
 
+      const savedMusicEq = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}');
+      const savedVoiceEq = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
+
+      musicEqBassRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqBassRef.current.type = 'lowshelf';
+      musicEqBassRef.current.frequency.value = 200;
+      musicEqBassRef.current.gain.value = savedMusicEq.bass;
+
+      musicEqMidRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqMidRef.current.type = 'peaking';
+      musicEqMidRef.current.frequency.value = 1000;
+      musicEqMidRef.current.Q.value = 1.0;
+      musicEqMidRef.current.gain.value = savedMusicEq.mid;
+
+      musicEqTrebleRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqTrebleRef.current.type = 'highshelf';
+      musicEqTrebleRef.current.frequency.value = 4000;
+      musicEqTrebleRef.current.gain.value = savedMusicEq.treble;
+
       musicBusGainRef.current = audioCtxRef.current.createGain();
       musicBusGainRef.current.gain.value = 1.0;
-      musicBusGainRef.current.connect(limiterRef.current);
+      musicBusGainRef.current.connect(musicEqBassRef.current);
+      musicEqBassRef.current.connect(musicEqMidRef.current);
+      musicEqMidRef.current.connect(musicEqTrebleRef.current);
+      musicEqTrebleRef.current.connect(limiterRef.current);
 
       deckAGainRef.current = audioCtxRef.current.createGain();
       deckAGainRef.current.gain.value = 1.0;
@@ -104,9 +133,28 @@ const AudioEngine = forwardRef(({
       deckASourceElRef.current = null;
       deckBSourceElRef.current = null;
 
+      voiceEqBassRef.current = audioCtxRef.current.createBiquadFilter();
+      voiceEqBassRef.current.type = 'lowshelf';
+      voiceEqBassRef.current.frequency.value = 200;
+      voiceEqBassRef.current.gain.value = savedVoiceEq.bass;
+
+      voiceEqMidRef.current = audioCtxRef.current.createBiquadFilter();
+      voiceEqMidRef.current.type = 'peaking';
+      voiceEqMidRef.current.frequency.value = 1000;
+      voiceEqMidRef.current.Q.value = 1.0;
+      voiceEqMidRef.current.gain.value = savedVoiceEq.mid;
+
+      voiceEqTrebleRef.current = audioCtxRef.current.createBiquadFilter();
+      voiceEqTrebleRef.current.type = 'highshelf';
+      voiceEqTrebleRef.current.frequency.value = 4000;
+      voiceEqTrebleRef.current.gain.value = savedVoiceEq.treble;
+
       voiceGainRef.current = audioCtxRef.current.createGain();
       voiceGainRef.current.gain.value = voiceGainLevel.current;
-      voiceGainRef.current.connect(audioCtxRef.current.destination);
+      voiceGainRef.current.connect(voiceEqBassRef.current);
+      voiceEqBassRef.current.connect(voiceEqMidRef.current);
+      voiceEqMidRef.current.connect(voiceEqTrebleRef.current);
+      voiceEqTrebleRef.current.connect(audioCtxRef.current.destination);
     }
     if (audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
@@ -638,6 +686,30 @@ const AudioEngine = forwardRef(({
     deck.currentTime = Math.min(time, MAX_SONG_DURATION);
   }, []);
 
+  const setMusicEq = useCallback((band, value) => {
+    const v = Math.max(-12, Math.min(12, value));
+    const ref_map = { bass: musicEqBassRef, mid: musicEqMidRef, treble: musicEqTrebleRef };
+    const filterRef = ref_map[band];
+    if (filterRef && filterRef.current && audioCtxRef.current) {
+      filterRef.current.gain.setValueAtTime(v, audioCtxRef.current.currentTime);
+    }
+    const saved = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}');
+    saved[band] = v;
+    localStorage.setItem('neonaidj_music_eq', JSON.stringify(saved));
+  }, []);
+
+  const setVoiceEq = useCallback((band, value) => {
+    const v = Math.max(-12, Math.min(12, value));
+    const ref_map = { bass: voiceEqBassRef, mid: voiceEqMidRef, treble: voiceEqTrebleRef };
+    const filterRef = ref_map[band];
+    if (filterRef && filterRef.current && audioCtxRef.current) {
+      filterRef.current.gain.setValueAtTime(v, audioCtxRef.current.currentTime);
+    }
+    const saved = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
+    saved[band] = v;
+    localStorage.setItem('neonaidj_voice_eq', JSON.stringify(saved));
+  }, []);
+
   useImperativeHandle(ref, () => ({
     playTrack,
     pause,
@@ -648,6 +720,8 @@ const AudioEngine = forwardRef(({
     setVolume,
     setVoiceGain,
     seek,
+    setMusicEq,
+    setVoiceEq,
     setMaxDuration: (seconds) => { maxDurationOverrideRef.current = seconds; },
     setAutoGain: (enabled) => { autoGainEnabledRef.current = enabled; },
     isPlaying,

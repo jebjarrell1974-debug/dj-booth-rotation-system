@@ -2746,6 +2746,7 @@ export default function DJBooth() {
                   }}
                   energyOverride={energyOverride}
                   onEnergyOverrideChange={setEnergyOverride}
+                  audioEngineRef={audioEngineRef}
                 />
               </div>
             )}

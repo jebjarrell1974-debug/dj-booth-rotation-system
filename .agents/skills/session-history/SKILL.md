@@ -266,13 +266,24 @@ EOF
 chmod +x ~/Desktop/DJBooth.desktop
 ```
 
-### Step 11: Disable screen blanking
+### Step 11: Enable VNC remote desktop access
+Allows you to see and control the Pi's full desktop remotely from your phone or laptop using a VNC viewer app (e.g. RealVNC Viewer). Connect via the Pi's Tailscale IP.
+```bash
+sudo raspi-config nonint do_vnc 0
+```
+To set a VNC password (required for direct connections):
+```bash
+sudo vncpasswd -service
+```
+Connect from any device with Tailscale using a VNC viewer app at `TAILSCALE_IP:5900` (e.g. `100.115.212.34:5900`).
+
+### Step 12: Disable screen blanking
 Keeps the Pi screen on all night (no sleep/screensaver).
 ```bash
 sudo raspi-config nonint do_blanking 1
 ```
 
-### Step 12: Set timezone and daily reboot
+### Step 14: Set timezone and daily reboot
 Set the Pi to Central time and schedule a daily reboot at 8:30 AM to keep things fresh.
 ```bash
 sudo timedatectl set-timezone America/Chicago
@@ -280,12 +291,12 @@ sudo timedatectl set-timezone America/Chicago
 ```
 Verify: `sudo crontab -l` should show the reboot line. `timedatectl` should show `America/Chicago`.
 
-### Step 13: Copy music files
+### Step 15: Copy music files
 Copy music to `/home/USERNAME/Desktop/DJ MUSIC/`
 - Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
 - Songs in the `FEATURE/` folder play to completion (no 3-minute cap)
 
-### Step 14: Start the app and verify
+### Step 16: Start the app and verify
 ```bash
 sudo systemctl start djbooth && sudo journalctl -u djbooth --no-pager -n 20
 ```
@@ -295,13 +306,13 @@ You should see:
 - Heartbeat client active
 - R2 cloud sync downloading/uploading voiceovers
 
-### Step 15: Configure the app in the browser
+### Step 17: Configure the app in the browser
 - Open `http://localhost:3001` on the Pi
 - Go to Configuration (master PIN: `36669`)
 - Set club name, ElevenLabs API key, OpenAI API key, voice ID
 - These settings are stored in the browser's localStorage on each Pi
 
-### Step 16: Reboot and verify full boot sequence
+### Step 18: Reboot and verify full boot sequence
 ```bash
 sudo reboot
 ```

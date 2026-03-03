@@ -204,8 +204,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const voiceSettings = VOICE_SETTINGS[energyLevel] || VOICE_SETTINGS[3];
 
     const PRONUNCIATION_MAP = {
-      'Mia': 'Mee-ah',
-      'Mia\'s': 'Mee-ah\'s',
+      'Mia': 'Meeyah',
+      'Mia\'s': 'Meeyah\'s',
       'Chaunte': 'Shawn-tay',
       'Chaunte\'s': 'Shawn-tay\'s',
       'Charisse': 'Sha-reese',
@@ -214,6 +214,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       'Tatianna\'s': 'Tah-tee-ah-nah\'s',
       'Nadia': 'Nah-dee-ah',
       'Nadia\'s': 'Nah-dee-ah\'s',
+      'Yasmine': 'Yazmen',
+      'Yasmine\'s': 'Yazmen\'s',
     };
     let ttsText = script;
     for (const [name, phonetic] of Object.entries(PRONUNCIATION_MAP)) {

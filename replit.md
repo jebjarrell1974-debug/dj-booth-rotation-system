@@ -29,6 +29,28 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 3, 2026 — Session 16 (EQ, Specials Timing, Pronunciation)
+
+#### Feature: 3-Band EQ for Music and Voice
+- **Purpose**: Compensate for audio quality differences between Bluetooth and RCA/DAC output on Pi units. Bluetooth codecs add warmth; DAC gives flat output that sounds thinner
+- **Implementation**: BiquadFilter nodes inserted into existing Web Audio chains without modifying gain bus architecture
+- **Music chain**: musicBusGain → eqBass (lowshelf 200Hz) → eqMid (peaking 1kHz) → eqTreble (highshelf 4kHz) → limiter
+- **Voice chain**: voiceGain → eqBass (lowshelf 200Hz) → eqMid (peaking 1kHz) → eqTreble (highshelf 4kHz) → destination
+- **Range**: -12 to +12 dB per band, with "Reset to flat" button
+- **Persistence**: Saved to localStorage (`neonaidj_music_eq`, `neonaidj_voice_eq`), restored on startup
+- **UI**: Two EQ sections in Options tab (Music EQ and Voice EQ) with horizontal sliders
+- **Files**: `src/components/dj/AudioEngine.jsx` (filter nodes + setMusicEq/setVoiceEq methods), `src/components/dj/DJOptions.jsx` (slider UI), `src/pages/DJBooth.jsx` (passes audioEngineRef to DJOptions)
+
+#### Fix: Club Specials Only During Transitions
+- **Problem**: Club specials (drink deals, dance specials) were being announced during intros and round twos — awkward because the dancer is on stage and not available for private dances yet
+- **Fix**: Club specials now only included in `outro` (calling dancer off stage) and `transition` (gap between dancers) announcement prompts
+- **File**: `src/utils/energyLevels.js` (condition added to clubSpecials block)
+
+#### Fix: Pronunciation Corrections
+- **Yasmine**: Was pronounced "Yaz-mean", now "Yazmen" in PRONUNCIATION_MAP
+- **Mia**: Was pronounced "M.I.A." (spelled out), changed from "Mee-ah" to "Meeyah" for smoother TTS output
+- **File**: `src/components/dj/AnnouncementSystem.jsx`
+
 ### Mar 3, 2026 — Session 15 (Fleet Command Center)
 
 #### Feature: Fleet Command Center Dashboard
@@ -65,6 +87,12 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Endpoints**: `POST /api/monitor/heartbeat`, `GET /api/monitor/status`, `POST /api/monitor/test-telegram`, `POST /api/monitor/command/:deviceId/:action` (relay)
 - **File**: `public/fleet-monitor-standalone.js`
 - **Setup guide**: See "Fleet Monitor Server Setup" section in session-history skill
+
+#### Setup: VNC Remote Desktop Access
+- **Purpose**: See and control the Pi's full desktop remotely from phone or laptop
+- **Enable**: `sudo raspi-config nonint do_vnc 0` then `sudo vncpasswd -service`
+- **Connect**: VNC viewer app (RealVNC Viewer) → Pi's Tailscale IP on port 5900
+- **Added to setup guide**: Step 11
 
 #### Fix: Voiceover Path Standardized to ~/djbooth/voiceovers
 - **Problem**: Voiceovers were saved to `~/Desktop/VOICE OVERS FOR AUTO DJ` — outside the app directory, hard to find, and inconsistent across fleet

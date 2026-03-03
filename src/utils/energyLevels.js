@@ -276,7 +276,7 @@ CRITICAL: Do NOT reference the time of night, shift, energy level, or any intern
 
   if (clubLine) parts.push(clubLine);
 
-  if (clubSpecials && clubSpecials.length > 0) {
+  if (clubSpecials && clubSpecials.length > 0 && (type === 'outro' || type === 'transition')) {
     parts.push(`CLUB SPECIALS (weave naturally into the announcement — do not list mechanically):
 ${clubSpecials.map(s => `- ${s}`).join('\n')}`);
   }
