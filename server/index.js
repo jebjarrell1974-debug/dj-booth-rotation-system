@@ -1027,13 +1027,21 @@ function initMusicScanner() {
 }
 
 async function initR2Sync() {
-  const orphaned = cleanupOrphanedVoiceovers();
-  if (orphaned > 0) {
-    console.log(`🧹 Cleaned up ${orphaned} orphaned voiceover database entries`);
+  const isDeployment = !!(process.env.REPLIT_DEPLOYMENT);
+
+  if (!isDeployment) {
+    const orphaned = cleanupOrphanedVoiceovers();
+    if (orphaned > 0) {
+      console.log(`🧹 Cleaned up ${orphaned} orphaned voiceover database entries`);
+    }
   }
 
-  if (!isR2Configured()) {
-    console.log('ℹ️ R2 not configured — cloud sync disabled');
+  if (!isR2Configured() || isDeployment) {
+    if (isDeployment) {
+      console.log('☁️ Skipping R2 sync in cloud deployment (not needed — Pis sync directly)');
+    } else {
+      console.log('ℹ️ R2 not configured — cloud sync disabled');
+    }
     updateBootStep('voiceoverSync', 'skipped');
     updateBootStep('voiceoverUpload', 'skipped');
     updateBootStep('musicSync', 'skipped');
@@ -1127,4 +1135,4 @@ if (isDirectRun) {
   process.on('SIGINT', gracefulShutdown);
 }
 
-export { app, initMusicScanner, stopPeriodicScan, stopCheckpoints, closeDatabase };
+export { app, initMusicScanner, stopPeriodicScan, stopCheckpoints, closeDatabase, initR2Sync };

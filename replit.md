@@ -29,6 +29,29 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 3, 2026 — Session 14 (Telegram Fix, Genre Dropdown, Voice Tuning)
+
+#### Fix: Fleet Monitor DB Recovery on Startup
+- **Problem**: If the Replit server restarted, all fleet devices were lost from memory. Offline Pis wouldn't trigger Telegram alerts because they weren't tracked
+- **Fix**: `loadDevicesFromDb()` runs at startup before the check interval begins. Loads all known devices from `fleet_devices` table, calculates their status based on last heartbeat timestamp
+- **File**: `server/fleet-monitor.js`
+
+#### UI: Genre Folders Compact Dropdown
+- **Problem**: DJOptions showed every genre folder as a full-width checkbox button, filling the screen on clubs with many folders
+- **Fix**: Replaced with a compact dropdown that opens a scrollable checklist overlay. Shows selected count summary, click-outside to close, All/None quick buttons
+- **File**: `src/components/dj/DJOptions.jsx`
+
+#### Fix: Voice Speed Tuning (Turbo v2.5 Too Fast)
+- **Problem**: ElevenLabs Turbo v2.5 model speaks faster than old models, voiceovers sounded rushed
+- **Fix**: Reduced speed values across all 5 energy levels (L1: 0.82, L2: 0.88, L3: 0.92, L4: 0.90, L5: 0.85). Previously ranged 0.92-1.05
+- **Voiceover date filter**: Bumped `VOICEOVER_VALID_AFTER` to `2026-03-04` so all old cached voiceovers regenerate with new speed settings
+- **Files**: `src/utils/energyLevels.js`, `server/db.js`
+
+#### Feature: Energy-Based Excitement Cues in Prompts
+- **Problem**: Prime time voiceovers sounded same energy as early/late shifts
+- **Fix**: Added `excitement` field to each SHIFT_TYPE with explicit delivery instructions. Prime shift gets "THIS IS THE PEAK — deliver with maximum excitement!" cue. Voice `style` parameter also increased for prime levels (0.50/0.55 vs 0.15/0.25 for early/mid)
+- **Files**: `src/utils/energyLevels.js`
+
 ### Mar 3, 2026 — Session 13 (Voiceover Cleanup + Settings Tab)
 
 #### Feature: Clear All Voiceovers Button

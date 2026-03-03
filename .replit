@@ -47,8 +47,12 @@ externalPort = 3000
 localPort = 5002
 externalPort = 3002
 
+[[ports]]
+localPort = 5050
+externalPort = 3003
+
 [deployment]
-deploymentTarget = "autoscale"
+deploymentTarget = "vm"
 run = ["node", "server/boot.cjs"]
 build = ["npm", "run", "build"]
 publicDir = "dist/public"
