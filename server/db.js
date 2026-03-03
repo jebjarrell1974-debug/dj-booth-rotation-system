@@ -340,6 +340,31 @@ export function deleteVoiceover(cacheKey) {
   }
 }
 
+export function clearAllVoiceovers() {
+  const rows = db.prepare('SELECT file_name FROM voiceovers').all();
+  let deleted = 0;
+  for (const row of rows) {
+    const filePath = join(VOICEOVER_DIR, row.file_name);
+    try { if (existsSync(filePath)) unlinkSync(filePath); } catch (e) {}
+    deleted++;
+  }
+  db.prepare('DELETE FROM voiceovers').run();
+  return deleted;
+}
+
+export function cleanupOrphanedVoiceovers() {
+  const rows = db.prepare('SELECT cache_key, file_name FROM voiceovers').all();
+  let removed = 0;
+  for (const row of rows) {
+    const filePath = join(VOICEOVER_DIR, row.file_name);
+    if (!existsSync(filePath)) {
+      db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(row.cache_key);
+      removed++;
+    }
+  }
+  return removed;
+}
+
 export function upsertMusicTrack(name, path, genre, size, modifiedAt) {
   db.prepare(
     'INSERT INTO music_tracks (name, path, genre, size, modified_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET name=excluded.name, genre=excluded.genre, size=excluded.size, modified_at=excluded.modified_at'

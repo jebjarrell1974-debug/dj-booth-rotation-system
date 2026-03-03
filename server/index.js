@@ -10,6 +10,7 @@ import {
   createSession, getSession, touchSession, deleteSession, cleanExpiredSessions,
   syncSongs, listSongs,
   saveVoiceover, getVoiceover, getVoiceoverFilePath, listVoiceovers, deleteVoiceover,
+  clearAllVoiceovers, cleanupOrphanedVoiceovers,
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
@@ -392,6 +393,12 @@ app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
 app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {
   deleteVoiceover(req.params.cacheKey);
   res.json({ ok: true });
+});
+
+app.delete('/api/voiceovers', authenticate, requireDJ, (req, res) => {
+  const count = clearAllVoiceovers();
+  console.log(`🗑️ Cleared all voiceovers: ${count} removed`);
+  res.json({ ok: true, deleted: count });
 });
 
 app.use('/api/fleet', fleetRoutes);
@@ -1020,6 +1027,11 @@ function initMusicScanner() {
 }
 
 async function initR2Sync() {
+  const orphaned = cleanupOrphanedVoiceovers();
+  if (orphaned > 0) {
+    console.log(`🧹 Cleaned up ${orphaned} orphaned voiceover database entries`);
+  }
+
   if (!isR2Configured()) {
     console.log('ℹ️ R2 not configured — cloud sync disabled');
     updateBootStep('voiceoverSync', 'skipped');

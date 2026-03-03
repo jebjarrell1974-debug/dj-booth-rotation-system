@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { localEntities, localIntegrations } from '@/api/localEntities';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { toast } from 'sonner';
@@ -19,6 +19,7 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => {
 });
 
 export default function Configuration() {
+  const queryClient = useQueryClient();
   const [masterPinInput, setMasterPinInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockError, setUnlockError] = useState('');
@@ -731,6 +732,36 @@ export default function Configuration() {
             {voStats.total === 0 && (
               <div className="mb-4 p-3 rounded-lg bg-[#08081a] border border-[#1e293b]">
                 <p className="text-sm text-gray-400">No voiceovers yet. Generate them by running a rotation or use the pre-cache button below.</p>
+              </div>
+            )}
+
+            {voStats.total > 0 && (
+              <div className="mb-4">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!window.confirm(`Delete all ${voStats.total} voiceovers? They will be regenerated fresh with the current voice engine.`)) return;
+                    try {
+                      const token = sessionStorage.getItem('djbooth_token');
+                      const res = await fetch('/api/voiceovers', {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        toast.success(`Cleared ${data.deleted} voiceovers`);
+                        queryClient.invalidateQueries({ queryKey: ['voiceovers-stats'] });
+                      }
+                    } catch (err) {
+                      toast.error('Failed to clear voiceovers');
+                    }
+                  }}
+                  className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Clear All Voiceovers ({voStats.total})
+                </Button>
+                <p className="text-[10px] text-gray-600 mt-1 text-center">Removes all cached voiceovers. They'll regenerate with the current voice engine.</p>
               </div>
             )}
             

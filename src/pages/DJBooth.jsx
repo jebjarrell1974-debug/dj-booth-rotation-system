@@ -2714,6 +2714,17 @@ export default function DJBooth() {
                 <SlidersHorizontal className="w-4 h-4 mr-1" />
                 Options
               </Button>
+              {!remoteMode && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  <Settings className="w-4 h-4 mr-1" />
+                  Settings
+                </Button>
+              )}
               <Link to={createPageUrl('Help')}>
                 <Button
                   variant="ghost"
@@ -2831,15 +2842,6 @@ export default function DJBooth() {
                     <SlidersHorizontal className="w-5 h-5" />
                   </Button>
                 </Link>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-400 hover:text-white hover:bg-[#151528]"
-                  onClick={() => setSettingsOpen(true)}
-                  title="Settings"
-                >
-                  <Settings className="w-5 h-5" />
-                </Button>
               </>
             )}
             <Button
