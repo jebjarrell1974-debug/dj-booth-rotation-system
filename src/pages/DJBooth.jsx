@@ -121,7 +121,7 @@ export default function DJBooth() {
   const saveRotationRef = useRef(null);
   
   const DUCK_SETTLE_MS = 300;
-  const SONG_OVERLAP_DELAY_MS = 10000;
+  const SONG_OVERLAP_DELAY_MS = 2000;
   const waitForDuck = () => {
     lastAudioActivityRef.current = Date.now();
     return new Promise(r => setTimeout(() => {
@@ -1727,7 +1727,7 @@ export default function DJBooth() {
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
             const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-            await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+            await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
             if (firstBreakTrack?.url) {
               console.log('🎵 HandleSkip: Playing break song during outro:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
@@ -1981,7 +1981,7 @@ export default function DJBooth() {
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           lastAudioActivityRef.current = Date.now();
           const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-          await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
           lastAudioActivityRef.current = Date.now();
           if (nextTrack?.url) {
             const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
@@ -2075,7 +2075,7 @@ export default function DJBooth() {
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-          await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
           if (nextTrack?.url) {
             console.log('🎵 HandleTrackEnd: Switching to next track during announcement:', nextTrack.name);
             const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
@@ -2170,7 +2170,7 @@ export default function DJBooth() {
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
             const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-            await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+            await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
             if (firstBreakTrack?.url) {
               console.log('🎵 Playing break song during outro announcement:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
@@ -2226,7 +2226,7 @@ export default function DJBooth() {
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-          await new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS));
+          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
           if (nextTrack && nextTrack.url) {
             console.log('🎵 HandleTrackEnd: Switching to next dancer during announcement:', nextDancer.name, 'track:', nextTrack.name);
             const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
