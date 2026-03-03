@@ -94,17 +94,18 @@ export default function Landing() {
   const handleDJLogin = useCallback(async (pin) => {
     setError('');
     setLoading(true);
-    manualLoginRef.current = true;
     try {
       const isRemote = mode === 'dj-remote';
       if (isRemote) {
         setBoothIp(boothIpInput || '');
       }
       await login('dj', pin, { remote: isRemote });
+      navigate('/DJBooth');
     } catch (loginErr) {
       if (loginErr.message && (loginErr.message.includes('No DJ PIN') || loginErr.message.includes('not set'))) {
         try {
           await initDjPin(pin);
+          navigate('/DJBooth');
         } catch (initErr) {
           setError(initErr.message || 'Failed to set PIN');
         }
@@ -113,19 +114,19 @@ export default function Landing() {
       }
     }
     setLoading(false);
-  }, [login, initDjPin, mode, boothIpInput]);
+  }, [login, initDjPin, mode, boothIpInput, navigate]);
 
   const handleDancerLogin = useCallback(async (pin) => {
     setError('');
     setLoading(true);
-    manualLoginRef.current = true;
     try {
       await login('dancer', pin);
+      navigate('/DancerView');
     } catch (err) {
       setError(err.message || 'Incorrect PIN');
     }
     setLoading(false);
-  }, [login]);
+  }, [login, navigate]);
 
   return (
     <div className="min-h-screen bg-[#08081a] flex flex-col items-center justify-center p-6">
