@@ -203,7 +203,15 @@ sudo systemctl daemon-reload
 ```
 Note: `FLEET_SERVER_URL` points to the fleet monitor server running on "raspberrypi" (Tailscale IP `100.70.172.8`). This is the always-on Pi that monitors all fleet devices and sends Telegram alerts when a device goes offline. If the fleet monitor moves to a different machine, update this IP.
 
-### Step 8: Create the auto-update service
+### Step 8: Enable remote admin commands (Fleet Command Center)
+Allow the djbooth server to restart its service and reboot the Pi remotely via the Fleet Command Center dashboard. Replace `USERNAME`.
+```bash
+sudo bash -c 'cat > /etc/sudoers.d/djbooth << EOF
+USERNAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart djbooth, /usr/bin/systemctl stop djbooth, /usr/bin/systemctl start djbooth, /usr/sbin/reboot
+EOF'
+```
+
+### Step 9: Create the auto-update service
 Pulls latest code from GitHub on every boot before the app starts. Replace `USERNAME`.
 ```bash
 sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << 'EOF'

@@ -156,7 +156,7 @@ const server = http.createServer(async (req, res) => {
     return jsonResponse(res, 200, { ok: true });
   }
 
-  const cmdMatch = req.url?.match(/^\/api\/monitor\/command\/([^/]+)\/(update|restart|sync)$/);
+  const cmdMatch = req.url?.match(/^\/api\/monitor\/command\/([^/]+)\/(update|restart|reboot|sync)$/);
   if (req.method === 'POST' && cmdMatch) {
     const deviceId = decodeURIComponent(cmdMatch[1]);
     const action = cmdMatch[2];

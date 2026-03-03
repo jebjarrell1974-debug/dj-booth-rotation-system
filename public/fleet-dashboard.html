@@ -241,6 +241,11 @@
       color: #fbbf24;
     }
     .btn.restart:hover { background: rgba(245, 158, 11, 0.15); }
+    .btn.reboot {
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #f87171;
+    }
+    .btn.reboot:hover { background: rgba(239, 68, 68, 0.15); }
     .btn.sync {
       border-color: rgba(168, 85, 247, 0.4);
       color: #c084fc;
@@ -489,6 +494,7 @@
         const cmdKey = d.deviceId;
         const isUpdating = pendingCommands.has(`${cmdKey}-update`);
         const isRestarting = pendingCommands.has(`${cmdKey}-restart`);
+        const isRebooting = pendingCommands.has(`${cmdKey}-reboot`);
         const isSyncing = pendingCommands.has(`${cmdKey}-sync`);
         const isOffline = d.status === 'offline';
 
@@ -544,6 +550,9 @@
               <button class="btn sync" onclick="sendCommand('${esc(d.deviceId)}', 'sync')" ${isSyncing || isOffline ? 'disabled' : ''}>
                 ${isSyncing ? '<span class="spinner"></span>' : '<span>☁</span>'} Sync
               </button>
+              <button class="btn reboot" onclick="sendReboot('${esc(d.deviceId)}')" ${isRebooting || isOffline ? 'disabled' : ''}>
+                ${isRebooting ? '<span class="spinner"></span>' : '<span>⏻</span>'} Reboot
+              </button>
             </div>
           </div>
         `;
@@ -589,7 +598,7 @@
         });
         const data = await res.json();
         if (res.ok) {
-          const labels = { update: 'Update started', restart: 'Restarting...', sync: 'Sync complete' };
+          const labels = { update: 'Update started', restart: 'Restarting...', reboot: 'Rebooting...', sync: 'Sync complete' };
           showToast(`${labels[action] || 'Done'} — ${deviceId}`, 'success');
         } else {
           showToast(data.error || 'Command failed', 'error');
@@ -602,6 +611,13 @@
         pendingCommands.delete(key);
         renderDevices();
       }, action === 'update' ? 5000 : 3000);
+    }
+
+    async function sendReboot(deviceId) {
+      const device = devices.find(d => d.deviceId === deviceId);
+      const name = device ? device.name : deviceId;
+      if (!confirm(`REBOOT the entire Pi "${name}"?\n\nThis will take 1-2 minutes to come back online.`)) return;
+      sendCommand(deviceId, 'reboot');
     }
 
     async function updateAll() {

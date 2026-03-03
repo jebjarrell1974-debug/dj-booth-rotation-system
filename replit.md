@@ -49,7 +49,9 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Endpoints** (all PIN-protected via master PIN):
   - `POST /api/admin/update` — runs `~/djbooth-update.sh` in background
   - `POST /api/admin/restart` — restarts djbooth systemd service
+  - `POST /api/admin/reboot` — full Pi reboot (confirmation prompt on dashboard)
   - `POST /api/admin/sync` — triggers full R2 voiceover sync (download + upload)
+- **Requires sudoers**: `USERNAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart djbooth, /usr/bin/systemctl stop djbooth, /usr/bin/systemctl start djbooth, /usr/sbin/reboot`
 - **File**: `server/index.js`
 
 #### Feature: Standalone Fleet Monitor on "raspberrypi"

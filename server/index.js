@@ -476,6 +476,19 @@ app.post('/api/admin/restart', async (req, res) => {
   }, 500);
 });
 
+app.post('/api/admin/reboot', async (req, res) => {
+  const { pin } = req.body || {};
+  if (!pin || pin !== getMasterPin()) {
+    return res.status(403).json({ error: 'Invalid PIN' });
+  }
+  res.json({ ok: true, message: 'Rebooting...' });
+  setTimeout(async () => {
+    const { spawn } = await import('child_process');
+    const child = spawn('sudo', ['reboot'], { detached: true, stdio: 'ignore' });
+    child.unref();
+  }, 500);
+});
+
 app.post('/api/admin/sync', async (req, res) => {
   const { pin } = req.body || {};
   if (!pin || pin !== getMasterPin()) {
