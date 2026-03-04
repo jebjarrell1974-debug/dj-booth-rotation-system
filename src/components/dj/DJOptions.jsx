@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, Wifi, ChevronDown, MonitorOff } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown } from 'lucide-react';
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -8,7 +8,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [serverIps, setServerIps] = useState([]);
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
   const [clubSpecials, setClubSpecials] = useState('');
   const dropdownRef = useRef(null);
@@ -23,10 +22,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
       .then(data => setGenres(data.genres || []))
       .catch(() => {})
       .finally(() => setLoading(false));
-    fetch('/api/server-info')
-      .then(r => r.json())
-      .then(data => setServerIps(data.ips || []))
-      .catch(() => {});
     const cfg = getApiConfig();
     setClubSpecials(cfg.clubSpecials || '');
   }, []);
@@ -371,45 +366,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
         </div>
       </div>
 
-      {serverIps.length > 0 && (
-        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Wifi className="w-4 h-4 text-[#2563eb]" />
-            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Remote Connection</h3>
-          </div>
-          <p className="text-xs text-gray-500 mb-3">Enter this IP on the iPad to connect as DJ Remote</p>
-          {serverIps.map((ip, i) => (
-            <div key={i} className="flex items-center justify-between py-2 px-3 bg-[#151528] rounded-lg mb-2 last:mb-0">
-              <span className="text-xs text-gray-400">{ip.interface}</span>
-              <span className="text-lg font-mono font-bold text-white">{ip.address}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-[#0d0d1f] rounded-xl border border-red-500/20 p-5">
-        <h3 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">Kiosk Control</h3>
-        <button
-          onClick={async () => {
-            if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
-            try {
-              const token = sessionStorage.getItem('djbooth_token');
-              await fetch('/api/kiosk/exit', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {})
-                }
-              });
-            } catch {}
-          }}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm font-medium"
-        >
-          <MonitorOff className="w-4 h-4" />
-          Exit Kiosk Mode
-        </button>
-        <p className="text-xs text-gray-500 mt-2">Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.</p>
-      </div>
     </div>
   );
 }

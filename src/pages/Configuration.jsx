@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, Trash2 } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, Trash2, MonitorOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { toast } from 'sonner';
@@ -42,6 +42,7 @@ export default function Configuration() {
   const [clubCloseHour, setClubCloseHour] = useState(2);
   const [scriptModel, setScriptModel] = useState('auto');
   const [configReady, setConfigReady] = useState(false);
+  const [serverIps, setServerIps] = useState([]);
   const [musicPath, setMusicPath] = useState('');
   const [musicPathSaved, setMusicPathSaved] = useState('');
   const [musicPathSaving, setMusicPathSaving] = useState(false);
@@ -103,6 +104,11 @@ export default function Configuration() {
     }).then(r => r.ok ? r.json() : null).then(data => {
       if (data?.tracks) setBlockedTracks(data.tracks);
     }).catch(() => {});
+
+    fetch('/api/server-info')
+      .then(r => r.json())
+      .then(data => setServerIps(data.ips || []))
+      .catch(() => {});
   }, [isUnlocked]);
 
   useEffect(() => {
@@ -1326,6 +1332,46 @@ export default function Configuration() {
               R2 error: {r2Status.error}
             </p>
           )}
+        </div>
+
+        {serverIps.length > 0 && (
+          <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Wifi className="w-4 h-4 text-[#2563eb]" />
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Remote Connection</h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Enter this IP on the iPad to connect as DJ Remote</p>
+            {serverIps.map((ip, i) => (
+              <div key={i} className="flex items-center justify-between py-2 px-3 bg-[#151528] rounded-lg mb-2 last:mb-0">
+                <span className="text-xs text-gray-400">{ip.interface}</span>
+                <span className="text-lg font-mono font-bold text-white">{ip.address}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="bg-[#0d0d1f] rounded-xl border border-red-500/20 p-5">
+          <h3 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">Kiosk Control</h3>
+          <button
+            onClick={async () => {
+              if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
+              try {
+                const token = sessionStorage.getItem('djbooth_token');
+                await fetch('/api/kiosk/exit', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                  }
+                });
+              } catch {}
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm font-medium"
+          >
+            <MonitorOff className="w-4 h-4" />
+            Exit Kiosk Mode
+          </button>
+          <p className="text-xs text-gray-500 mt-2">Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.</p>
         </div>
 
         <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5">
