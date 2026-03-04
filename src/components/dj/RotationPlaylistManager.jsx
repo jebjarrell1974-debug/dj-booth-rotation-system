@@ -258,7 +258,7 @@ export default function RotationPlaylistManager({
         limit: TRACKS_PER_PAGE.toString(),
       });
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      if (activeGenre) params.set('genre', activeGenre);
+      if (activeGenre && !debouncedSearch.trim()) params.set('genre', activeGenre);
       const res = await fetch(`/api/music/tracks?${params}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
