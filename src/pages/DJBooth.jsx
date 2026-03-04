@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { localEntities } from '@/api/localEntities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ const DEFAULT_SONGS_PER_SET = 2;
 
 export default function DJBooth() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const audioEngineRef = useRef(null);
   const remoteMode = isRemoteMode();
   
