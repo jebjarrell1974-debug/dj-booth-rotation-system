@@ -48,6 +48,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [controlsTab, setControlsTab] = useState('entertainers');
 
   const [selectedTrack, setSelectedTrack] = useState(null);
+  const [selectedBreakSong, setSelectedBreakSong] = useState(null);
 
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
   const [deactivatePin, setDeactivatePin] = useState('');
@@ -179,6 +180,17 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   };
 
   const handleSelectTrack = (trackName) => {
+    if (selectedBreakSong) {
+      const { breakKey, index } = selectedBreakSong;
+      const updated = { ...interstitialSongs };
+      const arr = [...(updated[breakKey] || [])];
+      arr[index] = trackName;
+      updated[breakKey] = arr;
+      boothApi.sendCommand('updateInterstitialSongs', { interstitialSongs: updated });
+      setSelectedBreakSong(null);
+      setSelectedTrack(null);
+      return;
+    }
     if (selectedTrack === trackName) {
       setSelectedTrack(null);
     } else {
@@ -191,6 +203,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       addSongToDancer(dancerId, selectedTrack);
       setExpandedDancerId(dancerId);
       setSelectedTrack(null);
+      setSelectedBreakSong(null);
     }
   };
 
@@ -548,7 +561,16 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               )}
             </div>
 
-            {selectedTrack && (
+            {selectedBreakSong && (
+              <div className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/30 flex items-center gap-2 flex-shrink-0">
+                <Music className="w-3.5 h-3.5 text-violet-400 flex-shrink-0 animate-pulse" />
+                <span className="text-xs text-violet-400 truncate flex-1">Tap a song to replace break song</span>
+                <button onClick={() => setSelectedBreakSong(null)} className="text-violet-400/60 active:text-violet-400">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {selectedTrack && !selectedBreakSong && (
               <div className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg bg-[#00d4ff]/10 border border-[#00d4ff]/30 flex items-center gap-2 flex-shrink-0">
                 <Check className="w-3.5 h-3.5 text-[#00d4ff] flex-shrink-0" />
                 <span className="text-xs text-[#00d4ff] truncate flex-1">{selectedTrack}</span>
@@ -775,10 +797,30 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                         <div className="ml-10 mt-0.5">
                           {breakSongsList.length > 0 ? (
                             <div className="space-y-0.5">
-                              {breakSongsList.map((songName, bsi) => (
-                                <div key={bsi} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20">
-                                  <Music className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                  <p className="text-[10px] text-violet-400 truncate flex-1">{songName}</p>
+                              {breakSongsList.map((songName, bsi) => {
+                                const isBreakSelected = selectedBreakSong?.breakKey === breakKey && selectedBreakSong?.index === bsi;
+                                return (
+                                <div
+                                  key={bsi}
+                                  onClick={() => {
+                                    if (isBreakSelected) {
+                                      setSelectedBreakSong(null);
+                                    } else {
+                                      setSelectedBreakSong({ breakKey, index: bsi });
+                                      setSelectedTrack(null);
+                                    }
+                                  }}
+                                  className={`flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer transition-colors ${
+                                    isBreakSelected
+                                      ? 'bg-[#00d4ff]/15 border border-[#00d4ff]/40'
+                                      : 'bg-violet-500/10 border border-violet-500/20'
+                                  }`}
+                                >
+                                  <Music className={`w-3 h-3 flex-shrink-0 ${isBreakSelected ? 'text-[#00d4ff]' : 'text-violet-400'}`} />
+                                  <p className={`text-[10px] truncate flex-1 ${isBreakSelected ? 'text-[#00d4ff]' : 'text-violet-400'}`}>{songName}</p>
+                                  {isBreakSelected && (
+                                    <span className="text-[9px] text-[#00d4ff] animate-pulse flex-shrink-0">tap song to swap</span>
+                                  )}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -787,13 +829,15 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                                       arr.splice(bsi, 1);
                                       if (arr.length === 0) { delete updated[breakKey]; } else { updated[breakKey] = arr; }
                                       boothApi.sendCommand('updateInterstitialSongs', { interstitialSongs: updated });
+                                      if (isBreakSelected) setSelectedBreakSong(null);
                                     }}
                                     className="p-0.5 text-violet-400/40 active:text-red-400 flex-shrink-0"
                                   >
                                     <X className="w-3 h-3" />
                                   </button>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           ) : null}
                           {selectedTrack && (
