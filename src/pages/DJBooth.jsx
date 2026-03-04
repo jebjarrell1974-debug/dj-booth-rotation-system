@@ -3089,7 +3089,7 @@ export default function DJBooth() {
             )}
             
             {!remoteMode && activeTab === 'announcements' && (
-              <div className="h-full flex flex-col gap-6">
+              <div className="h-full flex flex-col gap-6 overflow-auto">
                 <AnnouncementSystem
                   dancers={dancers}
                   rotation={rotation}

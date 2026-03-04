@@ -16,7 +16,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const [beatMatchEnabled, setBeatMatchEnabled] = useState(() => localStorage.getItem('neonaidj_beat_match') === 'true');
   const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
   const [commercialDropdownOpen, setCommercialDropdownOpen] = useState(false);
-  const [commercialBrief, setCommercialBrief] = useState(() => localStorage.getItem('neonaidj_commercial_brief') || '');
   const commercialRef = useRef(null);
 
   const activeGenres = djOptions?.activeGenres || [];
@@ -195,20 +194,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
               ? 'A promo plays between every other entertainer set.'
               : 'A promo plays between every third entertainer set.'}
           </p>
-          <div className="mt-4 pt-4 border-t border-[#1e293b]">
-            <label className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-2 block">Event Brief</label>
-            <textarea
-              value={commercialBrief}
-              onChange={(e) => {
-                setCommercialBrief(e.target.value);
-                localStorage.setItem('neonaidj_commercial_brief', e.target.value);
-              }}
-              placeholder={"Ladies Night - Friday March 21st\nDoors at 9pm - No cover before 10\n$5 cocktails all night\nDJ Blaze spinning the hottest hits\nVIP sections available"}
-              rows={4}
-              className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-lg px-3 py-2 resize-none placeholder-gray-600 focus:outline-none focus:border-[#00d4ff]/50"
-            />
-            <p className="text-xs text-gray-600 mt-1">Event name, date, time, specials, details — used to generate promos in the Announcements tab</p>
-          </div>
         </div>
 
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
