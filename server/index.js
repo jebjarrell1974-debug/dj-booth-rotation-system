@@ -1128,13 +1128,14 @@ if (isProduction) {
   app.get('/download', (req, res) => {
     res.sendFile(join(distPath, 'download.html'));
   });
-  app.get('/{*splat}', (req, res) => {
-    res.set('Cache-Control', 'no-cache');
-    if (existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(200).send('OK');
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.url.startsWith('/api/')) {
+      res.set('Cache-Control', 'no-cache');
+      if (existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+      }
     }
+    next();
   });
 }
 
