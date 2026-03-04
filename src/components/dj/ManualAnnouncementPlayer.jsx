@@ -47,10 +47,38 @@ function PromoCreator({ onPlay, onSaved }) {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewBlob, setPreviewBlob] = useState(null);
 
+  const applyBrief = useCallback(() => {
+    const brief = localStorage.getItem('neonaidj_commercial_brief') || '';
+    if (!brief) return false;
+    const lines = brief.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return false;
+    const firstLine = lines[0];
+    const separatorMatch = firstLine.match(/^(.+?)\s*[-–]\s*(.+)$/);
+    if (separatorMatch) {
+      setEventName(separatorMatch[1].trim());
+      setEventDate(separatorMatch[2].trim());
+    } else {
+      setEventName(firstLine);
+    }
+    const remaining = lines.slice(1);
+    const timePatterns = /^(doors|starts?|show|open|begins?)\s*(at\s*)?\d/i;
+    const timeLine = remaining.find(l => timePatterns.test(l) || /^\d{1,2}\s*(am|pm|:\d{2})/i.test(l));
+    if (timeLine) {
+      setEventTime(timeLine);
+      setDetails(remaining.filter(l => l !== timeLine).join('\n'));
+    } else {
+      setDetails(remaining.join('\n'));
+    }
+    return true;
+  }, []);
+
   useEffect(() => {
     const config = getApiConfig();
     if (config.clubName && !venue) {
       setVenue(config.clubName);
+    }
+    if (!eventName && !details) {
+      applyBrief();
     }
   }, []);
 
@@ -287,7 +315,18 @@ function PromoCreator({ onPlay, onSaved }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="text-xs text-gray-500 mb-1 block">Event Name</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs text-gray-500">Event Name</label>
+            {localStorage.getItem('neonaidj_commercial_brief') && (
+              <button
+                onClick={() => applyBrief()}
+                disabled={generating}
+                className="text-[10px] text-[#00d4ff] hover:underline"
+              >
+                Load from Brief
+              </button>
+            )}
+          </div>
           <Input
             placeholder="Ladies Night, Fight Night, etc."
             value={eventName}
