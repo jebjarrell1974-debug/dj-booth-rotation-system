@@ -816,7 +816,7 @@ export default function DJBooth() {
     broadcast();
     const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState]);
 
   useEffect(() => {
     if (!activeStage) return;

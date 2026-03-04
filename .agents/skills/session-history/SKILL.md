@@ -452,6 +452,56 @@ Should show "Fleet Monitor Started" with port 3001 and Telegram active.
 
 ---
 
+## Session 21 — Mar 4, 2026
+
+### Feature: Remote Break Songs & Commercial Markers
+- Remote tablet (RemoteView.jsx) now shows interactive break song slots between entertainers in the rotation list
+- Each break song shows individually with music icon + X to remove
+- When a track is selected from music list, dashed "Add as break song" button appears between entertainers
+- Commercial break markers (amber) appear based on commercial frequency with X to skip
+- Skipped commercials synced to Pi via `skipCommercial` command; Pi broadcasts skipped list back in live state
+- New commands: `updateInterstitialSongs`, `skipCommercial`
+- `commercialFreq` and `skippedCommercials` now broadcast in live booth state
+
+### Feature: Commercial Shuffle Rotation
+- Replaced random promo selection with Fisher-Yates shuffle — all promos play before any repeats
+- `promoShuffleRef` tracks queue; reshuffles when empty or promo list changes
+- File: `src/pages/DJBooth.jsx`
+
+### Feature: Deactivate Song on Remote Tablet
+- Red "Deactivate Song" button in left controls column of RemoteView (below Voice Volume)
+- PIN entry modal with numpad; on 5th digit sends `deactivateTrack` command with PIN + track name
+- DJBooth verifies PIN via `/api/auth/login`, uses returned token for `/api/music/block`, then skips
+- Shows "Deactivate Sent" confirmation for 1.5s before auto-closing
+- New command: `deactivateTrack`
+
+### Fix: Club Name "the" Prefix in Announcements
+- Added CLUB NAME USAGE RULE to prompt — treats club name as proper noun, never prefix with "the"
+- Rule placed right after SYSTEM_PROMPT (2nd position) for maximum AI compliance
+- Suggests compound phrases: "Pony Nation", "Pony family", "here at Pony"
+- File: `src/utils/energyLevels.js`
+
+### Fix: Commercial Music Bed Volume Fluctuation
+- `detectVoiceActivity()` was splitting speech into tiny regions, causing rapid duck/unduck cycles
+- Added region merging with 0.8s gap — adjacent regions merge into one continuous duck
+- Fixed duck timing to avoid conflicts with initial music fade-in
+- Existing promos keep old audio; regenerate for fix to apply
+- File: `src/utils/audioMixer.js`
+
+### Fix: Voice Shouting Name on Final Mention
+- Added DELIVERY RULE to intro prompt — final name mention smooth/confident, not shouted
+- No exclamation marks on final name mention
+- Examples updated: "Coming to the stage, the one and only ${name}."
+- File: `src/utils/energyLevels.js`
+
+### Fix: VIP Spelled Out as Letters
+- All-caps name fix was converting VIP→Vip, read as word by TTS
+- Added `SPELL_OUT` exception set: VIP, DJ, MC, ATM, ID, etc.
+- These convert to "V.I.P.", "D.J." with dots so TTS reads as individual letters
+- File: `src/components/dj/AnnouncementSystem.jsx`
+
+---
+
 ## User Preferences & Style
 - Nightclub dark theme: neon cyan (#00d4ff), blue secondary (#2563eb)
 - Deep navy-black backgrounds (#08081a, #0d0d1f), blue-tinged borders (#1e293b)
@@ -479,6 +529,10 @@ Should show "Fleet Monitor Started" with port 3001 and Telegram active.
 | `src/pages/Configuration.jsx` | Venue configuration page |
 | `src/components/dj/RemoteView.jsx` | iPad-optimized remote control view (landscape, touch-friendly) |
 | `src/components/dj/DJOptions.jsx` | DJ Options panel — music mode + genre/folder selection |
+| `src/components/dj/AnnouncementSystem.jsx` | Voice announcement generation (ElevenLabs TTS, pronunciation map, caching) |
+| `src/utils/energyLevels.js` | Announcement prompts, energy levels, shift types, club name rules |
+| `src/utils/promoGenerator.js` | AI promo script generation (OpenAI/Replit LLM) |
+| `src/utils/audioMixer.js` | OfflineAudioContext mixing for promo voice+music, WAV encoding |
 | `src/api/serverApi.js` | Client-side API wrapper |
 | `public/djbooth-update-github.sh` | Pi update script (GitHub-based) |
 | `replit.md` | Project documentation (always loaded into agent memory) |
