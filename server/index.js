@@ -585,6 +585,9 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     trackDuration: state.trackDuration || 0,
     trackTimeAt: state.trackTimeAt || 0,
     breakSongsPerSet: state.breakSongsPerSet || 0,
+    interstitialSongs: state.interstitialSongs || {},
+    commercialFreq: state.commercialFreq || 'off',
+    skippedCommercials: state.skippedCommercials || [],
     updatedAt: Date.now(),
   };
   broadcastSSE('boothState', { state: liveBoothState });
