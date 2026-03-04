@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, ChevronDown, Music } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown, Music, MonitorOff } from 'lucide-react';
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -389,6 +389,29 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
             Reset to flat
           </button>
         </div>
+      </div>
+
+      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+        <button
+          onClick={async () => {
+            if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
+            try {
+              const token = sessionStorage.getItem('djbooth_token');
+              await fetch('/api/kiosk/exit', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {})
+                }
+              });
+            } catch {}
+          }}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm font-medium"
+        >
+          <MonitorOff className="w-4 h-4" />
+          Exit Kiosk Mode
+        </button>
+        <p className="text-xs text-gray-500 mt-2 text-center">Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.</p>
       </div>
 
     </div>
