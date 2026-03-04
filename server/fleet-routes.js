@@ -12,6 +12,7 @@ import {
   listUpdates, deleteUpdate, clearErrorLogs
 } from './fleet-db.js';
 import { getSession } from './db.js';
+import { getFleetStatus } from './fleet-monitor.js';
 
 const router = express.Router();
 
@@ -281,6 +282,12 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
   const devices = listDevices();
   const voiceovers = listVoiceovers();
 
+  const fleetStatus = getFleetStatus();
+  const costMap = {};
+  for (const dev of fleetStatus) {
+    if (dev.apiCosts) costMap[dev.deviceId] = dev.apiCosts;
+  }
+
   const uniqueDancers = [...new Set(voiceovers.map(v => v.dancer_name))];
 
   const overview = {
@@ -291,7 +298,8 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
     uniqueDancers: uniqueDancers.length,
     devices: devices.map(({ api_key, ...d }) => ({
       ...d,
-      timeSinceHeartbeat: d.last_heartbeat ? Date.now() - d.last_heartbeat : null
+      timeSinceHeartbeat: d.last_heartbeat ? Date.now() - d.last_heartbeat : null,
+      apiCosts: costMap[d.device_id] || null
     }))
   };
 

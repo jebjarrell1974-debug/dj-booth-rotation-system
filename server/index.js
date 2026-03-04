@@ -1242,11 +1242,29 @@ if (isDirectRun) {
     updateBootStep('server', 'done', `Port ${PORT}`);
     initMusicScanner();
     startMonitoring();
-    startHeartbeat(() => ({
-      trackCount: getMusicTrackCount(),
-      clubName: getSetting('club_name') || '',
-      version: getSetting('app_version') || '',
-    }));
+    startHeartbeat(() => {
+      let apiCosts = { total: 0, elevenlabs: 0, openai: 0, calls: 0 };
+      try {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+        const rows = getApiUsageByDevice({ startDate: thirtyDaysAgo });
+        if (rows && rows.length > 0) {
+          const row = rows[0];
+          apiCosts = {
+            total: row.total_cost || 0,
+            elevenlabs: row.elevenlabs_cost || 0,
+            openai: row.openai_cost || 0,
+            calls: row.total_calls || 0,
+            characters: row.total_characters || 0,
+          };
+        }
+      } catch {}
+      return {
+        trackCount: getMusicTrackCount(),
+        clubName: getSetting('club_name') || '',
+        version: getSetting('app_version') || '',
+        apiCosts,
+      };
+    });
     initR2Sync().catch(err => {
       console.error('☁️ R2 init error:', err.message);
       bootStatus.ready = true;

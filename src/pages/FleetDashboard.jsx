@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronRight, Copy, Check, History,
   Upload, Package, Search, Filter, XCircle, 
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
-  AlertCircle, Info
+  AlertCircle, Info, DollarSign
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -117,23 +117,47 @@ function DeviceDetailModal({ device, onClose }) {
         </div>
 
         {latestHb && (
-          <div className="p-4 border-b border-[#1e293b] grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="text-center">
-              <p className="text-xs text-gray-500">CPU</p>
-              <p className="text-lg font-bold text-white">{Math.round(latestHb.cpu_percent || 0)}%</p>
+          <div className="p-4 border-b border-[#1e293b]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="text-center">
+                <p className="text-xs text-gray-500">CPU</p>
+                <p className="text-lg font-bold text-white">{Math.round(latestHb.cpu_percent || 0)}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Memory</p>
+                <p className="text-lg font-bold text-white">{Math.round(latestHb.memory_percent || 0)}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Disk</p>
+                <p className="text-lg font-bold text-white">{Math.round(latestHb.disk_percent || 0)}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Uptime</p>
+                <p className="text-lg font-bold text-white">{latestHb.uptime_seconds ? `${Math.floor(latestHb.uptime_seconds / 3600)}h` : '-'}</p>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Memory</p>
-              <p className="text-lg font-bold text-white">{Math.round(latestHb.memory_percent || 0)}%</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Disk</p>
-              <p className="text-lg font-bold text-white">{Math.round(latestHb.disk_percent || 0)}%</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Uptime</p>
-              <p className="text-lg font-bold text-white">{latestHb.uptime_seconds ? `${Math.floor(latestHb.uptime_seconds / 3600)}h` : '-'}</p>
-            </div>
+            {device.apiCosts && (
+              <div className="mt-3 bg-[#08081a] rounded-lg p-3 border border-[#1e293b]">
+                <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                  <DollarSign className="w-3 h-3" /> API Costs (30 Day)
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 uppercase">Total</p>
+                    <p className="text-sm font-bold text-emerald-400">${device.apiCosts.total?.toFixed(2)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 uppercase">ElevenLabs</p>
+                    <p className="text-sm font-bold text-purple-400">${device.apiCosts.elevenlabs?.toFixed(2)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 uppercase">OpenAI</p>
+                    <p className="text-sm font-bold text-blue-400">${device.apiCosts.openai?.toFixed(2)}</p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-600 text-center mt-1">{device.apiCosts.calls || 0} API calls</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -222,6 +246,11 @@ function DeviceCard({ device, onDelete, onViewDetail }) {
         <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatTimeAgo(device.last_heartbeat)}</span>
         <span>v{device.app_version}</span>
         <span>Sync: {device.sync_hour}:{String(device.sync_minute).padStart(2, '0')}</span>
+        {device.apiCosts && (
+          <span className="flex items-center gap-1 text-emerald-400">
+            <DollarSign className="w-3 h-3" /> ${device.apiCosts.total?.toFixed(2)} (30d)
+          </span>
+        )}
       </div>
       {isStale && !isOnline && (
         <div className="mt-2 text-xs text-red-400 flex items-center gap-1">
@@ -703,7 +732,7 @@ export default function FleetDashboard() {
         )}
 
         {overview && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-white">{overview.totalDevices}</p>
               <p className="text-xs text-gray-500">Total Devices</p>
@@ -714,11 +743,17 @@ export default function FleetDashboard() {
             </div>
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-[#00d4ff]">{overview.uniqueDancers}</p>
-              <p className="text-xs text-gray-500">Dancers</p>
+              <p className="text-xs text-gray-500">Entertainers</p>
             </div>
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-purple-400">{overview.totalVoiceovers}</p>
               <p className="text-xs text-gray-500">Voiceovers</p>
+            </div>
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-400">
+                ${(overview.devices || []).reduce((sum, d) => sum + (d.apiCosts?.total || 0), 0).toFixed(2)}
+              </p>
+              <p className="text-xs text-gray-500">Fleet API Costs (30d)</p>
             </div>
           </div>
         )}

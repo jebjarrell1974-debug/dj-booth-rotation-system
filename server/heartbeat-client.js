@@ -88,6 +88,7 @@ async function sendHeartbeat(extraData = {}) {
     currentSong: extraData.currentSong || null,
     version: extraData.version || null,
     lastError: extraData.lastError || null,
+    apiCosts: extraData.apiCosts || null,
   };
 
   try {

@@ -38,6 +38,20 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 4, 2026 — Session 23 (Fleet Dashboard API Costs)
+
+#### Feature: Per-Unit API Costs in Fleet Dashboard
+- **Purpose**: Show 30-day API costs per Pi unit in the fleet dashboard (homebase), alongside CPU/memory/disk health
+- **How it works**:
+  1. Each Pi's heartbeat payload now includes `apiCosts: { total, elevenlabs, openai, calls, characters }` — queried from the local `api_usage` table (last 30 days)
+  2. Fleet monitor stores `apiCosts` in the in-memory device map
+  3. Dashboard overview endpoint merges cost data from in-memory fleet status onto DB device records
+  4. Fleet-wide API cost total shown in the overview stats bar (5th stat card, emerald green)
+  5. Per-device cost shown inline on DeviceCard (green dollar amount with "30d" label)
+  6. Expanded cost breakdown in DeviceDetailModal: Total / ElevenLabs / OpenAI + call count
+- **Note**: Costs are in-memory only — after fleet server restart, cost data clears until each Pi sends its next heartbeat (every 5 minutes)
+- **Files modified**: `server/index.js` (heartbeat callback), `server/heartbeat-client.js` (payload field), `server/fleet-monitor.js` (in-memory storage + export), `server/fleet-routes.js` (overview merge), `src/pages/FleetDashboard.jsx` (DeviceCard, DeviceDetailModal, overview stats)
+
 ### Mar 4, 2026 — Session 22 (Rotation Playlist Dropdown, Enhanced Boot Screen, API Cost Tracking)
 
 #### Feature: Entertainer Playlist Dropdown in RotationPlaylistManager

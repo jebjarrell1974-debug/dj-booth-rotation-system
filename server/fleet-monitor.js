@@ -100,6 +100,7 @@ function registerHeartbeat(deviceId, data) {
     lastHeartbeat: now,
     status: 'online',
     lastError: data.lastError || null,
+    apiCosts: data.apiCosts || null,
   });
 
   ensureDeviceInDb(deviceId, data);
@@ -226,4 +227,4 @@ function setupFleetMonitorRoutes(app) {
   });
 }
 
-export { setupFleetMonitorRoutes, startMonitoring, stopMonitoring, sendTelegram, isTelegramConfigured };
+export { setupFleetMonitorRoutes, startMonitoring, stopMonitoring, sendTelegram, isTelegramConfigured, getFleetStatus };
