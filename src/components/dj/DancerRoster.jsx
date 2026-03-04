@@ -30,6 +30,7 @@ export default function DancerRoster({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newDancerName, setNewDancerName] = useState('');
   const [newDancerPin, setNewDancerPin] = useState('');
+  const [newDancerPhonetic, setNewDancerPhonetic] = useState('');
   const [addError, setAddError] = useState('');
   const [editingDancer, setEditingDancer] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -74,12 +75,14 @@ export default function DancerRoster({
           name: newDancerName.trim(), 
           color, 
           pin: newDancerPin,
+          phonetic_name: newDancerPhonetic.trim(),
           playlist: [], 
           is_active: true 
         });
         await new Promise(resolve => setTimeout(resolve, 300));
         setNewDancerName('');
         setNewDancerPin('');
+        setNewDancerPhonetic('');
         setIsAddOpen(false);
       } catch (error) {
         console.error('Failed to add dancer:', error);
@@ -92,7 +95,7 @@ export default function DancerRoster({
 
   const handleEdit = () => {
     if (editingDancer && editingDancer.name.trim()) {
-      onEditDancer(editingDancer.id, { name: editingDancer.name });
+      onEditDancer(editingDancer.id, { name: editingDancer.name, phonetic_name: editingDancer.phonetic_name || '' });
       setEditingDancer(null);
     }
   };
@@ -128,6 +131,15 @@ export default function DancerRoster({
                 className="bg-[#0d0d1f] border-[#1e293b]"
                 autoFocus
               />
+              <div>
+                <Input
+                  value={newDancerPhonetic}
+                  onChange={(e) => setNewDancerPhonetic(e.target.value)}
+                  placeholder="Pronunciation (e.g. Jee-Jee for GIGI)"
+                  className="bg-[#0d0d1f] border-[#1e293b]"
+                />
+                <p className="text-xs text-gray-500 mt-1">How the DJ voice should say the name — leave blank if it sounds fine</p>
+              </div>
               <div>
                 <Input
                   value={newDancerPin}
@@ -248,6 +260,15 @@ export default function DancerRoster({
                         placeholder="Stage name..."
                         className="bg-[#0d0d1f] border-[#1e293b]"
                       />
+                      <div>
+                        <Input
+                          value={editingDancer?.phonetic_name || ''}
+                          onChange={(e) => setEditingDancer(prev => ({ ...prev, phonetic_name: e.target.value }))}
+                          placeholder="Pronunciation (e.g. Jee-Jee for GIGI)"
+                          className="bg-[#0d0d1f] border-[#1e293b]"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">How the DJ voice should say the name — leave blank if it sounds fine</p>
+                      </div>
                       <Button onClick={handleEdit} className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
                         Save Changes
                       </Button>

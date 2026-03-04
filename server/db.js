@@ -72,6 +72,7 @@ db.exec(`
     pin_hash TEXT NOT NULL,
     playlist TEXT DEFAULT '[]',
     is_active INTEGER DEFAULT 1,
+    phonetic_name TEXT DEFAULT '',
     created_date TEXT DEFAULT (datetime('now'))
   );
 
@@ -144,6 +145,12 @@ try {
 } catch {
   db.exec("ALTER TABLE voiceovers ADD COLUMN club_name TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_voiceovers_club_name ON voiceovers(club_name)");
+}
+
+try {
+  db.prepare("SELECT phonetic_name FROM dancers LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE dancers ADD COLUMN phonetic_name TEXT DEFAULT ''");
 }
 
 function getVoiceoverDir() {
@@ -247,6 +254,9 @@ export function updateDancer(id, data) {
   }
   if (data.pin !== undefined) {
     db.prepare('UPDATE dancers SET pin_hash = ? WHERE id = ?').run(hashPin(data.pin), id);
+  }
+  if (data.phonetic_name !== undefined) {
+    db.prepare('UPDATE dancers SET phonetic_name = ? WHERE id = ?').run(data.phonetic_name, id);
   }
   return getDancer(id);
 }

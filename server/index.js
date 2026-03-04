@@ -295,11 +295,14 @@ app.get('/api/dancers', (req, res) => {
 });
 
 app.post('/api/dancers', authenticate, requireDJ, (req, res) => {
-  const { name, color, pin } = req.body;
+  const { name, color, pin, phonetic_name } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (!pin || pin.length !== 5) return res.status(400).json({ error: '5-digit PIN required' });
   try {
-    const dancer = createDancer(name, color, pin);
+    let dancer = createDancer(name, color, pin);
+    if (phonetic_name) {
+      dancer = updateDancer(dancer.id, { phonetic_name });
+    }
     const { pin_hash, ...safe } = dancer;
     res.json(safe);
   } catch (err) {

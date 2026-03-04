@@ -203,32 +203,38 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
     const voiceSettings = VOICE_SETTINGS[energyLevel] || VOICE_SETTINGS[3];
 
-    const PRONUNCIATION_MAP = {
+    const pronunciationMap = {};
+    if (dancers && dancers.length > 0) {
+      for (const d of dancers) {
+        if (d.phonetic_name && d.phonetic_name.trim()) {
+          pronunciationMap[d.name] = d.phonetic_name.trim();
+          pronunciationMap[d.name + "'s"] = d.phonetic_name.trim() + "'s";
+        }
+      }
+    }
+    const FALLBACK_MAP = {
       'Mia': 'Meeyah',
-      'Mia\'s': 'Meeyah\'s',
       'Chaunte': 'Shawn-tay',
-      'Chaunte\'s': 'Shawn-tay\'s',
       'Charisse': 'Sha-reese',
-      'Charisse\'s': 'Sha-reese\'s',
       'Tatianna': 'Tah-tee-ah-nah',
-      'Tatianna\'s': 'Tah-tee-ah-nah\'s',
       'Nadia': 'Nah-dee-ah',
-      'Nadia\'s': 'Nah-dee-ah\'s',
       'Yasmine': 'Yazmen',
-      'Yasmine\'s': 'Yazmen\'s',
       'Mimi': 'Mee-Mee',
-      'Mimi\'s': 'Mee-Mee\'s',
       'Ava': 'Ay-vuh',
-      'Ava\'s': 'Ay-vuh\'s',
       'Gigi': 'Jee-Jee',
-      'Gigi\'s': 'Jee-Jee\'s',
     };
+    for (const [name, phonetic] of Object.entries(FALLBACK_MAP)) {
+      if (!pronunciationMap[name]) {
+        pronunciationMap[name] = phonetic;
+        pronunciationMap[name + "'s"] = phonetic + "'s";
+      }
+    }
     let ttsText = script.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
       const base = match.replace(/'[Ss]$/, '');
       const suffix = match.slice(base.length);
       return base.charAt(0) + base.slice(1).toLowerCase() + suffix;
     });
-    for (const [name, phonetic] of Object.entries(PRONUNCIATION_MAP)) {
+    for (const [name, phonetic] of Object.entries(pronunciationMap)) {
       ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'gi'), phonetic);
     }
 
