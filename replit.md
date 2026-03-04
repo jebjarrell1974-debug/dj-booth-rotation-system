@@ -29,6 +29,37 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 4, 2026 — Session 21 (Remote Deactivate, Club Name Fix, Commercial Audio Fix, Voice Delivery Fix)
+
+#### Feature: Deactivate Song on Remote Tablet
+- **Purpose**: Allow DJ to block/ban a song from the iPad remote during playback, removing it from future rotation
+- **How it works**:
+  1. Red "Deactivate Song" button in left controls column of RemoteView (below Voice Volume)
+  2. Tapping opens a PIN entry modal with numpad — DJ enters their 5-digit PIN
+  3. On 5th digit, sends `deactivateTrack` command via `boothApi.sendCommand` with PIN + track name
+  4. DJBooth receives command, verifies PIN via `POST /api/auth/login`, uses returned token for `POST /api/music/block`, then skips
+  5. Modal shows "Deactivate Sent" confirmation for 1.5s before auto-closing
+  6. Button disabled when no track is playing
+- **Files**: `src/pages/DJBooth.jsx` (deactivateTrack command handler), `src/components/dj/RemoteView.jsx` (button + PIN modal UI)
+
+#### Fix: Club Name "the" Prefix in Announcements
+- **Problem**: AI was generating "the Pony" in contexts where just "Pony" sounds natural (e.g., "here at the Pony" instead of "here at Pony", "the Pony's finest" instead of "Pony Nation")
+- **Fix**: Added explicit CLUB NAME USAGE RULE in the announcement prompt — tells AI to treat club name as proper noun, never prefix with "the", and suggests compound phrases like "Pony Nation", "Pony family", "here at Pony"
+- **Priority**: Rule placed right after SYSTEM_PROMPT (2nd position) for maximum AI compliance
+- **File**: `src/utils/energyLevels.js`
+
+#### Fix: Commercial Music Bed Volume Fluctuation
+- **Problem**: During promo/commercial playback, the background music bed underneath the voice was rapidly fluctuating up and down — a disturbing "pumping" effect
+- **Root cause**: `detectVoiceActivity()` in audioMixer.js was splitting speech into many tiny regions (every syllable pause). Each region triggered a separate duck→unduck→duck cycle on the music gain
+- **Fix**: Added region merging with 0.8s gap threshold — voice regions separated by less than 0.8 seconds are merged into one continuous region, so the music stays smoothly ducked during continuous speech. Also fixed duck timing to avoid conflicts with the initial music fade-in
+- **Note**: Existing saved promos keep old audio; regenerate them for the fix to apply
+- **File**: `src/utils/audioMixer.js`
+
+#### Fix: Voice Shouting Entertainer Name on Final Mention
+- **Problem**: ElevenLabs was yelling the entertainer's name on the third/final mention in intros, especially noticeable with names like "Gigi"
+- **Fix**: Added DELIVERY RULE to intro prompt — final name mention should be "smooth, cool, and confident — NOT shouted." No exclamation marks on final name. Examples updated to model smooth endings like "Coming to the stage, the one and only ${name}."
+- **File**: `src/utils/energyLevels.js`
+
 ### Mar 4, 2026 — Session 20 (Promo Creator, Commercial Scheduling, Music Search Fix, Pronunciation Fix)
 
 #### Feature: AI Promo Creator

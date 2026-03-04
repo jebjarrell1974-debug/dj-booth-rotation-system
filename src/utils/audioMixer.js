@@ -3,11 +3,11 @@ async function decodeAudio(audioContext, blob) {
   return audioContext.decodeAudioData(arrayBuffer);
 }
 
-function detectVoiceActivity(audioBuffer, threshold = 0.02) {
+function detectVoiceActivity(audioBuffer, threshold = 0.02, mergeGap = 0.8) {
   const data = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
   const blockSize = Math.floor(sampleRate * 0.05);
-  const regions = [];
+  const rawRegions = [];
   let inVoice = false;
   let start = 0;
 
@@ -24,13 +24,24 @@ function detectVoiceActivity(audioBuffer, threshold = 0.02) {
       start = i / sampleRate;
     } else if (avg <= threshold && inVoice) {
       inVoice = false;
-      regions.push({ start, end: i / sampleRate });
+      rawRegions.push({ start, end: i / sampleRate });
     }
   }
   if (inVoice) {
-    regions.push({ start, end: audioBuffer.duration });
+    rawRegions.push({ start, end: audioBuffer.duration });
   }
-  return regions;
+
+  if (rawRegions.length <= 1) return rawRegions;
+  const merged = [rawRegions[0]];
+  for (let i = 1; i < rawRegions.length; i++) {
+    const prev = merged[merged.length - 1];
+    if (rawRegions[i].start - prev.end <= mergeGap) {
+      prev.end = rawRegions[i].end;
+    } else {
+      merged.push(rawRegions[i]);
+    }
+  }
+  return merged;
 }
 
 function encodeWav(audioBuffer) {
@@ -114,12 +125,10 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
 
   const voiceRegions = detectVoiceActivity(voiceBuffer);
   for (const region of voiceRegions) {
-    const duckStart = voiceDelay + region.start - 0.1;
+    const duckStart = Math.max(fadeInDuration, voiceDelay + region.start - 0.1);
     const duckEnd = voiceDelay + region.end + 0.2;
-    if (duckStart > fadeInDuration) {
-      musicGain.gain.setValueAtTime(musicVolume, Math.max(0, duckStart - duckAttack));
-    }
-    musicGain.gain.linearRampToValueAtTime(duckLevel, Math.max(0, duckStart));
+    musicGain.gain.setValueAtTime(musicVolume, Math.max(0, duckStart - duckAttack));
+    musicGain.gain.linearRampToValueAtTime(duckLevel, duckStart);
     musicGain.gain.setValueAtTime(duckLevel, duckEnd);
     musicGain.gain.linearRampToValueAtTime(musicVolume, duckEnd + duckRelease);
   }

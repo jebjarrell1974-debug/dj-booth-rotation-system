@@ -78,11 +78,25 @@ export default function Landing() {
   const [mode, setMode] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [boothIpInput, setBoothIpInput] = useState(getBoothIp());
+  const [boothIpInput, setBoothIpInput] = useState(() => {
+    const saved = getBoothIp();
+    if (saved) return saved;
+    if (typeof window !== 'undefined' && window.location.hostname && 
+        window.location.hostname !== 'localhost' && 
+        window.location.hostname !== '127.0.0.1') {
+      return window.location.hostname;
+    }
+    return '';
+  });
   const { login, initDjPin, isAuthenticated, role, dancerSession } = useAuth();
   const navigate = useNavigate();
 
   const manualLoginRef = React.useRef(false);
+  const isLocalDevice = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '::1'
+  );
 
   useEffect(() => {
     if (isAuthenticated && manualLoginRef.current) {
@@ -145,17 +159,23 @@ export default function Landing() {
             </div>
 
             <div className="flex flex-col gap-4 w-full">
-              <Button
-                onClick={() => setMode('dj')}
-                className="h-16 text-lg font-semibold bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black"
-              >
-                <Music2 className="w-5 h-5 mr-3" />
-                NEON AI DJ
-              </Button>
+              {isLocalDevice && (
+                <Button
+                  onClick={() => setMode('dj')}
+                  className="h-16 text-lg font-semibold bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black"
+                >
+                  <Music2 className="w-5 h-5 mr-3" />
+                  NEON AI DJ
+                </Button>
+              )}
               <Button
                 onClick={() => setMode('dj-remote')}
                 variant="outline"
-                className="h-16 text-lg font-semibold border-[#2563eb] bg-[#2563eb]/10 text-[#00d4ff] hover:bg-[#2563eb]/20 hover:text-white"
+                className={`h-16 text-lg font-semibold ${
+                  !isLocalDevice
+                    ? 'bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black border-0'
+                    : 'border-[#2563eb] bg-[#2563eb]/10 text-[#00d4ff] hover:bg-[#2563eb]/20 hover:text-white'
+                }`}
               >
                 <Wifi className="w-5 h-5 mr-3" />
                 DJ / Manager Remote

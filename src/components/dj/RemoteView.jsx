@@ -25,6 +25,8 @@ import {
   GripVertical,
   ListMusic,
   Check,
+  Ban,
+  Delete,
 } from 'lucide-react';
 
 export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange }) {
@@ -46,6 +48,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [controlsTab, setControlsTab] = useState('entertainers');
 
   const [selectedTrack, setSelectedTrack] = useState(null);
+
+  const [showDeactivatePin, setShowDeactivatePin] = useState(false);
+  const [deactivatePin, setDeactivatePin] = useState('');
+  const [deactivateSent, setDeactivateSent] = useState(false);
 
   const isConnected = liveBoothState?.updatedAt > 0;
   const isPlaying = liveBoothState?.isPlaying;
@@ -376,6 +382,20 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 </button>
               </div>
             </div>
+
+            <button
+              onClick={() => {
+                if (!currentTrack) return;
+                setDeactivatePin('');
+                setDeactivateSent(false);
+                setShowDeactivatePin(true);
+              }}
+              disabled={!currentTrack}
+              className="h-11 px-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-2 text-red-400 active:bg-red-500/20 transition-colors disabled:opacity-30"
+            >
+              <Ban className="w-5 h-5" />
+              <span className="text-sm font-semibold">Deactivate Song</span>
+            </button>
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
@@ -756,6 +776,96 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showDeactivatePin && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6" onClick={() => setShowDeactivatePin(false)}>
+          <div className="bg-[#0d0d1f] border border-red-500/30 rounded-2xl p-6 w-full max-w-xs" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center">
+                <Ban className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">Deactivate Song</p>
+                <p className="text-xs text-gray-500 truncate max-w-[200px]">{currentTrack}</p>
+              </div>
+            </div>
+
+            {deactivateSent ? (
+              <div className="flex flex-col items-center py-6">
+                <div className="w-14 h-14 rounded-full bg-red-500/20 flex items-center justify-center mb-3">
+                  <Check className="w-7 h-7 text-red-400" />
+                </div>
+                <p className="text-sm font-semibold text-red-400">Deactivate Sent</p>
+                <p className="text-xs text-gray-500 mt-1">Song will be blocked and skipped</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-gray-400 mb-3">Enter DJ PIN to confirm</p>
+
+                <div className="flex gap-2 justify-center mb-4">
+                  {[0,1,2,3,4].map(i => (
+                    <div key={i} className={`w-10 h-12 rounded-lg border-2 flex items-center justify-center text-xl font-bold transition-colors ${
+                      i < deactivatePin.length ? 'border-red-500 bg-red-500/20 text-red-400' : 'border-[#1e293b] bg-[#08081a] text-gray-600'
+                    }`}>
+                      {i < deactivatePin.length ? '\u2022' : ''}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[1,2,3,4,5,6,7,8,9].map(d => (
+                    <button
+                      key={d}
+                      onClick={() => {
+                        if (deactivatePin.length >= 5) return;
+                        const newPin = deactivatePin + String(d);
+                        setDeactivatePin(newPin);
+                        if (newPin.length === 5) {
+                          boothApi.sendCommand('deactivateTrack', { pin: newPin, trackName: currentTrack });
+                          setDeactivateSent(true);
+                          setTimeout(() => { setShowDeactivatePin(false); setDeactivatePin(''); setDeactivateSent(false); }, 1500);
+                        }
+                      }}
+                      className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-xl font-semibold active:bg-red-500/20 transition-colors"
+                    >
+                      {d}
+                    </button>
+                  ))}
+                  <div />
+                  <button
+                    onClick={() => {
+                      if (deactivatePin.length >= 5) return;
+                      const newPin = deactivatePin + '0';
+                      setDeactivatePin(newPin);
+                      if (newPin.length === 5) {
+                        boothApi.sendCommand('deactivateTrack', { pin: newPin, trackName: currentTrack });
+                        setDeactivateSent(true);
+                        setTimeout(() => { setShowDeactivatePin(false); setDeactivatePin(''); setDeactivateSent(false); }, 1500);
+                      }
+                    }}
+                    className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-xl font-semibold active:bg-red-500/20 transition-colors"
+                  >
+                    0
+                  </button>
+                  <button
+                    onClick={() => setDeactivatePin(prev => prev.slice(0, -1))}
+                    className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-gray-400 flex items-center justify-center active:bg-[#1e293b] transition-colors"
+                  >
+                    <Delete className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }}
+                  className="w-full mt-3 h-10 rounded-xl bg-[#1e293b] text-gray-400 text-sm font-semibold active:bg-[#2e2e5a] transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

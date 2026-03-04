@@ -649,6 +649,43 @@ export default function DJBooth() {
             saveRotationRef.current?.(newRot);
           }
           break;
+        case 'deactivateTrack':
+          if (cmd.payload.pin && cmd.payload.trackName) {
+            (async () => {
+              try {
+                const verifyRes = await fetch('/api/auth/login', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ role: 'dj', pin: cmd.payload.pin })
+                });
+                if (!verifyRes.ok) {
+                  console.warn('⚠️ Remote deactivate: invalid PIN');
+                  return;
+                }
+                const loginData = await verifyRes.json().catch(() => ({}));
+                const authToken = loginData.token || sessionStorage.getItem('djbooth_token');
+                if (!authToken) {
+                  console.warn('⚠️ Remote deactivate: no auth token available');
+                  return;
+                }
+                const hdrs = { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` };
+                const res = await fetch('/api/music/block', {
+                  method: 'POST',
+                  headers: hdrs,
+                  body: JSON.stringify({ trackName: cmd.payload.trackName })
+                });
+                if (res.ok) {
+                  console.log('🚫 Remote deactivated track:', cmd.payload.trackName);
+                  handleSkipRef.current?.();
+                } else {
+                  console.warn('⚠️ Remote deactivate: block request failed', res.status);
+                }
+              } catch (err) {
+                console.warn('⚠️ Remote deactivate failed:', err.message);
+              }
+            })();
+          }
+          break;
         case 'updateSongAssignments':
           if (cmd.payload.assignments) {
             const allTracks = tracksRef.current || [];

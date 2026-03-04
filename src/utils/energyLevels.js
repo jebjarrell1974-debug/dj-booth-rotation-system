@@ -146,7 +146,8 @@ export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energy
   const shiftType = levelInfo.shiftType;
   const shift = SHIFT_TYPES[shiftType];
   const closingWindow = level >= 5;
-  const clubLine = clubName ? `Club: ${clubName}` : '';
+  const clubLine = clubName ? `CLUB NAME: "${clubName}"
+CLUB NAME USAGE RULE: "${clubName}" is a proper noun. NEVER put "the" before it in general references. Say "here at ${clubName}", "${clubName} Nation", "${clubName} family", "welcome to ${clubName}" — NOT "the ${clubName}". The ONLY exception is "welcome to the ${clubName}" which is acceptable but "welcome to ${clubName}" is preferred. You can create compound phrases like "${clubName} Nation", "${clubName} fans", "${clubName} family" freely.` : '';
 
   const isGeneric = dancerName === '_GENERIC_';
   const displayName = isGeneric ? 'your next entertainer' : dancerName;
@@ -172,10 +173,12 @@ Do NOT mention VIP, private dances, or buying drinks — this is a stage intro, 
 
 NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" 2-3 times total, spaced naturally throughout the announcement — NOT clustered together. Drop the name early to get attention, weave it into the middle for buildup, and land it again at the end. In a loud club people need to hear the name more than once.`}
 
-EXAMPLE (match this energy and structure, but create original lines):
+DELIVERY RULE: The final time you say her name should sound smooth, cool, and confident — NOT shouted or yelled. End the announcement with a laid-back, suave delivery of the name. Think smooth radio DJ, not hype man screaming. Do NOT use exclamation marks on the final name mention.
+
+EXAMPLE (match this energy and structure, but create original lines — notice the final name is smooth, not shouted):
 "All right ladies and gentlemen main stage get ready for the ultimate performance. ${displayName} is coming up to make some dreams come true. That's right gentlemen grab some cash and hit that stage. This is ${displayName}."
-"Right about now I need all eyes on the main stage for ${displayName}. Fellas get those dollars ready because she's about to set it off. Coming to the stage the one and only ${displayName}."
-"Let's fire up the main stage gentlemen. We're doing it right on a ${dayOfWeek} night. ${displayName} is heading your way so get those dollars out. Give it up for ${displayName}."
+"Right about now I need all eyes on the main stage for ${displayName}. Fellas get those dollars ready because she's about to set it off. Coming to the stage, the one and only ${displayName}."
+"Let's fire up the main stage gentlemen. We're doing it right on a ${dayOfWeek} night. ${displayName} is heading your way so get those dollars out. Give it up for the lovely ${displayName}."
 
 Output should be 3-5 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — say it 2-3 times, spaced out naturally.`}`;
 
@@ -268,13 +271,16 @@ CRITICAL: Do NOT reference the time of night, shift, energy level, or any intern
 
   const parts = [
     SYSTEM_PROMPT,
+  ];
+
+  if (clubLine) parts.push(clubLine);
+
+  parts.push(
     eventInstructions,
     shiftBlock,
     closingBlock,
     `BEHAVIOR: ${behaviorRule}`,
-  ];
-
-  if (clubLine) parts.push(clubLine);
+  );
 
   if (clubSpecials && clubSpecials.length > 0 && (type === 'outro' || type === 'transition')) {
     parts.push(`CLUB SPECIALS (weave naturally into the announcement — do not list mechanically):
