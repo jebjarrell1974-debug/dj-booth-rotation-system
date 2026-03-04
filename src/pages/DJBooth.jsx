@@ -1436,6 +1436,21 @@ export default function DJBooth() {
     commercialCounterRef.current += 1;
     if (commercialCounterRef.current % freqNum !== 0) return false;
 
+    const curIdx = currentDancerIndexRef.current;
+    const commercialId = `commercial-after-${curIdx}`;
+    try {
+      const skippedRaw = localStorage.getItem('neonaidj_skipped_commercials');
+      if (skippedRaw) {
+        const skipped = JSON.parse(skippedRaw);
+        if (Array.isArray(skipped) && skipped.includes(commercialId)) {
+          const remaining = skipped.filter(id => id !== commercialId);
+          localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify(remaining));
+          console.log('📺 Commercial skipped (removed by DJ):', commercialId);
+          return false;
+        }
+      }
+    } catch {}
+
     try {
       const token = sessionStorage.getItem('djbooth_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -1703,28 +1718,23 @@ export default function DJBooth() {
         delete updatedSongs[finishedDancerId];
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
-        
-        await playCommercialIfDue();
 
         if (announcementsEnabled) {
           const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           await playPrefetchedAnnouncement(announcementUrl);
-          if (nextTrack && nextTrack.url) {
-            console.log('🎵 HandleSkip: Switching to next dancer after announcement:', nextDancer.name, 'track:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(false);
-          } else {
-            await playFallbackTrack(false);
-          }
           audioEngineRef.current?.unduck();
+        }
+
+        await playCommercialIfDue();
+
+        if (nextTrack && nextTrack.url) {
+          console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+          if (!trackOk) await playFallbackTrack(true);
         } else {
-          if (nextTrack && nextTrack.url) {
-            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          } else {
-            await playFallbackTrack(true);
-          }
+          await playFallbackTrack(true);
         }
         
         setRotation(newRotation);
@@ -1910,24 +1920,16 @@ export default function DJBooth() {
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           lastAudioActivityRef.current = Date.now();
-          const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
-          lastAudioActivityRef.current = Date.now();
-          if (nextTrack?.url) {
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(false);
-          } else {
-            await playFallbackTrack(false);
-          }
-          lastAudioActivityRef.current = Date.now();
-          await announcementDone;
+          await playPrefetchedAnnouncement(announcementUrl);
           audioEngineRef.current?.unduck();
+        }
+
+        lastAudioActivityRef.current = Date.now();
+        if (nextTrack?.url) {
+          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+          if (!trackOk) await playFallbackTrack(true);
         } else {
-          if (nextTrack?.url) {
-            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          } else {
-            await playFallbackTrack(true);
-          }
+          await playFallbackTrack(true);
         }
         lastAudioActivityRef.current = Date.now();
 
@@ -2151,29 +2153,22 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        await playCommercialIfDue();
-        
         if (announcementsEnabled) {
           const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
-          const announcementDone = playPrefetchedAnnouncement(announcementUrl);
-          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
-          if (nextTrack && nextTrack.url) {
-            console.log('🎵 HandleTrackEnd: Switching to next dancer during announcement:', nextDancer.name, 'track:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(false);
-          } else {
-            await playFallbackTrack(false);
-          }
-          await announcementDone;
+          await playPrefetchedAnnouncement(announcementUrl);
           audioEngineRef.current?.unduck();
+        }
+
+        await playCommercialIfDue();
+
+        if (nextTrack && nextTrack.url) {
+          console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+          if (!trackOk) await playFallbackTrack(true);
         } else {
-          if (nextTrack && nextTrack.url) {
-            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          } else {
-            await playFallbackTrack(true);
-          }
+          await playFallbackTrack(true);
         }
         
         setRotation(newRotation);
@@ -2814,8 +2809,12 @@ export default function DJBooth() {
                       if (!dancer) return null;
                       const isCurrent = idx === (liveBoothState?.currentDancerIndex || 0) && liveBoothState?.isRotationActive;
                       const dancerSongs = liveBoothState?.rotationSongs?.[dancerId] || [];
+                      const remoteFreq = localStorage.getItem('neonaidj_commercial_freq') || 'off';
+                      const remoteFreqNum = parseInt(remoteFreq);
+                      const showCommercial = remoteFreq !== 'off' && remoteFreqNum >= 1 && (idx + 1) % remoteFreqNum === 0 && idx < (liveBoothState?.rotation || []).length - 1;
                       return (
-                        <div key={dancerId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${isCurrent ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40' : 'bg-[#151528] border-[#1e293b]'}`}>
+                        <React.Fragment key={dancerId}>
+                        <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${isCurrent ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40' : 'bg-[#151528] border-[#1e293b]'}`}>
                           <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                             {dancer.name.charAt(0).toUpperCase()}
                           </div>
@@ -2832,6 +2831,13 @@ export default function DJBooth() {
                             <X className="w-4 h-4" />
                           </button>
                         </div>
+                        {showCommercial && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 mx-1 rounded-lg bg-amber-900/20 border border-amber-500/30">
+                            <Radio className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                            <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider flex-1">Commercial Break</p>
+                          </div>
+                        )}
+                        </React.Fragment>
                       );
                     })}
                   </div>

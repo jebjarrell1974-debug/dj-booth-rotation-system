@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -64,6 +64,13 @@ export default function RotationPlaylistManager({
   });
   const [selectedDancerId, setSelectedDancerId] = useState(null);
   const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
+  const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
+  const [skippedCommercials, setSkippedCommercials] = useState(() => {
+    try {
+      const saved = localStorage.getItem('neonaidj_skipped_commercials');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
   const djOverridesRef = React.useRef(new Set());
@@ -84,6 +91,16 @@ export default function RotationPlaylistManager({
   useEffect(() => {
     setLocalRotation(rotation);
   }, [rotation]);
+
+  useEffect(() => {
+    const checkFreq = () => {
+      const freq = localStorage.getItem('neonaidj_commercial_freq') || 'off';
+      setCommercialFreq(freq);
+    };
+    window.addEventListener('storage', checkFreq);
+    const interval = setInterval(checkFreq, 2000);
+    return () => { window.removeEventListener('storage', checkFreq); clearInterval(interval); };
+  }, []);
 
   useEffect(() => {
     songAssignmentsRef.current = songAssignments;
@@ -860,6 +877,39 @@ export default function RotationPlaylistManager({
                           )}
                         </Droppable>
                       )}
+
+                      {(() => {
+                        if (commercialFreq === 'off') return null;
+                        const freqNum = parseInt(commercialFreq);
+                        if (!freqNum || freqNum < 1) return null;
+                        const position = index + 1;
+                        if (position % freqNum !== 0) return null;
+                        if (position >= rotationDancers.length) return null;
+                        const commercialId = `commercial-after-${index}`;
+                        if (skippedCommercials.has(commercialId)) return null;
+                        return (
+                          <div className="mx-2 my-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
+                            <Radio className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Commercial Break</p>
+                              <p className="text-[10px] text-amber-500/60">Promo will play here</p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSkippedCommercials(prev => {
+                                  const next = new Set([...prev, commercialId]);
+                                  try { localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify([...next])); } catch {}
+                                  return next;
+                                });
+                              }}
+                              className="p-1.5 text-amber-400/50 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                              title="Skip this commercial break"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        );
+                      })()}
                       </React.Fragment>
                     );
                   })}
