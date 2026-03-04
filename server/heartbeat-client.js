@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
-import { existsSync, statSync, readdirSync } from 'fs';
-import { networkInterfaces, hostname, uptime } from 'os';
+import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
+import { networkInterfaces, hostname, uptime, freemem, totalmem } from 'os';
 
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const FLEET_SERVER_URL = process.env.FLEET_SERVER_URL || '';
@@ -59,6 +59,35 @@ function countFiles(dir, ext) {
   }
 }
 
+function getMemoryInfo() {
+  const free = freemem();
+  const total = totalmem();
+  return { free, total, used: total - free, pct: Math.round(((total - free) / total) * 100) };
+}
+
+function getServiceUptime() {
+  try {
+    const out = execSync('systemctl show djbooth.service --property=ActiveEnterTimestamp --no-pager 2>/dev/null', { encoding: 'utf8' }).trim();
+    const match = out.match(/ActiveEnterTimestamp=(.+)/);
+    if (match && match[1] && match[1] !== '') {
+      const started = new Date(match[1]).getTime();
+      if (!isNaN(started)) return Math.round((Date.now() - started) / 1000);
+    }
+  } catch {}
+  return null;
+}
+
+function getLastUpdateTime() {
+  try {
+    const gitDir = process.env.APP_DIR ? `${process.env.APP_DIR}/.git` : '/home/jebjarrell/djbooth/.git';
+    if (existsSync(`${gitDir}/FETCH_HEAD`)) {
+      const stat = statSync(`${gitDir}/FETCH_HEAD`);
+      return stat.mtimeMs;
+    }
+  } catch {}
+  return null;
+}
+
 function getDeviceId() {
   return process.env.DEVICE_ID || hostname() || 'unknown';
 }
@@ -70,6 +99,8 @@ async function sendHeartbeat(extraData = {}) {
   const disk = getDiskInfo();
   const musicPath = process.env.MUSIC_PATH || '';
   const voiceoverPath = process.env.VOICEOVER_PATH || process.env.VOICEOVER_DIR || '';
+
+  const memory = getMemoryInfo();
 
   const payload = {
     deviceId: getDeviceId(),
@@ -89,6 +120,13 @@ async function sendHeartbeat(extraData = {}) {
     version: extraData.version || null,
     lastError: extraData.lastError || null,
     apiCosts: extraData.apiCosts || null,
+    memFree: memory.free,
+    memTotal: memory.total,
+    memPct: memory.pct,
+    serviceUptime: getServiceUptime(),
+    lastUpdateTime: getLastUpdateTime(),
+    activeEntertainers: extraData.activeEntertainers || 0,
+    errorCount: extraData.errorCount || 0,
   };
 
   try {

@@ -139,6 +139,13 @@ const server = http.createServer(async (req, res) => {
       version: data.version || null,
       lastError: data.lastError || null,
       apiCosts: data.apiCosts || null,
+      memFree: data.memFree || null,
+      memTotal: data.memTotal || null,
+      memPct: data.memPct || null,
+      serviceUptime: data.serviceUptime || null,
+      lastUpdateTime: data.lastUpdateTime || null,
+      activeEntertainers: data.activeEntertainers || 0,
+      errorCount: data.errorCount || 0,
       lastHeartbeat: now,
       status: 'online',
     });

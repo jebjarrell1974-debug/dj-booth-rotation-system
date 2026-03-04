@@ -383,6 +383,10 @@
       margin-top: 2px;
     }
     .summary-card.costs .value { color: #34d399; }
+    .summary-card.entertainers .value { color: #f472b6; }
+    .stat-value.mem-warn { color: #f59e0b; }
+    .stat-value.mem-danger { color: #ef4444; }
+    .stat-value.errors { color: #ef4444; }
   </style>
 </head>
 <body>
@@ -492,6 +496,25 @@
       return '';
     }
 
+    function memClass(pct) {
+      if (pct == null) return '';
+      if (pct > 90) return 'mem-danger';
+      if (pct > 75) return 'mem-warn';
+      return '';
+    }
+
+    function formatLastUpdate(timestamp) {
+      if (!timestamp) return '--';
+      const d = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now - d;
+      const diffDays = Math.floor(diffMs / 86400000);
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return diffDays + 'd ago';
+      return d.toLocaleDateString();
+    }
+
     function formatAgo(seconds) {
       if (seconds < 60) return `${seconds}s ago`;
       if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
@@ -507,12 +530,15 @@
       const totalVoiceovers = devices.reduce((s, d) => s + (d.voiceoverCount || 0), 0);
 
       const fleetCost = devices.reduce((s, d) => s + (d.apiCosts?.total || 0), 0);
+      const totalEntertainers = devices.reduce((s, d) => s + (d.activeEntertainers || 0), 0);
+      const totalErrors = devices.reduce((s, d) => s + (d.errorCount || 0), 0);
 
       document.getElementById('summaryBar').innerHTML = `
         <div class="summary-card"><div class="value">${total}</div><div class="label">Devices</div></div>
         <div class="summary-card online"><div class="value">${online}</div><div class="label">Online</div></div>
         <div class="summary-card offline"><div class="value">${offline}</div><div class="label">Offline</div></div>
         <div class="summary-card"><div class="value">${totalVoiceovers}</div><div class="label">Voiceovers</div></div>
+        <div class="summary-card entertainers"><div class="value">${totalEntertainers}</div><div class="label">Entertainers</div></div>
         <div class="summary-card costs"><div class="value">$${fleetCost.toFixed(2)}</div><div class="label">API Costs (30d)</div></div>
       `;
     }
@@ -576,6 +602,26 @@
               <div class="stat-row">
                 <span class="stat-label">Version</span>
                 <span class="stat-value">${esc(d.version || '--')}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Memory</span>
+                <span class="stat-value ${memClass(d.memPct)}">${d.memPct != null ? d.memPct + '% used' : '--'}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Service</span>
+                <span class="stat-value">${d.serviceUptime != null ? formatUptime(d.serviceUptime) : '--'}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Entertainers</span>
+                <span class="stat-value" style="color: #f472b6">${d.activeEntertainers || 0}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Errors</span>
+                <span class="stat-value ${d.errorCount > 0 ? 'errors' : ''}">${d.errorCount || 0}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Last Update</span>
+                <span class="stat-value">${formatLastUpdate(d.lastUpdateTime)}</span>
               </div>
               <div class="stat-row">
                 <span class="stat-label">IP</span>

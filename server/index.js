@@ -86,6 +86,9 @@ let liveBoothState = {
 
 let remoteCommandQueue = [];
 let commandIdCounter = 0;
+let errorCounter = 0;
+const origConsoleError = console.error;
+console.error = (...args) => { errorCounter++; origConsoleError.apply(console, args); };
 
 setInterval(() => cleanExpiredSessions(DANCER_TIMEOUT_MS), 30 * 1000);
 setInterval(() => cleanOldPlayHistory(90), 24 * 60 * 60 * 1000);
@@ -1259,11 +1262,16 @@ if (isDirectRun) {
           };
         }
       } catch {}
+      let activeEntertainers = 0;
+      try { activeEntertainers = liveBoothState.rotation?.length || 0; } catch {}
+
       return {
         trackCount: getMusicTrackCount(),
         clubName: getSetting('club_name') || '',
         version: getSetting('app_version') || '',
         apiCosts,
+        activeEntertainers,
+        errorCount: errorCounter,
       };
     });
     initR2Sync().catch(err => {
