@@ -358,10 +358,10 @@ function PromoCreator({ onPlay, onSaved }) {
             ))}
           </div>
         </div>
-        <div className="w-24">
+        <div className="w-32">
           <label className="text-xs text-gray-500 mb-1 block">Length</label>
           <div className="flex gap-1.5">
-            {['30', '60'].map(d => (
+            {['15', '30', '60'].map(d => (
               <button
                 key={d}
                 onClick={() => setDuration(d)}
