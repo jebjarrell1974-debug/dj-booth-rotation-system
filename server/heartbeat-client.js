@@ -62,6 +62,7 @@ function countFiles(dir, ext) {
 function getMemoryInfo() {
   const free = freemem();
   const total = totalmem();
+  if (!total || total <= 0) return { free: null, total: null, used: null, pct: null };
   return { free, total, used: total - free, pct: Math.round(((total - free) / total) * 100) };
 }
 

@@ -38,7 +38,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 4, 2026 — Session 23 (Fleet Dashboard API Costs)
+### Mar 4, 2026 — Session 23 (Fleet Dashboard API Costs + Enhanced Fleet Metrics)
 
 #### Feature: Per-Unit API Costs in Fleet Dashboard
 - **Purpose**: Show 30-day API costs per Pi unit in the fleet dashboard (homebase), alongside CPU/memory/disk health
@@ -51,6 +51,18 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   6. Expanded cost breakdown in DeviceDetailModal: Total / ElevenLabs / OpenAI + call count
 - **Note**: Costs are in-memory only — after fleet server restart, cost data clears until each Pi sends its next heartbeat (every 5 minutes)
 - **Files modified**: `server/index.js` (heartbeat callback), `server/heartbeat-client.js` (payload field), `server/fleet-monitor.js` (in-memory storage + export), `server/fleet-routes.js` (overview merge), `src/pages/FleetDashboard.jsx` (DeviceCard, DeviceDetailModal, overview stats)
+
+#### Feature: Enhanced Fleet Monitoring Metrics
+- **Purpose**: Add five new health metrics to fleet dashboard for better visibility across all Pi units
+- **New metrics in heartbeat payload**:
+  1. **Memory usage** (`memFree`, `memTotal`, `memPct`) — RAM usage from `os.freemem()`/`os.totalmem()`, shown as percentage with color warnings (yellow >75%, red >90%)
+  2. **Service uptime** (`serviceUptime`) — How long `djbooth.service` has been running, via `systemctl show`. Distinct from system uptime — catches service restarts
+  3. **Last update time** (`lastUpdateTime`) — Timestamp of last `git pull` (from `.git/FETCH_HEAD` mtime). Shows "Today", "Yesterday", "3d ago" etc.
+  4. **Active entertainers** (`activeEntertainers`) — Count of entertainers currently in the rotation (`liveBoothState.rotation.length`)
+  5. **Error count** (`errorCount`) — Running count of `console.error()` calls since service start. Wraps native console.error to increment counter
+- **Dashboard summary bar**: Added "Entertainers" card (pink) alongside existing cards
+- **Device card stats grid**: Shows Memory, Service uptime, Entertainers, Errors, Last Update rows alongside existing CPU/Disk/Tracks/Version/IP
+- **Files modified**: `server/heartbeat-client.js` (5 new data collectors), `server/index.js` (error counter + heartbeat callback), `public/fleet-monitor-standalone.js` (store new fields), `public/fleet-dashboard.html` (summary card + device card stats + helper functions)
 
 ### Mar 4, 2026 — Session 22 (Rotation Playlist Dropdown, Enhanced Boot Screen, API Cost Tracking)
 
