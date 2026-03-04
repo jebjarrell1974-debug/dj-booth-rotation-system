@@ -92,10 +92,10 @@ function PromoCreator({ onPlay, onSaved }) {
         text: script,
         model_id: 'eleven_turbo_v2_5',
         voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.78,
-          style: 0.45,
-          speed: 0.88,
+          stability: 0.30,
+          similarity_boost: 0.75,
+          style: 0.85,
+          speed: 1.08,
         }
       }),
     });
