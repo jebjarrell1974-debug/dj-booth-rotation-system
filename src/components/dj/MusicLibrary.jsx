@@ -1,15 +1,16 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Music, RefreshCw, Check, Folder, ChevronDown } from 'lucide-react';
+import { Search, Music, RefreshCw, Check, Folder, ChevronDown, ListMusic } from 'lucide-react';
 
 const PAGE_SIZE = 200;
 
 export default function MusicLibrary({ 
   onTrackSelect,
   selectedTracks = [],
-  selectionMode = false
+  selectionMode = false,
+  dancers = []
 }) {
   const [tracks, setTracks] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -21,7 +22,18 @@ export default function MusicLibrary({
   const [currentPage, setCurrentPage] = useState(1);
   const [totalTracks, setTotalTracks] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [musicSource, setMusicSource] = useState('genres');
   const searchTimeoutRef = useRef(null);
+
+  const activeDancers = useMemo(() =>
+    dancers.filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name)),
+    [dancers]
+  );
+
+  const selectedPlaylistDancer = musicSource !== 'genres'
+    ? dancers.find(d => String(d.id) === String(musicSource))
+    : null;
+  const playlistSongs = selectedPlaylistDancer?.playlist || [];
 
   const getAuthHeaders = useCallback(() => {
     const token = sessionStorage.getItem('djbooth_token');
@@ -129,39 +141,60 @@ export default function MusicLibrary({
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Music Library</h3>
           <span className="text-xs text-gray-500">
-            {tracks.length} of {totalTracks} tracks
+            {musicSource === 'genres'
+              ? `${tracks.length} of ${totalTracks} tracks`
+              : `${playlistSongs.length} songs`
+            }
           </span>
         </div>
         
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <div className="flex-1 px-3 py-2 bg-[#151528] rounded-lg text-sm text-gray-300 truncate">
-              🎵 Server Music Library
-            </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={handleRescan}
-              disabled={isRescanning}
-              className="text-gray-400 hover:text-white hover:bg-[#1e293b]"
-              title="Rescan music folder"
+            <select
+              value={musicSource}
+              onChange={(e) => {
+                setMusicSource(e.target.value);
+                setSearchQuery('');
+                setActiveGenre(null);
+              }}
+              className="flex-1 px-3 py-2 bg-[#151528] border border-[#1e293b] rounded-lg text-sm text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
+              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '28px' }}
             >
-              <RefreshCw className={`w-4 h-4 ${isRescanning ? 'animate-spin' : ''}`} />
-            </Button>
+              <option value="genres">Genre Folders</option>
+              {activeDancers.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name}'s Playlist ({(d.playlist || []).length})
+                </option>
+              ))}
+            </select>
+            {musicSource === 'genres' && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={handleRescan}
+                disabled={isRescanning}
+                className="text-gray-400 hover:text-white hover:bg-[#1e293b]"
+                title="Rescan music folder"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRescanning ? 'animate-spin' : ''}`} />
+              </Button>
+            )}
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tracks..."
-              className="pl-9 bg-[#151528] border-[#1e293b] text-white placeholder:text-gray-500"
-            />
-          </div>
+          {musicSource === 'genres' && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tracks..."
+                className="pl-9 bg-[#151528] border-[#1e293b] text-white placeholder:text-gray-500"
+              />
+            </div>
+          )}
         </div>
       </div>
       
-      {genres.length > 0 && (
+      {musicSource === 'genres' && genres.length > 0 && (
         <div className="px-3 py-2 border-b border-[#1e293b]">
           <div className="flex flex-wrap gap-1.5">
             <button
@@ -195,55 +228,84 @@ export default function MusicLibrary({
 
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-1">
-          {isLoading && tracks.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">
-              Loading...
-            </div>
-          )}
-
-          {tracks.map((track) => (
-            <button
-              key={track.id}
-              onClick={() => onTrackSelect?.({ ...track, url: '/api/music/stream/' + track.id })}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                isSelected(track.name)
-                  ? 'bg-[#00d4ff]/20 text-[#00d4ff]'
-                  : 'text-gray-300 hover:bg-[#151528] hover:text-white'
-              }`}
-            >
-              {selectionMode && isSelected(track.name) ? (
-                <Check className="w-4 h-4 text-[#00d4ff] flex-shrink-0" />
-              ) : (
-                <Music className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          {musicSource === 'genres' ? (
+            <>
+              {isLoading && tracks.length === 0 && (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  Loading...
+                </div>
               )}
-              <div className="flex-1 min-w-0">
-                <span className="truncate text-sm block">{track.name}</span>
-                {activeGenre === null && track.genre && (
-                  <span className="text-xs text-gray-500 truncate block">{track.genre}</span>
-                )}
-              </div>
-            </button>
-          ))}
 
-          {hasMore && (
-            <div className="py-3 text-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={loadMore}
-                disabled={isLoadingMore}
-                className="text-[#00d4ff] hover:text-white hover:bg-[#1e293b]"
-              >
-                <ChevronDown className="w-4 h-4 mr-2" />
-                {isLoadingMore ? 'Loading...' : `Load More (${tracks.length} of ${totalTracks})`}
-              </Button>
-            </div>
-          )}
-          
-          {tracks.length === 0 && !isLoading && (
-            <div className="text-center py-8 text-gray-500 text-sm">
-              {searchQuery.trim() || activeGenre ? 'No tracks match your search' : 'No music files found on server'}
-            </div>
+              {tracks.map((track) => (
+                <button
+                  key={track.id}
+                  onClick={() => onTrackSelect?.({ ...track, url: '/api/music/stream/' + track.id })}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                    isSelected(track.name)
+                      ? 'bg-[#00d4ff]/20 text-[#00d4ff]'
+                      : 'text-gray-300 hover:bg-[#151528] hover:text-white'
+                  }`}
+                >
+                  {selectionMode && isSelected(track.name) ? (
+                    <Check className="w-4 h-4 text-[#00d4ff] flex-shrink-0" />
+                  ) : (
+                    <Music className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <span className="truncate text-sm block">{track.name}</span>
+                    {activeGenre === null && track.genre && (
+                      <span className="text-xs text-gray-500 truncate block">{track.genre}</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+
+              {hasMore && (
+                <div className="py-3 text-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadMore}
+                    disabled={isLoadingMore}
+                    className="text-[#00d4ff] hover:text-white hover:bg-[#1e293b]"
+                  >
+                    <ChevronDown className="w-4 h-4 mr-2" />
+                    {isLoadingMore ? 'Loading...' : `Load More (${tracks.length} of ${totalTracks})`}
+                  </Button>
+                </div>
+              )}
+              
+              {tracks.length === 0 && !isLoading && (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  {searchQuery.trim() || activeGenre ? 'No tracks match your search' : 'No music files found on server'}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {playlistSongs.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  {selectedPlaylistDancer?.name} hasn't added any songs yet
+                </div>
+              ) : (
+                playlistSongs.map((songName, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onTrackSelect?.({ name: songName, url: null, playlistSong: true })}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                      isSelected(songName)
+                        ? 'bg-[#a855f7]/20 text-[#a855f7]'
+                        : 'text-gray-300 hover:bg-[#151528] hover:text-white'
+                    }`}
+                  >
+                    <ListMusic className="w-4 h-4 text-[#a855f7] flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="truncate text-sm block">{songName}</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </>
           )}
         </div>
       </ScrollArea>

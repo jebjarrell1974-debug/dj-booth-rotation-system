@@ -3235,6 +3235,7 @@ export default function DJBooth() {
             {!remoteMode && (
               <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex flex-col overflow-hidden" style={{ display: activeTab === 'library' ? 'flex' : 'none' }}>
                 <MusicLibrary
+                  dancers={dancers}
                   onTrackSelect={(track) => {
                     if (editingPlaylist) return;
                     if (track.url) playTrack(track.url, true, track.name, track.genre);

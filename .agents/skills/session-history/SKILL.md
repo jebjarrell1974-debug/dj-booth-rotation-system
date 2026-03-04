@@ -500,6 +500,40 @@ Should show "Fleet Monitor Started" with port 3001 and Telegram active.
 - These convert to "V.I.P.", "D.J." with dots so TTS reads as individual letters
 - File: `src/components/dj/AnnouncementSystem.jsx`
 
+### Fix: Server State Relay Missing New Fields (CRITICAL LESSON)
+- Remote tablet couldn't see break songs or commercial markers — Pi was sending them but server dropped them
+- `server/index.js` POST `/api/booth/state` constructs `liveBoothState` with a WHITELIST of fields
+- **RULE**: When adding ANY new field to the Pi→remote broadcast in DJBooth.jsx, MUST ALSO add it to the server relay whitelist in `server/index.js` (POST `/api/booth/state` handler ~line 571)
+- Added: `interstitialSongs`, `commercialFreq`, `skippedCommercials`
+- File: `server/index.js`
+
+### Fix: Remote Playlist Dropdown Not Alphabetical + Songs Not Loading
+- Playlists sorted alphabetically: `.sort((a, b) => a.name.localeCompare(b.name))`
+- ID comparison fix: `String(d.id) === String(musicSource)` (HTML select values are always strings)
+- File: `src/components/dj/RemoteView.jsx`
+
+### Feature: Break Song Swap on Remote
+- Tap existing break song → highlights cyan with "tap song to swap" label
+- Purple banner above library: "Tap a song to replace break song"
+- Tap library song → replaces the break song, sends update to Pi
+- State: `selectedBreakSong` = `{ breakKey, index }`
+- File: `src/components/dj/RemoteView.jsx`
+
+### Fix: Broadcast Dependency Array
+- `interstitialSongsState` was missing from broadcast useEffect dependency array
+- Changes to break songs weren't triggering re-broadcast to remote
+- File: `src/pages/DJBooth.jsx`
+
+---
+
+## Critical Architecture Notes
+
+### Server State Relay Whitelist
+The server (`server/index.js`) acts as a relay between the Pi's DJBooth and the remote tablet. The POST `/api/booth/state` endpoint constructs `liveBoothState` with an explicit whitelist of fields. **Any new field added to the broadcast in DJBooth.jsx MUST also be added to this whitelist or the remote tablet will never see it.** This has caused bugs before — always check both files when adding new broadcast fields.
+
+### Broadcast Dependency Array
+The broadcast useEffect in DJBooth.jsx has a dependency array that controls when state is re-sent to the server. **Any new state variable included in the broadcast payload MUST also be added to this dependency array** or changes won't trigger re-broadcasts.
+
 ---
 
 ## User Preferences & Style

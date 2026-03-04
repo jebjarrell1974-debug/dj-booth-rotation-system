@@ -27,6 +27,15 @@ A fleet management system enables centralized control of multiple Pi units, prov
 
 The application is deployed via Replit as an autoscale target, with Vite building to `dist/public/`. Production Express servers static files from `dist/public/` with SPA fallback.
 
+## Critical Architecture Rules (READ FIRST EVERY SESSION)
+1. **Server State Relay Whitelist**: When adding ANY new field to the Pi→remote broadcast in `DJBooth.jsx`, MUST ALSO add it to the server relay whitelist in `server/index.js` (POST `/api/booth/state` handler ~line 571). The server drops fields not in its whitelist.
+2. **Broadcast Dependency Array**: Any new state variable in the broadcast payload in `DJBooth.jsx` MUST also be added to the useEffect dependency array (~line 822) or changes won't trigger re-broadcasts to the remote.
+3. **AudioEngine.jsx**: NEVER modify audio behavior (crossfade, ducking, volume levels are finalized).
+4. **Server port**: Always 3001. Do NOT change.
+5. **No Suno API**: Music beds from local PROMO BEDS folder only.
+6. **UI says "Entertainer" but code says `dancer`**: Do NOT rename variables.
+7. **Session history**: Always read `.agents/skills/session-history/SKILL.md` at the start of each session for full context of past decisions, fixes, and architecture.
+
 ## Session Notes
 
 ### Mar 4, 2026 — Session 21 (Remote Deactivate, Club Name Fix, Commercial Audio Fix, Voice Delivery Fix, Remote Break Songs, Commercial Shuffle)
@@ -55,6 +64,35 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Problem**: The all-caps name fix (converting GIGI→Gigi) was also converting VIP→Vip, causing ElevenLabs to say it as a word instead of individual letters
 - **Fix**: Added `SPELL_OUT` exception set (VIP, DJ, MC, ATM, ID, etc.) — these get converted to "V.I.P.", "D.J." etc. with dots between letters so TTS reads them individually
 - **File**: `src/components/dj/AnnouncementSystem.jsx`
+
+#### Fix: Server State Relay Missing New Fields
+- **Problem**: Remote tablet couldn't see break songs or commercial markers even though Pi was broadcasting them
+- **Root cause**: `server/index.js` POST `/api/booth/state` constructs `liveBoothState` with a whitelist of fields — `interstitialSongs`, `commercialFreq`, and `skippedCommercials` were NOT in that whitelist, so the server silently dropped them
+- **Fix**: Added all three fields to the server's state relay whitelist
+- **Lesson**: When adding new fields to the Pi→remote broadcast in DJBooth.jsx, MUST also add them to the server relay whitelist in `server/index.js` (POST `/api/booth/state` handler around line 571)
+- **File**: `server/index.js`
+
+#### Fix: Remote Playlist Dropdown Not Alphabetical + Songs Not Loading
+- **Problem 1**: Entertainer playlists in the dropdown were in database order, not alphabetical
+- **Problem 2**: Selecting an entertainer's playlist showed "0 songs" even though the dropdown said "(4)"
+- **Fix 1**: Added `.sort((a, b) => a.name.localeCompare(b.name))` to `allActiveDancers`
+- **Fix 2**: Changed dancer ID comparison from `d.id === parseInt(musicSource)` to `String(d.id) === String(musicSource)` — HTML select values are always strings, so strict equality with parseInt could fail
+- **File**: `src/components/dj/RemoteView.jsx`
+
+#### Feature: Break Song Swap on Remote
+- **Purpose**: Allow DJ to tap an existing break song to swap it with a different song from the music library
+- **How it works**:
+  1. Tap a break song in the rotation list — highlights cyan with pulsing "tap song to swap" label
+  2. Purple banner appears above the music library: "Tap a song to replace break song"
+  3. Tap any song in the library — instantly replaces the selected break song and sends update to Pi
+  4. X button still removes the break song; tap again or X on banner to cancel selection
+- **State**: `selectedBreakSong` tracks `{ breakKey, index }` of the break song being replaced
+- **File**: `src/components/dj/RemoteView.jsx`
+
+#### Fix: Broadcast Dependency Array Missing interstitialSongsState
+- **Problem**: Changes to break songs on the Pi didn't trigger a re-broadcast to remote
+- **Fix**: Added `interstitialSongsState` to the useEffect dependency array for the broadcast interval
+- **File**: `src/pages/DJBooth.jsx`
 
 #### Feature: Deactivate Song on Remote Tablet
 - **Purpose**: Allow DJ to block/ban a song from the iPad remote during playback, removing it from future rotation
