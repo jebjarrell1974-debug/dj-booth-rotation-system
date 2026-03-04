@@ -80,7 +80,7 @@ export default function DancerView() {
   const fetchTracks = useCallback(async (search, genre, pageNum) => {
     setTracksLoading(true);
     try {
-      const data = await musicApi.getTracks({ page: pageNum, limit: 100, search, genre });
+      const data = await musicApi.getTracks({ page: pageNum, limit: 100, search, genre: search ? '' : genre });
       if (pageNum === 1) {
         setTracks(data.tracks || []);
       } else {

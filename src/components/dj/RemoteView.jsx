@@ -89,7 +89,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       const token = sessionStorage.getItem('djbooth_token');
       const params = new URLSearchParams({ page: '1', limit: '200' });
       if (search) params.set('search', search);
-      if (genre) params.set('genre', genre);
+      if (genre && !search) params.set('genre', genre);
       const res = await fetch(`/api/music/tracks?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
