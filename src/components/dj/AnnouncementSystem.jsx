@@ -223,9 +223,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       'Gigi': 'Jee-Jee',
       'Gigi\'s': 'Jee-Jee\'s',
     };
-    let ttsText = script;
+    let ttsText = script.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
+      const base = match.replace(/'[Ss]$/, '');
+      const suffix = match.slice(base.length);
+      return base.charAt(0) + base.slice(1).toLowerCase() + suffix;
+    });
     for (const [name, phonetic] of Object.entries(PRONUNCIATION_MAP)) {
-      ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'g'), phonetic);
+      ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'gi'), phonetic);
     }
 
     const controller = new AbortController();

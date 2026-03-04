@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, ChevronDown, Music, MonitorOff } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown, Music, MonitorOff, Radio } from 'lucide-react';
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -14,6 +14,9 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const [musicEq, setMusicEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}'));
   const [voiceEq, setVoiceEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}'));
   const [beatMatchEnabled, setBeatMatchEnabled] = useState(() => localStorage.getItem('neonaidj_beat_match') === 'true');
+  const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
+  const [commercialDropdownOpen, setCommercialDropdownOpen] = useState(false);
+  const commercialRef = useRef(null);
 
   const activeGenres = djOptions?.activeGenres || [];
   const musicMode = djOptions?.musicMode || 'dancer_first';
@@ -62,6 +65,9 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setFolderDropdownOpen(false);
+      }
+      if (commercialRef.current && !commercialRef.current.contains(e.target)) {
+        setCommercialDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -124,6 +130,71 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
             </div>
           );
         })()}
+
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Radio className="w-4 h-4 text-[#00d4ff]" />
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Commercials</h3>
+            </div>
+            <div className="relative" ref={commercialRef}>
+              <button
+                onClick={() => setCommercialDropdownOpen(!commercialDropdownOpen)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  commercialFreq !== 'off'
+                    ? 'bg-[#2563eb] text-white'
+                    : 'bg-[#151528] text-gray-400 border border-[#1e293b] hover:text-white'
+                }`}
+              >
+                <span>
+                  {commercialFreq === 'off' ? 'Off' :
+                   commercialFreq === '1' ? 'Every Set' :
+                   commercialFreq === '2' ? 'Every Other Set' :
+                   'Every 3rd Set'}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${commercialDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {commercialDropdownOpen && (
+                <div className="absolute z-50 right-0 mt-1 bg-[#0d0d1f] border border-[#2e2e5a] rounded-xl shadow-xl min-w-[180px] overflow-hidden">
+                  {[
+                    { value: 'off', label: 'Off' },
+                    { value: '1', label: 'Every Set' },
+                    { value: '2', label: 'Every Other Set' },
+                    { value: '3', label: 'Every 3rd Set' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setCommercialFreq(opt.value);
+                        localStorage.setItem('neonaidj_commercial_freq', opt.value);
+                        setCommercialDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-[#1e293b] last:border-b-0 ${
+                        commercialFreq === opt.value ? 'bg-[#2563eb]/10 text-white' : 'text-gray-300 hover:bg-[#151528]'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        commercialFreq === opt.value ? 'border-[#2563eb] bg-[#2563eb]' : 'border-gray-600'
+                      }`}>
+                        {commercialFreq === opt.value && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                      <span className="text-sm">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            {commercialFreq === 'off'
+              ? 'Commercials and promos are disabled during rotation.'
+              : commercialFreq === '1'
+              ? 'A promo plays between every entertainer set.'
+              : commercialFreq === '2'
+              ? 'A promo plays between every other entertainer set.'
+              : 'A promo plays between every third entertainer set.'}
+          </p>
+        </div>
 
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Music Selection Mode</h3>

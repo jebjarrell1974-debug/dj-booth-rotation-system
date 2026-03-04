@@ -108,6 +108,7 @@ export default function DJBooth() {
   const interstitialIndexRef = useRef(0);
   const handleSkipRef = useRef(null);
   const saveRotationRef = useRef(null);
+  const commercialCounterRef = useRef(0);
   
   const DUCK_SETTLE_MS = 300;
   const SONG_OVERLAP_DELAY_MS = 2000;
@@ -1426,6 +1427,42 @@ export default function DJBooth() {
     await beginRotation();
   }, [rotation, tracks, beginRotation]);
 
+  const playCommercialIfDue = useCallback(async () => {
+    const freq = localStorage.getItem('neonaidj_commercial_freq') || 'off';
+    if (freq === 'off') return false;
+    const freqNum = parseInt(freq);
+    if (!freqNum || freqNum < 1) return false;
+
+    commercialCounterRef.current += 1;
+    if (commercialCounterRef.current % freqNum !== 0) return false;
+
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch('/api/voiceovers', { headers });
+      if (!res.ok) return false;
+      const all = await res.json();
+      const promos = all.filter(v => v.type === 'promo' || v.type === 'manual');
+      if (promos.length === 0) return false;
+
+      const promo = promos[Math.floor(Math.random() * promos.length)];
+      const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(promo.cache_key)}`, { headers });
+      if (!audioRes.ok) return false;
+      const blob = await audioRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      console.log('📺 Playing commercial:', promo.dancer_name || promo.cache_key);
+      if (audioEngineRef.current) {
+        await audioEngineRef.current.playAnnouncement(blobUrl);
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+      return true;
+    } catch (err) {
+      console.warn('⚠️ Commercial playback failed:', err.message);
+      return false;
+    }
+  }, []);
+
   const handleSkip = useCallback(async () => {
     if (watchdogRecoveringRef.current) {
       console.log('⏳ HandleSkip: Watchdog recovery in progress, skipping');
@@ -1667,6 +1704,8 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
         
+        await playCommercialIfDue();
+
         if (announcementsEnabled) {
           const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
           audioEngineRef.current?.duck();
@@ -1707,7 +1746,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
 
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
@@ -1863,6 +1902,8 @@ export default function DJBooth() {
         delete updatedSongs[finishedDancerId];
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
+
+        await playCommercialIfDue();
 
         if (announcementsEnabled) {
           const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -2109,6 +2150,8 @@ export default function DJBooth() {
         delete updatedSongs[finishedDancerId];
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
+
+        await playCommercialIfDue();
         
         if (announcementsEnabled) {
           const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);

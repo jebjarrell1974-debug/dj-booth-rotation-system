@@ -29,6 +29,43 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 4, 2026 — Session 20 (Promo Creator, Music Search Fix, Pronunciation Fix)
+
+#### Feature: AI Promo Creator
+- **Purpose**: Generate radio-quality event promo commercials directly from the DJ booth. Replaces the need for pre-recorded radio spots — DJ fills in event details, app generates a professional promo with AI script + ElevenLabs voice + music bed
+- **How it works**:
+  1. DJ enters event details (name, date, time, venue, extras) and selects vibe (Hype/Party/Classy/Chill) + duration (30s/60s)
+  2. `promoGenerator.js` builds a radio-imaging-style prompt and sends to OpenAI or Replit LLM
+  3. AI returns a punchy radio script (~80 words for 30s, ~150 words for 60s)
+  4. Script is sent to ElevenLabs TTS with radio-announcer voice settings (stability 0.45, style 0.45, speed 0.88)
+  5. Music bed is fetched from "Promo Beds" genre folder in the music library (random or user-selected track)
+  6. `audioMixer.js` uses OfflineAudioContext to mix voice over music: music fades in, ducks during speech (voice activity detection), fades out at end
+  7. Output is a stereo WAV blob — can preview, download, or save to announcement library as type 'promo'
+- **UI**: ManualAnnouncementPlayer now has tabbed interface: "Create Promo" | "Upload". Progress bar shows 5 steps (Script → Voice → Music → Mix → Done). Script is editable before regenerating. "New Bed" remixes with different music track
+- **Music beds**: Uses tracks from a folder called "Promo Beds" in the music library (genre match). Not Suno API — instrumental tracks are manually added to the Promo Beds folder
+- **Audio mixing details**: Voice activity detection with 50ms blocks, music ducks to 6% during speech (0.3s attack, 0.5s release), 0.8s fade-in, 2.5s fade-out, 1.2s voice delay
+- **Files**: `src/utils/promoGenerator.js` (AI prompt + script generation), `src/utils/audioMixer.js` (OfflineAudioContext mixing + WAV encoding), `src/components/dj/ManualAnnouncementPlayer.jsx` (tabbed UI + promo form)
+
+#### Feature: Commercial Frequency Setting
+- **Purpose**: Control how often promos/commercials play during the rotation — off, every set, every other set, or every 3rd set
+- **UI**: "Commercials" dropdown button on Options page, placed right below Energy Level. Shows current setting, opens a dropdown with radio-button-style options: Off, Every Set, Every Other Set, Every 3rd Set. Button lights up blue when active
+- **How it works**:
+  1. Setting stored in `localStorage` as `neonaidj_commercial_freq` (values: 'off', '1', '2', '3')
+  2. `commercialCounterRef` tracks entertainer transitions in DJBooth
+  3. At each entertainer transition (handleSkip and handleTrackEnd), `playCommercialIfDue()` checks if the counter hits the frequency threshold
+  4. When due, fetches a random promo/manual announcement from `/api/voiceovers` and plays it via the audio engine's `playAnnouncement` method
+  5. Commercial plays in the gap between entertainers, before the next entertainer's transition announcement
+- **Files**: `src/components/dj/DJOptions.jsx` (dropdown UI), `src/pages/DJBooth.jsx` (playCommercialIfDue function + integration into transition logic)
+
+#### Fix: Music Search Bypasses Genre Filter
+- All 4 music browser views (RotationPlaylistManager, PlaylistEditor, RemoteView, DancerView) now ignore genre filtering when a search query is active, so search results aren't limited to the selected genre
+- PlaylistEditor genre pills replaced with compact dropdown
+
+#### Fix: ElevenLabs All-Caps Name Pronunciation
+- All-caps names (AVA, GIGI, MIMI) were spelled out letter-by-letter by TTS
+- Pre-TTS conversion now lowercases 2+ letter all-caps words to title case before applying pronunciation map
+- Pronunciation map regex uses case-insensitive flag (`/gi`)
+
 ### Mar 4, 2026 — Session 19 (Entertainer Side-Session, Pronunciation Fixes)
 
 #### Fix: Entertainer Portal No Longer Kills Music
