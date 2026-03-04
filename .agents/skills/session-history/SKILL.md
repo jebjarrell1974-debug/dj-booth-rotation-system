@@ -22,7 +22,7 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 ### Production (Pi)
 - Express serves both API and built frontend from `dist/public/`
 - Runs as systemd service `djbooth` on port 3001
-- Music scanned from `MUSIC_PATH` env var (default: `/home/<user>/Desktop/NEONAIDJ MUSIC`)
+- Music scanned from `MUSIC_PATH` env var (default: `/home/<user>/Desktop/DJ MUSIC`)
 - Chromium kiosk auto-starts via `~/.config/autostart/djbooth-kiosk.desktop`
 
 ### Pi Hardware Details
@@ -30,7 +30,8 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Username pattern: `neonaidj001`, `neonaidj002`, etc.
 - App directory: `/home/<user>/djbooth`
 - Data directory: `/home/<user>/data/` (database)
-- Music directory: `/home/<user>/Desktop/DJ MUSIC`
+- Music directory: `/home/<user>/Desktop/DJ MUSIC` — **synced to/from R2** (`music/` prefix in bucket). Music IS shared across fleet via R2
+- Promo Beds directory: `/home/<user>/Desktop/DJ MUSIC/PROMO BEDS/` — instrumental tracks for AI promo mixing. Synced to R2 like all other music
 - Voiceover directory: `/home/<user>/djbooth/voiceovers` (inside app dir, survives updates, R2 syncs to/from here)
 
 ## GitHub Backup System
@@ -48,6 +49,38 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Replit container takes 6+ seconds cold start, exceeding 5-second healthcheck timeout
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
+
+## Mar 4, 2026 — Session 20 Changes
+
+### New Features
+
+#### AI Promo Creator
+- **Purpose**: Generate radio-quality event promo commercials directly from the DJ booth
+- **Pipeline**: Event form → AI script (OpenAI/Replit LLM) → ElevenLabs TTS voiceover → fetch instrumental from PROMO BEDS folder → OfflineAudioContext stereo mixing with voice activity detection + music ducking → preview/download/save as type 'promo'
+- **Prompt architecture**: "Design It Like a Track, Not an Ad" — section-based timing (First Impact → Build → Info Drop → Peak Escalation → CTA → Hard Out), energy arcs per vibe, controlled chaos density, 3 runtime modes: Short Burst (15s, 35-55 words), Standard Spot (30s, 65-90 words), Extended Hype (60s, 120-165 words)
+- **4 vibes**: Hype (explosive, chaos max), Party (fun, building), Classy (smooth, controlled), Chill (laid-back, low chaos)
+- **Audio mixer**: Stereo WAV output, music ducks to 6% during speech (0.3s attack, 0.5s release), 0.8s fade-in, 2.5s fade-out, 1.2s voice delay before speech starts
+- **Music beds**: From "PROMO BEDS" folder in music library (`/home/<user>/Desktop/DJ MUSIC/PROMO BEDS/`). Genre query is case-insensitive (`COLLATE NOCASE`). Synced across fleet via R2 like all music
+- **UI**: ManualAnnouncementPlayer has tabbed interface ("Create Promo" | "Upload"). 5-step progress bar. Script editable before remixing. "New Bed" picks different instrumental
+- **Files**: `src/utils/promoGenerator.js`, `src/utils/audioMixer.js`, `src/components/dj/ManualAnnouncementPlayer.jsx`
+
+#### Commercial Frequency Setting
+- **Purpose**: Schedule how often promos play during rotation
+- **UI**: "Commercials" dropdown on Options page below Energy Level — Off / Every Set / Every Other Set / Every 3rd Set
+- **Storage**: `localStorage` key `neonaidj_commercial_freq` (values: 'off', '1', '2', '3')
+- **Logic**: `commercialCounterRef` in DJBooth increments on every entertainer transition. `playCommercialIfDue()` checks modulo frequency, fetches random promo/manual from `/api/voiceovers`, plays via `audioEngineRef.playAnnouncement()`. Integrated into all 4 transition paths (handleSkip direct, handleSkip post-interstitial, handleTrackEnd direct, handleTrackEnd post-interstitial)
+- **Files**: `src/components/dj/DJOptions.jsx`, `src/pages/DJBooth.jsx`
+
+### Bug Fixes
+- **Music search bypasses genre filter**: All 4 music browser views (RotationPlaylistManager, PlaylistEditor, RemoteView, DancerView) now ignore genre filtering when a search query is active. PlaylistEditor genre pills replaced with compact dropdown
+- **ElevenLabs all-caps pronunciation**: All-caps names (AVA, GIGI, MIMI) were spelled out letter-by-letter. Pre-TTS conversion now lowercases 2+ letter all-caps words to title case. Pronunciation map regex uses `/gi` flag
+- **Genre query case-insensitive**: `getMusicTracks()` in `server/db.js` uses `COLLATE NOCASE` for genre matching. Ensures folder names like "PROMO BEDS" match regardless of case
+
+### R2 Sync Reminder
+- **Music IS synced to R2** via `syncMusicToR2()` and `syncMusicFromR2()` in `server/r2sync.js`
+- Music files use `music/` prefix in R2 bucket
+- PROMO BEDS instrumentals sync across fleet automatically like all other music
+- Voiceovers sync separately from voiceovers directory
 
 ## Feb 27, 2026 — Session 3 Changes
 

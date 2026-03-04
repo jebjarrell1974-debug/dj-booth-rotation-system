@@ -430,7 +430,7 @@ export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '' 
     params.push(`%${search}%`, `%${search}%`);
   }
   if (genre) {
-    where.push('genre = ?');
+    where.push('genre = ? COLLATE NOCASE');
     params.push(genre);
   }
   const whereClause = 'WHERE ' + where.join(' AND ');

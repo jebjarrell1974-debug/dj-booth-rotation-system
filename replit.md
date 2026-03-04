@@ -29,22 +29,23 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 4, 2026 — Session 20 (Promo Creator, Music Search Fix, Pronunciation Fix)
+### Mar 4, 2026 — Session 20 (Promo Creator, Commercial Scheduling, Music Search Fix, Pronunciation Fix)
 
 #### Feature: AI Promo Creator
-- **Purpose**: Generate radio-quality event promo commercials directly from the DJ booth. Replaces the need for pre-recorded radio spots — DJ fills in event details, app generates a professional promo with AI script + ElevenLabs voice + music bed
+- **Purpose**: Generate radio-quality event promo commercials directly from the DJ booth. DJ fills in event details, app generates a professional promo with AI script + ElevenLabs voice + instrumental music bed
 - **How it works**:
-  1. DJ enters event details (name, date, time, venue, extras) and selects vibe (Hype/Party/Classy/Chill) + duration (30s/60s)
-  2. `promoGenerator.js` builds a radio-imaging-style prompt and sends to OpenAI or Replit LLM
-  3. AI returns a punchy radio script (~80 words for 30s, ~150 words for 60s)
+  1. DJ enters event details (name, date, time, venue, extras) and selects vibe (Hype/Party/Classy/Chill) + duration (15s/30s/60s)
+  2. `promoGenerator.js` builds a track-structured prompt with energy arcs and sends to OpenAI or Replit LLM
+  3. AI returns a punchy radio script structured like a track: First Impact → Build → Info Drop → Peak Escalation → CTA → Hard Out
   4. Script is sent to ElevenLabs TTS with radio-announcer voice settings (stability 0.45, style 0.45, speed 0.88)
-  5. Music bed is fetched from "Promo Beds" genre folder in the music library (random or user-selected track)
-  6. `audioMixer.js` uses OfflineAudioContext to mix voice over music: music fades in, ducks during speech (voice activity detection), fades out at end
+  5. Music bed is fetched from "PROMO BEDS" genre folder in the music library (random or user-selected track)
+  6. `audioMixer.js` uses OfflineAudioContext to mix voice over music: stereo output, music fades in, ducks during speech (voice activity detection), fades out at end
   7. Output is a stereo WAV blob — can preview, download, or save to announcement library as type 'promo'
 - **UI**: ManualAnnouncementPlayer now has tabbed interface: "Create Promo" | "Upload". Progress bar shows 5 steps (Script → Voice → Music → Mix → Done). Script is editable before regenerating. "New Bed" remixes with different music track
-- **Music beds**: Uses tracks from a folder called "Promo Beds" in the music library (genre match). Not Suno API — instrumental tracks are manually added to the Promo Beds folder
+- **Music beds**: Uses tracks from a folder called "PROMO BEDS" in the music library on each Pi (`/home/<user>/Desktop/DJ MUSIC/PROMO BEDS/`). Genre match is case-insensitive. Tracks sync via R2 across fleet like all other music
 - **Audio mixing details**: Voice activity detection with 50ms blocks, music ducks to 6% during speech (0.3s attack, 0.5s release), 0.8s fade-in, 2.5s fade-out, 1.2s voice delay
-- **Files**: `src/utils/promoGenerator.js` (AI prompt + script generation), `src/utils/audioMixer.js` (OfflineAudioContext mixing + WAV encoding), `src/components/dj/ManualAnnouncementPlayer.jsx` (tabbed UI + promo form)
+- **Prompt architecture**: "Design It Like a Track, Not an Ad" — uses section-based timing model with energy arcs, controlled chaos density (high density for short spots, rising density for long spots), duration-aware runtime modes (Short Burst 15s, Standard Spot 30s, Extended Hype 60s), vibe-specific escalation curves
+- **Files**: `src/utils/promoGenerator.js` (AI prompt + script generation), `src/utils/audioMixer.js` (OfflineAudioContext mixing + WAV encoding + voice activity detection), `src/components/dj/ManualAnnouncementPlayer.jsx` (tabbed UI + promo form)
 
 #### Feature: Commercial Frequency Setting
 - **Purpose**: Control how often promos/commercials play during the rotation — off, every set, every other set, or every 3rd set
@@ -52,10 +53,10 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **How it works**:
   1. Setting stored in `localStorage` as `neonaidj_commercial_freq` (values: 'off', '1', '2', '3')
   2. `commercialCounterRef` tracks entertainer transitions in DJBooth
-  3. At each entertainer transition (handleSkip and handleTrackEnd), `playCommercialIfDue()` checks if the counter hits the frequency threshold
+  3. At each entertainer transition (handleSkip and handleTrackEnd — both direct and post-interstitial paths), `playCommercialIfDue()` checks if the counter hits the frequency threshold
   4. When due, fetches a random promo/manual announcement from `/api/voiceovers` and plays it via the audio engine's `playAnnouncement` method
   5. Commercial plays in the gap between entertainers, before the next entertainer's transition announcement
-- **Files**: `src/components/dj/DJOptions.jsx` (dropdown UI), `src/pages/DJBooth.jsx` (playCommercialIfDue function + integration into transition logic)
+- **Files**: `src/components/dj/DJOptions.jsx` (dropdown UI), `src/pages/DJBooth.jsx` (playCommercialIfDue function + integration into all 4 transition paths)
 
 #### Fix: Music Search Bypasses Genre Filter
 - All 4 music browser views (RotationPlaylistManager, PlaylistEditor, RemoteView, DancerView) now ignore genre filtering when a search query is active, so search results aren't limited to the selected genre
@@ -65,6 +66,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - All-caps names (AVA, GIGI, MIMI) were spelled out letter-by-letter by TTS
 - Pre-TTS conversion now lowercases 2+ letter all-caps words to title case before applying pronunciation map
 - Pronunciation map regex uses case-insensitive flag (`/gi`)
+
+#### Fix: Genre Query Case-Insensitive
+- `getMusicTracks()` in `server/db.js` now uses `COLLATE NOCASE` for genre matching
+- Ensures folder names like "PROMO BEDS", "Promo Beds", "promo beds" all match regardless of case
+
+#### Important Reminders for Future Sessions
+- **Music IS synced to R2** — `syncMusicToR2()` and `syncMusicFromR2()` exist in `server/r2sync.js`. Music uploads/downloads from `music/` prefix in R2 bucket. Music library is shared across fleet
+- **Voiceovers are ALSO synced to R2** — separate from music, stored in voiceovers directory
+- **Pi music path**: `/home/<user>/Desktop/DJ MUSIC/` (set via `MUSIC_PATH` env in systemd service)
+- **Promo Beds path on Pi**: `/home/<user>/Desktop/DJ MUSIC/PROMO BEDS/`
 
 ### Mar 4, 2026 — Session 19 (Entertainer Side-Session, Pronunciation Fixes)
 
