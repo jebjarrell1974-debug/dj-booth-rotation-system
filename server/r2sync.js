@@ -31,7 +31,7 @@ export function isR2Configured() {
   return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
 }
 
-export async function uploadVoiceover(cacheKey, filePath) {
+export async function uploadVoiceover(cacheKey, filePath, clubName = null) {
   const client = getClient();
   if (!client) return null;
 
@@ -40,20 +40,36 @@ export async function uploadVoiceover(cacheKey, filePath) {
     const fileName = basename(filePath);
     const key = `voiceovers/${fileName}`;
 
+    const metadata = { cacheKey };
+    if (clubName) metadata.clubName = clubName;
+
     await client.send(new PutObjectCommand({
       Bucket: R2_BUCKET_NAME,
       Key: key,
       Body: fileBuffer,
       ContentType: 'audio/mpeg',
-      Metadata: { cacheKey },
+      Metadata: metadata,
     }));
 
-    console.log(`☁️ R2: Uploaded voiceover ${fileName}`);
+    console.log(`☁️ R2: Uploaded voiceover ${fileName}${clubName ? ` (club: ${clubName})` : ''}`);
     return key;
   } catch (err) {
     console.error(`☁️ R2: Failed to upload voiceover: ${err.message}`);
     return null;
   }
+}
+
+function extractClubFromFilename(fileName) {
+  const match = fileName.match(/-C([a-zA-Z0-9]+)(?:\.|$|-S)/);
+  if (match) return match[1].toLowerCase();
+  const endMatch = fileName.replace(/\.mp3$/i, '').match(/-C([a-zA-Z0-9]+)$/);
+  if (endMatch) return endMatch[1].toLowerCase();
+  return null;
+}
+
+function normalizeClubName(name) {
+  if (!name) return '';
+  return name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 }
 
 function sanitizePath(p) {
@@ -125,16 +141,23 @@ export async function listR2Voiceovers() {
   }
 }
 
-export async function syncVoiceoversFromR2(voiceoverDir) {
+export async function syncVoiceoversFromR2(voiceoverDir, currentClubName = '') {
   const client = getClient();
-  if (!client) return { downloaded: 0, skipped: 0, errors: 0 };
+  if (!client) return { downloaded: 0, skipped: 0, errors: 0, clubFiltered: 0 };
 
   if (!existsSync(voiceoverDir)) mkdirSync(voiceoverDir, { recursive: true });
 
   const remoteFiles = await listR2Voiceovers();
-  let downloaded = 0, skipped = 0, errors = 0;
+  const normalizedClub = normalizeClubName(currentClubName);
+  let downloaded = 0, skipped = 0, errors = 0, clubFiltered = 0;
 
   for (const file of remoteFiles) {
+    const fileClub = extractClubFromFilename(file.name);
+    if (fileClub && normalizedClub && fileClub !== normalizedClub) {
+      clubFiltered++;
+      continue;
+    }
+
     const localPath = join(voiceoverDir, file.name);
     let force = false;
     if (existsSync(localPath)) {
@@ -154,8 +177,12 @@ export async function syncVoiceoversFromR2(voiceoverDir) {
     }
   }
 
-  console.log(`☁️ R2 voiceover sync: ${downloaded} downloaded, ${skipped} already local, ${errors} errors`);
-  return { downloaded, skipped, errors };
+  if (clubFiltered > 0) {
+    console.log(`☁️ R2 voiceover sync: ${downloaded} downloaded, ${skipped} already local, ${clubFiltered} other-club skipped, ${errors} errors`);
+  } else {
+    console.log(`☁️ R2 voiceover sync: ${downloaded} downloaded, ${skipped} already local, ${errors} errors`);
+  }
+  return { downloaded, skipped, errors, clubFiltered };
 }
 
 export async function syncVoiceoversToR2(voiceoverDir) {
@@ -181,11 +208,15 @@ export async function syncVoiceoversToR2(voiceoverDir) {
 
     try {
       const fileBuffer = readFileSync(localPath);
+      const fileClub = extractClubFromFilename(fileName);
+      const metadata = {};
+      if (fileClub) metadata.clubName = fileClub;
       await client.send(new PutObjectCommand({
         Bucket: R2_BUCKET_NAME,
         Key: `voiceovers/${fileName}`,
         Body: fileBuffer,
         ContentType: 'audio/mpeg',
+        Metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       }));
       uploaded++;
     } catch (err) {

@@ -57,16 +57,29 @@ function getSessionInfo() {
   };
 }
 
+let _tokenOverride = null;
+function setTokenOverride(token) { _tokenOverride = token; }
+function getTokenOverride() { return _tokenOverride; }
+
+const DJ_PATHS = ['/booth/', '/settings/', '/auth/', '/dancers', '/rotation', '/health', '/admin/'];
+
 async function apiFetch(path, options = {}) {
-  const token = getToken();
+  const isDJPath = DJ_PATHS.some(p => path.startsWith(p));
+  const usingOverride = !!_tokenOverride && !isDJPath;
+  const token = (usingOverride ? _tokenOverride : null) || getToken();
   const headers = { 'Content-Type': 'application/json', ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   
   const res = await fetch(`${getApiBase()}${path}`, { ...options, headers });
   
   if (res.status === 401) {
-    clearToken();
-    window.dispatchEvent(new Event('djbooth-session-expired'));
+    if (usingOverride) {
+      _tokenOverride = null;
+      window.dispatchEvent(new Event('djbooth-dancer-session-expired'));
+    } else {
+      clearToken();
+      window.dispatchEvent(new Event('djbooth-session-expired'));
+    }
     throw new Error('Session expired');
   }
   
@@ -161,4 +174,4 @@ export function connectBoothSSE(onMessage) {
   return es;
 }
 
-export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode, setBoothIp, getBoothIp };
+export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode, setBoothIp, getBoothIp, setTokenOverride, getTokenOverride };

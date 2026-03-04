@@ -216,6 +216,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       'Nadia\'s': 'Nah-dee-ah\'s',
       'Yasmine': 'Yazmen',
       'Yasmine\'s': 'Yazmen\'s',
+      'Mimi': 'Mee-Mee',
+      'Mimi\'s': 'Mee-Mee\'s',
+      'Ava': 'Ay-vuh',
+      'Ava\'s': 'Ay-vuh\'s',
+      'Gigi': 'Jee-Jee',
+      'Gigi\'s': 'Jee-Jee\'s',
     };
     let ttsText = script;
     for (const [name, phonetic] of Object.entries(PRONUNCIATION_MAP)) {
@@ -278,12 +284,21 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return `-S${Math.abs(h).toString(36)}`;
   };
 
+  const getClubSuffix = () => {
+    const config = getApiConfig();
+    const clubName = (config.clubName || '').trim();
+    if (!clubName) return '';
+    return `-C${clubName.replace(/[^a-zA-Z0-9]/g, '')}`;
+  };
+
   const getCacheKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return getAnnouncementKey(type, dancerName, nextDancerName, energyLevel) + getSpecialsHash();
+    return getAnnouncementKey(type, dancerName, nextDancerName, energyLevel) + getSpecialsHash() + getClubSuffix();
   };
 
   const saveToServer = useCallback(async (cacheKey, audioBlob, script, type, dancerName, energyLevel) => {
     try {
+      const config = getApiConfig();
+      const clubName = (config.clubName || '').trim() || null;
       const audio_base64 = await blobToBase64(audioBlob);
       const res = await fetch('/api/voiceovers', {
         method: 'POST',
@@ -297,11 +312,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           script,
           type,
           dancer_name: dancerName,
-          energy_level: energyLevel
+          energy_level: energyLevel,
+          club_name: clubName
         })
       });
       if (res.ok) {
-        console.log(`💾 Saved voiceover to server: ${cacheKey}`);
+        console.log(`💾 Saved voiceover to server: ${cacheKey}${clubName ? ` (club: ${clubName})` : ''}`);
         return true;
       }
       console.error('Server save failed:', res.status);
@@ -344,8 +360,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, []);
 
   const findCachedAtAnyLevel = useCallback(async (type, dancerName, nextDancerName) => {
+    const clubSuffix = getClubSuffix();
     for (let l = 1; l <= 5; l++) {
-      const altKey = getAnnouncementKey(type, dancerName, nextDancerName, l);
+      const altKey = getAnnouncementKey(type, dancerName, nextDancerName, l) + clubSuffix;
       const idb = await getCachedFromIndexedDB(altKey);
       if (idb) {
         console.log(`✅ Found cached ${type} for ${dancerName} at L${l} (IndexedDB)`);
@@ -364,8 +381,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const config = getApiConfig();
     const level = energyLevel ?? getCurrentEnergyLevel(config);
     const specialsSuffix = getSpecialsHash();
+    const clubSuffix = getClubSuffix();
     const hasSpecials = specialsSuffix.length > 0;
-    const key = getAnnouncementKey(type, dancerName, nextDancerName, level) + specialsSuffix;
+    const key = getAnnouncementKey(type, dancerName, nextDancerName, level) + specialsSuffix + clubSuffix;
 
     const idbCached = await getCachedFromIndexedDB(key);
     if (idbCached) {

@@ -382,17 +382,17 @@ app.get('/api/voiceovers/audio/:cacheKey', authenticate, (req, res) => {
 });
 
 app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
-  const { cache_key, script, type, dancer_name, energy_level, audio_base64 } = req.body;
+  const { cache_key, script, type, dancer_name, energy_level, audio_base64, club_name } = req.body;
   if (!cache_key || !type || !audio_base64) {
     return res.status(400).json({ error: 'cache_key, type, and audio_base64 required' });
   }
   try {
     const audioBuffer = Buffer.from(audio_base64, 'base64');
-    const result = saveVoiceover(cache_key, audioBuffer, script || null, type, dancer_name || null, parseInt(energy_level) || 3);
+    const result = saveVoiceover(cache_key, audioBuffer, script || null, type, dancer_name || null, parseInt(energy_level) || 3, club_name || null);
     res.json({ ok: true, ...result });
     if (isR2Configured() && result.fileName) {
       const voiceoverPath = getVoiceoverFilePath(cache_key);
-      if (voiceoverPath) uploadVoiceover(cache_key, voiceoverPath).catch(() => {});
+      if (voiceoverPath) uploadVoiceover(cache_key, voiceoverPath, club_name || null).catch(() => {});
     }
   } catch (err) {
     console.error('Failed to save voiceover:', err.message);
@@ -426,13 +426,14 @@ app.get('/api/r2/status', authenticate, requireDJ, async (req, res) => {
 app.post('/api/r2/sync/voiceovers', authenticate, requireDJ, async (req, res) => {
   if (!isR2Configured()) return res.status(400).json({ error: 'R2 not configured' });
   const { direction } = req.body;
+  const currentClub = getSetting('club_name') || '';
   try {
     const voiceoverDir = getVoiceoverDirPath();
     if (direction === 'upload') {
       const result = await syncVoiceoversToR2(voiceoverDir);
       res.json({ ok: true, ...result });
     } else {
-      const result = await syncVoiceoversFromR2(voiceoverDir);
+      const result = await syncVoiceoversFromR2(voiceoverDir, currentClub);
       res.json({ ok: true, ...result });
     }
   } catch (err) {
@@ -507,7 +508,8 @@ app.post('/api/admin/sync', async (req, res) => {
   if (!isR2Configured()) return res.status(400).json({ error: 'R2 not configured' });
   try {
     const voiceoverDir = getVoiceoverDirPath();
-    const downloaded = await syncVoiceoversFromR2(voiceoverDir);
+    const currentClub = getSetting('club_name') || '';
+    const downloaded = await syncVoiceoversFromR2(voiceoverDir, currentClub);
     const uploaded = await syncVoiceoversToR2(voiceoverDir);
     res.json({ ok: true, downloaded, uploaded });
   } catch (err) {
@@ -1131,8 +1133,9 @@ async function initR2Sync() {
   console.log('☁️ R2 cloud sync enabled — starting background sync...');
   try {
     const voiceoverDir = getVoiceoverDirPath();
+    const currentClub = getSetting('club_name') || '';
     updateBootStep('voiceoverSync', 'running', 'Downloading...');
-    const voResult = await syncVoiceoversFromR2(voiceoverDir);
+    const voResult = await syncVoiceoversFromR2(voiceoverDir, currentClub);
     updateBootStep('voiceoverSync', 'done', `${voResult.downloaded} new, ${voResult.skipped} cached`);
     console.log(`☁️ Voiceover sync: ${voResult.downloaded} new, ${voResult.skipped} cached`);
 

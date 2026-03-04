@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { playlistApi, musicApi, auth as authApi } from '@/api/serverApi';
+import { playlistApi, musicApi, auth as authApi, setTokenOverride } from '@/api/serverApi';
 import { Button } from '@/components/ui/button';
 import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen } from 'lucide-react';
 
@@ -10,7 +10,7 @@ const LONG_PRESS_MS = 200;
 const PHONE_BREAKPOINT = 768;
 
 export default function DancerView() {
-  const { user, role, isAuthenticated, logout } = useAuth();
+  const { user, role, isAuthenticated, logout, dancerSession, logoutDancerSession } = useAuth();
   const navigate = useNavigate();
   const [playlist, setPlaylist] = useState([]);
   const [tracks, setTracks] = useState([]);
@@ -39,11 +39,23 @@ export default function DancerView() {
   playlistRef.current = playlist;
   const saveTimerRef = useRef(null);
 
+  const isDancerSession = !!dancerSession;
+  const effectiveUser = isDancerSession ? dancerSession.user : user;
+
   useEffect(() => {
-    if (!isAuthenticated || role !== 'dancer') {
+    if (isDancerSession) {
+      setTokenOverride(dancerSession.token);
+    }
+    return () => {
+      setTokenOverride(null);
+    };
+  }, [isDancerSession, dancerSession]);
+
+  useEffect(() => {
+    if (!isDancerSession && (!isAuthenticated || role !== 'dancer')) {
       navigate('/');
     }
-  }, [isAuthenticated, role, navigate]);
+  }, [isAuthenticated, role, navigate, isDancerSession]);
 
   useEffect(() => {
     const load = async () => {
@@ -97,7 +109,12 @@ export default function DancerView() {
     
     const checker = setInterval(async () => {
       if (Date.now() - lastActivityRef.current > INACTIVITY_TIMEOUT) {
-        navigate('/');
+        if (isDancerSession) {
+          logoutDancerSession();
+          navigate('/DJBooth');
+        } else {
+          navigate('/');
+        }
       } else {
         authApi.ping().catch(() => {});
       }
@@ -107,7 +124,7 @@ export default function DancerView() {
       events.forEach(e => window.removeEventListener(e, resetTimer));
       clearInterval(checker);
     };
-  }, [logout, navigate]);
+  }, [logout, navigate, isDancerSession, logoutDancerSession]);
 
   const flushSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -246,7 +263,12 @@ export default function DancerView() {
 
   const handleLogout = () => {
     flushSave();
-    navigate('/');
+    if (isDancerSession) {
+      logoutDancerSession();
+      navigate('/DJBooth');
+    } else {
+      navigate('/');
+    }
   };
 
   const loadMore = () => {
@@ -269,7 +291,7 @@ export default function DancerView() {
     <div className="h-[100dvh] bg-[#08081a] flex flex-col overflow-hidden">
       <div className="px-4 py-2 border-b border-[#1e293b] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
         <div>
-          <h1 className="text-lg font-bold text-white">{user?.name || 'Entertainer'}</h1>
+          <h1 className="text-lg font-bold text-white">{effectiveUser?.name || 'Entertainer'}</h1>
           <p className="text-[10px] text-gray-500">My Playlist</p>
         </div>
         <Button variant="ghost" size="sm" onClick={handleLogout} className="text-gray-400 hover:text-white">

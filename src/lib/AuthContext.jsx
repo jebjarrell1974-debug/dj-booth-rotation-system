@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings, setAppPublicSettings] = useState({});
+  const [dancerSession, setDancerSession] = useState(null);
 
   const autoLoginAttemptedRef = React.useRef(false);
 
@@ -64,15 +65,34 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('djbooth-session-expired', handler);
   }, []);
 
+  useEffect(() => {
+    const handler = () => {
+      setDancerSession(null);
+    };
+    window.addEventListener('djbooth-dancer-session-expired', handler);
+    return () => window.removeEventListener('djbooth-dancer-session-expired', handler);
+  }, []);
+
   const login = useCallback(async (loginRole, pin, options = {}) => {
     const data = await auth.login(loginRole, pin);
     if (options.remote) data.remote = true;
+
+    if (loginRole === 'dancer' && role === 'dj' && isAuthenticated && !isRemoteMode()) {
+      setDancerSession({
+        token: data.token,
+        dancerId: data.dancerId,
+        dancerName: data.dancerName,
+        user: { name: data.dancerName, dancerId: data.dancerId },
+      });
+      return data;
+    }
+
     setSessionInfo(data);
     setUser({ name: data.dancerName || 'DJ', dancerId: data.dancerId });
     setRole(data.role);
     setIsAuthenticated(true);
     return data;
-  }, []);
+  }, [role, isAuthenticated]);
 
   const initDjPin = useCallback(async (pin) => {
     const data = await auth.initDjPin(pin);
@@ -84,11 +104,19 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const logout = useCallback(async () => {
+    if (dancerSession) {
+      setDancerSession(null);
+      return;
+    }
     await auth.logout();
     clearToken();
     setUser(null);
     setRole(null);
     setIsAuthenticated(false);
+  }, [dancerSession]);
+
+  const logoutDancerSession = useCallback(() => {
+    setDancerSession(null);
   }, []);
 
   const navigateToLogin = () => {};
@@ -106,7 +134,9 @@ export const AuthProvider = ({ children }) => {
       initDjPin,
       logout,
       navigateToLogin,
-      checkAppState: checkSession
+      checkAppState: checkSession,
+      dancerSession,
+      logoutDancerSession,
     }}>
       {children}
     </AuthContext.Provider>

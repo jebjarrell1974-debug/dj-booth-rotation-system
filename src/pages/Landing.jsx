@@ -79,17 +79,23 @@ export default function Landing() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [boothIpInput, setBoothIpInput] = useState(getBoothIp());
-  const { login, initDjPin, isAuthenticated, role } = useAuth();
+  const { login, initDjPin, isAuthenticated, role, dancerSession } = useAuth();
   const navigate = useNavigate();
 
   const manualLoginRef = React.useRef(false);
 
   useEffect(() => {
     if (isAuthenticated && manualLoginRef.current) {
-      if (role === 'dj') navigate('/DJBooth');
+      if (role === 'dj' && !dancerSession) navigate('/DJBooth');
       else if (role === 'dancer') navigate('/DancerView');
     }
-  }, [isAuthenticated, role, navigate]);
+  }, [isAuthenticated, role, navigate, dancerSession]);
+
+  useEffect(() => {
+    if (dancerSession) {
+      navigate('/DancerView');
+    }
+  }, [dancerSession, navigate]);
 
   const handleDJLogin = useCallback(async (pin) => {
     setError('');

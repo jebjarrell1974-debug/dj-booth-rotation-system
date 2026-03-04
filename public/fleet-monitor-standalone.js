@@ -13,6 +13,21 @@ const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const devices = new Map();
+const commandRateLimit = new Map();
+const RATE_LIMIT_WINDOW_MS = 60000;
+const RATE_LIMIT_MAX = 10;
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = commandRateLimit.get(ip);
+  if (!entry || (now - entry.windowStart) > RATE_LIMIT_WINDOW_MS) {
+    commandRateLimit.set(ip, { windowStart: now, count: 1 });
+    return true;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return false;
+  return true;
+}
 
 let dashboardHtml = '';
 try {
@@ -158,6 +173,11 @@ const server = http.createServer(async (req, res) => {
 
   const cmdMatch = req.url?.match(/^\/api\/monitor\/command\/([^/]+)\/(update|restart|reboot|sync)$/);
   if (req.method === 'POST' && cmdMatch) {
+    const clientIp = req.socket.remoteAddress || '';
+    if (!checkRateLimit(clientIp)) {
+      return jsonResponse(res, 429, { error: 'Too many requests. Try again later.' });
+    }
+
     const deviceId = decodeURIComponent(cmdMatch[1]);
     const action = cmdMatch[2];
     const body = await parseBody(req);

@@ -139,6 +139,13 @@ try {
   db.exec("ALTER TABLE music_tracks ADD COLUMN blocked_at TEXT");
 }
 
+try {
+  db.prepare("SELECT club_name FROM voiceovers LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE voiceovers ADD COLUMN club_name TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_voiceovers_club_name ON voiceovers(club_name)");
+}
+
 function getVoiceoverDir() {
   if (process.env.VOICEOVER_PATH) {
     const dir = process.env.VOICEOVER_PATH;
@@ -305,15 +312,15 @@ export function listSongs() {
   return db.prepare('SELECT name FROM songs ORDER BY name ASC').all().map(r => r.name);
 }
 
-export function saveVoiceover(cacheKey, audioBuffer, script, type, dancerName, energyLevel) {
+export function saveVoiceover(cacheKey, audioBuffer, script, type, dancerName, energyLevel, clubName) {
   const fileName = cacheKey.replace(/[^a-zA-Z0-9_-]/g, '_') + '.mp3';
   const filePath = join(VOICEOVER_DIR, fileName);
   writeFileSync(filePath, Buffer.from(audioBuffer));
   db.prepare(
-    `INSERT OR REPLACE INTO voiceovers (cache_key, file_name, script, type, dancer_name, energy_level)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(cacheKey, fileName, script || null, type, dancerName || null, energyLevel || 3);
-  return { cacheKey, fileName };
+    `INSERT OR REPLACE INTO voiceovers (cache_key, file_name, script, type, dancer_name, energy_level, club_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(cacheKey, fileName, script || null, type, dancerName || null, energyLevel || 3, clubName || null);
+  return { cacheKey, fileName, clubName: clubName || null };
 }
 
 const VOICEOVER_VALID_AFTER = '2026-03-04';

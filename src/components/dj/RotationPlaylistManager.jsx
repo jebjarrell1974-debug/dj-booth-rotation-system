@@ -316,7 +316,7 @@ export default function RotationPlaylistManager({
   const rotationDancers = localRotation.map(id => dancers.find(d => d.id === id)).filter(Boolean);
   const availableDancers = dancers.filter(d => d.is_active && !localRotation.includes(d.id)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
-  const genreFilteredTracks = filterByGenres(serverTracks, djOptions?.activeGenres);
+  const genreFilteredTracks = debouncedSearch.trim() ? serverTracks : filterByGenres(serverTracks, djOptions?.activeGenres);
   const filteredTracks = genreFilteredTracks;
   const displayedTracks = genreFilteredTracks;
 

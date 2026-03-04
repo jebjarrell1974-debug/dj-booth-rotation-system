@@ -29,6 +29,41 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 4, 2026 — Session 19 (Entertainer Side-Session, Pronunciation Fixes)
+
+#### Fix: Entertainer Portal No Longer Kills Music
+- **Problem**: On the Pi kiosk (single browser), logging in as an entertainer replaced the DJ auth session, which unmounted PersistentDJBooth and killed the music
+- **Solution**: Added "dancer side-session" — when an entertainer logs in while DJ is already authenticated on a local (non-remote) device, the dancer auth is stored separately in `dancerSession` state without touching the DJ session
+- **How it works**:
+  1. `AuthContext` stores `dancerSession` alongside the main DJ auth (`user`/`role`/`isAuthenticated`)
+  2. On login, if `role === 'dj' && isAuthenticated && !isRemoteMode()` and dancer is logging in, the dancer token goes into `dancerSession` instead of replacing the main auth
+  3. `ProtectedRoute` allows DancerView access when `dancerSession` is set
+  4. `DancerView` sets a token override (`setTokenOverride`) so its API calls use the dancer token
+  5. Token override is path-scoped: DJ paths (`/booth/`, `/settings/`, `/auth/`, etc.) always use the main DJ token, preventing bleed
+  6. 401 errors on override-token requests dispatch `djbooth-dancer-session-expired` (not the DJ session expired event)
+  7. On entertainer logout/timeout, `dancerSession` is cleared and navigation returns to `/DJBooth` (not `/`)
+  8. `PersistentDJBooth` stays mounted (hidden) the entire time — music keeps playing
+- **Files**: `src/lib/AuthContext.jsx`, `src/App.jsx`, `src/pages/Landing.jsx`, `src/pages/DancerView.jsx`, `src/api/serverApi.js`
+
+#### Pronunciation Fixes
+- Added to `PRONUNCIATION_MAP` in AnnouncementSystem.jsx: Mimi → Mee-Mee, Ava → Ay-vuh, Gigi → Jee-Jee
+
+### Mar 4, 2026 — Session 18 (Beat Matching + Club-Locked Voiceovers)
+
+#### Feature: Club-Locked Voiceovers
+- **Purpose**: Prevent club-specific voiceovers (that mention a club by name) from playing at other clubs. The demo Pi travels between venues, so changing the club name in config instantly switches which voiceovers are active
+- **How it works**:
+  1. Club name is encoded in the cache key: `intro-ASHLEY-L3-Cponynation` (the `-C` suffix)
+  2. When no club name is set, no suffix is added → voiceover is "universal" (shared everywhere)
+  3. When a club name IS set, the AI prompt includes the club name, and the cache key includes the club tag → voiceover is club-specific
+  4. Cache key separation means different clubs naturally get different voiceovers
+  5. All voiceovers stay saved locally forever — nothing is deleted when switching clubs
+  6. Playback is automatically filtered because cache key lookups include the current club suffix
+- **R2 sync filtering**: When downloading from R2, filenames are checked for a `-C` club tag. Files tagged for a different club are skipped (saves bandwidth on permanent installations). Universal voiceovers (no `-C` tag) always sync
+- **Database**: `voiceovers` table has new `club_name TEXT` column (nullable, NULL = universal). Migration runs automatically
+- **Server**: `POST /api/voiceovers` accepts optional `club_name` field. Upload to R2 includes `clubName` in object metadata
+- **Files**: `server/db.js` (column + migration), `server/r2sync.js` (upload metadata + download filtering), `server/index.js` (pass club through endpoints), `src/components/dj/AnnouncementSystem.jsx` (cache key suffix + save with club name)
+
 ### Mar 4, 2026 — Session 18 (Beat Matching)
 
 #### Feature: Beat-Matched Crossfading

@@ -529,6 +529,10 @@
                 <span class="stat-value">${d.voiceoverCount || 0}</span>
               </div>
               <div class="stat-row">
+                <span class="stat-label">Version</span>
+                <span class="stat-value">${esc(d.version || '--')}</span>
+              </div>
+              <div class="stat-row">
                 <span class="stat-label">IP</span>
                 <span class="stat-value">${esc(d.tailscaleIp || d.ip || '--')}</span>
               </div>

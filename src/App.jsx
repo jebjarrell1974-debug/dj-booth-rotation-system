@@ -47,7 +47,7 @@ class ErrorBoundary extends React.Component {
 }
 
 function ProtectedRoute({ children, allowedRole }) {
-  const { isAuthenticated, role, isLoadingAuth } = useAuth();
+  const { isAuthenticated, role, isLoadingAuth, dancerSession } = useAuth();
   
   if (isLoadingAuth) {
     return (
@@ -57,6 +57,7 @@ function ProtectedRoute({ children, allowedRole }) {
     );
   }
   
+  if (allowedRole === 'dancer' && dancerSession) return children;
   if (!isAuthenticated) return <Navigate to="/" replace />;
   if (allowedRole && role !== allowedRole) return <Navigate to="/" replace />;
   
