@@ -234,7 +234,7 @@ export default function DancerRoster({
                   <ListMusic className="w-3.5 h-3.5" />
                 </Button>
 
-                <Dialog>
+                <Dialog open={editingDancer?.id === dancer.id} onOpenChange={(open) => { if (!open) setEditingDancer(null); }}>
                   <DialogTrigger asChild>
                     <Button
                       size="icon"
