@@ -38,7 +38,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 4, 2026 — Session 22 (Rotation Playlist Dropdown, Enhanced Boot Screen)
+### Mar 4, 2026 — Session 22 (Rotation Playlist Dropdown, Enhanced Boot Screen, API Cost Tracking)
 
 #### Feature: Entertainer Playlist Dropdown in RotationPlaylistManager
 - **Purpose**: The Rotation tab's music library panel (left half) now has the same entertainer playlist dropdown as the Library tab
@@ -55,6 +55,25 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - All text uses monospace/terminal font for tech feel
   - Progress auto-fills to 95% then jumps to 100% when server reports ready
 - **File**: `src/components/BootScreen.jsx`
+
+#### Feature: Per-Unit API Cost Tracking
+- **Purpose**: Track ElevenLabs and OpenAI API costs per Pi unit for billing
+- **How it works**:
+  1. Every API call (ElevenLabs TTS + OpenAI script generation) is logged to local SQLite `api_usage` table
+  2. Server attaches its own device ID (hostname or `DEVICE_ID` env var) to each log entry
+  3. Cost estimates use current API pricing: ElevenLabs $0.00003/char, OpenAI varies by model
+  4. OpenAI usage tokens from API response are used when available; otherwise estimated at ~4 chars/token
+  5. Entries auto-cleaned after 180 days
+- **Database**: `api_usage` table with columns: device_id, service, model, endpoint, characters, prompt_tokens, completion_tokens, estimated_cost, context, created_at
+- **API Endpoints**:
+  - `POST /api/usage/log` — log an API call (no auth needed, device ID added server-side)
+  - `GET /api/usage/summary` — get cost summary with breakdowns by device/service/day (DJ auth required)
+  - `GET /api/usage/by-device` — get per-device cost breakdown (DJ auth required)
+  - `GET /api/usage/device-id` — get this unit's device ID
+- **Client tracker**: `src/utils/apiCostTracker.js` — exports `trackElevenLabsCall()`, `trackOpenAICall()`, `estimateTokens()`
+- **Tracked call sites**: `AnnouncementSystem.jsx` (intro/outro scripts + TTS), `ManualAnnouncementPlayer.jsx` (promo TTS), `promoGenerator.js` (promo scripts), `Configuration.jsx` (bulk pre-cache scripts + TTS), `localEntities.js` (InvokeLLM fallback)
+- **UI**: "API Costs" section in Configuration page showing total cost, call count, TTS characters, service breakdown, and daily cost history. Filterable by time period (7/30/90/365 days). Shows this unit's device ID
+- **Files**: `server/db.js` (table + queries), `server/index.js` (endpoints), `src/utils/apiCostTracker.js` (client tracker), `src/pages/Configuration.jsx` (dashboard UI)
 
 ### Mar 4, 2026 — Session 21 (Remote Deactivate, Club Name Fix, Commercial Audio Fix, Voice Delivery Fix, Remote Break Songs, Commercial Shuffle)
 

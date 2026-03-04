@@ -580,6 +580,112 @@ export function getPlayHistoryStats(date = null) {
   return { total: total.count, topTracks, topDancers, topGenres };
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS api_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL DEFAULT 'local',
+    service TEXT NOT NULL,
+    model TEXT DEFAULT '',
+    endpoint TEXT DEFAULT '',
+    characters INTEGER DEFAULT 0,
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    estimated_cost REAL DEFAULT 0,
+    context TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_api_usage_device ON api_usage(device_id);
+  CREATE INDEX IF NOT EXISTS idx_api_usage_service ON api_usage(service);
+  CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at);
+`);
+
+export function logApiUsage({ deviceId, service, model, endpoint, characters, promptTokens, completionTokens, estimatedCost, context }) {
+  return db.prepare(`
+    INSERT INTO api_usage (device_id, service, model, endpoint, characters, prompt_tokens, completion_tokens, estimated_cost, context)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    deviceId || 'local',
+    service || 'unknown',
+    model || '',
+    endpoint || '',
+    characters || 0,
+    promptTokens || 0,
+    completionTokens || 0,
+    estimatedCost || 0,
+    context || ''
+  );
+}
+
+export function getApiUsageSummary({ startDate, endDate, deviceId } = {}) {
+  let where = '1=1';
+  const params = [];
+  if (startDate) { where += ' AND created_at >= ?'; params.push(startDate); }
+  if (endDate) { where += ' AND created_at <= ?'; params.push(endDate); }
+  if (deviceId) { where += ' AND device_id = ?'; params.push(deviceId); }
+
+  const byDevice = db.prepare(`
+    SELECT device_id, service,
+      SUM(characters) as total_characters,
+      SUM(prompt_tokens) as total_prompt_tokens,
+      SUM(completion_tokens) as total_completion_tokens,
+      SUM(estimated_cost) as total_cost,
+      COUNT(*) as call_count
+    FROM api_usage WHERE ${where}
+    GROUP BY device_id, service
+    ORDER BY device_id, service
+  `).all(...params);
+
+  const byDay = db.prepare(`
+    SELECT date(created_at) as day, device_id, service,
+      SUM(estimated_cost) as total_cost,
+      COUNT(*) as call_count
+    FROM api_usage WHERE ${where}
+    GROUP BY day, device_id, service
+    ORDER BY day DESC
+    LIMIT 90
+  `).all(...params);
+
+  const totals = db.prepare(`
+    SELECT
+      SUM(estimated_cost) as total_cost,
+      SUM(characters) as total_characters,
+      SUM(prompt_tokens) as total_prompt_tokens,
+      SUM(completion_tokens) as total_completion_tokens,
+      COUNT(*) as total_calls
+    FROM api_usage WHERE ${where}
+  `).get(...params);
+
+  return { byDevice, byDay, totals };
+}
+
+export function getApiUsageByDevice({ startDate, endDate } = {}) {
+  let where = '1=1';
+  const params = [];
+  if (startDate) { where += ' AND created_at >= ?'; params.push(startDate); }
+  if (endDate) { where += ' AND created_at <= ?'; params.push(endDate); }
+
+  return db.prepare(`
+    SELECT device_id,
+      SUM(CASE WHEN service = 'elevenlabs' THEN estimated_cost ELSE 0 END) as elevenlabs_cost,
+      SUM(CASE WHEN service = 'openai' THEN estimated_cost ELSE 0 END) as openai_cost,
+      SUM(estimated_cost) as total_cost,
+      SUM(CASE WHEN service = 'elevenlabs' THEN 1 ELSE 0 END) as elevenlabs_calls,
+      SUM(CASE WHEN service = 'openai' THEN 1 ELSE 0 END) as openai_calls,
+      SUM(characters) as total_characters,
+      COUNT(*) as total_calls
+    FROM api_usage WHERE ${where}
+    GROUP BY device_id
+    ORDER BY total_cost DESC
+  `).all(...params);
+}
+
+export function cleanOldApiUsage(daysToKeep = 180) {
+  const result = db.prepare(
+    `DELETE FROM api_usage WHERE created_at < datetime('now', 'localtime', ?)`
+  ).run(`-${daysToKeep} days`);
+  return result.changes;
+}
+
 export function cleanOldPlayHistory(daysToKeep = 90) {
   const result = db.prepare(
     `DELETE FROM play_history WHERE played_at < datetime('now', 'localtime', ?)`

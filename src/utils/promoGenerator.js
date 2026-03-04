@@ -1,5 +1,6 @@
 import { getApiConfig } from '@/components/apiConfig';
 import { localIntegrations } from '@/api/localEntities';
+import { trackOpenAICall, estimateTokens } from '@/utils/apiCostTracker';
 
 const VIBE_STYLES = {
   hype: {
@@ -136,6 +137,13 @@ export async function generatePromoScript(eventDetails) {
       throw new Error(`OpenAI ${res.status}: ${errText}`);
     }
     const data = await res.json();
+    const usage = data.usage;
+    trackOpenAICall({
+      model: scriptModel,
+      promptTokens: usage?.prompt_tokens || estimateTokens(prompt),
+      completionTokens: usage?.completion_tokens || estimateTokens(data.choices?.[0]?.message?.content || ''),
+      context: 'promo-script',
+    });
     const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
     return text.trim().replace(/^["']|["']$/g, '');
   }

@@ -249,6 +249,14 @@ export const localIntegrations = {
             throw new Error(`OpenAI API error (${status})`);
           }
           const data = await response.json();
+          const { trackOpenAICall, estimateTokens } = await import('@/utils/apiCostTracker');
+          const usage = data.usage;
+          trackOpenAICall({
+            model: 'gpt-4o-mini',
+            promptTokens: usage?.prompt_tokens || estimateTokens(prompt),
+            completionTokens: usage?.completion_tokens || estimateTokens(data.choices?.[0]?.message?.content || ''),
+            context: 'invokellm-fallback',
+          });
           const content = data.choices?.[0]?.message?.content;
           if (typeof content === 'string') return content;
           return String(content ?? '');

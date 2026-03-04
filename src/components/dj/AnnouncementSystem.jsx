@@ -6,6 +6,7 @@ import { Mic, Download, Wifi, WifiOff, Loader2, Check, AlertCircle, HardDrive } 
 import { localIntegrations } from '@/api/localEntities';
 import { getApiConfig } from '@/components/apiConfig';
 import { getCurrentEnergyLevel, VOICE_SETTINGS, ENERGY_LEVELS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem('djbooth_token');
@@ -186,6 +187,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         throw new Error(`OpenAI ${res.status}: ${errText}`);
       }
       const data = await res.json();
+      const usage = data.usage;
+      trackOpenAICall({
+        model: scriptModel,
+        promptTokens: usage?.prompt_tokens || estimateTokens(prompt),
+        completionTokens: usage?.completion_tokens || estimateTokens(data.choices?.[0]?.message?.content || ''),
+        context: `announcement-${type}-${dancerName}`,
+      });
       return parseResponse(data);
     }
 
@@ -278,6 +286,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
     }
 
+    trackElevenLabsCall({ text: ttsText, model: 'eleven_turbo_v2_5', context: 'announcement-tts' });
     return await response.blob();
   }, [elevenLabsApiKey]);
 

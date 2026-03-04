@@ -3,7 +3,7 @@ import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, statSync, createReadStream, readdirSync } from 'fs';
-import { networkInterfaces } from 'os';
+import { networkInterfaces, hostname } from 'os';
 import {
   getSetting, setSetting, hashPin, verifyPin,
   createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer,
@@ -15,7 +15,8 @@ import {
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory,
-  blockTrack, unblockTrack, getBlockedTracks
+  blockTrack, unblockTrack, getBlockedTracks,
+  logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage
 } from './db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
@@ -88,6 +89,7 @@ let commandIdCounter = 0;
 
 setInterval(() => cleanExpiredSessions(DANCER_TIMEOUT_MS), 30 * 1000);
 setInterval(() => cleanOldPlayHistory(90), 24 * 60 * 60 * 1000);
+setInterval(() => cleanOldApiUsage(180), 24 * 60 * 60 * 1000);
 
 function authenticate(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -412,6 +414,54 @@ app.delete('/api/voiceovers', authenticate, requireDJ, (req, res) => {
   const count = clearAllVoiceovers();
   console.log(`🗑️ Cleared all voiceovers: ${count} removed`);
   res.json({ ok: true, deleted: count });
+});
+
+const SERVER_DEVICE_ID = process.env.DEVICE_ID || hostname() || 'local';
+
+app.post('/api/usage/log', (req, res) => {
+  try {
+    const { service, model, endpoint, characters, promptTokens, completionTokens, estimatedCost, context } = req.body;
+    if (!service) return res.status(400).json({ error: 'service is required' });
+    logApiUsage({
+      deviceId: SERVER_DEVICE_ID,
+      service,
+      model: model || '',
+      endpoint: endpoint || '',
+      characters: characters || 0,
+      promptTokens: promptTokens || 0,
+      completionTokens: completionTokens || 0,
+      estimatedCost: estimatedCost || 0,
+      context: context || ''
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('API usage log error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/usage/summary', authenticate, requireDJ, (req, res) => {
+  try {
+    const { startDate, endDate, deviceId } = req.query;
+    const summary = getApiUsageSummary({ startDate, endDate, deviceId });
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/usage/by-device', authenticate, requireDJ, (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const data = getApiUsageByDevice({ startDate, endDate });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/usage/device-id', (req, res) => {
+  res.json({ deviceId: SERVER_DEVICE_ID });
 });
 
 app.use('/api/fleet', fleetRoutes);

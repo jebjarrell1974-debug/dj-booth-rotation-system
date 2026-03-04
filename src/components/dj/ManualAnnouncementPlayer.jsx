@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { getApiConfig } from '@/components/apiConfig';
 import { generatePromoScript, VIBE_STYLES } from '@/utils/promoGenerator';
 import { mixPromo } from '@/utils/audioMixer';
+import { trackElevenLabsCall } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem('djbooth_token');
@@ -107,6 +108,7 @@ function PromoCreator({ onPlay, onSaved }) {
       throw new Error(`ElevenLabs error (${status})`);
     }
 
+    trackElevenLabsCall({ text: script, model: 'eleven_turbo_v2_5', context: 'promo-tts' });
     return await res.blob();
   };
 

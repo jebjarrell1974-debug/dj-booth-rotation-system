@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { localEntities, localIntegrations } from '@/api/localEntities';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, Trash2, MonitorOff } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, Trash2, MonitorOff, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import { toast } from 'sonner';
 import { getApiConfig, saveApiConfig, loadApiConfig } from '@/components/apiConfig';
 import { ENERGY_LEVELS, getCurrentEnergyLevel, VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
@@ -59,6 +60,10 @@ export default function Configuration() {
   const [r2Syncing, setR2Syncing] = useState({ voUp: false, voDown: false, muUp: false, muDown: false });
   const [blockedTracks, setBlockedTracks] = useState([]);
   const [blockedLoading, setBlockedLoading] = useState(false);
+  const [apiCosts, setApiCosts] = useState(null);
+  const [apiCostsLoading, setApiCostsLoading] = useState(false);
+  const [apiCostPeriod, setApiCostPeriod] = useState('30');
+  const [apiDeviceId, setApiDeviceId] = useState('');
 
   const config = getApiConfig();
   const currentLevel = getCurrentEnergyLevel({ clubOpenHour, clubCloseHour, energyOverride: config.energyOverride });
@@ -109,7 +114,34 @@ export default function Configuration() {
       .then(r => r.json())
       .then(data => setServerIps(data.ips || []))
       .catch(() => {});
+
+    fetch('/api/usage/device-id')
+      .then(r => r.json())
+      .then(data => setApiDeviceId(data.deviceId || ''))
+      .catch(() => {});
   }, [isUnlocked]);
+
+  const loadApiCosts = useCallback(async () => {
+    setApiCostsLoading(true);
+    try {
+      const days = parseInt(apiCostPeriod) || 30;
+      const startDate = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+      const token = sessionStorage.getItem('djbooth_token');
+      const res = await fetch(`/api/usage/summary?startDate=${startDate}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApiCosts(data);
+      }
+    } catch {} finally {
+      setApiCostsLoading(false);
+    }
+  }, [apiCostPeriod]);
+
+  useEffect(() => {
+    if (isUnlocked) loadApiCosts();
+  }, [isUnlocked, loadApiCosts]);
 
   useEffect(() => {
     if (!configReady) return;
@@ -240,6 +272,13 @@ export default function Configuration() {
               }),
             });
             const oaiData = await oaiRes.json();
+            const oaiUsage = oaiData.usage;
+            trackOpenAICall({
+              model: cfg.scriptModel,
+              promptTokens: oaiUsage?.prompt_tokens || estimateTokens(prompt),
+              completionTokens: oaiUsage?.completion_tokens || estimateTokens(oaiData.choices?.[0]?.message?.content || ''),
+              context: `precache-${type}-${dancer.name}`,
+            });
             rawResponse = oaiData.choices?.[0]?.message?.content || '';
           } else {
             rawResponse = await localIntegrations.Core.InvokeLLM({ prompt });
@@ -274,6 +313,7 @@ export default function Configuration() {
           });
 
           if (!response.ok) throw new Error('Audio generation failed');
+          trackElevenLabsCall({ text: script, model: 'eleven_monolingual_v1', context: `precache-${type}-${dancer.name}` });
           const audioBlob = await response.blob();
           
           const reader = new FileReader();
@@ -1372,6 +1412,104 @@ export default function Configuration() {
             Exit Kiosk Mode
           </button>
           <p className="text-xs text-gray-500 mt-2">Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.</p>
+        </div>
+
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white text-md font-semibold flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-[#00d4ff]" />
+              API Costs
+            </h3>
+            <div className="flex items-center gap-2">
+              <select
+                value={apiCostPeriod}
+                onChange={(e) => setApiCostPeriod(e.target.value)}
+                className="bg-[#08081a] border border-[#1e293b] rounded-lg px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-[#00d4ff]"
+              >
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="365">Last year</option>
+              </select>
+              <button
+                onClick={loadApiCosts}
+                disabled={apiCostsLoading}
+                className="text-gray-400 hover:text-[#00d4ff] transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${apiCostsLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+          {apiDeviceId && (
+            <p className="text-xs text-gray-500 mb-3 font-mono">Unit: {apiDeviceId}</p>
+          )}
+          {apiCosts ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-[#08081a] rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-[#00d4ff]">
+                    ${(apiCosts.totals?.total_cost || 0).toFixed(2)}
+                  </div>
+                  <div className="text-xs text-gray-500">Total Cost</div>
+                </div>
+                <div className="bg-[#08081a] rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-[#a855f7]">
+                    {(apiCosts.totals?.total_calls || 0).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">API Calls</div>
+                </div>
+                <div className="bg-[#08081a] rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-[#22c55e]">
+                    {((apiCosts.totals?.total_characters || 0) / 1000).toFixed(1)}k
+                  </div>
+                  <div className="text-xs text-gray-500">TTS Chars</div>
+                </div>
+              </div>
+
+              {apiCosts.byDevice?.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Breakdown by Service</div>
+                  {apiCosts.byDevice.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between bg-[#08081a] rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${row.service === 'elevenlabs' ? 'bg-[#a855f7]' : 'bg-[#00d4ff]'}`} />
+                        <span className="text-sm text-gray-300 capitalize">{row.service}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-white">${(row.total_cost || 0).toFixed(4)}</span>
+                        <span className="text-xs text-gray-500 ml-2">({row.call_count} calls)</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {apiCosts.byDay?.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Recent Daily Costs</div>
+                  {apiCosts.byDay.slice(0, 7).map((row, i) => (
+                    <div key={i} className="flex items-center justify-between px-2 py-1">
+                      <span className="text-xs text-gray-400 font-mono">{row.day}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs ${row.service === 'elevenlabs' ? 'text-[#a855f7]' : 'text-[#00d4ff]'}`}>
+                          {row.service}
+                        </span>
+                        <span className="text-xs text-white font-medium">${(row.total_cost || 0).toFixed(4)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(!apiCosts.byDevice || apiCosts.byDevice.length === 0) && (
+                <p className="text-xs text-gray-500 text-center py-3">No API usage recorded yet. Costs will appear as announcements and promos are generated.</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500 text-center py-3">
+              {apiCostsLoading ? 'Loading cost data...' : 'No cost data available'}
+            </p>
+          )}
         </div>
 
         <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5">
