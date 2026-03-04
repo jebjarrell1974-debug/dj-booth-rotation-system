@@ -1487,12 +1487,15 @@ export default function DJBooth() {
 
       console.log('📺 Playing commercial:', promo.dancer_name || promo.cache_key);
       lastAudioActivityRef.current = Date.now();
+      if (audioEngineRef.current) {
+        audioEngineRef.current.pause();
+      }
       const keepAlive = setInterval(() => {
         lastAudioActivityRef.current = Date.now();
       }, 2000);
       try {
         if (audioEngineRef.current) {
-          await audioEngineRef.current.playAnnouncement(blobUrl);
+          await audioEngineRef.current.playAnnouncement(blobUrl, { autoDuck: false });
         }
       } finally {
         clearInterval(keepAlive);
@@ -1755,7 +1758,6 @@ export default function DJBooth() {
             audioEngineRef.current?.duck();
             const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
             await playPrefetchedAnnouncement(outroUrl);
-            audioEngineRef.current?.unduck();
           } else {
             const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
             audioEngineRef.current?.duck();
@@ -1769,11 +1771,11 @@ export default function DJBooth() {
 
         if (commercialComing && announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
-          await playPrefetchedAnnouncement(introUrl);
-          audioEngineRef.current?.unduck();
+          const introUrl = await introPromise;
+          if (introUrl) {
+            await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+          }
         }
 
         if (nextTrack && nextTrack.url) {
@@ -1960,15 +1962,23 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        await playCommercialIfDue();
+        const commercialPlayed = await playCommercialIfDue();
 
         if (announcementsEnabled) {
-          const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
-          lastAudioActivityRef.current = Date.now();
-          await playPrefetchedAnnouncement(announcementUrl);
-          audioEngineRef.current?.unduck();
+          if (commercialPlayed) {
+            const introUrl = await prefetchAnnouncement('intro', nextDancer.name, null, 1);
+            lastAudioActivityRef.current = Date.now();
+            if (introUrl) {
+              await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+            }
+          } else {
+            const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+            audioEngineRef.current?.duck();
+            const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
+            lastAudioActivityRef.current = Date.now();
+            await playPrefetchedAnnouncement(announcementUrl);
+            audioEngineRef.current?.unduck();
+          }
         }
 
         lastAudioActivityRef.current = Date.now();
@@ -2208,7 +2218,6 @@ export default function DJBooth() {
             audioEngineRef.current?.duck();
             const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
             await playPrefetchedAnnouncement(outroUrl);
-            audioEngineRef.current?.unduck();
           } else {
             const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
             audioEngineRef.current?.duck();
@@ -2222,11 +2231,11 @@ export default function DJBooth() {
 
         if (commercialComing && announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
-          await playPrefetchedAnnouncement(introUrl);
-          audioEngineRef.current?.unduck();
+          const introUrl = await introPromise;
+          if (introUrl) {
+            await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+          }
         }
 
         if (nextTrack && nextTrack.url) {

@@ -24,6 +24,7 @@ import {
   Music,
   GripVertical,
   ListMusic,
+  Check,
 } from 'lucide-react';
 
 export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange }) {
@@ -43,6 +44,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const searchTimeoutRef = useRef(null);
 
   const [controlsTab, setControlsTab] = useState('entertainers');
+
+  const [selectedTrack, setSelectedTrack] = useState(null);
 
   const isConnected = liveBoothState?.updatedAt > 0;
   const isPlaying = liveBoothState?.isPlaying;
@@ -164,37 +167,28 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
     setHasUnsavedChanges(false);
   };
 
-  const [draggedTrack, setDraggedTrack] = useState(null);
-  const [dragOverDancer, setDragOverDancer] = useState(null);
-
-  const handleDragStart = (trackName) => {
-    setDraggedTrack(trackName);
-  };
-
-  const handleDragOver = (e, dancerId) => {
-    e.preventDefault();
-    setDragOverDancer(dancerId);
-  };
-
-  const handleDrop = (e, dancerId) => {
-    e.preventDefault();
-    if (draggedTrack) {
-      addSongToDancer(dancerId, draggedTrack);
-      setExpandedDancerId(dancerId);
+  const handleSelectTrack = (trackName) => {
+    if (selectedTrack === trackName) {
+      setSelectedTrack(null);
+    } else {
+      setSelectedTrack(trackName);
     }
-    setDraggedTrack(null);
-    setDragOverDancer(null);
   };
 
-  const handleDragEnd = () => {
-    setDraggedTrack(null);
-    setDragOverDancer(null);
+  const handleTapDancerToAdd = (dancerId) => {
+    if (selectedTrack) {
+      addSongToDancer(dancerId, selectedTrack);
+      setExpandedDancerId(dancerId);
+      setSelectedTrack(null);
+    }
   };
 
   const selectedPlaylistDancer = musicSource !== 'genres'
     ? dancers.find(d => d.id === parseInt(musicSource))
     : null;
   const playlistSongs = selectedPlaylistDancer?.playlist || [];
+
+  const allActiveDancers = dancers.filter(d => d.is_active);
 
   return (
     <div className="remote-view h-[100dvh] bg-[#08081a] text-white flex flex-col overflow-hidden select-none">
@@ -280,173 +274,189 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       </div>
 
       {page === 'controls' && (
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#151528] flex-shrink-0 flex-wrap">
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          <div className="w-[280px] flex-shrink-0 flex flex-col gap-2.5 p-3 border-r border-[#151528] overflow-auto">
             <button
               onClick={() => boothApi.sendCommand('skip')}
-              className="h-9 px-3 rounded-lg bg-[#1e293b] border border-[#2e2e5a] flex items-center gap-1.5 text-white active:bg-[#2e2e5a] transition-colors"
+              className="h-11 px-4 rounded-xl bg-[#1e293b] border border-[#2e2e5a] flex items-center gap-2 text-white active:bg-[#2e2e5a] transition-colors"
             >
-              <SkipForward className="w-4 h-4" />
-              <span className="text-xs font-semibold">Skip</span>
+              <SkipForward className="w-5 h-5" />
+              <span className="text-sm font-semibold">Skip Track</span>
             </button>
             <button
               onClick={() => boothApi.sendCommand('toggleAnnouncements')}
-              className={`h-9 px-3 rounded-lg border flex items-center gap-1.5 active:opacity-80 transition-colors ${
+              className={`h-11 px-4 rounded-xl border flex items-center gap-2 active:opacity-80 transition-colors ${
                 announcementsEnabled
                   ? 'bg-[#00d4ff]/15 border-[#00d4ff]/40 text-[#00d4ff]'
                   : 'bg-[#1e293b] border-[#2e2e5a] text-gray-500'
               }`}
             >
-              {announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-              <span className="text-xs font-semibold">{announcementsEnabled ? 'Voice' : 'Muted'}</span>
+              {announcementsEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              <span className="text-sm font-semibold">{announcementsEnabled ? 'Voice On' : 'Voice Muted'}</span>
             </button>
 
-            <div className="h-9 flex items-center gap-0.5 bg-[#0d0d1f] rounded-lg border border-[#1e293b] px-1.5">
-              <span className="text-[10px] text-gray-500 mr-1">Songs</span>
-              {[1,2,3,4,5].map(n => (
+            <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-2.5">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Songs Per Set</span>
+              <div className="flex items-center gap-1 mt-1.5">
+                {[1,2,3,4,5].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => boothApi.sendCommand('setSongsPerSet', { count: n })}
+                    className={`flex-1 h-9 rounded-lg text-sm font-bold transition-colors ${
+                      n === songsPerSet ? 'bg-[#00d4ff] text-black' : 'text-gray-400 active:bg-[#2e2e5a]'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-2.5">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Break Songs</span>
+              <div className="flex items-center gap-1 mt-1.5">
+                {[0,1,2,3].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => boothApi.sendCommand('setBreakSongsPerSet', { count: n })}
+                    className={`flex-1 h-9 rounded-lg text-sm font-bold transition-colors ${
+                      n === breakSongsPerSet ? 'bg-violet-500 text-white' : 'text-gray-400 active:bg-[#2e2e5a]'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-2.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Volume2 className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Music Volume</span>
+              </div>
+              <div className="flex items-center gap-1">
                 <button
-                  key={n}
-                  onClick={() => boothApi.sendCommand('setSongsPerSet', { count: n })}
-                  className={`w-7 h-7 rounded text-xs font-bold transition-colors ${
-                    n === songsPerSet ? 'bg-[#00d4ff] text-black' : 'text-gray-400 active:bg-[#2e2e5a]'
-                  }`}
+                  onClick={() => boothApi.sendCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })}
+                  disabled={volumePercent <= 0}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white bg-[#1e293b] active:bg-[#2e2e5a] disabled:opacity-30"
                 >
-                  {n}
+                  <Minus className="w-4 h-4" />
                 </button>
-              ))}
-            </div>
-
-            <div className="h-9 flex items-center gap-0.5 bg-[#0d0d1f] rounded-lg border border-[#1e293b] px-1.5">
-              <span className="text-[10px] text-gray-500 mr-1">Break</span>
-              {[0,1,2,3].map(n => (
+                <span className="text-sm font-bold tabular-nums flex-1 text-center">{volumePercent}%</span>
                 <button
-                  key={n}
-                  onClick={() => boothApi.sendCommand('setBreakSongsPerSet', { count: n })}
-                  className={`w-7 h-7 rounded text-xs font-bold transition-colors ${
-                    n === breakSongsPerSet ? 'bg-violet-500 text-white' : 'text-gray-400 active:bg-[#2e2e5a]'
-                  }`}
+                  onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })}
+                  disabled={volumePercent >= 100}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white bg-[#1e293b] active:bg-[#2e2e5a] disabled:opacity-30"
                 >
-                  {n}
+                  <Plus className="w-4 h-4" />
                 </button>
-              ))}
+              </div>
             </div>
 
-            <div className="h-9 flex items-center gap-1 bg-[#0d0d1f] rounded-lg border border-[#1e293b] px-1.5">
-              <Volume2 className="w-3.5 h-3.5 text-gray-400" />
-              <button
-                onClick={() => boothApi.sendCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })}
-                disabled={volumePercent <= 0}
-                className="w-7 h-7 rounded flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-xs font-bold tabular-nums w-8 text-center">{volumePercent}%</span>
-              <button
-                onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })}
-                disabled={volumePercent >= 100}
-                className="w-7 h-7 rounded flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="h-9 flex items-center gap-1 bg-[#0d0d1f] rounded-lg border border-[#a855f7]/20 px-1.5">
-              <Mic className="w-3.5 h-3.5 text-[#a855f7]" />
-              <button
-                onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })}
-                disabled={voiceGainPercent <= 50}
-                className="w-7 h-7 rounded flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-xs font-bold text-[#a855f7] tabular-nums w-8 text-center">{voiceGainPercent}%</span>
-              <button
-                onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(3, currentVoiceGain + 0.1) })}
-                disabled={voiceGainPercent >= 300}
-                className="w-7 h-7 rounded flex items-center justify-center text-white active:bg-[#2e2e5a] disabled:opacity-30"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
+            <div className="rounded-xl bg-[#0d0d1f] border border-[#a855f7]/20 p-2.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Mic className="w-3.5 h-3.5 text-[#a855f7]" />
+                <span className="text-[10px] text-[#a855f7] uppercase tracking-wider">Voice Volume</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })}
+                  disabled={voiceGainPercent <= 50}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white bg-[#1e293b] active:bg-[#2e2e5a] disabled:opacity-30"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="text-sm font-bold text-[#a855f7] tabular-nums flex-1 text-center">{voiceGainPercent}%</span>
+                <button
+                  onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(3, currentVoiceGain + 0.1) })}
+                  disabled={voiceGainPercent >= 300}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white bg-[#1e293b] active:bg-[#2e2e5a] disabled:opacity-30"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1 px-3 pt-2 pb-1 flex-shrink-0">
-            <button
-              onClick={() => setControlsTab('entertainers')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                controlsTab === 'entertainers' ? 'bg-[#00d4ff] text-black' : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Entertainers
-            </button>
-            <button
-              onClick={() => setControlsTab('options')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                controlsTab === 'options' ? 'bg-[#00d4ff] text-black' : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
-              }`}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              Options
-            </button>
-          </div>
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <div className="flex items-center gap-1 px-3 pt-2 pb-1 flex-shrink-0">
+              <button
+                onClick={() => setControlsTab('entertainers')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  controlsTab === 'entertainers' ? 'bg-[#00d4ff] text-black' : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Entertainers
+              </button>
+              <button
+                onClick={() => setControlsTab('options')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  controlsTab === 'options' ? 'bg-[#00d4ff] text-black' : 'bg-[#0d0d1f] text-gray-400 active:bg-[#151528]'
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                Options
+              </button>
+            </div>
 
-          <div className="flex-1 px-3 pb-2 overflow-auto min-h-0">
-            {controlsTab === 'entertainers' && (
-              <div className="space-y-1.5 pt-2">
-                {dancers.filter(d => d.is_active).length === 0 ? (
-                  <div className="text-center py-12">
-                    <Users className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">No active entertainers</p>
-                  </div>
-                ) : (
-                  dancers.filter(d => d.is_active).map(dancer => {
-                    const inRotation = rotationList.includes(dancer.id);
-                    return (
-                      <div
-                        key={dancer.id}
-                        className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#0d0d1f] border border-[#1e293b]"
-                      >
+            <div className="flex-1 px-3 pb-2 overflow-auto min-h-0">
+              {controlsTab === 'entertainers' && (
+                <div className="space-y-1.5 pt-2">
+                  {allActiveDancers.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Users className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">No active entertainers</p>
+                    </div>
+                  ) : (
+                    allActiveDancers.map(dancer => {
+                      const inRotation = rotationList.includes(dancer.id);
+                      return (
                         <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0"
-                          style={{ backgroundColor: dancer.color || '#00d4ff' }}
+                          key={dancer.id}
+                          className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#0d0d1f] border border-[#1e293b]"
                         >
-                          {dancer.name.charAt(0).toUpperCase()}
+                          <div
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0"
+                            style={{ backgroundColor: dancer.color || '#00d4ff' }}
+                          >
+                            {dancer.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-white">{dancer.name}</p>
+                            {dancer.playlist && dancer.playlist.length > 0 && (
+                              <p className="text-xs text-gray-500">{dancer.playlist.length} songs in playlist</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (inRotation) {
+                                boothApi.sendCommand('removeDancerFromRotation', { dancerId: dancer.id });
+                              } else {
+                                boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id });
+                              }
+                            }}
+                            className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
+                              inRotation
+                                ? 'bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25'
+                                : 'bg-[#00d4ff]/15 text-[#00d4ff] border border-[#00d4ff]/30 active:bg-[#00d4ff]/25'
+                            }`}
+                          >
+                            {inRotation ? '- Remove' : '+ Add'}
+                          </button>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white">{dancer.name}</p>
-                          {dancer.playlist && dancer.playlist.length > 0 && (
-                            <p className="text-xs text-gray-500">{dancer.playlist.length} songs</p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => {
-                            if (inRotation) {
-                              boothApi.sendCommand('removeDancerFromRotation', { dancerId: dancer.id });
-                            } else {
-                              boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id });
-                            }
-                          }}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
-                            inRotation
-                              ? 'bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25'
-                              : 'bg-[#00d4ff]/15 text-[#00d4ff] border border-[#00d4ff]/30 active:bg-[#00d4ff]/25'
-                          }`}
-                        >
-                          {inRotation ? '- Remove' : '+ Add'}
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
+                      );
+                    })
+                  )}
+                </div>
+              )}
 
-            {controlsTab === 'options' && (
-              <div className="pt-2">
-                <DJOptions djOptions={djOptions} onOptionsChange={onOptionsChange} />
-              </div>
-            )}
+              {controlsTab === 'options' && (
+                <div className="pt-2">
+                  <DJOptions djOptions={djOptions} onOptionsChange={onOptionsChange} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -468,13 +478,16 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   setMusicSource(e.target.value);
                   setLibrarySearch('');
                   setLibraryGenre('');
+                  setSelectedTrack(null);
                 }}
                 className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-2.5 py-1.5 text-xs text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff] mb-2"
                 style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px' }}
               >
                 <option value="genres">Genre Folders</option>
-                {rotationDancers.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}'s Playlist</option>
+                {allActiveDancers.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}'s Playlist ({(d.playlist || []).length})
+                  </option>
                 ))}
               </select>
 
@@ -510,33 +523,49 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               )}
             </div>
 
+            {selectedTrack && (
+              <div className="mx-3 mb-2 px-2.5 py-1.5 rounded-lg bg-[#00d4ff]/10 border border-[#00d4ff]/30 flex items-center gap-2 flex-shrink-0">
+                <Check className="w-3.5 h-3.5 text-[#00d4ff] flex-shrink-0" />
+                <span className="text-xs text-[#00d4ff] truncate flex-1">{selectedTrack}</span>
+                <button onClick={() => setSelectedTrack(null)} className="text-[#00d4ff]/60 active:text-[#00d4ff]">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className="flex-1 overflow-auto px-1 pb-2">
               {musicSource === 'genres' ? (
                 <>
-                  {libraryTracks.map(track => (
-                    <div
-                      key={track.id}
-                      draggable
-                      onDragStart={() => handleDragStart(track.name)}
-                      onDragEnd={handleDragEnd}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#151528] active:bg-[#1e293b] group transition-colors cursor-grab active:cursor-grabbing"
-                    >
-                      <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0 opacity-0 group-hover:opacity-100" />
-                      <Music className="w-3.5 h-3.5 text-gray-600 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white truncate">{track.name}</p>
-                        {track.genre && <p className="text-[10px] text-gray-500 truncate">{track.genre}</p>}
+                  {libraryTracks.map(track => {
+                    const isSelected = selectedTrack === track.name;
+                    return (
+                      <div
+                        key={track.id}
+                        onClick={() => handleSelectTrack(track.name)}
+                        className={`flex items-center gap-2 px-2 py-2 rounded-lg active:bg-[#1e293b] group transition-colors cursor-pointer ${
+                          isSelected ? 'bg-[#00d4ff]/15 border border-[#00d4ff]/30' : 'hover:bg-[#151528]'
+                        }`}
+                      >
+                        {isSelected ? (
+                          <Check className="w-3.5 h-3.5 text-[#00d4ff] flex-shrink-0" />
+                        ) : (
+                          <Music className="w-3.5 h-3.5 text-gray-600 flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs truncate ${isSelected ? 'text-[#00d4ff]' : 'text-white'}`}>{track.name}</p>
+                          {track.genre && <p className="text-[10px] text-gray-500 truncate">{track.genre}</p>}
+                        </div>
+                        {expandedDancerId && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addSongToDancer(expandedDancerId, track.name); }}
+                            className="w-7 h-7 rounded flex items-center justify-center text-[#00d4ff] bg-[#00d4ff]/10 active:bg-[#00d4ff]/25 flex-shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
-                      {expandedDancerId && (
-                        <button
-                          onClick={() => addSongToDancer(expandedDancerId, track.name)}
-                          className="w-7 h-7 rounded flex items-center justify-center text-[#00d4ff] bg-[#00d4ff]/10 active:bg-[#00d4ff]/25 flex-shrink-0"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                   {libraryTracks.length === 0 && !libraryLoading && (
                     <p className="text-xs text-gray-500 text-center py-8">No tracks found</p>
                   )}
@@ -548,32 +577,38 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <>
                   {playlistSongs.length === 0 ? (
                     <p className="text-xs text-gray-500 text-center py-8">
-                      {selectedPlaylistDancer?.name} hasn't added any songs to their playlist yet
+                      {selectedPlaylistDancer?.name} hasn't added any songs yet
                     </p>
                   ) : (
-                    playlistSongs.map((songName, idx) => (
-                      <div
-                        key={idx}
-                        draggable
-                        onDragStart={() => handleDragStart(songName)}
-                        onDragEnd={handleDragEnd}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#151528] active:bg-[#1e293b] group transition-colors cursor-grab active:cursor-grabbing"
-                      >
-                        <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0 opacity-0 group-hover:opacity-100" />
-                        <ListMusic className="w-3.5 h-3.5 text-[#a855f7] flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-white truncate">{songName}</p>
+                    playlistSongs.map((songName, idx) => {
+                      const isSelected = selectedTrack === songName;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => handleSelectTrack(songName)}
+                          className={`flex items-center gap-2 px-2 py-2 rounded-lg active:bg-[#1e293b] group transition-colors cursor-pointer ${
+                            isSelected ? 'bg-[#00d4ff]/15 border border-[#00d4ff]/30' : 'hover:bg-[#151528]'
+                          }`}
+                        >
+                          {isSelected ? (
+                            <Check className="w-3.5 h-3.5 text-[#00d4ff] flex-shrink-0" />
+                          ) : (
+                            <ListMusic className="w-3.5 h-3.5 text-[#a855f7] flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs truncate ${isSelected ? 'text-[#00d4ff]' : 'text-white'}`}>{songName}</p>
+                          </div>
+                          {expandedDancerId && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); addSongToDancer(expandedDancerId, songName); }}
+                              className="w-7 h-7 rounded flex items-center justify-center text-[#00d4ff] bg-[#00d4ff]/10 active:bg-[#00d4ff]/25 flex-shrink-0"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
-                        {expandedDancerId && (
-                          <button
-                            onClick={() => addSongToDancer(expandedDancerId, songName)}
-                            className="w-7 h-7 rounded flex items-center justify-center text-[#00d4ff] bg-[#00d4ff]/10 active:bg-[#00d4ff]/25 flex-shrink-0"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </>
               )}
@@ -586,8 +621,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Rotation</span>
                 <span className="text-[10px] text-gray-500 ml-2">{rotationList.length} entertainers</span>
               </div>
-              {draggedTrack && (
-                <span className="text-[10px] text-[#00d4ff] animate-pulse">Drop on an entertainer to add</span>
+              {selectedTrack && (
+                <span className="text-[10px] text-[#00d4ff] animate-pulse">Tap an entertainer to add selected song</span>
               )}
             </div>
             <div className="flex-1 overflow-auto space-y-1">
@@ -607,27 +642,30 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   const breakKey = `after-${dancerId}`;
                   const breakSongsList = interstitialSongs[breakKey] || [];
                   const hasEdits = !!localSongEdits[dancerId];
-                  const isDragTarget = dragOverDancer === dancerId;
+                  const isDropTarget = selectedTrack !== null;
 
                   return (
                     <div key={dancerId}>
                       <div
                         className={`rounded-xl border transition-colors ${
-                          isDragTarget
-                            ? 'bg-[#00d4ff]/20 border-[#00d4ff] ring-1 ring-[#00d4ff]'
-                            : isCurrent
-                              ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
-                              : isExpanded
-                                ? 'bg-[#0d0d1f] border-[#2563eb]/40'
+                          isCurrent
+                            ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40'
+                            : isExpanded
+                              ? 'bg-[#0d0d1f] border-[#2563eb]/40'
+                              : isDropTarget
+                                ? 'bg-[#0d0d1f] border-[#00d4ff]/20'
                                 : 'bg-[#0d0d1f] border-[#1e293b]'
                         }`}
-                        onDragOver={(e) => handleDragOver(e, dancerId)}
-                        onDragLeave={() => setDragOverDancer(null)}
-                        onDrop={(e) => handleDrop(e, dancerId)}
                       >
                         <div
                           className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                          onClick={() => toggleDancer(dancerId)}
+                          onClick={() => {
+                            if (selectedTrack) {
+                              handleTapDancerToAdd(dancerId);
+                            } else {
+                              toggleDancer(dancerId);
+                            }
+                          }}
                         >
                           <div className="flex flex-col items-center gap-0 flex-shrink-0">
                             <button
@@ -646,7 +684,9 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             </button>
                           </div>
                           <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0"
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0 ${
+                              isDropTarget ? 'ring-2 ring-[#00d4ff] ring-offset-1 ring-offset-[#0d0d1f]' : ''
+                            }`}
                             style={{ backgroundColor: dancer.color || '#00d4ff' }}
                           >
                             {dancer.name.charAt(0).toUpperCase()}
@@ -659,10 +699,19 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             </p>
                             <p className="text-[10px] text-gray-500">{songs.length} song{songs.length !== 1 ? 's' : ''}</p>
                           </div>
-                          {isExpanded ? (
-                            <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                          {selectedTrack ? (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#00d4ff]/15 border border-[#00d4ff]/30 flex-shrink-0">
+                              <Plus className="w-3.5 h-3.5 text-[#00d4ff]" />
+                              <span className="text-[10px] text-[#00d4ff] font-semibold">Add</span>
+                            </div>
                           ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                            <>
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              )}
+                            </>
                           )}
                           <button
                             onClick={(e) => { e.stopPropagation(); boothApi.sendCommand('removeDancerFromRotation', { dancerId }); }}
@@ -672,10 +721,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           </button>
                         </div>
 
-                        {isExpanded && (
+                        {isExpanded && !selectedTrack && (
                           <div className="px-3 pb-2 border-t border-[#1e293b]/50">
                             {songs.length === 0 ? (
-                              <p className="text-[10px] text-gray-500 py-2 text-center">No songs — drag from the left or tap + to add</p>
+                              <p className="text-[10px] text-gray-500 py-2 text-center">No songs — select a song on the left, then tap here to add</p>
                             ) : (
                               <div className="space-y-0.5 mt-1">
                                 {songs.map((songName, songIdx) => (
