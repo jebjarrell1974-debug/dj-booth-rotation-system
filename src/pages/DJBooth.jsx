@@ -1467,8 +1467,17 @@ export default function DJBooth() {
       const blobUrl = URL.createObjectURL(blob);
 
       console.log('📺 Playing commercial:', promo.dancer_name || promo.cache_key);
-      if (audioEngineRef.current) {
-        await audioEngineRef.current.playAnnouncement(blobUrl);
+      lastAudioActivityRef.current = Date.now();
+      const keepAlive = setInterval(() => {
+        lastAudioActivityRef.current = Date.now();
+      }, 2000);
+      try {
+        if (audioEngineRef.current) {
+          await audioEngineRef.current.playAnnouncement(blobUrl);
+        }
+      } finally {
+        clearInterval(keepAlive);
+        lastAudioActivityRef.current = Date.now();
       }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
       return true;
