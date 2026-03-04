@@ -195,11 +195,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   };
 
   const selectedPlaylistDancer = musicSource !== 'genres'
-    ? dancers.find(d => d.id === parseInt(musicSource))
+    ? dancers.find(d => String(d.id) === String(musicSource))
     : null;
   const playlistSongs = selectedPlaylistDancer?.playlist || [];
 
-  const allActiveDancers = dancers.filter(d => d.is_active);
+  const allActiveDancers = dancers.filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="remote-view h-[100dvh] bg-[#08081a] text-white flex flex-col overflow-hidden select-none">
