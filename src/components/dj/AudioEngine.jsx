@@ -42,6 +42,12 @@ const AudioEngine = forwardRef(({
   const autoGainEnabledRef = useRef(true);
   const autoGainCacheRef = useRef(new Map());
 
+  const beatMatchEnabledRef = useRef((() => {
+    try { return localStorage.getItem('neonaidj_beat_match') === 'true'; } catch { return false; }
+  })());
+  const bpmCacheRef = useRef(new Map());
+  const activeDeckBpmRef = useRef(null);
+
   const musicEqBassRef = useRef(null);
   const musicEqMidRef = useRef(null);
   const musicEqTrebleRef = useRef(null);
@@ -234,27 +240,100 @@ const AudioEngine = forwardRef(({
     }
   }, []);
 
+  const detectBPMFromBuffer = useCallback((audioBuffer) => {
+    try {
+      const channelData = audioBuffer.getChannelData(0);
+      const sampleRate = audioBuffer.sampleRate;
+      const bufLen = channelData.length;
+      const analysisLen = Math.min(bufLen, sampleRate * 30);
+
+      const filtered = new Float32Array(analysisLen);
+      for (let i = 0; i < analysisLen; i++) {
+        filtered[i] = Math.abs(channelData[i]);
+      }
+      for (let i = 1; i < analysisLen; i++) {
+        filtered[i] = filtered[i] * 0.1 + filtered[i - 1] * 0.9;
+      }
+
+      const peaks = [];
+      const windowSize = Math.floor(sampleRate * 0.3);
+      let threshold = 0;
+      for (let i = 0; i < analysisLen; i++) {
+        threshold = Math.max(threshold * 0.9999, filtered[i]);
+      }
+      threshold *= 0.5;
+
+      let lastPeak = -windowSize;
+      for (let i = 1; i < analysisLen - 1; i++) {
+        if (filtered[i] > filtered[i - 1] && filtered[i] > filtered[i + 1] && filtered[i] > threshold && (i - lastPeak) > windowSize) {
+          peaks.push(i);
+          lastPeak = i;
+        }
+      }
+
+      if (peaks.length < 4) return null;
+
+      const intervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push((peaks[i] - peaks[i - 1]) / sampleRate);
+      }
+
+      const bpmCounts = {};
+      for (const interval of intervals) {
+        let bpm = 60 / interval;
+        while (bpm < 70) bpm *= 2;
+        while (bpm > 180) bpm /= 2;
+        const rounded = Math.round(bpm);
+        bpmCounts[rounded] = (bpmCounts[rounded] || 0) + 1;
+      }
+
+      let bestBpm = null;
+      let bestCount = 0;
+      for (const [bpm, count] of Object.entries(bpmCounts)) {
+        const nearby = Object.entries(bpmCounts)
+          .filter(([b]) => Math.abs(parseInt(b) - parseInt(bpm)) <= 2)
+          .reduce((sum, [, c]) => sum + c, 0);
+        if (nearby > bestCount) {
+          bestCount = nearby;
+          bestBpm = parseInt(bpm);
+        }
+      }
+
+      if (bestBpm && bestCount >= 3) {
+        console.log(`🎵 BPM detected: ${bestBpm} (confidence: ${bestCount} peaks)`);
+        return bestBpm;
+      }
+      return null;
+    } catch (err) {
+      console.warn('⚠️ BPM detection failed:', err.message);
+      return null;
+    }
+  }, []);
+
   const analyzeTrackLoudness = useCallback(async (deckEl) => {
-    if (!autoGainEnabledRef.current) return 1.0;
+    if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) return { gain: 1.0, bpm: null };
     try {
       const ctx = audioCtxRef.current;
-      if (!ctx || !deckEl.src) return 1.0;
+      if (!ctx || !deckEl.src) return { gain: 1.0, bpm: null };
 
       const srcUrl = deckEl.src;
       const cacheKey = srcUrl.replace(/^blob:/, '');
-      const cached = autoGainCacheRef.current.get(cacheKey);
-      if (cached !== undefined) {
-        console.log(`🔊 AutoGain: cached gain=${cached.toFixed(2)}x`);
-        return cached;
+      const cachedGain = autoGainCacheRef.current.get(cacheKey);
+      const cachedBpm = bpmCacheRef.current.get(cacheKey);
+      if (cachedGain !== undefined && (cachedBpm !== undefined || !beatMatchEnabledRef.current)) {
+        console.log(`🔊 AutoGain: cached gain=${cachedGain.toFixed(2)}x, bpm=${cachedBpm || '?'}`);
+        return { gain: cachedGain, bpm: cachedBpm || null };
       }
 
       const dur = deckEl.duration;
-      if (!dur || !isFinite(dur) || dur <= 0) return 1.0;
+      if (!dur || !isFinite(dur) || dur <= 0) return { gain: 1.0, bpm: null };
 
       const sampleRate = ctx.sampleRate || 44100;
       const analysisDur = Math.min(dur, AUTO_GAIN_ANALYSIS_SECONDS);
-      const frameCount = Math.floor(analysisDur * sampleRate);
-      if (frameCount <= 0) return 1.0;
+      const bpmDur = Math.min(dur, 30);
+      const maxDur = Math.max(analysisDur, bpmDur);
+      const frameCount = Math.floor(maxDur * sampleRate);
+      if (frameCount <= 0) return { gain: 1.0, bpm: null };
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
@@ -268,41 +347,52 @@ const AudioEngine = forwardRef(({
       const source = offlineCtx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(offlineCtx.destination);
-      source.start(0, 0, analysisDur);
+      source.start(0, 0, maxDur);
 
       const rendered = await offlineCtx.startRendering();
 
-      let sumSquares = 0;
-      let sampleCount = 0;
-      for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
-        const data = rendered.getChannelData(ch);
-        for (let i = 0; i < data.length; i++) {
-          sumSquares += data[i] * data[i];
-          sampleCount++;
+      let gainValue = 1.0;
+      if (autoGainEnabledRef.current) {
+        let sumSquares = 0;
+        let sampleCount = 0;
+        const gainFrames = Math.floor(analysisDur * sampleRate);
+        for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+          const data = rendered.getChannelData(ch);
+          const len = Math.min(data.length, gainFrames);
+          for (let i = 0; i < len; i++) {
+            sumSquares += data[i] * data[i];
+            sampleCount++;
+          }
+        }
+        if (sampleCount > 0) {
+          const rms = Math.sqrt(sumSquares / sampleCount);
+          const lufs = 20 * Math.log10(Math.max(rms, 1e-10));
+          const diff = AUTO_GAIN_TARGET_LUFS - lufs;
+          const gain = Math.pow(10, diff / 20);
+          gainValue = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, gain));
+          console.log(`🔊 AutoGain: LUFS=${lufs.toFixed(1)}dB, target=${AUTO_GAIN_TARGET_LUFS}dB, gain=${gainValue.toFixed(2)}x`);
         }
       }
 
-      if (sampleCount === 0) return 1.0;
+      let detectedBpm = null;
+      if (beatMatchEnabledRef.current) {
+        detectedBpm = detectBPMFromBuffer(rendered);
+      }
 
-      const rms = Math.sqrt(sumSquares / sampleCount);
-      const lufs = 20 * Math.log10(Math.max(rms, 1e-10));
-      const diff = AUTO_GAIN_TARGET_LUFS - lufs;
-      const gain = Math.pow(10, diff / 20);
-      const clamped = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, gain));
-
-      autoGainCacheRef.current.set(cacheKey, clamped);
+      autoGainCacheRef.current.set(cacheKey, gainValue);
+      bpmCacheRef.current.set(cacheKey, detectedBpm);
       if (autoGainCacheRef.current.size > 200) {
         const firstKey = autoGainCacheRef.current.keys().next().value;
         autoGainCacheRef.current.delete(firstKey);
+        bpmCacheRef.current.delete(firstKey);
       }
 
-      console.log(`🔊 AutoGain: LUFS=${lufs.toFixed(1)}dB, target=${AUTO_GAIN_TARGET_LUFS}dB, gain=${clamped.toFixed(2)}x`);
-      return clamped;
+      return { gain: gainValue, bpm: detectedBpm };
     } catch (err) {
       console.warn('⚠️ AutoGain: Analysis failed, using 1.0:', err.message);
-      return 1.0;
+      return { gain: 1.0, bpm: null };
     }
-  }, []);
+  }, [detectBPMFromBuffer]);
 
   const loadTrack = useCallback(async (input) => {
     if (!input) return null;
@@ -378,7 +468,9 @@ const AudioEngine = forwardRef(({
       connectDeckSource(inactiveDeck, inactiveGain, inactiveSourceRef, inactiveSourceElRef);
     }
 
-    const autoGainValue = await analyzeTrackLoudness(inactiveDeck);
+    const analysisResult = await analyzeTrackLoudness(inactiveDeck);
+    const autoGainValue = analysisResult.gain;
+    const incomingBpm = analysisResult.bpm;
     inactiveGain.gain.value = autoGainValue;
 
     const maxDur = maxDurationOverrideRef.current || MAX_SONG_DURATION;
@@ -389,6 +481,17 @@ const AudioEngine = forwardRef(({
     setCurrentTime(0);
     lastTimeUpdateRef.current = 0;
     onTrackChangeRef.current?.(trackData.name);
+
+    const outgoingBpm = activeDeckBpmRef.current;
+    const doBeatMatch = beatMatchEnabledRef.current && outgoingBpm && incomingBpm && Math.abs(outgoingBpm - incomingBpm) > 1;
+    const beatMatchRate = doBeatMatch ? outgoingBpm / incomingBpm : 1.0;
+    const beatMatchMaxDiff = 0.12;
+    const clampedRate = doBeatMatch ? Math.max(1 - beatMatchMaxDiff, Math.min(1 + beatMatchMaxDiff, beatMatchRate)) : 1.0;
+
+    if (doBeatMatch) {
+      console.log(`🎵 Beat Match: ${outgoingBpm} → ${incomingBpm} BPM, rate=${clampedRate.toFixed(3)}`);
+      inactiveDeck.playbackRate = clampedRate;
+    }
 
     try {
       if (crossfade && isPlayingRef.current) {
@@ -407,11 +510,18 @@ const AudioEngine = forwardRef(({
           inactiveGain.gain.setValueAtTime(clampVol(equalPowerIn(progress) * targetVolume), ctx.currentTime);
           activeGain.gain.setValueAtTime(clampVol(equalPowerOut(progress) * oldStartVolume), ctx.currentTime);
 
+          if (doBeatMatch) {
+            const rateProgress = Math.min(progress * 1.5, 1);
+            inactiveDeck.playbackRate = clampedRate + (1.0 - clampedRate) * rateProgress;
+          }
+
           if (progress < 1) {
             fadeAnimationRef.current = requestAnimationFrame(animateFade);
           } else {
             fadeAnimationRef.current = null;
             crossfadeInProgressRef.current = false;
+            if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
+            activeDeckBpmRef.current = incomingBpm;
             activeDeckEl.pause();
             activeDeckEl.src = '';
             cleanupDeck(activeDeckEl);
@@ -424,6 +534,7 @@ const AudioEngine = forwardRef(({
         const targetVolume = autoGainValue;
         const oldStartVolume = activeGain.gain.value;
         inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
+        if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
         await inactiveDeck.play();
 
         const startTime = performance.now();
@@ -441,6 +552,7 @@ const AudioEngine = forwardRef(({
           } else {
             fadeAnimationRef.current = null;
             crossfadeInProgressRef.current = false;
+            activeDeckBpmRef.current = incomingBpm;
             activeDeckEl.pause();
             activeDeckEl.src = '';
             cleanupDeck(activeDeckEl);
@@ -456,7 +568,9 @@ const AudioEngine = forwardRef(({
         cleanupDeck(activeDeckEl);
         inactiveGain.gain.setValueAtTime(autoGainValue, ctx.currentTime);
         inactiveDeck.currentTime = 0;
+        if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
         await inactiveDeck.play();
+        activeDeckBpmRef.current = incomingBpm;
         activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
       }
     } catch (playErr) {
@@ -724,6 +838,11 @@ const AudioEngine = forwardRef(({
     setVoiceEq,
     setMaxDuration: (seconds) => { maxDurationOverrideRef.current = seconds; },
     setAutoGain: (enabled) => { autoGainEnabledRef.current = enabled; },
+    setBeatMatch: (enabled) => {
+      beatMatchEnabledRef.current = enabled;
+      try { localStorage.setItem('neonaidj_beat_match', enabled ? 'true' : 'false'); } catch {}
+    },
+    getBeatMatchEnabled: () => beatMatchEnabledRef.current,
     isPlaying,
     currentTrack,
     currentTime,

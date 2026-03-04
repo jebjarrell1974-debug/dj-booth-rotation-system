@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, ChevronDown } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown, Music } from 'lucide-react';
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -13,6 +13,7 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const dropdownRef = useRef(null);
   const [musicEq, setMusicEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}'));
   const [voiceEq, setVoiceEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}'));
+  const [beatMatchEnabled, setBeatMatchEnabled] = useState(() => localStorage.getItem('neonaidj_beat_match') === 'true');
 
   const activeGenres = djOptions?.activeGenres || [];
   const musicMode = djOptions?.musicMode || 'dancer_first';
@@ -276,6 +277,30 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
           className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
         />
         <p className="text-xs text-gray-500 mt-1">One per line — the DJ will weave these into announcements naturally</p>
+      </div>
+
+      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Music className="w-4 h-4 text-[#00d4ff]" />
+            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Beat Matching</h3>
+          </div>
+          <button
+            onClick={() => {
+              const next = !beatMatchEnabled;
+              setBeatMatchEnabled(next);
+              audioEngineRef?.current?.setBeatMatch?.(next);
+            }}
+            className={`relative w-11 h-6 rounded-full transition-colors ${beatMatchEnabled ? 'bg-[#00d4ff]' : 'bg-[#1e293b]'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${beatMatchEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          {beatMatchEnabled
+            ? 'During crossfades, the incoming track tempo adjusts to match the outgoing track then gradually returns to normal speed.'
+            : 'Off — songs crossfade at their natural tempos.'}
+        </p>
       </div>
 
       <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">

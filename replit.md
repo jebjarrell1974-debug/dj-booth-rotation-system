@@ -29,6 +29,23 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 4, 2026 — Session 18 (Beat Matching)
+
+#### Feature: Beat-Matched Crossfading
+- **Purpose**: During crossfades, the incoming track's tempo is adjusted to match the outgoing track's BPM, then gradually returns to natural speed — like a real DJ
+- **How it works**:
+  1. BPM detection runs during track analysis (same audio fetch/decode as auto-gain, no extra network request)
+  2. Peak detection algorithm analyzes first 30 seconds of audio to find dominant tempo (70-180 BPM range)
+  3. BPM values are cached per-track in `bpmCacheRef` (alongside auto-gain cache)
+  4. During crossfade, incoming deck's `playbackRate` is set to `outgoingBPM / incomingBPM` (clamped to +/-12%)
+  5. Rate gradually ramps back to 1.0 during the crossfade (at 1.5x the fade rate, so it reaches natural speed before fade completes)
+  6. Once crossfade finishes, `playbackRate` is explicitly set to 1.0
+- **Safety**: If BPM detection fails on either track, beat matching is skipped and normal crossfade runs. Micro-crossfades (skip/manual) don't use beat matching. Max rate adjustment is 12% to avoid noticeable pitch distortion
+- **Toggle**: On/off switch in Options page above Music EQ, persisted to `localStorage` key `neonaidj_beat_match`, default OFF
+- **API**: `audioEngineRef.current.setBeatMatch(bool)`, `audioEngineRef.current.getBeatMatchEnabled()`
+- **Files**: `src/components/dj/AudioEngine.jsx` (BPM detection + crossfade rate adjustment), `src/components/dj/DJOptions.jsx` (toggle UI)
+- **Note**: `analyzeTrackLoudness` now returns `{ gain, bpm }` object instead of plain number
+
 ### Mar 3, 2026 — Session 17 (Auto-Play on Boot)
 
 #### Feature: Auto-Play Music on Boot
