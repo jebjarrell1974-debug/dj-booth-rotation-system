@@ -109,6 +109,7 @@ export default function DJBooth() {
   const handleSkipRef = useRef(null);
   const saveRotationRef = useRef(null);
   const commercialCounterRef = useRef(0);
+  const promoShuffleRef = useRef([]);
   
   const DUCK_SETTLE_MS = 300;
   const SONG_OVERLAP_DELAY_MS = 2000;
@@ -649,6 +650,28 @@ export default function DJBooth() {
             saveRotationRef.current?.(newRot);
           }
           break;
+        case 'updateInterstitialSongs':
+          if (cmd.payload.interstitialSongs) {
+            interstitialSongsRef.current = cmd.payload.interstitialSongs;
+            setInterstitialSongsState({ ...cmd.payload.interstitialSongs });
+            setInterstitialRemoteVersion(v => v + 1);
+            try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(cmd.payload.interstitialSongs)); } catch {}
+            console.log('🎵 Remote updated break songs');
+          }
+          break;
+        case 'skipCommercial':
+          if (cmd.payload.commercialId) {
+            try {
+              const raw = localStorage.getItem('neonaidj_skipped_commercials');
+              const existing = raw ? JSON.parse(raw) : [];
+              if (!existing.includes(cmd.payload.commercialId)) {
+                existing.push(cmd.payload.commercialId);
+                localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify(existing));
+              }
+              console.log('📺 Remote skipped commercial:', cmd.payload.commercialId);
+            } catch {}
+          }
+          break;
         case 'deactivateTrack':
           if (cmd.payload.pin && cmd.payload.trackName) {
             (async () => {
@@ -780,6 +803,8 @@ export default function DJBooth() {
           announcementsEnabled,
           rotationSongs: mergedSongs,
           interstitialSongs: interstitialSongsRef.current || {},
+          commercialFreq: localStorage.getItem('neonaidj_commercial_freq') || 'off',
+          skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),
           volume,
           voiceGain,
           trackTime: currentTimeRef.current || 0,
@@ -1516,7 +1541,19 @@ export default function DJBooth() {
       const promos = all.filter(v => v.type === 'promo' || v.type === 'manual');
       if (promos.length === 0) return false;
 
-      const promo = promos[Math.floor(Math.random() * promos.length)];
+      const promoKeys = promos.map(p => p.cache_key).sort();
+      const currentQueue = promoShuffleRef.current;
+      const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key));
+      if (!queueValid) {
+        const shuffled = [...promoKeys];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        promoShuffleRef.current = shuffled;
+      }
+      const nextKey = promoShuffleRef.current.shift();
+      const promo = promos.find(p => p.cache_key === nextKey) || promos[0];
       const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(promo.cache_key)}`, { headers });
       if (!audioRes.ok) return false;
       const blob = await audioRes.blob();

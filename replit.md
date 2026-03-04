@@ -29,7 +29,32 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 4, 2026 — Session 21 (Remote Deactivate, Club Name Fix, Commercial Audio Fix, Voice Delivery Fix)
+### Mar 4, 2026 — Session 21 (Remote Deactivate, Club Name Fix, Commercial Audio Fix, Voice Delivery Fix, Remote Break Songs, Commercial Shuffle)
+
+#### Feature: Remote Break Songs & Commercial Markers
+- **Purpose**: Allow DJ to manage break songs and see/skip commercial markers from the iPad remote, matching the local Pi rotation view
+- **Break songs on remote**:
+  - Each break song shows individually between entertainers with music icon + X to remove
+  - When a track is selected from the music list, a dashed "Add as break song" button appears between entertainers
+  - Tapping it adds the selected song as a break song and sends the update to the Pi
+  - Removing sends updated interstitial songs to Pi via `updateInterstitialSongs` command
+- **Commercial break markers on remote**:
+  - Amber markers appear between entertainers based on commercial frequency setting
+  - Each has an X to skip that specific slot, synced to the Pi via `skipCommercial` command
+  - Skipped commercials from Pi's localStorage are broadcast in live state so remote stays in sync
+- **Commercial frequency** now broadcast in live booth state so remote can calculate marker positions
+- **New commands**: `updateInterstitialSongs` (replaces entire break songs state), `skipCommercial` (adds ID to skipped list)
+- **Files**: `src/pages/DJBooth.jsx` (commands + broadcast), `src/components/dj/RemoteView.jsx` (UI)
+
+#### Feature: Commercial Shuffle Rotation
+- **Problem**: Multiple commercials were selected randomly, causing repeats and uneven airtime
+- **Fix**: Fisher-Yates shuffle rotation — cycles through all saved promos before any repeats. Queue reshuffles when all have played or promo list changes
+- **File**: `src/pages/DJBooth.jsx` (`promoShuffleRef` + shuffle logic in `playCommercialIfDue`)
+
+#### Fix: VIP Spelled Out as Letters
+- **Problem**: The all-caps name fix (converting GIGI→Gigi) was also converting VIP→Vip, causing ElevenLabs to say it as a word instead of individual letters
+- **Fix**: Added `SPELL_OUT` exception set (VIP, DJ, MC, ATM, ID, etc.) — these get converted to "V.I.P.", "D.J." etc. with dots between letters so TTS reads them individually
+- **File**: `src/components/dj/AnnouncementSystem.jsx`
 
 #### Feature: Deactivate Song on Remote Tablet
 - **Purpose**: Allow DJ to block/ban a song from the iPad remote during playback, removing it from future rotation

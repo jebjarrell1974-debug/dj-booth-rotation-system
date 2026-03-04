@@ -70,6 +70,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const voiceGainPercent = Math.round(currentVoiceGain * 100);
   const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
   const interstitialSongs = liveBoothState?.interstitialSongs || {};
+  const commercialFreq = liveBoothState?.commercialFreq || 'off';
+
+  const skippedFromBooth = liveBoothState?.skippedCommercials || [];
+  const [localSkipped, setLocalSkipped] = useState(new Set());
+  const skippedCommercials = new Set([...skippedFromBooth, ...localSkipped]);
 
   const trackTime = liveBoothState?.trackTime || 0;
   const trackDuration = liveBoothState?.trackDuration || 0;
@@ -642,7 +647,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <span className="text-[10px] text-gray-500 ml-2">{rotationList.length} entertainers</span>
               </div>
               {selectedTrack && (
-                <span className="text-[10px] text-[#00d4ff] animate-pulse">Tap an entertainer to add selected song</span>
+                <span className="text-[10px] text-[#00d4ff] animate-pulse">Tap entertainer or break slot to add</span>
               )}
             </div>
             <div className="flex-1 overflow-auto space-y-1">
@@ -766,11 +771,78 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                         )}
                       </div>
 
-                      {breakSongsList.length > 0 && (
-                        <div className="ml-10 mt-0.5 px-2 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20">
-                          <p className="text-[10px] text-violet-400 truncate">♫ {breakSongsList.join(', ')}</p>
+                      {idx < rotationList.length - 1 && (
+                        <div className="ml-10 mt-0.5">
+                          {breakSongsList.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {breakSongsList.map((songName, bsi) => (
+                                <div key={bsi} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                                  <Music className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                                  <p className="text-[10px] text-violet-400 truncate flex-1">{songName}</p>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const updated = { ...interstitialSongs };
+                                      const arr = [...(updated[breakKey] || [])];
+                                      arr.splice(bsi, 1);
+                                      if (arr.length === 0) { delete updated[breakKey]; } else { updated[breakKey] = arr; }
+                                      boothApi.sendCommand('updateInterstitialSongs', { interstitialSongs: updated });
+                                    }}
+                                    className="p-0.5 text-violet-400/40 active:text-red-400 flex-shrink-0"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          {selectedTrack && (
+                            <button
+                              onClick={() => {
+                                const updated = { ...interstitialSongs };
+                                const arr = [...(updated[breakKey] || [])];
+                                arr.push(selectedTrack);
+                                updated[breakKey] = arr;
+                                boothApi.sendCommand('updateInterstitialSongs', { interstitialSongs: updated });
+                                setSelectedTrack(null);
+                              }}
+                              className="w-full mt-0.5 flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-dashed border-violet-500/30 bg-violet-500/5 active:bg-violet-500/15 transition-colors"
+                            >
+                              <Plus className="w-3 h-3 text-violet-400" />
+                              <span className="text-[10px] text-violet-400">Add as break song</span>
+                            </button>
+                          )}
                         </div>
                       )}
+
+                      {(() => {
+                        if (commercialFreq === 'off') return null;
+                        const freqNum = parseInt(commercialFreq);
+                        if (!freqNum || freqNum < 1) return null;
+                        const position = idx + 1;
+                        if (position % freqNum !== 0) return null;
+                        if (position >= rotationList.length) return null;
+                        const commercialId = `commercial-after-${idx}`;
+                        if (skippedCommercials.has(commercialId)) return null;
+                        return (
+                          <div className="ml-10 mt-0.5 flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-900/20 border border-amber-500/30">
+                            <Radio className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Commercial Break</p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLocalSkipped(prev => new Set([...prev, commercialId]));
+                                boothApi.sendCommand('skipCommercial', { commercialId });
+                              }}
+                              className="p-0.5 text-amber-400/40 active:text-red-400 flex-shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })

@@ -229,9 +229,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         pronunciationMap[name + "'s"] = phonetic + "'s";
       }
     }
+    const SPELL_OUT = new Set(['VIP', 'DJ', 'MC', 'ATM', 'ID', 'VR', 'TV', 'AC', 'DC', 'OK', 'UV']);
     let ttsText = script.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
       const base = match.replace(/'[Ss]$/, '');
       const suffix = match.slice(base.length);
+      if (SPELL_OUT.has(base)) return base.split('').join('.') + '.' + suffix;
       return base.charAt(0) + base.slice(1).toLowerCase() + suffix;
     });
     for (const [name, phonetic] of Object.entries(pronunciationMap)) {
