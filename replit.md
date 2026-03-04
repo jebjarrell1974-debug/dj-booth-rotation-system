@@ -38,6 +38,24 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 4, 2026 — Session 22 (Rotation Playlist Dropdown, Enhanced Boot Screen)
+
+#### Feature: Entertainer Playlist Dropdown in RotationPlaylistManager
+- **Purpose**: The Rotation tab's music library panel (left half) now has the same entertainer playlist dropdown as the Library tab
+- **How it works**: Dropdown at top of music library switches between "Genre Folders" (default server tracks with search/genre filter) and any active entertainer's playlist (shows their saved songs with purple ListMusic icon)
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Feature: Enhanced AI-Flavored Boot Screen
+- **Purpose**: More visually impressive boot screen with AI/tech aesthetics
+- **Changes**:
+  - "SYSTEM BOOT v3.0" header + "Nightclub Entertainment Operations Network" subtitle
+  - Progress bar with percentage counter and gradient shimmer animation (cyan→purple→cyan)
+  - Rotating AI status lines in monospace font at bottom (20 different messages like "Initializing neural entertainment matrix", "Calibrating beat-detection algorithms", etc.)
+  - Subtle scan line animation and radial glow background
+  - All text uses monospace/terminal font for tech feel
+  - Progress auto-fills to 95% then jumps to 100% when server reports ready
+- **File**: `src/components/BootScreen.jsx`
+
 ### Mar 4, 2026 — Session 21 (Remote Deactivate, Club Name Fix, Commercial Audio Fix, Voice Delivery Fix, Remote Break Songs, Commercial Shuffle)
 
 #### Feature: Remote Break Songs & Commercial Markers

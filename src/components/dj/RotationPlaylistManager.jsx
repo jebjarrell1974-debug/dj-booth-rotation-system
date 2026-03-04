@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -53,6 +53,17 @@ export default function RotationPlaylistManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeGenre, setActiveGenre] = useState(null);
+  const [musicSource, setMusicSource] = useState('genres');
+
+  const activeDancers = useMemo(() =>
+    (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name)),
+    [dancers]
+  );
+
+  const selectedPlaylistDancer = musicSource !== 'genres'
+    ? (dancers || []).find(d => String(d.id) === String(musicSource))
+    : null;
+  const playlistSongs = selectedPlaylistDancer?.playlist || [];
   const [localRotation, setLocalRotation] = useState(rotation);
   const [songAssignments, setSongAssignments] = useState({});
   const [interstitialSongs, setInterstitialSongs] = useState(() => {
@@ -507,29 +518,51 @@ export default function RotationPlaylistManager({
                 Music Library
               </h3>
               <span className="text-xs text-gray-500">
-                {serverTracks.length} of {serverTotalTracks} tracks
+                {musicSource === 'genres'
+                  ? `${serverTracks.length} of ${serverTotalTracks} tracks`
+                  : `${playlistSongs.length} songs`
+                }
               </span>
             </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <Input
-                placeholder="Search by name, genre, or path..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-[#151528] border-[#1e293b]"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            <select
+              value={musicSource}
+              onChange={(e) => {
+                setMusicSource(e.target.value);
+                setSearchQuery('');
+                setActiveGenre(null);
+              }}
+              className="w-full mb-2 px-3 py-2 bg-[#151528] border border-[#1e293b] rounded-lg text-sm text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
+              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '28px' }}
+            >
+              <option value="genres">Genre Folders</option>
+              {activeDancers.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name}'s Playlist ({(d.playlist || []).length})
+                </option>
+              ))}
+            </select>
+            {musicSource === 'genres' && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Input
+                  placeholder="Search by name, genre, or path..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 bg-[#151528] border-[#1e293b]"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          {genres.length > 0 && (
+          {musicSource === 'genres' && genres.length > 0 && (
             <div className="px-3 py-2 border-b border-[#1e293b]">
               <div className="flex items-center gap-2">
                 <Folder className="w-4 h-4 text-gray-400 shrink-0" />
@@ -548,6 +581,30 @@ export default function RotationPlaylistManager({
             </div>
           )}
 
+          {musicSource !== 'genres' ? (
+            <ScrollArea className="flex-1">
+              <div className="p-2">
+                {playlistSongs.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    {selectedPlaylistDancer?.name} hasn't added any songs yet
+                  </div>
+                ) : (
+                  playlistSongs.map((songName, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleLibraryTrackClick(songName)}
+                      className="flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-pointer bg-[#151528] hover:bg-[#1e293b]"
+                    >
+                      <ListMusic className="w-4 h-4 text-[#a855f7] flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-white truncate block">{songName}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          ) : (
           <Droppable droppableId="library" isDropDisabled={true} type="song">
             {(provided) => (
               <ScrollArea className="flex-1">
@@ -602,6 +659,7 @@ export default function RotationPlaylistManager({
               </ScrollArea>
             )}
           </Droppable>
+          )}
         </div>
 
         <div className="w-1/2 flex flex-col">
