@@ -138,6 +138,7 @@ const server = http.createServer(async (req, res) => {
       currentSong: data.currentSong || null,
       version: data.version || null,
       lastError: data.lastError || null,
+      apiCosts: data.apiCosts || null,
       lastHeartbeat: now,
       status: 'online',
     });
