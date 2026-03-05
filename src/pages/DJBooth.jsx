@@ -75,10 +75,15 @@ export default function DJBooth() {
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
   const tracksRef = useRef([]);
-  const [rotationSongs, setRotationSongs] = useState({});
+  const [rotationSongs, setRotationSongs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('djbooth_rotation_songs');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const currentDancerIndexRef = useRef(0);
   const currentSongNumberRef = useRef(1);
-  const rotationSongsRef = useRef({});
+  const rotationSongsRef = useRef(rotationSongs);
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
   const [breakSongsPerSet, setBreakSongsPerSet] = useState(0);
@@ -86,6 +91,12 @@ export default function DJBooth() {
   const [energyOverride, setEnergyOverride] = useState(() => getApiConfig().energyOverride || 'auto');
   const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
   const djOptionsRef = useRef({ activeGenres: [], musicMode: 'dancer_first' });
+  useEffect(() => {
+    try {
+      localStorage.setItem('djbooth_rotation_songs', JSON.stringify(rotationSongs));
+    } catch {}
+  }, [rotationSongs]);
+
   const rotationRef = useRef([]);
   const dancersRef = useRef([]);
   const transitionInProgressRef = useRef(false);

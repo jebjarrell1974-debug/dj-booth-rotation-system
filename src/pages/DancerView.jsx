@@ -19,6 +19,7 @@ export default function DancerView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [tracksLoading, setTracksLoading] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null);
   const [page, setPage] = useState(1);
   const [totalTracks, setTotalTracks] = useState(0);
   const lastActivityRef = useRef(Date.now());
@@ -145,12 +146,16 @@ export default function DancerView() {
 
   const debouncedSave = useCallback((newPlaylist) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus('saving');
     saveTimerRef.current = setTimeout(async () => {
       saveTimerRef.current = null;
       try {
         await playlistApi.update(newPlaylist);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus(prev => prev === 'saved' ? null : prev), 2000);
       } catch (err) {
         console.error('Failed to save playlist:', err);
+        setSaveStatus('error');
       }
     }, 300);
   }, []);
@@ -292,7 +297,12 @@ export default function DancerView() {
       <div className="px-4 py-2 border-b border-[#1e293b] bg-[#0d0d1f] flex items-center justify-between flex-shrink-0">
         <div>
           <h1 className="text-lg font-bold text-white">{effectiveUser?.name || 'Entertainer'}</h1>
-          <p className="text-[10px] text-gray-500">My Playlist</p>
+          <p className="text-[10px] text-gray-500">
+            My Playlist
+            {saveStatus === 'saving' && <span className="ml-2 text-yellow-400">Saving...</span>}
+            {saveStatus === 'saved' && <span className="ml-2 text-green-400">Saved</span>}
+            {saveStatus === 'error' && <span className="ml-2 text-red-400">Save failed!</span>}
+          </p>
         </div>
         <Button variant="ghost" size="sm" onClick={handleLogout} className="text-gray-400 hover:text-white">
           <LogOut className="w-4 h-4 mr-1" />

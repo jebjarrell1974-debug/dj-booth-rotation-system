@@ -38,6 +38,32 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 5, 2026 — Session 24 (White Screen Fix + Wi-Fi Routing + Cleanup)
+
+#### Fix: White Screen During Updates
+- **Problem**: Chrome kiosk showed "This site can't be reached" for ~30 seconds during service restarts
+- **Root cause**: Update script restarted djbooth service while Chrome was still open; Chrome immediately displayed error page
+- **Solution**: Update script now: (1) stops watchdog, (2) kills Chrome, (3) restarts service, (4) waits for health check, (5) relaunches Chrome, (6) restarts watchdog
+- **Watchdog service** (`djbooth-watchdog.sh`): Runs as systemd service `djbooth-watchdog`, pings server every 5 seconds, auto-refreshes Chrome via xdotool F5 when server recovers from unexpected crashes
+- **Race condition fix**: Update script stops watchdog before restart sequence to prevent both trying to relaunch Chrome
+
+#### Fix: Wi-Fi Overriding Ethernet for Internet
+- **Problem**: Pi connected to both ethernet (internet) and Wi-Fi (local iPad remote network with no internet). Wi-Fi took priority for all traffic, breaking API calls
+- **Solution**: NetworkManager route metrics — ethernet set to 100 (priority), Wi-Fi set to 600 (local only)
+- **Persistence**: Update script now auto-configures route metrics via `nmcli connection modify` on every update
+- **Pi network**: Ethernet `10.1.10.41`, Wi-Fi `172.21.33.107` (ShowclubVIP network for iPad remote)
+
+#### Cleanup: Removed Unused Code
+- Removed `public/neonaidj-launcher.html` (iframe-based launcher — broken approach, caused localStorage/audio issues)
+- Removed unused `/api/proxy/openai` and `/api/proxy/elevenlabs` server endpoints
+- Update script reverts any autostart entries still pointing to launcher back to `http://localhost:3001`
+
+#### Files Modified
+- `server/index.js` — removed proxy endpoints
+- `public/djbooth-update-github.sh` — kill Chrome before restart, watchdog stop/start, Wi-Fi routing, launcher revert
+- `public/djbooth-watchdog.sh` — new watchdog script (auto-refresh Chrome on server recovery)
+- Removed: `public/neonaidj-launcher.html`
+
 ### Mar 4, 2026 — Session 23 (Fleet Dashboard API Costs + Enhanced Fleet Metrics)
 
 #### Feature: Per-Unit API Costs in Fleet Dashboard
