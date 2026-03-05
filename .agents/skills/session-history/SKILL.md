@@ -434,6 +434,15 @@ journalctl -u fleet-monitor --no-pager -n 15
 ```
 Should show "Fleet Monitor Started" with port 3001 and Telegram active.
 
+### Updating the Fleet Monitor (CRITICAL PATH INFO)
+The fleet-monitor service runs from `~/fleet-monitor/monitor.js` and `~/fleet-monitor/fleet-dashboard.html` — **NOT** from `~/djbooth/public/`. The source files in the repo are `public/fleet-monitor-standalone.js` and `public/fleet-dashboard.html`. After pulling updates, you must COPY them to the correct location:
+
+```bash
+cd ~/djbooth && git pull && cp public/fleet-monitor-standalone.js ~/fleet-monitor/monitor.js && cp public/fleet-dashboard.html ~/fleet-monitor/fleet-dashboard.html && sudo systemctl restart fleet-monitor
+```
+
+**DO NOT** just update `~/djbooth/public/` — the fleet-monitor service will not see those changes.
+
 ### Important Notes
 - If `djbooth` service was previously running on this Pi, stop and disable it first: `sudo systemctl stop djbooth && sudo systemctl disable djbooth`
 - If Node is installed via system package instead of nvm, use `/usr/bin/node` for ExecStart
@@ -449,6 +458,43 @@ Should show "Fleet Monitor Started" with port 3001 and Telegram active.
 - **Username**: `jebjarrell`
 - **Node path**: `/home/jebjarrell/.nvm/versions/node/v22.22.0/bin/node`
 - **Port**: 3001
+
+---
+
+## Session 23 — Mar 4-5, 2026
+
+### Feature: Enhanced Fleet Command Center Dashboard
+Added six new metrics to the standalone fleet dashboard (homebase) for comprehensive monitoring of all Pi units:
+
+1. **API Costs (30d)** — Per-unit ElevenLabs + OpenAI cost tracking with fleet total in summary bar. Breakdown: Total / ElevenLabs / OpenAI + call count. Data comes from `api_usage` SQLite table on each Pi
+2. **Memory Usage** — RAM percentage with color warnings (yellow >75%, red >90%). Uses `os.freemem()`/`os.totalmem()`
+3. **Service Uptime** — How long `djbooth.service` has been running. Uses `systemctl show` to get ActiveEnterTimestamp. Catches service crashes vs system reboots
+4. **Active Entertainers** — Count of entertainers currently in rotation (`liveBoothState.rotation.length`)
+5. **Error Count** — Running count of `console.error()` calls since service start. Wraps native console.error
+6. **Network Quality** — Pings Google DNS (8.8.8.8) 3 times, shows avg latency + signal bars (4-bar green = Excellent <30ms, 3-bar green = Good <60ms, 2-bar yellow = Fair <100ms, 1-bar red = Poor >100ms, all red = No Internet)
+7. **Last Update** — When the Pi last ran `git pull` (from `.git/FETCH_HEAD` mtime). Shows "Today", "Yesterday", "3d ago"
+
+Summary bar now shows: Devices | Online | Offline | Voiceovers | Entertainers | API Costs (30d)
+
+### Key Fix: Fleet Monitor HTML Caching
+- **Problem**: Fleet monitor standalone server (`fleet-monitor-standalone.js`) read `fleet-dashboard.html` once at startup and cached in memory. Updating the HTML file had no effect until service restart
+- **Fix**: Changed to read HTML fresh on every request via `getDashboardHtml()` function. Also added `Cache-Control: no-cache, no-store` header
+
+### CRITICAL DISCOVERY: Fleet Monitor File Paths
+- Fleet monitor service runs from `~/fleet-monitor/monitor.js` and reads `~/fleet-monitor/fleet-dashboard.html`
+- This is a **separate directory** from `~/djbooth/public/` where the repo source lives
+- The service file (`/etc/systemd/system/fleet-monitor.service`) has `ExecStart` pointing to `~/fleet-monitor/monitor.js`
+- Updating `~/djbooth/public/` has NO EFFECT on the running fleet monitor
+- **Correct update procedure** (on homebase):
+```bash
+cd ~/djbooth && git pull && cp public/fleet-monitor-standalone.js ~/fleet-monitor/monitor.js && cp public/fleet-dashboard.html ~/fleet-monitor/fleet-dashboard.html && sudo systemctl restart fleet-monitor
+```
+
+### Files Modified
+- `server/heartbeat-client.js` — Added `getMemoryInfo()`, `getServiceUptime()`, `getLastUpdateTime()`, `getNetworkLatency()` collectors + all new payload fields
+- `server/index.js` — Added `errorCounter` (wraps console.error), `activeEntertainers` from rotation state, passed to heartbeat callback
+- `public/fleet-monitor-standalone.js` — Store all new fields from heartbeat + serve HTML fresh on each request (no caching)
+- `public/fleet-dashboard.html` — Summary cards (Entertainers, API Costs), device card stat rows (Memory, Service, Entertainers, Errors, Last Update, Network with signal bars), helper functions (`formatNetwork`, `memClass`, `formatLastUpdate`)
 
 ---
 
