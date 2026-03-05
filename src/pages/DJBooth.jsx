@@ -1498,7 +1498,11 @@ export default function DJBooth() {
     }
   }, [getDancerTracks, playTrack, playFallbackTrack, tracks, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, updateStageState]);
 
+  const lastRotationToggleRef = useRef(0);
   const startRotation = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastRotationToggleRef.current < 2000) return;
+    lastRotationToggleRef.current = now;
     if (rotation.length === 0 || !tracks.length) {
       console.error('❌ StartRotation: rotation.length=' + rotation.length + ', tracks.length=' + tracks.length);
       return;
@@ -1677,7 +1681,11 @@ export default function DJBooth() {
     swapPromoRef.current = swapPromoAtSlot;
   }, [swapPromoAtSlot]);
 
+  const lastSkipTimeRef = useRef(0);
   const handleSkip = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastSkipTimeRef.current < 2000) return;
+    lastSkipTimeRef.current = now;
     if (watchdogRecoveringRef.current) {
       console.log('⏳ HandleSkip: Watchdog recovery in progress, skipping');
       return;
@@ -2571,6 +2579,9 @@ export default function DJBooth() {
   };
 
   const stopRotation = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRotationToggleRef.current < 2000) return;
+    lastRotationToggleRef.current = now;
     setIsRotationActive(false);
     isRotationActiveRef.current = false;
     setCurrentSongNumber(1);

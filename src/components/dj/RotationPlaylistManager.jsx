@@ -530,7 +530,12 @@ export default function RotationPlaylistManager({
     });
   }, []);
 
+  const lastSaveTimeRef = useRef(0);
+  const lastSkipDancerTimeRef = useRef(0);
   const handleSave = async () => {
+    const now = Date.now();
+    if (now - lastSaveTimeRef.current < 2000) return;
+    lastSaveTimeRef.current = now;
     const playlists = {};
     Object.entries(songAssignments).forEach(([dancerId, songs]) => {
       playlists[dancerId] = songs;
@@ -890,6 +895,9 @@ export default function RotationPlaylistManager({
                                   title="Skip to bottom of rotation"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    const now = Date.now();
+                                    if (now - lastSkipDancerTimeRef.current < 2000) return;
+                                    lastSkipDancerTimeRef.current = now;
                                     onSkipDancer?.(dancer.id);
                                   }}
                                 >
