@@ -990,7 +990,7 @@ export default function RotationPlaylistManager({
                                 <p className="text-[10px] text-amber-500/60">Promo will play here</p>
                               )}
                             </div>
-                            {availablePromos.length > 1 && onSwapPromo && (
+                            {availablePromos.length > 1 && onSwapPromo && promoSlotIndex < promoQueue.length && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

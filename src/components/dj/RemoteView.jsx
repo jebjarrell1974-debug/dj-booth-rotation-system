@@ -909,7 +909,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                                 <p className="text-[9px] text-amber-300/80 truncate">{promoName}</p>
                               )}
                             </div>
-                            {remoteAvailablePromos.length > 1 && (
+                            {remoteAvailablePromos.length > 1 && promoSlotIndex < remotePromoQueue.length && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

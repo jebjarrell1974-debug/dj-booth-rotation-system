@@ -1630,11 +1630,11 @@ export default function DJBooth() {
   const swapPromoAtSlot = useCallback((slotIndex) => {
     if (availablePromos.length <= 1) return;
     const queue = [...promoShuffleRef.current];
-    if (slotIndex >= queue.length) return;
+    if (slotIndex < 0 || slotIndex >= queue.length) return;
     const currentKey = queue[slotIndex];
-    const allKeys = availablePromos.map(p => p.cache_key);
+    const allKeys = availablePromos.map(p => p.cache_key).sort();
     const currentIdx = allKeys.indexOf(currentKey);
-    const nextIdx = (currentIdx + 1) % allKeys.length;
+    const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % allKeys.length;
     queue[slotIndex] = allKeys[nextIdx];
     promoShuffleRef.current = queue;
     setPromoQueue([...queue]);
