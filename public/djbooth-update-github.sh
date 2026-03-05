@@ -144,23 +144,28 @@ echo "[6/7] Restarting service..."
 if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
   echo "Running as boot service — skipping restart (systemd will start djbooth next)"
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+  export DISPLAY=:0
+  echo "Closing browser before restart..."
+  pkill -f "chromium" 2>/dev/null || pkill -f "chrome" 2>/dev/null || true
+  sleep 2
+
   sudo systemctl restart "$SERVICE_NAME"
-  sleep 5
-  for i in 1 2 3 4 5; do
-    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+
+  echo "Waiting for server to be ready..."
+  for i in $(seq 1 30); do
+    if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
+      echo "Server is up (attempt $i)"
       break
     fi
-    echo "Waiting for service to start... ($i)"
     sleep 2
   done
-  if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+
+  if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
     echo ""
-    echo "UPDATE SUCCESSFUL — refreshing browser..."
+    echo "UPDATE SUCCESSFUL — relaunching browser..."
     echo ""
-    export DISPLAY=:0
-    xdotool key --clearmodifiers F5 2>/dev/null || \
-      xdotool key --clearmodifiers ctrl+r 2>/dev/null || \
-      wmctrl -a Chromium 2>/dev/null && xdotool key F5 2>/dev/null || true
+    bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+    disown
     CLEANUP_COUNT=$(ls -d "${APP_DIR}.backup-"* 2>/dev/null | head -n -3 | wc -l)
     if [ "$CLEANUP_COUNT" -gt "0" ]; then
       ls -d "${APP_DIR}.backup-"* 2>/dev/null | head -n -3 | xargs rm -rf
@@ -173,6 +178,8 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     mv "$BACKUP_DIR" "$APP_DIR"
     sudo systemctl restart "$SERVICE_NAME"
     echo "Rolled back to previous version"
+    bash -c "until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+    disown
     exit 1
   fi
 else
