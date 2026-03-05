@@ -81,6 +81,26 @@ npm prune --production 2>&1 | tail -1
 
 rm -rf "$TMPDIR"
 
+LAUNCHER_SRC="$APP_DIR/public/neonaidj-launcher.html"
+LAUNCHER_DEST="/home/$(whoami)/neonaidj-launcher.html"
+if [ -f "$LAUNCHER_SRC" ]; then
+  cp "$LAUNCHER_SRC" "$LAUNCHER_DEST"
+  AUTOSTART_DIR="/home/$(whoami)/.config/autostart"
+  AUTOSTART_FILE="$AUTOSTART_DIR/chromium-djbooth.desktop"
+  if [ -d "$AUTOSTART_DIR" ] && [ -f "$AUTOSTART_FILE" ]; then
+    if grep -q "localhost:3001" "$AUTOSTART_FILE" 2>/dev/null; then
+      sed -i "s|http://localhost:3001|file://$LAUNCHER_DEST|g" "$AUTOSTART_FILE" 2>/dev/null && \
+        echo "Updated Chromium autostart to use launcher page" || true
+    fi
+  fi
+  LXDE_AUTOSTART="/etc/xdg/lxsession/LXDE-pi/autostart"
+  if [ -f "$LXDE_AUTOSTART" ] && grep -q "localhost:3001" "$LXDE_AUTOSTART" 2>/dev/null; then
+    sudo sed -i "s|http://localhost:3001|file://$LAUNCHER_DEST|g" "$LXDE_AUTOSTART" 2>/dev/null && \
+      echo "Updated LXDE autostart to use launcher page" || true
+  fi
+  echo "Launcher page installed: $LAUNCHER_DEST"
+fi
+
 echo "[6/7] Restarting service..."
 if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
   echo "Running as boot service — skipping restart (systemd will start djbooth next)"
