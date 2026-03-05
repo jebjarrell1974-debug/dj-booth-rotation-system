@@ -129,6 +129,16 @@ WEOF
   fi
 fi
 
+NOPASSWD_FILE="/etc/sudoers.d/010_${USER}-nopasswd"
+if [ ! -f "$NOPASSWD_FILE" ]; then
+  echo "Configuring passwordless sudo for $USER..."
+  echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee "$NOPASSWD_FILE" > /dev/null
+  sudo chmod 0440 "$NOPASSWD_FILE"
+  sudo visudo -c -f "$NOPASSWD_FILE" > /dev/null 2>&1 && \
+    echo "Passwordless sudo configured" || \
+    { sudo rm -f "$NOPASSWD_FILE"; echo "WARNING: sudoers validation failed, skipping"; }
+fi
+
 if [ ! -f /swapfile ] && [ "$(free -m | awk '/^Mem:/{print $2}')" -lt 2048 ]; then
   echo "Setting up 1GB swap file for build stability..."
   sudo fallocate -l 1G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null
