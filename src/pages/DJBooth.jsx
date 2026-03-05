@@ -1885,31 +1885,31 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        const commercialComing = isCommercialDue();
-
         if (announcementsEnabled) {
-          if (commercialComing) {
-            const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
-            audioEngineRef.current?.duck();
-            const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
-            await playPrefetchedAnnouncement(outroUrl);
-          } else {
-            const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
-            audioEngineRef.current?.duck();
-            const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
-            await playPrefetchedAnnouncement(announcementUrl);
-            audioEngineRef.current?.unduck();
-          }
+          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
+          await playPrefetchedAnnouncement(outroUrl);
         }
 
-        await playCommercialIfDue();
+        const commercialPlayed = await playCommercialIfDue();
 
-        if (commercialComing && announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-          lastAudioActivityRef.current = Date.now();
-          const introUrl = await introPromise;
-          if (introUrl) {
-            await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+        if (announcementsEnabled) {
+          if (commercialPlayed) {
+            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+            lastAudioActivityRef.current = Date.now();
+            const introUrl = await introPromise;
+            if (introUrl) {
+              await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+            }
+          } else {
+            const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
+            lastAudioActivityRef.current = Date.now();
+            const introUrl = await introPromise;
+            if (introUrl) {
+              await playPrefetchedAnnouncement(introUrl);
+            }
+            audioEngineRef.current?.unduck();
           }
         }
 
@@ -1940,7 +1940,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, isCommercialDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
 
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
@@ -2345,31 +2345,31 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        const commercialComing = isCommercialDue();
-
         if (announcementsEnabled) {
-          if (commercialComing) {
-            const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
-            audioEngineRef.current?.duck();
-            const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
-            await playPrefetchedAnnouncement(outroUrl);
-          } else {
-            const announcementPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
-            audioEngineRef.current?.duck();
-            const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
-            await playPrefetchedAnnouncement(announcementUrl);
-            audioEngineRef.current?.unduck();
-          }
+          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
+          await playPrefetchedAnnouncement(outroUrl);
         }
 
-        await playCommercialIfDue();
+        const commercialPlayed = await playCommercialIfDue();
 
-        if (commercialComing && announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-          lastAudioActivityRef.current = Date.now();
-          const introUrl = await introPromise;
-          if (introUrl) {
-            await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+        if (announcementsEnabled) {
+          if (commercialPlayed) {
+            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+            lastAudioActivityRef.current = Date.now();
+            const introUrl = await introPromise;
+            if (introUrl) {
+              await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+            }
+          } else {
+            const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
+            lastAudioActivityRef.current = Date.now();
+            const introUrl = await introPromise;
+            if (introUrl) {
+              await playPrefetchedAnnouncement(introUrl);
+            }
+            audioEngineRef.current?.unduck();
           }
         }
 
@@ -2400,7 +2400,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, isCommercialDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, beginRotation]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, beginRotation]);
 
   const handleAnnouncementPlay = useCallback(async (audioUrl, options) => {
     if (audioEngineRef.current) {
