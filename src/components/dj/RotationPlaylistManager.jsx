@@ -40,6 +40,7 @@ export default function RotationPlaylistManager({
   activeRotationSongs,
   savedInterstitials,
   interstitialRemoteVersion,
+  activeBreakInfo,
   djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
@@ -810,6 +811,29 @@ export default function RotationPlaylistManager({
                   {...provided.droppableProps}
                   className="p-4 space-y-1"
                 >
+                  {activeBreakInfo && activeBreakInfo.songs.length > 0 && (() => {
+                    const upcomingBreaks = activeBreakInfo.songs.slice(activeBreakInfo.currentIndex + 1);
+                    if (upcomingBreaks.length === 0) return null;
+                    return (
+                      <div className="mx-2 mb-2 rounded-lg border border-dashed border-violet-500/40 bg-violet-900/10 p-2">
+                        <div className="flex items-center gap-1 px-1 mb-1">
+                          <Music2 className="w-3 h-3 text-violet-400" />
+                          <span className="text-[10px] text-violet-400 uppercase font-semibold tracking-wider">Up Next — Break Song{upcomingBreaks.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="space-y-1">
+                          {upcomingBreaks.map((songName, i) => (
+                            <div
+                              key={`active-break-${i}`}
+                              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
+                            >
+                              <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                              <span className="text-xs text-violet-300 truncate flex-1">{songName}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {rotationDancers.map((dancer, index) => {
                     const assigned = songAssignments[dancer.id] || [];
                     const breakKey = `after-${dancer.id}`;

@@ -119,6 +119,7 @@ export default function DJBooth() {
   const [plannedSongAssignments, setPlannedSongAssignments] = useState({});
   const playingInterstitialRef = useRef(false);
   const interstitialIndexRef = useRef(0);
+  const [activeBreakInfo, setActiveBreakInfo] = useState(null);
   const handleSkipRef = useRef(null);
   const saveRotationRef = useRef(null);
   const commercialCounterRef = useRef(0);
@@ -1711,6 +1712,7 @@ export default function DJBooth() {
     if (playingInterstitialRef.current) {
       playingInterstitialRef.current = false;
       interstitialIndexRef.current = 0;
+      setActiveBreakInfo(null);
       console.log('⏭️ HandleSkip: Skipping break song, advancing to next dancer');
     }
 
@@ -1855,6 +1857,7 @@ export default function DJBooth() {
 
           playingInterstitialRef.current = true;
           interstitialIndexRef.current = 1;
+          setActiveBreakInfo({ songs: breakSongs, currentIndex: 0 });
           const firstBreakName = breakSongs[0];
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
           if (!firstBreakTrack?.url) {
@@ -2089,6 +2092,7 @@ export default function DJBooth() {
         const nextBreakName = breakSongs[breakIdx];
         let nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
         interstitialIndexRef.current = breakIdx + 1;
+        setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx });
         if (!nextBreakTrack?.url) {
           nextBreakTrack = tracks.find(t => t.url && (
             t.name === nextBreakName || 
@@ -2112,6 +2116,7 @@ export default function DJBooth() {
 
       playingInterstitialRef.current = false;
       interstitialIndexRef.current = 0;
+      setActiveBreakInfo(null);
 
       const newRotation = [...rot];
       const newIdx = idx;
@@ -2323,6 +2328,7 @@ export default function DJBooth() {
 
           playingInterstitialRef.current = true;
           interstitialIndexRef.current = 1;
+          setActiveBreakInfo({ songs: breakSongs, currentIndex: 0 });
           const firstBreakName = breakSongs[0];
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
           if (!firstBreakTrack?.url) {
@@ -2576,6 +2582,7 @@ export default function DJBooth() {
     setRotationPending(false);
     playingInterstitialRef.current = false;
     interstitialIndexRef.current = 0;
+    setActiveBreakInfo(null);
   }, []);
 
   const removeFromRotation = (dancerId) => {
@@ -3144,6 +3151,7 @@ export default function DJBooth() {
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
                 savedInterstitials={interstitialSongsState}
                 interstitialRemoteVersion={interstitialRemoteVersion}
+                activeBreakInfo={activeBreakInfo}
                 onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
