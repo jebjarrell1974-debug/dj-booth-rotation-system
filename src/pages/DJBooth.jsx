@@ -804,6 +804,7 @@ export default function DJBooth() {
           rotationSongs: mergedSongs,
           interstitialSongs: interstitialSongsRef.current || {},
           commercialFreq: localStorage.getItem('neonaidj_commercial_freq') || 'off',
+          commercialCounter: commercialCounterRef.current,
           skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),
           volume,
           voiceGain,
@@ -3146,6 +3147,7 @@ export default function DJBooth() {
                 announcementsEnabled={announcementsEnabled}
                 onAnnouncementsToggle={(enabled) => setAnnouncementsEnabled(enabled)}
                 currentDancerIndex={currentDancerIndex}
+                commercialCounter={commercialCounterRef.current}
                 onSkipDancer={(dancerId) => {
                   if (!isRotationActive) return;
                   const rot = [...rotationRef.current];

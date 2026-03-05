@@ -72,6 +72,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
   const interstitialSongs = liveBoothState?.interstitialSongs || {};
   const commercialFreq = liveBoothState?.commercialFreq || 'off';
+  const commercialCounter = liveBoothState?.commercialCounter || 0;
 
   const skippedFromBooth = liveBoothState?.skippedCommercials || [];
   const [localSkipped, setLocalSkipped] = useState(new Set());
@@ -863,9 +864,19 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                         if (commercialFreq === 'off') return null;
                         const freqNum = parseInt(commercialFreq);
                         if (!freqNum || freqNum < 1) return null;
-                        const position = idx + 1;
-                        if (position % freqNum !== 0) return null;
-                        if (position >= rotationList.length) return null;
+                        if (idx >= rotationList.length - 1) return null;
+
+                        const totalEntertainers = rotationList.length;
+                        let stepsFromCurrent;
+                        if (currentDancerIndex != null) {
+                          stepsFromCurrent = (idx - currentDancerIndex + totalEntertainers) % totalEntertainers;
+                          if (stepsFromCurrent === 0) stepsFromCurrent = totalEntertainers;
+                        } else {
+                          stepsFromCurrent = idx + 1;
+                        }
+                        const futureCount = commercialCounter + stepsFromCurrent;
+                        if (futureCount % freqNum !== 0) return null;
+
                         const commercialId = `commercial-after-${idx}`;
                         if (skippedCommercials.has(commercialId)) return null;
                         return (

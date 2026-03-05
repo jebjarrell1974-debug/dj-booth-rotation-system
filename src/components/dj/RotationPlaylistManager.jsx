@@ -45,6 +45,7 @@ export default function RotationPlaylistManager({
   onAnnouncementsToggle,
   onSkipDancer,
   currentDancerIndex,
+  commercialCounter = 0,
   currentSongNumber,
   breakSongsPerSet,
   onBreakSongsPerSetChange,
@@ -940,9 +941,19 @@ export default function RotationPlaylistManager({
                         if (commercialFreq === 'off') return null;
                         const freqNum = parseInt(commercialFreq);
                         if (!freqNum || freqNum < 1) return null;
-                        const position = index + 1;
-                        if (position % freqNum !== 0) return null;
-                        if (position >= rotationDancers.length) return null;
+                        if (index >= rotationDancers.length - 1) return null;
+
+                        const totalEntertainers = rotationDancers.length;
+                        let stepsFromCurrent;
+                        if (isRotationActive && currentDancerIndex != null) {
+                          stepsFromCurrent = (index - currentDancerIndex + totalEntertainers) % totalEntertainers;
+                          if (stepsFromCurrent === 0) stepsFromCurrent = totalEntertainers;
+                        } else {
+                          stepsFromCurrent = index + 1;
+                        }
+                        const futureCount = commercialCounter + stepsFromCurrent;
+                        if (futureCount % freqNum !== 0) return null;
+
                         const commercialId = `commercial-after-${index}`;
                         if (skippedCommercials.has(commercialId)) return null;
                         return (
