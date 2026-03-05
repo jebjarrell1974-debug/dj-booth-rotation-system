@@ -123,6 +123,7 @@ export default function DJBooth() {
   const handleSkipRef = useRef(null);
   const saveRotationRef = useRef(null);
   const commercialCounterRef = useRef(0);
+  const playingCommercialRef = useRef(false);
   const promoShuffleRef = useRef([]);
   const [availablePromos, setAvailablePromos] = useState([]);
   const [promoQueue, setPromoQueue] = useState([]);
@@ -1611,6 +1612,7 @@ export default function DJBooth() {
 
       console.log('📺 Playing commercial:', promo.dancer_name || promo.cache_key);
       lastAudioActivityRef.current = Date.now();
+      playingCommercialRef.current = true;
       if (audioEngineRef.current) {
         audioEngineRef.current.pauseAll();
       }
@@ -1623,11 +1625,13 @@ export default function DJBooth() {
         }
       } finally {
         clearInterval(keepAlive);
+        playingCommercialRef.current = false;
         lastAudioActivityRef.current = Date.now();
       }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
       return true;
     } catch (err) {
+      playingCommercialRef.current = false;
       console.warn('⚠️ Commercial playback failed:', err.message);
       return false;
     }
@@ -1942,14 +1946,20 @@ export default function DJBooth() {
         }
 
         const commercialPlayed = await playCommercialIfDue();
+        if (commercialPlayed) {
+          transitionStartTimeRef.current = Date.now();
+          lastAudioActivityRef.current = Date.now();
+        }
 
         if (announcementsEnabled) {
           if (commercialPlayed) {
             const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
             lastAudioActivityRef.current = Date.now();
             const introUrl = await introPromise;
+            lastAudioActivityRef.current = Date.now();
             if (introUrl) {
               await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+              lastAudioActivityRef.current = Date.now();
             }
           } else {
             const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
@@ -1962,6 +1972,7 @@ export default function DJBooth() {
           }
         }
 
+        lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
@@ -2148,6 +2159,10 @@ export default function DJBooth() {
         rotationSongsRef.current = updatedSongs;
 
         const commercialPlayed = await playCommercialIfDue();
+        if (commercialPlayed) {
+          transitionStartTimeRef.current = Date.now();
+          lastAudioActivityRef.current = Date.now();
+        }
 
         if (announcementsEnabled) {
           if (commercialPlayed) {
@@ -2155,6 +2170,7 @@ export default function DJBooth() {
             lastAudioActivityRef.current = Date.now();
             if (introUrl) {
               await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+              lastAudioActivityRef.current = Date.now();
             }
           } else {
             const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -2413,14 +2429,20 @@ export default function DJBooth() {
         }
 
         const commercialPlayed = await playCommercialIfDue();
+        if (commercialPlayed) {
+          transitionStartTimeRef.current = Date.now();
+          lastAudioActivityRef.current = Date.now();
+        }
 
         if (announcementsEnabled) {
           if (commercialPlayed) {
             const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
             lastAudioActivityRef.current = Date.now();
             const introUrl = await introPromise;
+            lastAudioActivityRef.current = Date.now();
             if (introUrl) {
               await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
+              lastAudioActivityRef.current = Date.now();
             }
           } else {
             const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
@@ -2433,6 +2455,7 @@ export default function DJBooth() {
           }
         }
 
+        lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
@@ -2476,6 +2499,7 @@ export default function DJBooth() {
     const watchdogCheck = async () => {
       if (!playbackExpectedRef.current) return;
       if (watchdogRecoveringRef.current) return;
+      if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
       
       const silentFor = Date.now() - lastAudioActivityRef.current;
