@@ -63,6 +63,12 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Solution**: `rotationSongs` now persists to localStorage (`djbooth_rotation_songs`), loaded on mount, cleared when rotation stops
 - **File**: `src/pages/DJBooth.jsx`
 
+#### Feature: Save All Merges Songs into Permanent Playlists
+- **Problem**: When the DJ dragged a song from the music library into an entertainer's set during rotation and hit "Save All," the song was only used for that session — it never got added to the entertainer's permanent playlist
+- **Solution**: Save All now checks which entertainers were manually modified (via `djOverridesRef`) and merges their new songs into the permanent playlist. Entertainers whose sets were only auto-filled are untouched — only entertainers the DJ specifically edited get new songs saved
+- **How it works**: `RotationPlaylistManager.handleSave` now passes `manualOverrides` (list of dancer IDs the DJ touched) to the `onSaveAll` callback. `DJBooth.jsx` uses this to decide: merge new songs for overridden entertainers, preserve-only for others
+- **Files**: `src/components/dj/RotationPlaylistManager.jsx`, `src/pages/DJBooth.jsx`
+
 #### Feature: Auto Pre-Cache on Rotation Start
 - **Problem**: DJs never manually pre-cached announcements, causing delays when rotation started as each announcement had to generate on the fly
 - **Solution**: When "Start Rotation" is pressed, the app now automatically caches announcements before beginning:

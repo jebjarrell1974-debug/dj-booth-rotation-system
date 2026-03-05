@@ -3166,21 +3166,34 @@ export default function DJBooth() {
                     }
                   }
                 }}
-                onSaveAll={async (newRotation, playlists, interstitials = {}) => {
+                onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = []) => {
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
                   setInterstitialSongsState(interstitials);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
+                  const overrideSet = new Set(manualOverrides.map(id => String(id)));
                   Object.entries(playlists).forEach(([dancerId, displayedSongs]) => {
-                    const dancer = dancers.find(d => d.id === dancerId);
+                    const dancer = dancers.find(d => String(d.id) === String(dancerId));
                     const existingPlaylist = dancer?.playlist || [];
-                    const playlistSet = new Set(existingPlaylist);
-                    const playlistSongs = displayedSongs.filter(s => playlistSet.has(s));
-                    if (playlistSongs.length !== existingPlaylist.length || !playlistSongs.every((s, i) => s === existingPlaylist[i])) {
+
+                    let updatedPlaylist;
+                    if (overrideSet.has(String(dancerId))) {
+                      const playlistSet = new Set(existingPlaylist);
+                      const newSongs = displayedSongs.filter(s => !playlistSet.has(s));
+                      updatedPlaylist = [...existingPlaylist, ...newSongs];
+                      if (newSongs.length > 0) {
+                        console.log(`🎵 Added ${newSongs.length} song(s) to ${dancer?.name}'s permanent playlist: ${newSongs.join(', ')}`);
+                      }
+                    } else {
+                      const playlistSet = new Set(existingPlaylist);
+                      updatedPlaylist = displayedSongs.filter(s => playlistSet.has(s));
+                    }
+
+                    if (updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i])) {
                       updateDancerMutation.mutate({ 
                         id: dancerId, 
-                        data: { playlist: playlistSongs } 
+                        data: { playlist: updatedPlaylist } 
                       });
                     }
                   });

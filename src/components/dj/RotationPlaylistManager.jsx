@@ -507,8 +507,9 @@ export default function RotationPlaylistManager({
     });
 
     const finalInterstitials = { ...interstitialSongs };
+    const manualOverrides = [...djOverridesRef.current];
 
-    onSaveAll?.(localRotation, playlists, finalInterstitials);
+    onSaveAll?.(localRotation, playlists, finalInterstitials, manualOverrides);
     toast.success('Rotation & playlists saved');
   };
 
