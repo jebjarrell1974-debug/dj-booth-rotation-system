@@ -145,6 +145,9 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
   echo "Running as boot service — skipping restart (systemd will start djbooth next)"
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   export DISPLAY=:0
+
+  sudo systemctl stop djbooth-watchdog 2>/dev/null || true
+
   echo "Closing browser before restart..."
   pkill -f "chromium" 2>/dev/null || pkill -f "chrome" 2>/dev/null || true
   sleep 2
@@ -171,6 +174,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
       ls -d "${APP_DIR}.backup-"* 2>/dev/null | head -n -3 | xargs rm -rf
       echo "Cleaned up $CLEANUP_COUNT old backups (kept last 3)"
     fi
+    sudo systemctl start djbooth-watchdog 2>/dev/null || true
   else
     echo ""
     echo "WARNING: Service failed to start. Rolling back..."
@@ -180,11 +184,23 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo "Rolled back to previous version"
     bash -c "until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
     disown
+    sudo systemctl start djbooth-watchdog 2>/dev/null || true
     exit 1
   fi
 else
   echo "Service '$SERVICE_NAME' not running - skipping restart"
   echo "Start manually: sudo systemctl start $SERVICE_NAME"
+fi
+
+ETH_CONN=$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | grep eth0 | cut -d: -f1)
+WIFI_CONN=$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | grep wlan0 | cut -d: -f1)
+if [ -n "$ETH_CONN" ]; then
+  sudo nmcli connection modify "$ETH_CONN" ipv4.route-metric 100 2>/dev/null && \
+    echo "Ethernet ($ETH_CONN) route metric set to 100 (priority)" || true
+fi
+if [ -n "$WIFI_CONN" ]; then
+  sudo nmcli connection modify "$WIFI_CONN" ipv4.route-metric 600 2>/dev/null && \
+    echo "Wi-Fi ($WIFI_CONN) route metric set to 600 (local only)" || true
 fi
 
 echo ""
