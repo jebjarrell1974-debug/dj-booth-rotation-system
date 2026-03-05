@@ -291,7 +291,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, [elevenLabsApiKey]);
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}-V4`;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}-V5`;
   };
 
   const getSpecialsHash = () => {

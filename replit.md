@@ -38,7 +38,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 5, 2026 — Session 25 (Song Repeat Fix + Transition Gap Fix)
+### Mar 5, 2026 — Session 25 (Song Repeat Fix + Transition Gap Fix + Voice Quality Overhaul)
 
 #### Fix: Song Repeat Reduction
 - **Problem**: Same songs heard multiple times within the same hour despite 4-hour client-side cooldown
@@ -70,6 +70,13 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **System prompt rewritten**: Persona changed from "AI voice engine" to "veteran strip club DJ with twenty years on the mic". Removed contradictory instructions (PRIME_SHIFT used ALL CAPS/exclamation marks while TTS rules forbade them). Simplified from rule-heavy to conversational guidance. All event instruction blocks (intro/round2/outro/transition) shortened with more authentic examples
 - **TTS formatting rules preserved**: Commas, ellipses, em dashes, no ALL CAPS, max one exclamation, "V I P" with spaces, numbers as words, 5-14 word sentences
 - **Cache key**: V4 (forces full regeneration)
+
+#### Change: Default Script Model to GPT-4.1
+- **Previous default**: `auto` (built-in Replit LLM)
+- **New default**: `gpt-4.1` — best at following nuanced creative voice instructions for strip club DJ patter
+- **Where**: `src/components/apiConfig.jsx` — both `DEFAULTS.scriptModel` and `readFromStorage()` fallback
+- **Note**: Existing Pi units with a model already saved in localStorage keep their current setting. New installs or cleared localStorage will use GPT-4.1
+- **Available models**: auto, gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini (configurable in Configuration page)
 
 #### Fix: Auto-Select Songs for Dancers Without Playlists
 - **Problem**: Dancers with no/empty playlists got no songs assigned — `handleSkip` and `handleTrackEnd` immediately fell back to `playFallbackTrack` instead of selecting random songs
