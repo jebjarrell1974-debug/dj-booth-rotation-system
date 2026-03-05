@@ -21,7 +21,7 @@ const DEFAULTS = {
   clubOpenHour: 11,
   clubCloseHour: 2,
   energyOverride: 'auto',
-  scriptModel: 'auto',
+  scriptModel: 'gpt-4.1',
   clubSpecials: '',
 };
 
@@ -37,7 +37,7 @@ function readFromStorage() {
     clubOpenHour: parseInt(localStorage.getItem(STORAGE_KEYS.clubOpenHour) || '11', 10),
     clubCloseHour: parseInt(localStorage.getItem(STORAGE_KEYS.clubCloseHour) || '2', 10),
     energyOverride: localStorage.getItem(STORAGE_KEYS.energyOverride) || 'auto',
-    scriptModel: localStorage.getItem(STORAGE_KEYS.scriptModel) || 'auto',
+    scriptModel: localStorage.getItem(STORAGE_KEYS.scriptModel) || 'gpt-4.1',
     clubSpecials: localStorage.getItem(STORAGE_KEYS.clubSpecials) || '',
   };
 }
