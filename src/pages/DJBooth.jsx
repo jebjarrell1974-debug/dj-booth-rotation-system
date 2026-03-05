@@ -1803,7 +1803,13 @@ export default function DJBooth() {
           try {
             const token = sessionStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-            const excludeNames = [...new Set(Object.values(rotationSongsRef.current).flat().map(t => t.name))];
+            const cooldowns = songCooldownRef.current || {};
+            const nowMs = Date.now();
+            const cooldownNames = Object.entries(cooldowns)
+              .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
+              .map(([name]) => name);
+            const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
+            const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
             const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
             const res = await fetch('/api/music/select', {
               method: 'POST',
@@ -2266,7 +2272,13 @@ export default function DJBooth() {
           try {
             const token = sessionStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-            const excludeNames = [...new Set(Object.values(rotationSongsRef.current).flat().map(t => t.name))];
+            const cooldowns = songCooldownRef.current || {};
+            const nowMs = Date.now();
+            const cooldownNames = Object.entries(cooldowns)
+              .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
+              .map(([name]) => name);
+            const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
+            const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
             const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
             const res = await fetch('/api/music/select', {
               method: 'POST',
