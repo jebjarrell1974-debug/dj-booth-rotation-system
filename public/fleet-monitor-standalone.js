@@ -29,14 +29,17 @@ function checkRateLimit(ip) {
   return true;
 }
 
-let dashboardHtml = '';
-try {
-  const htmlPath = join(__dirname, 'fleet-dashboard.html');
-  if (existsSync(htmlPath)) {
-    dashboardHtml = readFileSync(htmlPath, 'utf8');
+const dashboardHtmlPath = join(__dirname, 'fleet-dashboard.html');
+
+function getDashboardHtml() {
+  try {
+    if (existsSync(dashboardHtmlPath)) {
+      return readFileSync(dashboardHtmlPath, 'utf8');
+    }
+  } catch (err) {
+    console.error('Failed to load dashboard HTML:', err.message);
   }
-} catch (err) {
-  console.error('Failed to load dashboard HTML:', err.message);
+  return '';
 }
 
 async function sendTelegram(message) {
@@ -217,9 +220,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && (req.url === '/' || req.url === '/dashboard')) {
-    if (dashboardHtml) {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(dashboardHtml);
+    const html = getDashboardHtml();
+    if (html) {
+      res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store' });
+      res.end(html);
     } else {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('NEON AI DJ Fleet Monitor - Dashboard HTML not found. Place fleet-dashboard.html in same directory.');
