@@ -38,6 +38,32 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 5, 2026 — Session 26 (Voice Natural Sound + Commercial Overlap Fix)
+
+#### Fix: 4-Hour Song Cooldown Now Survives App Restarts
+- **Problem**: Every time the app restarted, the same songs played again — the 4-hour cooldown was lost
+- **Root cause**: Cooldowns were stored in client-side `localStorage` + in-memory ref. Pi kiosk Chromium clears localStorage on restart, and the in-memory ref always starts empty
+- **Fix (server-side hard exclude)**: `getRandomTracks()` in `server/db.js` now queries `play_history` for songs played in the last 4 hours and HARD EXCLUDES them from results (was only soft-sorting them lower). Fallback to least-recently-played if pool is exhausted
+- **Fix (server cooldown endpoint)**: New `GET /api/history/cooldowns?hours=4` endpoint returns a map of `{track_name: timestamp}` from `play_history`. Added `getRecentCooldowns()` to `db.js`
+- **Fix (client loads from server)**: On startup, `DJBooth.jsx` now fetches cooldowns from the server AND merges with any surviving localStorage data. Server is the source of truth — even if localStorage is cleared, the server's `play_history` table preserves the full cooldown state
+
+#### Fix: Commercial Playback — Music Resuming During Commercial (REAL FIX - Session 27)
+- **Problem**: ~35 seconds into a commercial, the previous song would start playing loudly
+- **Root cause (ACTUAL)**: DJBooth.jsx has a keep-alive interval (every 15 seconds) that calls `audioEngineRef.current.resume()` when `isPlayingRef.current` is true. But `isPlayingRef` (DJBooth's own ref) is set to true by the `onTimeUpdate` callback and was NEVER set to false during commercials. So every 15 seconds, the keep-alive called `resume()` which called `.play()` on the paused deck, un-pausing it. Additionally, the Web Audio API has a known issue where `HTMLAudioElement.pause()` does not reliably stop audio when routed through `createMediaElementSource()` — audio can continue through the buffer chain. The visibility change handler had the same vulnerability.
+- **Fix (4 layers)**:
+  1. **Keep-alive guard**: Added `!playingCommercialRef.current` check to the 15-second keep-alive interval in DJBooth.jsx
+  2. **Visibility change guard**: Added `!playingCommercialRef.current` check to the visibility change handler in DJBooth.jsx
+  3. **AudioEngine musicMutedRef flag**: New `musicMutedRef` ref in AudioEngine.jsx. `resume()` and `playTrack()` are blocked when this flag is true. Set by `muteMusic()`, cleared by `unmuteMusic()`
+  4. **Physical source disconnection**: `muteMusic()` now physically disconnects deck source nodes from the audio graph (`source.disconnect()`), pauses both decks, AND zeros their HTML volume. `unmuteMusic()` reconnects sources and restores volume. No connection = no audio path = impossible for sound to leak through regardless of play state
+
+#### Improvement: Voice Settings V7 — Natural Sound
+- Stability lowered significantly (0.35-0.50, was 0.55-0.78) — reduces monotone robotic delivery
+- Similarity boost set to 0.75 across all levels (was 0.78-0.82) — ElevenLabs documented sweet spot
+- Style increased (0.15-0.38, was 0.10-0.25) — adds personality and expressiveness
+- Speed slowed (0.88-0.94, was 0.95-1.02) — DJ pacing, lets words land naturally
+- Added `use_speaker_boost: true` (was not sent) — enhances voice character/presence
+- Cache key: V7 — all announcements regenerate with new settings
+
 ### Mar 5, 2026 — Session 25 (Song Repeat Fix + Transition Gap Fix + Voice Quality Overhaul)
 
 #### Fix: Song Repeat Reduction
@@ -66,10 +92,10 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 #### Improvement: Voice Announcement Quality Upgrade
 - **TTS model**: `eleven_multilingual_v2` (was `eleven_turbo_v2_5`). Same cost ($0.00003/char)
-- **Voice settings tuned**: Speed brought to natural range (0.95-1.02, was 0.85-0.90). Style lowered (0.10-0.25, was 0.15-0.35) to prevent volume swings. Stability/similarity_boost slightly reduced for more natural variation
+- **Voice settings (V7)**: Stability 0.35-0.50 (was 0.55-0.78), similarity_boost 0.75 (was 0.78-0.82), style 0.15-0.38 (was 0.10-0.25), speed 0.88-0.94 (was 0.95-1.02), `use_speaker_boost: true` (was not sent). Lower stability = more expressive/human. Higher style = more personality. Slower speed = DJ pacing. Speaker boost enhances voice character
 - **System prompt rewritten**: Persona changed from "AI voice engine" to "veteran strip club DJ with twenty years on the mic". Removed contradictory instructions (PRIME_SHIFT used ALL CAPS/exclamation marks while TTS rules forbade them). Simplified from rule-heavy to conversational guidance. All event instruction blocks (intro/round2/outro/transition) shortened with more authentic examples
 - **TTS formatting rules preserved**: Commas, ellipses, em dashes, no ALL CAPS, max one exclamation, "V I P" with spaces, numbers as words, 5-14 word sentences
-- **Cache key**: V4 (forces full regeneration)
+- **Cache key**: V7 (forces full regeneration with new voice settings)
 
 #### Change: Default Script Model to GPT-4.1
 - **Previous default**: `auto` (built-in Replit LLM)

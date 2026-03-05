@@ -14,7 +14,7 @@ import {
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
-  logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory,
+  logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage
 } from './db.js';
@@ -843,6 +843,20 @@ app.post('/api/history/played', authenticate, (req, res) => {
   try {
     logPlayHistory(trackName, dancerName, genre);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/history/cooldowns', authenticate, requireDJ, (req, res) => {
+  try {
+    const hours = parseInt(req.query.hours) || 4;
+    const rows = getRecentCooldowns(hours);
+    const cooldowns = {};
+    for (const row of rows) {
+      cooldowns[row.track_name] = new Date(row.last_played).getTime();
+    }
+    res.json({ cooldowns });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

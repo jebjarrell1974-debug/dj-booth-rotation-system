@@ -153,22 +153,45 @@ export default function DJBooth() {
 
   useEffect(() => {
     if (songCooldownRef.current !== null) return;
-    try {
-      const raw = localStorage.getItem('djbooth_song_cooldowns');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const now = Date.now();
-        const valid = {};
-        for (const [k, v] of Object.entries(parsed)) {
-          if (now - v < COOLDOWN_MS) valid[k] = v;
+    const loadCooldowns = async () => {
+      let cooldowns = {};
+      try {
+        const raw = localStorage.getItem('djbooth_song_cooldowns');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const now = Date.now();
+          for (const [k, v] of Object.entries(parsed)) {
+            if (now - v < COOLDOWN_MS) cooldowns[k] = v;
+          }
         }
-        songCooldownRef.current = valid;
-      } else {
-        songCooldownRef.current = {};
+      } catch {}
+      try {
+        const token = sessionStorage.getItem('djbooth_token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch('/api/history/cooldowns?hours=4', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cooldowns) {
+            const now = Date.now();
+            for (const [k, v] of Object.entries(data.cooldowns)) {
+              if (now - v < COOLDOWN_MS) {
+                if (!cooldowns[k] || v > cooldowns[k]) {
+                  cooldowns[k] = v;
+                }
+              }
+            }
+            console.log(`🎵 Loaded ${Object.keys(data.cooldowns).length} song cooldowns from server`);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to load server cooldowns:', err.message);
       }
-    } catch {
-      songCooldownRef.current = {};
-    }
+      songCooldownRef.current = cooldowns;
+      try {
+        localStorage.setItem('djbooth_song_cooldowns', JSON.stringify(cooldowns));
+      } catch {}
+    };
+    loadCooldowns();
   }, []);
 
   const recordSongPlayed = useCallback((trackName, dancerName = null, genre = null) => {
@@ -274,9 +297,10 @@ export default function DJBooth() {
       if (document.visibilityState === 'visible') {
         acquireWakeLock();
         resumeAudioContext();
-        if (isPlayingRef.current && audioEngineRef.current) {
+        if (isPlayingRef.current && audioEngineRef.current && !playingCommercialRef.current) {
           console.log('👁️ Page visible — resuming audio playback');
           setTimeout(() => {
+            if (playingCommercialRef.current) return;
             try {
               audioEngineRef.current?.resume();
               lastAudioActivityRef.current = Date.now();
@@ -305,7 +329,7 @@ export default function DJBooth() {
 
     const keepAliveInterval = setInterval(() => {
       resumeAudioContext();
-      if (isPlayingRef.current && audioEngineRef.current) {
+      if (isPlayingRef.current && audioEngineRef.current && !playingCommercialRef.current) {
         lastAudioActivityRef.current = Date.now();
         try { audioEngineRef.current?.resume(); } catch {}
       }
@@ -1607,6 +1631,7 @@ export default function DJBooth() {
       playingCommercialRef.current = true;
       if (audioEngineRef.current) {
         audioEngineRef.current.pauseAll();
+        audioEngineRef.current.muteMusic();
       }
 
       const promoKeys = promos.map(p => p.cache_key).sort();
@@ -1625,6 +1650,7 @@ export default function DJBooth() {
       const promo = promos.find(p => p.cache_key === nextKey) || promos[0];
       const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(promo.cache_key)}`, { headers });
       if (!audioRes.ok) {
+        if (audioEngineRef.current) audioEngineRef.current.unmuteMusic();
         playingCommercialRef.current = false;
         return false;
       }
@@ -1642,12 +1668,16 @@ export default function DJBooth() {
         }
       } finally {
         clearInterval(keepAlive);
+        if (audioEngineRef.current) {
+          audioEngineRef.current.unmuteMusic();
+        }
         playingCommercialRef.current = false;
         lastAudioActivityRef.current = Date.now();
       }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
       return true;
     } catch (err) {
+      if (audioEngineRef.current) audioEngineRef.current.unmuteMusic();
       playingCommercialRef.current = false;
       console.warn('⚠️ Commercial playback failed:', err.message);
       return false;

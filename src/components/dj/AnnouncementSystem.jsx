@@ -265,6 +265,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           similarity_boost: voiceSettings.similarity_boost,
           style: voiceSettings.style,
           speed: voiceSettings.speed,
+          use_speaker_boost: voiceSettings.use_speaker_boost !== false,
         }
       }),
       signal: controller.signal
@@ -291,7 +292,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, [elevenLabsApiKey]);
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}-V5`;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}-V7`;
   };
 
   const getSpecialsHash = () => {

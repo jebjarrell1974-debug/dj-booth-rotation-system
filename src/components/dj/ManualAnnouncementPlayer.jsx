@@ -93,10 +93,11 @@ function PromoCreator({ onPlay, onSaved }) {
         text: script,
         model_id: 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.62,
-          similarity_boost: 0.78,
-          style: 0.20,
-          speed: 1.0,
+          stability: 0.40,
+          similarity_boost: 0.75,
+          style: 0.30,
+          speed: 0.92,
+          use_speaker_boost: true,
         }
       }),
     });

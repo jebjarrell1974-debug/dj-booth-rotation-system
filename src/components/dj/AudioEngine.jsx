@@ -60,6 +60,7 @@ const AudioEngine = forwardRef(({
   const isPlayingRef = useRef(false);
   const isDucked = useRef(false);
   const crossfadeInProgressRef = useRef(false);
+  const musicMutedRef = useRef(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -434,6 +435,10 @@ const AudioEngine = forwardRef(({
   }, []);
 
   const playTrack = useCallback(async (fileHandle, crossfade = true) => {
+    if (musicMutedRef.current) {
+      console.log('🔇 PlayTrack blocked — music is muted (commercial playing)');
+      return false;
+    }
     const trackData = await loadTrack(fileHandle);
     if (!trackData) {
       console.error('❌ PlayTrack: loadTrack returned null — file unreadable');
@@ -784,13 +789,34 @@ const AudioEngine = forwardRef(({
   }, []);
 
   const pauseAll = useCallback(() => {
-    if (deckARef.current) deckARef.current.pause();
-    if (deckBRef.current) deckBRef.current.pause();
+    if (fadeAnimationRef.current) {
+      cancelAnimationFrame(fadeAnimationRef.current);
+      fadeAnimationRef.current = null;
+    }
+    if (safetyFadeRef.current) {
+      cancelAnimationFrame(safetyFadeRef.current);
+      safetyFadeRef.current = null;
+    }
+    crossfadeInProgressRef.current = false;
+    if (deckARef.current) {
+      deckARef.current.pause();
+      deckARef.current.onended = null;
+      deckARef.current.ontimeupdate = null;
+    }
+    if (deckBRef.current) {
+      deckBRef.current.pause();
+      deckBRef.current.onended = null;
+      deckBRef.current.ontimeupdate = null;
+    }
     isPlayingRef.current = false;
     setIsPlaying(false);
   }, []);
 
   const resume = useCallback(() => {
+    if (musicMutedRef.current) {
+      console.log('🔇 Resume blocked — music is muted (commercial playing)');
+      return;
+    }
     ensureAudioContext();
     try {
       getActiveDeck().play().catch(err => {
@@ -848,6 +874,54 @@ const AudioEngine = forwardRef(({
     localStorage.setItem('neonaidj_voice_eq', JSON.stringify(saved));
   }, []);
 
+  const muteMusic = useCallback(() => {
+    musicMutedRef.current = true;
+    if (deckASourceRef.current) {
+      try { deckASourceRef.current.disconnect(); } catch {}
+    }
+    if (deckBSourceRef.current) {
+      try { deckBSourceRef.current.disconnect(); } catch {}
+    }
+    if (musicBusGainRef.current && audioCtxRef.current) {
+      musicBusGainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
+    }
+    if (deckAGainRef.current && audioCtxRef.current) {
+      deckAGainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
+    }
+    if (deckBGainRef.current && audioCtxRef.current) {
+      deckBGainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
+    }
+    if (deckARef.current) {
+      deckARef.current.pause();
+      deckARef.current.volume = 0;
+    }
+    if (deckBRef.current) {
+      deckBRef.current.pause();
+      deckBRef.current.volume = 0;
+    }
+    console.log('🔇 muteMusic: decks paused, disconnected from audio graph, gains zeroed');
+  }, []);
+
+  const unmuteMusic = useCallback(() => {
+    musicMutedRef.current = false;
+    if (deckASourceRef.current && deckAGainRef.current) {
+      try { deckASourceRef.current.connect(deckAGainRef.current); } catch {}
+    }
+    if (deckBSourceRef.current && deckBGainRef.current) {
+      try { deckBSourceRef.current.connect(deckBGainRef.current); } catch {}
+    }
+    if (musicBusGainRef.current && audioCtxRef.current) {
+      musicBusGainRef.current.gain.setValueAtTime(1.0, audioCtxRef.current.currentTime);
+    }
+    if (deckARef.current) {
+      deckARef.current.volume = 1.0;
+    }
+    if (deckBRef.current) {
+      deckBRef.current.volume = 1.0;
+    }
+    console.log('🔊 unmuteMusic: decks reconnected, musicBus gain restored');
+  }, []);
+
   useImperativeHandle(ref, () => ({
     playTrack,
     pause,
@@ -855,6 +929,8 @@ const AudioEngine = forwardRef(({
     resume,
     duck,
     unduck,
+    muteMusic,
+    unmuteMusic,
     playAnnouncement,
     setVolume,
     setVoiceGain,

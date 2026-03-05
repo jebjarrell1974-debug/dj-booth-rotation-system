@@ -463,13 +463,30 @@ export function getMusicTrackByName(name) {
   return readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
 }
 
+export function getRecentCooldowns(hours = 4) {
+  return readDb.prepare(
+    `SELECT track_name, MAX(played_at) AS last_played
+     FROM play_history
+     WHERE played_at > datetime('now', 'localtime', '-' || ? || ' hours')
+     GROUP BY track_name`
+  ).all(hours);
+}
+
 export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
+  const recentlyPlayed = readDb.prepare(
+    `SELECT track_name FROM play_history
+     WHERE played_at > datetime('now', 'localtime', '-4 hours')
+     GROUP BY track_name`
+  ).all().map(r => r.track_name);
+
+  const allExcluded = [...new Set([...excludeNames, ...recentlyPlayed])];
+
   const conditions = ['t.blocked = 0'];
   const params = [];
 
-  if (excludeNames.length > 0) {
-    conditions.push(`t.name NOT IN (${excludeNames.map(() => '?').join(',')})`);
-    params.push(...excludeNames);
+  if (allExcluded.length > 0) {
+    conditions.push(`t.name NOT IN (${allExcluded.map(() => '?').join(',')})`);
+    params.push(...allExcluded);
   }
   if (genres.length > 0) {
     conditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
@@ -478,31 +495,56 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
 
   const where = conditions.join(' AND ');
   params.push(count * 4);
-  const pool = readDb.prepare(
-    `SELECT t.id, t.name, t.path, t.genre,
-            h.last_played AS last_played
+  let pool = readDb.prepare(
+    `SELECT t.id, t.name, t.path, t.genre
      FROM music_tracks t
-     LEFT JOIN (
-       SELECT track_name, MAX(played_at) AS last_played
-       FROM play_history
-       WHERE played_at > datetime('now', 'localtime', '-8 hours')
-       GROUP BY track_name
-     ) h ON t.name = h.track_name
      WHERE ${where}
      ORDER BY RANDOM()
      LIMIT ?`
   ).all(...params);
 
-  const unplayed = pool.filter(t => !t.last_played);
-  const played = pool.filter(t => t.last_played);
-  played.sort((a, b) => a.last_played.localeCompare(b.last_played));
-
-  for (let i = unplayed.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [unplayed[i], unplayed[j]] = [unplayed[j], unplayed[i]];
+  if (pool.length < count) {
+    const fallbackConditions = ['t.blocked = 0'];
+    const fallbackParams = [];
+    if (excludeNames.length > 0) {
+      fallbackConditions.push(`t.name NOT IN (${excludeNames.map(() => '?').join(',')})`);
+      fallbackParams.push(...excludeNames);
+    }
+    if (genres.length > 0) {
+      fallbackConditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
+      fallbackParams.push(...genres);
+    }
+    const usedNames = new Set(pool.map(t => t.name));
+    if (usedNames.size > 0) {
+      fallbackConditions.push(`t.name NOT IN (${[...usedNames].map(() => '?').join(',')})`);
+      fallbackParams.push(...usedNames);
+    }
+    const fbWhere = fallbackConditions.join(' AND ');
+    fallbackParams.push((count - pool.length) * 4);
+    const fallback = readDb.prepare(
+      `SELECT t.id, t.name, t.path, t.genre,
+              h.last_played AS last_played
+       FROM music_tracks t
+       LEFT JOIN (
+         SELECT track_name, MAX(played_at) AS last_played
+         FROM play_history
+         WHERE played_at > datetime('now', 'localtime', '-8 hours')
+         GROUP BY track_name
+       ) h ON t.name = h.track_name
+       WHERE ${fbWhere}
+       ORDER BY RANDOM()
+       LIMIT ?`
+    ).all(...fallbackParams);
+    fallback.sort((a, b) => (a.last_played || '').localeCompare(b.last_played || ''));
+    pool = [...pool, ...fallback.map(({ last_played, ...t }) => t)];
   }
 
-  return [...unplayed, ...played].slice(0, count).map(({ last_played, ...t }) => t);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  return pool.slice(0, count);
 }
 
 export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {

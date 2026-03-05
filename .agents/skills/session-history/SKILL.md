@@ -468,6 +468,58 @@ cd ~/djbooth && git pull && cp public/fleet-monitor-standalone.js ~/fleet-monito
 
 ---
 
+## Session 25 — Mar 5, 2026 (Song Repeat Fix + Transition Gap Fix + Voice Quality Overhaul)
+
+### Fix: Song Repeat Reduction
+- **Problem**: Same songs heard multiple times within the same hour despite 4-hour client-side cooldown
+- **Root causes**: Server `getRandomTracks` used pure `ORDER BY RANDOM()` with no play-history awareness; `playFallbackTrack` and watchdog recovery sent no cooldown excludes; local fallback ignored cooldowns when pool was small
+- **Fixes**: Server-side `getRandomTracks` now LEFT JOINs `play_history` (8-hour window), prioritizes unplayed songs, then least-recently-played. `playFallbackTrack` and watchdog recovery pass cooldown excludes. Local fallback sorts by least-recently-played. Added `idx_play_history_track_name` index
+- **Files**: `server/db.js`, `src/pages/DJBooth.jsx`
+
+### Fix: Music Pause During Dancer Transitions
+- **Problem**: Audible gap between intro announcement and new dancer's song
+- **Root cause**: Three transition paths played announcement FIRST, waited for completion, THEN started next song
+- **Fix**: All three paths now match `beginRotation` pattern: start new track FIRST → duck → play announcement over ducked song → unduck
+- **File**: `src/pages/DJBooth.jsx`
+
+### Fix: Music Playing Under Commercial
+- **Problem**: Previous song audible underneath commercial playback during ~500ms network fetch
+- **Fix**: Moved `pauseAll()` + `playingCommercialRef.current = true` to immediately after confirming promos exist — before audio blob fetch
+- **File**: `src/pages/DJBooth.jsx`
+
+### Improvement: Voice Announcement Quality Overhaul
+- **TTS model**: Switched from `eleven_turbo_v2_5` to `eleven_multilingual_v2`. Same cost ($0.00003/char)
+- **Voice settings**: Speed 0.95-1.02 (was 0.85-0.90), Style 0.10-0.25 (was 0.15-0.35), Stability/similarity_boost slightly reduced
+- **System prompt completely rewritten**: Persona "veteran strip club DJ with twenty years on the mic" (was "AI voice engine"). Removed contradictory instructions. Simplified from rule-heavy to conversational guidance. Better examples
+- **ManualAnnouncementPlayer**: Also updated to `eleven_multilingual_v2` with matching voice settings
+- **All old model references removed**: `eleven_turbo_v2_5` no longer referenced anywhere in codebase
+- **Cache key**: V4 (forces full regeneration of all cached voiceovers)
+- **Files**: `src/utils/energyLevels.js`, `src/components/dj/AnnouncementSystem.jsx`, `src/components/dj/ManualAnnouncementPlayer.jsx`, `src/utils/apiCostTracker.js`
+
+### Change: Default Script Model to GPT-4.1
+- **Previous default**: `auto` (built-in Replit LLM)
+- **New default**: `gpt-4.1` — best at following nuanced creative voice instructions
+- **Where**: `src/components/apiConfig.jsx` — both `DEFAULTS.scriptModel` and `readFromStorage()` fallback
+- **Available models**: auto, gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini (Configuration page)
+- **Note**: Existing Pi localStorage values preserved. New installs default to GPT-4.1
+
+### Fix: Auto-Select Songs for Dancers Without Playlists
+- **Problem**: Dancers with no pre-selected songs fell through to `playFallbackTrack` immediately
+- **Fix**: `handleSkip` and `handleTrackEnd` now call `getDancerTracks()` to auto-select random songs when `rotationSongsRef` is empty
+- **File**: `src/pages/DJBooth.jsx`
+
+### ElevenLabs Voice Settings Reference (V4)
+```
+Level 1 (Chill):   stability=0.78, similarity=0.82, style=0.10, speed=0.95
+Level 2 (Warm):    stability=0.70, similarity=0.80, style=0.15, speed=0.97
+Level 3 (Mid):     stability=0.62, similarity=0.78, style=0.20, speed=1.00
+Level 4 (High):    stability=0.55, similarity=0.78, style=0.25, speed=1.02
+Level 5 (Closing): stability=0.72, similarity=0.82, style=0.12, speed=0.97
+Promo TTS:         stability=0.62, similarity=0.78, style=0.20, speed=1.00
+```
+
+---
+
 ## Session 24 — Mar 5, 2026
 
 ### Fix: White Screen During Updates
