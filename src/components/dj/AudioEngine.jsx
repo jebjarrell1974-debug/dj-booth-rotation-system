@@ -766,6 +766,13 @@ const AudioEngine = forwardRef(({
     setIsPlaying(false);
   }, []);
 
+  const pauseAll = useCallback(() => {
+    if (deckARef.current) deckARef.current.pause();
+    if (deckBRef.current) deckBRef.current.pause();
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+  }, []);
+
   const resume = useCallback(() => {
     ensureAudioContext();
     try {
@@ -827,6 +834,7 @@ const AudioEngine = forwardRef(({
   useImperativeHandle(ref, () => ({
     playTrack,
     pause,
+    pauseAll,
     resume,
     duck,
     unduck,

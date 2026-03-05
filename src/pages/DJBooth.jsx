@@ -1563,7 +1563,7 @@ export default function DJBooth() {
       console.log('📺 Playing commercial:', promo.dancer_name || promo.cache_key);
       lastAudioActivityRef.current = Date.now();
       if (audioEngineRef.current) {
-        audioEngineRef.current.pause();
+        audioEngineRef.current.pauseAll();
       }
       const keepAlive = setInterval(() => {
         lastAudioActivityRef.current = Date.now();
