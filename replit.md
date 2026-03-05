@@ -38,6 +38,36 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 5, 2026 — Session 25 (Song Repeat Fix + Transition Gap Fix)
+
+#### Fix: Song Repeat Reduction
+- **Problem**: Same songs heard multiple times within the same hour despite 4-hour client-side cooldown
+- **Root causes found**:
+  1. **Server `getRandomTracks` was pure random**: Used `ORDER BY RANDOM()` with no play-history awareness — server didn't know what was recently played, relied entirely on client excludes
+  2. **`playFallbackTrack` sent no cooldown excludes**: Called `/api/music/random` without passing any exclude list
+  3. **Watchdog recovery sent no cooldown excludes**: Same issue — emergency recovery picked truly random songs
+  4. **Local fallback ignored cooldowns when pool was small**: When off-cooldown pool was smaller than needed count, it fell back to pure random from all tracks
+- **Fixes**:
+  1. **Server-side play-history awareness**: `getRandomTracks` now LEFT JOINs `play_history` (last 8 hours), prioritizes unplayed songs (shuffled randomly), then least-recently-played. Added `idx_play_history_track_name` index for performance
+  2. **`playFallbackTrack` now sends cooldown excludes**: Passes recently-played song names via `exclude` query param
+  3. **Watchdog recovery now sends cooldown excludes**: Same fix applied to emergency recovery path
+  4. **Local fallback sorts by least-recently-played**: When pool is small, songs are sorted by cooldown timestamp (oldest first) instead of random shuffle
+
+#### Fix: Music Pause During Dancer Transitions
+- **Problem**: Audible gap/pause between intro announcement starting and the new dancer's song — music should play behind the voiceover
+- **Root cause**: Three transition paths (post-break, handleTrackEnd dancer switch, handleSkip dancer switch) played the intro/transition announcement FIRST, waited for it to finish, THEN started the next dancer's song. This created a silent gap.
+- **Fix**: All three paths now match `beginRotation`'s pattern: start the new track FIRST (crossfading from previous), THEN duck and play the announcement over the already-playing new song
+- **Correct flow**: Song starts → duck → announcement plays over ducked song → unduck (same as beginRotation)
+
+#### Fix: Music Playing Under Commercial
+- **Problem**: Music from the previous song was audible underneath commercial playback
+- **Root cause**: `playCommercialIfDue()` called `pauseAll()` only AFTER fetching the audio blob from the server (~500ms network delay). During that fetch, the previous track continued playing
+- **Fix**: Moved `pauseAll()` + `playingCommercialRef.current = true` to immediately after confirming promos exist — before the audio blob fetch. Also added `playingCommercialRef.current = false` on early return if audio fetch fails
+
+#### Fix: Auto-Select Songs for Dancers Without Playlists
+- **Problem**: Dancers with no/empty playlists got no songs assigned — `handleSkip` and `handleTrackEnd` immediately fell back to `playFallbackTrack` instead of selecting random songs
+- **Fix**: Both handlers now call `getDancerTracks()` to auto-select random songs when `rotationSongsRef` is empty for the current dancer, and store them in `rotationSongsRef` for proper set flow
+
 ### Mar 5, 2026 — Session 24 (White Screen Fix + Wi-Fi Routing + Cleanup)
 
 #### Fix: White Screen During Updates

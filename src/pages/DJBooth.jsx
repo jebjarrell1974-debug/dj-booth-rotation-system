@@ -1030,7 +1030,13 @@ export default function DJBooth() {
       const token = sessionStorage.getItem('djbooth_token');
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
-      const res = await fetch(`/api/music/random?count=5${genresParam}`, {
+      const cooldowns = songCooldownRef.current || {};
+      const nowMs = Date.now();
+      const recentNames = Object.entries(cooldowns)
+        .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
+        .map(([name]) => name);
+      const excludeParam = recentNames.length > 0 ? `&exclude=${encodeURIComponent(recentNames.join(','))}` : '';
+      const res = await fetch(`/api/music/random?count=5${genresParam}${excludeParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(5000)
       });
@@ -1268,8 +1274,15 @@ export default function DJBooth() {
       const lastPlayed = cooldowns[t.name] || 0;
       return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
     });
-    const pool = offCooldown.length >= count ? offCooldown : (available.length >= count ? available : validTracks);
-    const result = fisherYatesShuffle(pool).slice(0, count);
+    let pool;
+    if (offCooldown.length >= count) {
+      pool = offCooldown;
+    } else if (available.length >= count) {
+      pool = [...available].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
+    } else {
+      pool = [...validTracks].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
+    }
+    const result = (offCooldown.length >= count ? fisherYatesShuffle(pool) : pool).slice(0, count);
     console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks local fallback)`);
     return result;
   }, [tracks, filterCooldown]);
@@ -1591,6 +1604,11 @@ export default function DJBooth() {
       const promos = all.filter(v => v.type === 'promo' || v.type === 'manual');
       if (promos.length === 0) return false;
 
+      playingCommercialRef.current = true;
+      if (audioEngineRef.current) {
+        audioEngineRef.current.pauseAll();
+      }
+
       const promoKeys = promos.map(p => p.cache_key).sort();
       const currentQueue = promoShuffleRef.current;
       const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key));
@@ -1606,16 +1624,15 @@ export default function DJBooth() {
       setPromoQueue([...promoShuffleRef.current]);
       const promo = promos.find(p => p.cache_key === nextKey) || promos[0];
       const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(promo.cache_key)}`, { headers });
-      if (!audioRes.ok) return false;
+      if (!audioRes.ok) {
+        playingCommercialRef.current = false;
+        return false;
+      }
       const blob = await audioRes.blob();
       const blobUrl = URL.createObjectURL(blob);
 
       console.log('📺 Playing commercial:', promo.dancer_name || promo.cache_key);
       lastAudioActivityRef.current = Date.now();
-      playingCommercialRef.current = true;
-      if (audioEngineRef.current) {
-        audioEngineRef.current.pauseAll();
-      }
       const keepAlive = setInterval(() => {
         lastAudioActivityRef.current = Date.now();
       }, 2000);
@@ -1777,12 +1794,25 @@ export default function DJBooth() {
       return;
     }
     
-    const dancerTracks = songs[rot[idx]];
+    let dancerTracks = songs[rot[idx]];
     if (!dancerTracks || dancerTracks.length === 0) {
-      console.warn('⚠️ HandleSkip: no tracks for', dancer.name, ', falling back');
-      transitionInProgressRef.current = false;
-      await playFallbackTrack(false);
-      return;
+      console.log('🎵 HandleSkip: no pre-selected tracks for', dancer.name, ', auto-selecting via getDancerTracks');
+      try {
+        dancerTracks = await getDancerTracks(dancer);
+        if (dancerTracks && dancerTracks.length > 0) {
+          const updatedSongs = { ...rotationSongsRef.current, [rot[idx]]: dancerTracks };
+          setRotationSongs(updatedSongs);
+          rotationSongsRef.current = updatedSongs;
+        }
+      } catch (err) {
+        console.warn('⚠️ HandleSkip: getDancerTracks failed for', dancer.name, ':', err.message);
+      }
+      if (!dancerTracks || dancerTracks.length === 0) {
+        console.warn('⚠️ HandleSkip: still no tracks for', dancer.name, ', falling back');
+        transitionInProgressRef.current = false;
+        await playFallbackTrack(false);
+        return;
+      }
     }
     
     const dancerSongCountSkip = dancerTracks.length;
@@ -1982,6 +2012,16 @@ export default function DJBooth() {
           lastAudioActivityRef.current = Date.now();
         }
 
+        lastAudioActivityRef.current = Date.now();
+        if (nextTrack && nextTrack.url) {
+          console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+          if (!trackOk) await playFallbackTrack(true);
+        } else {
+          await playFallbackTrack(true);
+        }
+        lastAudioActivityRef.current = Date.now();
+
         if (announcementsEnabled) {
           if (commercialPlayed) {
             const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -1994,22 +2034,14 @@ export default function DJBooth() {
             }
           } else {
             const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
+            audioEngineRef.current?.duck();
+            const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
             lastAudioActivityRef.current = Date.now();
-            const introUrl = await introPromise;
             if (introUrl) {
               await playPrefetchedAnnouncement(introUrl);
             }
             audioEngineRef.current?.unduck();
           }
-        }
-
-        lastAudioActivityRef.current = Date.now();
-        if (nextTrack && nextTrack.url) {
-          console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
-          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          if (!trackOk) await playFallbackTrack(true);
-        } else {
-          await playFallbackTrack(true);
         }
         
         setRotation(newRotation);
@@ -2195,6 +2227,15 @@ export default function DJBooth() {
           lastAudioActivityRef.current = Date.now();
         }
 
+        lastAudioActivityRef.current = Date.now();
+        if (nextTrack?.url) {
+          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+          if (!trackOk) await playFallbackTrack(true);
+        } else {
+          await playFallbackTrack(true);
+        }
+        lastAudioActivityRef.current = Date.now();
+
         if (announcementsEnabled) {
           if (commercialPlayed) {
             const introUrl = await prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -2212,15 +2253,6 @@ export default function DJBooth() {
             audioEngineRef.current?.unduck();
           }
         }
-
-        lastAudioActivityRef.current = Date.now();
-        if (nextTrack?.url) {
-          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          if (!trackOk) await playFallbackTrack(true);
-        } else {
-          await playFallbackTrack(true);
-        }
-        lastAudioActivityRef.current = Date.now();
 
         setRotation(newRotation);
         rotationRef.current = newRotation;
@@ -2253,12 +2285,25 @@ export default function DJBooth() {
       return;
     }
     
-    const dancerTracks = songs[rot[idx]];
+    let dancerTracks = songs[rot[idx]];
     if (!dancerTracks || dancerTracks.length === 0) {
-      console.warn('⚠️ HandleTrackEnd: no tracks for', dancer.name, ', falling back');
-      transitionInProgressRef.current = false;
-      await playFallbackTrack(true);
-      return;
+      console.log('🎵 HandleTrackEnd: no pre-selected tracks for', dancer.name, ', auto-selecting via getDancerTracks');
+      try {
+        dancerTracks = await getDancerTracks(dancer);
+        if (dancerTracks && dancerTracks.length > 0) {
+          const updatedSongs = { ...rotationSongsRef.current, [rot[idx]]: dancerTracks };
+          setRotationSongs(updatedSongs);
+          rotationSongsRef.current = updatedSongs;
+        }
+      } catch (err) {
+        console.warn('⚠️ HandleTrackEnd: getDancerTracks failed for', dancer.name, ':', err.message);
+      }
+      if (!dancerTracks || dancerTracks.length === 0) {
+        console.warn('⚠️ HandleTrackEnd: still no tracks for', dancer.name, ', falling back');
+        transitionInProgressRef.current = false;
+        await playFallbackTrack(true);
+        return;
+      }
     }
 
     const dancerSongCount = dancerTracks.length;
@@ -2465,6 +2510,16 @@ export default function DJBooth() {
           lastAudioActivityRef.current = Date.now();
         }
 
+        lastAudioActivityRef.current = Date.now();
+        if (nextTrack && nextTrack.url) {
+          console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+          if (!trackOk) await playFallbackTrack(true);
+        } else {
+          await playFallbackTrack(true);
+        }
+        lastAudioActivityRef.current = Date.now();
+
         if (announcementsEnabled) {
           if (commercialPlayed) {
             const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -2477,22 +2532,14 @@ export default function DJBooth() {
             }
           } else {
             const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
+            audioEngineRef.current?.duck();
+            const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
             lastAudioActivityRef.current = Date.now();
-            const introUrl = await introPromise;
             if (introUrl) {
               await playPrefetchedAnnouncement(introUrl);
             }
             audioEngineRef.current?.unduck();
           }
-        }
-
-        lastAudioActivityRef.current = Date.now();
-        if (nextTrack && nextTrack.url) {
-          console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
-          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          if (!trackOk) await playFallbackTrack(true);
-        } else {
-          await playFallbackTrack(true);
         }
         
         setRotation(newRotation);
@@ -2556,7 +2603,13 @@ export default function DJBooth() {
 
         try {
           const token = sessionStorage.getItem('djbooth_token');
-          const res = await fetch('/api/music/random?count=5', {
+          const wdCooldowns = songCooldownRef.current || {};
+          const wdNow = Date.now();
+          const wdRecent = Object.entries(wdCooldowns)
+            .filter(([, ts]) => ts && (wdNow - ts) < COOLDOWN_MS)
+            .map(([name]) => name);
+          const wdExclude = wdRecent.length > 0 ? `&exclude=${encodeURIComponent(wdRecent.join(','))}` : '';
+          const res = await fetch(`/api/music/random?count=5${wdExclude}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
             signal: AbortSignal.timeout(5000)
           });

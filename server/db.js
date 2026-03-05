@@ -131,6 +131,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at);
   CREATE INDEX IF NOT EXISTS idx_play_history_dancer ON play_history(dancer_name);
+  CREATE INDEX IF NOT EXISTS idx_play_history_track_name ON play_history(track_name);
 `);
 
 try {
@@ -463,21 +464,45 @@ export function getMusicTrackByName(name) {
 }
 
 export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
-  const conditions = ['blocked = 0'];
+  const conditions = ['t.blocked = 0'];
   const params = [];
 
   if (excludeNames.length > 0) {
-    conditions.push(`name NOT IN (${excludeNames.map(() => '?').join(',')})`);
+    conditions.push(`t.name NOT IN (${excludeNames.map(() => '?').join(',')})`);
     params.push(...excludeNames);
   }
   if (genres.length > 0) {
-    conditions.push(`genre IN (${genres.map(() => '?').join(',')})`);
+    conditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
     params.push(...genres);
   }
 
-  const where = ' WHERE ' + conditions.join(' AND ');
-  params.push(count);
-  return readDb.prepare(`SELECT id, name, path, genre FROM music_tracks${where} ORDER BY RANDOM() LIMIT ?`).all(...params);
+  const where = conditions.join(' AND ');
+  params.push(count * 4);
+  const pool = readDb.prepare(
+    `SELECT t.id, t.name, t.path, t.genre,
+            h.last_played AS last_played
+     FROM music_tracks t
+     LEFT JOIN (
+       SELECT track_name, MAX(played_at) AS last_played
+       FROM play_history
+       WHERE played_at > datetime('now', 'localtime', '-8 hours')
+       GROUP BY track_name
+     ) h ON t.name = h.track_name
+     WHERE ${where}
+     ORDER BY RANDOM()
+     LIMIT ?`
+  ).all(...params);
+
+  const unplayed = pool.filter(t => !t.last_played);
+  const played = pool.filter(t => t.last_played);
+  played.sort((a, b) => a.last_played.localeCompare(b.last_played));
+
+  for (let i = unplayed.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unplayed[i], unplayed[j]] = [unplayed[j], unplayed[i]];
+  }
+
+  return [...unplayed, ...played].slice(0, count).map(({ last_played, ...t }) => t);
 }
 
 export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
