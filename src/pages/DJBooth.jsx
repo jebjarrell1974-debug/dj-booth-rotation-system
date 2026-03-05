@@ -1722,10 +1722,41 @@ export default function DJBooth() {
     }
     
     if (playingInterstitialRef.current) {
+      const rot = rotationRef.current;
+      const idx = currentDancerIndexRef.current;
+      const currentDancerId = rot[idx];
+      const breakKey = `after-${currentDancerId}`;
+      const breakSongs = interstitialSongsRef.current[breakKey] || [];
+      const breakIdx = interstitialIndexRef.current;
+
+      if (breakIdx < breakSongs.length) {
+        const nextBreakName = breakSongs[breakIdx];
+        let nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = tracks.find(t => t.url && (
+            t.name === nextBreakName ||
+            t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
+          ));
+        }
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = await resolveTrackByName(nextBreakName);
+        }
+        if (nextBreakTrack?.url) {
+          console.log('⏭️ HandleSkip: Skipping to next break song:', nextBreakTrack.name);
+          interstitialIndexRef.current = breakIdx + 1;
+          setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx });
+          lastAudioActivityRef.current = Date.now();
+          const ok = await playTrack(nextBreakTrack.url, false, nextBreakTrack.name, nextBreakTrack.genre);
+          if (!ok) await playFallbackTrack(false);
+          transitionInProgressRef.current = false;
+          return;
+        }
+      }
+
       playingInterstitialRef.current = false;
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
-      console.log('⏭️ HandleSkip: Skipping break song, advancing to next dancer');
+      console.log('⏭️ HandleSkip: No more break songs, advancing to next dancer');
     }
 
     transitionInProgressRef.current = true;
