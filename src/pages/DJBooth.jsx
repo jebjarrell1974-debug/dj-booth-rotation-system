@@ -2114,9 +2114,7 @@ export default function DJBooth() {
       interstitialIndexRef.current = 0;
 
       const newRotation = [...rot];
-      const [finishedDancerId] = newRotation.splice(idx, 1);
-      newRotation.push(finishedDancerId);
-      const newIdx = 0;
+      const newIdx = idx;
       const nextDancer = dnc.find(d => d.id === newRotation[newIdx]);
 
       if (!nextDancer) {
@@ -2125,13 +2123,14 @@ export default function DJBooth() {
         return;
       }
 
+      console.log('🎵 Break songs done — next dancer:', nextDancer.name, 'at index', newIdx);
+
       try {
         lastAudioActivityRef.current = Date.now();
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
         let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
-        delete updatedSongs[finishedDancerId];
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
@@ -2312,8 +2311,11 @@ export default function DJBooth() {
           const [finishedId] = flippedRotation.splice(idx, 1);
           flippedRotation.push(finishedId);
           setRotation(flippedRotation);
+          rotationRef.current = flippedRotation;
           setCurrentDancerIndex(0);
+          currentDancerIndexRef.current = 0;
           setCurrentSongNumber(0);
+          currentSongNumberRef.current = 0;
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
           rotationSongsRef.current = clearedSongs;
