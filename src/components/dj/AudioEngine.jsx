@@ -311,10 +311,16 @@ const AudioEngine = forwardRef(({
   }, []);
 
   const analyzeTrackLoudness = useCallback(async (deckEl) => {
-    if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) return { gain: 1.0, bpm: null };
+    if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) {
+      console.log('🔊 AutoGain: disabled, skipping');
+      return { gain: 1.0, bpm: null };
+    }
     try {
       const ctx = audioCtxRef.current;
-      if (!ctx || !deckEl.src) return { gain: 1.0, bpm: null };
+      if (!ctx || !deckEl.src) {
+        console.warn('🔊 AutoGain: no AudioContext or src, skipping');
+        return { gain: 1.0, bpm: null };
+      }
 
       const srcUrl = deckEl.src;
       const cacheKey = srcUrl.replace(/^blob:/, '');
@@ -325,8 +331,19 @@ const AudioEngine = forwardRef(({
         return { gain: cachedGain, bpm: cachedBpm || null };
       }
 
-      const dur = deckEl.duration;
-      if (!dur || !isFinite(dur) || dur <= 0) return { gain: 1.0, bpm: null };
+      let dur = deckEl.duration;
+      if (!dur || !isFinite(dur) || dur <= 0) {
+        await new Promise((resolve) => {
+          const onMeta = () => { deckEl.removeEventListener('loadedmetadata', onMeta); resolve(); };
+          deckEl.addEventListener('loadedmetadata', onMeta);
+          setTimeout(() => { deckEl.removeEventListener('loadedmetadata', onMeta); resolve(); }, 3000);
+        });
+        dur = deckEl.duration;
+      }
+      if (!dur || !isFinite(dur) || dur <= 0) {
+        console.warn('🔊 AutoGain: duration unavailable after wait, skipping');
+        return { gain: 1.0, bpm: null };
+      }
 
       const sampleRate = ctx.sampleRate || 44100;
       const analysisDur = Math.min(dur, AUTO_GAIN_ANALYSIS_SECONDS);
