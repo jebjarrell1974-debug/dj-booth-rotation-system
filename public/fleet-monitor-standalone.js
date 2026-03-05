@@ -146,6 +146,7 @@ const server = http.createServer(async (req, res) => {
       lastUpdateTime: data.lastUpdateTime || null,
       activeEntertainers: data.activeEntertainers || 0,
       errorCount: data.errorCount || 0,
+      network: data.network || null,
       lastHeartbeat: now,
       status: 'online',
     });

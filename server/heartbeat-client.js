@@ -89,6 +89,26 @@ function getLastUpdateTime() {
   return null;
 }
 
+function getNetworkLatency() {
+  try {
+    const out = execSync('ping -c 3 -W 2 8.8.8.8 2>/dev/null', { encoding: 'utf8', timeout: 8000 });
+    const match = out.match(/rtt min\/avg\/max\/mdev = ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)/);
+    if (match) {
+      return {
+        pingMin: parseFloat(match[1]),
+        pingAvg: parseFloat(match[2]),
+        pingMax: parseFloat(match[3]),
+        pingJitter: parseFloat(match[4]),
+        pingOk: true,
+      };
+    }
+    const lossMatch = out.match(/(\d+)% packet loss/);
+    return { pingMin: null, pingAvg: null, pingMax: null, pingJitter: null, pingOk: false, packetLoss: lossMatch ? parseInt(lossMatch[1]) : 100 };
+  } catch {
+    return { pingMin: null, pingAvg: null, pingMax: null, pingJitter: null, pingOk: false, packetLoss: 100 };
+  }
+}
+
 function getDeviceId() {
   return process.env.DEVICE_ID || hostname() || 'unknown';
 }
@@ -102,6 +122,7 @@ async function sendHeartbeat(extraData = {}) {
   const voiceoverPath = process.env.VOICEOVER_PATH || process.env.VOICEOVER_DIR || '';
 
   const memory = getMemoryInfo();
+  const network = getNetworkLatency();
 
   const payload = {
     deviceId: getDeviceId(),
@@ -128,17 +149,20 @@ async function sendHeartbeat(extraData = {}) {
     lastUpdateTime: getLastUpdateTime(),
     activeEntertainers: extraData.activeEntertainers || 0,
     errorCount: extraData.errorCount || 0,
+    network,
   };
 
   try {
+    const t0 = Date.now();
     const res = await fetch(`${FLEET_SERVER_URL}/api/monitor/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     });
+    const heartbeatMs = Date.now() - t0;
     if (res.ok) {
-      console.log('💓 Heartbeat sent');
+      console.log(`💓 Heartbeat sent (${heartbeatMs}ms, ping ${network.pingAvg || '--'}ms)`);
     } else {
       console.warn(`💓 Heartbeat failed: ${res.status}`);
     }

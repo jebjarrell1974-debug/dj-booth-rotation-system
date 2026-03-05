@@ -387,6 +387,26 @@
     .stat-value.mem-warn { color: #f59e0b; }
     .stat-value.mem-danger { color: #ef4444; }
     .stat-value.errors { color: #ef4444; }
+    .net-quality {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .net-bars {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 1px;
+      height: 12px;
+    }
+    .net-bar {
+      width: 3px;
+      background: #334155;
+      border-radius: 1px;
+    }
+    .net-bar.active.good { background: #22c55e; }
+    .net-bar.active.fair { background: #f59e0b; }
+    .net-bar.active.poor { background: #ef4444; }
+    .net-bar.active.down { background: #ef4444; }
   </style>
 </head>
 <body>
@@ -494,6 +514,31 @@
       if (t > 80) return 'danger';
       if (t > 70) return 'warn';
       return '';
+    }
+
+    function formatNetwork(net) {
+      if (!net || !net.pingOk) {
+        return `<span class="net-quality">
+          <span class="net-bars">${[3,5,8,11].map(h => `<span class="net-bar active down" style="height:${h}px"></span>`).join('')}</span>
+          <span style="color:#ef4444">${net?.packetLoss === 100 ? 'No Internet' : 'Down'}</span>
+        </span>`;
+      }
+      const avg = net.pingAvg;
+      let quality, cls, bars;
+      if (avg < 30) { quality = 'Excellent'; cls = 'good'; bars = 4; }
+      else if (avg < 60) { quality = 'Good'; cls = 'good'; bars = 3; }
+      else if (avg < 100) { quality = 'Fair'; cls = 'fair'; bars = 2; }
+      else { quality = 'Poor'; cls = 'poor'; bars = 1; }
+      const heights = [3, 5, 8, 11];
+      const barsHtml = heights.map((h, i) =>
+        `<span class="net-bar ${i < bars ? 'active ' + cls : ''}" style="height:${h}px"></span>`
+      ).join('');
+      const color = cls === 'good' ? '#22c55e' : cls === 'fair' ? '#f59e0b' : '#ef4444';
+      return `<span class="net-quality">
+        <span class="net-bars">${barsHtml}</span>
+        <span style="color:${color}">${avg.toFixed(0)}ms</span>
+        <span style="color:#475569;font-size:10px">${quality}</span>
+      </span>`;
     }
 
     function memClass(pct) {
@@ -628,6 +673,10 @@
               <div class="stat-row">
                 <span class="stat-label">IP</span>
                 <span class="stat-value">${esc(d.tailscaleIp || d.ip || '--')}</span>
+              </div>
+              <div class="stat-row" style="grid-column: 1 / -1">
+                <span class="stat-label">Network</span>
+                <span class="stat-value">${formatNetwork(d.network)}</span>
               </div>
             </div>
             ${d.currentDancer || d.currentSong ? `
