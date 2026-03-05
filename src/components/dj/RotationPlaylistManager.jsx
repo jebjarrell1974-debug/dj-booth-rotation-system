@@ -41,6 +41,7 @@ export default function RotationPlaylistManager({
   savedInterstitials,
   interstitialRemoteVersion,
   activeBreakInfo,
+  onRemoveActiveBreakSong,
   djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
@@ -826,15 +827,26 @@ export default function RotationPlaylistManager({
                           <span className="text-[10px] text-violet-400 uppercase font-semibold tracking-wider">Up Next — Break Song{upcomingBreaks.length > 1 ? 's' : ''}</span>
                         </div>
                         <div className="space-y-1">
-                          {upcomingBreaks.map((songName, i) => (
-                            <div
-                              key={`active-break-${i}`}
-                              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
-                            >
-                              <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                              <span className="text-xs text-violet-300 truncate flex-1">{songName}</span>
-                            </div>
-                          ))}
+                          {upcomingBreaks.map((songName, i) => {
+                            const actualIndex = activeBreakInfo.currentIndex + 1 + i;
+                            return (
+                              <div
+                                key={`active-break-${i}`}
+                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
+                              >
+                                <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                                <span className="text-xs text-violet-300 truncate flex-1">{songName}</span>
+                                {onRemoveActiveBreakSong && activeBreakInfo.breakKey && (
+                                  <button
+                                    onClick={() => onRemoveActiveBreakSong(activeBreakInfo.breakKey, actualIndex)}
+                                    className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );

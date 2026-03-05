@@ -1744,7 +1744,7 @@ export default function DJBooth() {
         if (nextBreakTrack?.url) {
           console.log('⏭️ HandleSkip: Skipping to next break song:', nextBreakTrack.name);
           interstitialIndexRef.current = breakIdx + 1;
-          setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx });
+          setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
           lastAudioActivityRef.current = Date.now();
           const ok = await playTrack(nextBreakTrack.url, false, nextBreakTrack.name, nextBreakTrack.genre);
           if (!ok) await playFallbackTrack(false);
@@ -1900,7 +1900,7 @@ export default function DJBooth() {
 
           playingInterstitialRef.current = true;
           interstitialIndexRef.current = 1;
-          setActiveBreakInfo({ songs: breakSongs, currentIndex: 0 });
+          setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           const firstBreakName = breakSongs[0];
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
           if (!firstBreakTrack?.url) {
@@ -2142,7 +2142,7 @@ export default function DJBooth() {
         const nextBreakName = breakSongs[breakIdx];
         let nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
         interstitialIndexRef.current = breakIdx + 1;
-        setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx });
+        setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
         if (!nextBreakTrack?.url) {
           nextBreakTrack = tracks.find(t => t.url && (
             t.name === nextBreakName || 
@@ -2383,7 +2383,7 @@ export default function DJBooth() {
 
           playingInterstitialRef.current = true;
           interstitialIndexRef.current = 1;
-          setActiveBreakInfo({ songs: breakSongs, currentIndex: 0 });
+          setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           const firstBreakName = breakSongs[0];
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
           if (!firstBreakTrack?.url) {
@@ -3218,6 +3218,32 @@ export default function DJBooth() {
                 savedInterstitials={interstitialSongsState}
                 interstitialRemoteVersion={interstitialRemoteVersion}
                 activeBreakInfo={activeBreakInfo}
+                onRemoveActiveBreakSong={(breakKey, actualIndex) => {
+                  const currentSongs = interstitialSongsRef.current[breakKey] || [];
+                  const updated = [...currentSongs];
+                  if (actualIndex >= 0 && actualIndex < updated.length) {
+                    updated.splice(actualIndex, 1);
+                  }
+                  const newInterstitials = { ...interstitialSongsRef.current };
+                  if (updated.length === 0) {
+                    delete newInterstitials[breakKey];
+                  } else {
+                    newInterstitials[breakKey] = updated;
+                  }
+                  interstitialSongsRef.current = newInterstitials;
+                  setInterstitialSongsState({ ...newInterstitials });
+                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(newInterstitials)); } catch {}
+                  if (activeBreakInfo && activeBreakInfo.breakKey === breakKey) {
+                    const newSongs = [...activeBreakInfo.songs];
+                    if (actualIndex >= 0 && actualIndex < newSongs.length) {
+                      newSongs.splice(actualIndex, 1);
+                    }
+                    if (interstitialIndexRef.current > actualIndex) {
+                      interstitialIndexRef.current = Math.max(0, interstitialIndexRef.current - 1);
+                    }
+                    setActiveBreakInfo({ ...activeBreakInfo, songs: newSongs });
+                  }
+                }}
                 onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
