@@ -3179,6 +3179,17 @@ export default function DJBooth() {
                   }
                 }}
                 onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = []) => {
+                  if (isRotationActive && rotationRef.current.length > 0) {
+                    const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
+                    if (currentPerformerId != null) {
+                      const newIdx = newRotation.indexOf(currentPerformerId);
+                      if (newIdx >= 0 && newIdx !== currentDancerIndexRef.current) {
+                        console.log(`🔄 Save All: adjusting currentDancerIndex ${currentDancerIndexRef.current} → ${newIdx} (performer ID ${currentPerformerId})`);
+                        setCurrentDancerIndex(newIdx);
+                        currentDancerIndexRef.current = newIdx;
+                      }
+                    }
+                  }
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
@@ -3233,10 +3244,11 @@ export default function DJBooth() {
                   }
                   if (announcementRef.current?.preCacheUpcoming) {
                     const lookahead = Math.min(3, newRotation.length);
+                    const startIdx = currentDancerIndexRef.current;
                     const upcoming = [];
                     for (let i = 0; i < lookahead; i++) {
-                      const rIdx = i % newRotation.length;
-                      const nIdx = (i + 1) % newRotation.length;
+                      const rIdx = (startIdx + i) % newRotation.length;
+                      const nIdx = (startIdx + i + 1) % newRotation.length;
                       const dancer = dancers.find(d => d.id === newRotation[rIdx]);
                       const nextDancer = dancers.find(d => d.id === newRotation[nIdx]);
                       if (dancer?.name) {
@@ -3252,7 +3264,7 @@ export default function DJBooth() {
                       id: activeStage.id,
                       data: {
                         rotation_order: newRotation,
-                        current_dancer_index: currentDancerIndex,
+                        current_dancer_index: currentDancerIndexRef.current,
                         is_active: true
                       }
                     });
