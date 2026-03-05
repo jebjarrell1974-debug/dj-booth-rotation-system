@@ -106,6 +106,8 @@ export default function DJBooth() {
   const watchdogRecoveringRef = useRef(false);
   const rotationPendingRef = useRef(false);
   const [rotationPending, setRotationPending] = useState(false);
+  const [preCachingForStart, setPreCachingForStart] = useState(false);
+  const [preCacheStartProgress, setPreCacheStartProgress] = useState({ completed: 0, total: 0, dancersDone: 0, dancersTotal: 0, phase: 'buffer' });
   const interstitialSongsRef = useRef((() => {
     try {
       const saved = localStorage.getItem('djbooth_interstitial_songs');
@@ -1509,8 +1511,27 @@ export default function DJBooth() {
       return;
     }
 
+    if (announcementRef.current?.preCacheForRotationStart && announcementsEnabled) {
+      const rotationDancers = rotation
+        .map(id => dancersRef.current.find(d => d.id === id))
+        .filter(Boolean);
+
+      if (rotationDancers.length > 0) {
+        setPreCachingForStart(true);
+        setPreCacheStartProgress({ completed: 0, total: 0, dancersDone: 0, dancersTotal: rotationDancers.length, phase: 'buffer' });
+        console.log(`🔄 Pre-caching ${rotationDancers.length} entertainers before rotation start...`);
+
+        await announcementRef.current.preCacheForRotationStart(
+          rotationDancers,
+          (progress) => setPreCacheStartProgress(progress),
+          2
+        );
+        setPreCachingForStart(false);
+      }
+    }
+
     await beginRotation();
-  }, [rotation, tracks, beginRotation]);
+  }, [rotation, tracks, beginRotation, announcementsEnabled]);
 
   const isCommercialDue = useCallback(() => {
     const freq = localStorage.getItem('neonaidj_commercial_freq') || 'off';
@@ -2926,7 +2947,22 @@ export default function DJBooth() {
               </div>
             )}
             {!remoteMode && rotation.length > 0 && (
-              rotationPending ? (
+              preCachingForStart ? (
+                <div className="flex items-center gap-3 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                  <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="flex flex-col">
+                    <span className="text-sm text-cyan-300 font-medium">
+                      Caching announcements... {preCacheStartProgress.dancersDone}/{preCacheStartProgress.dancersTotal} ready
+                    </span>
+                    <div className="w-32 h-1.5 bg-gray-700 rounded-full mt-1">
+                      <div
+                        className="h-full bg-cyan-400 rounded-full transition-all duration-300"
+                        style={{ width: `${preCacheStartProgress.total > 0 ? (preCacheStartProgress.completed / preCacheStartProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : rotationPending ? (
                 <Button
                   onClick={() => {
                     rotationPendingRef.current = false;

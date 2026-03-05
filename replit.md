@@ -63,6 +63,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Solution**: `rotationSongs` now persists to localStorage (`djbooth_rotation_songs`), loaded on mount, cleared when rotation stops
 - **File**: `src/pages/DJBooth.jsx`
 
+#### Feature: Auto Pre-Cache on Rotation Start
+- **Problem**: DJs never manually pre-cached announcements, causing delays when rotation started as each announcement had to generate on the fly
+- **Solution**: When "Start Rotation" is pressed, the app now automatically caches announcements before beginning:
+  1. Shows a progress indicator replacing the Start button: "Caching announcements... 2/8 ready" with a progress bar
+  2. Caches the first 2 entertainers' announcements (intro, round2, outro, transition) as a buffer — rotation starts after these are done
+  3. Remaining entertainers cache in the background while rotation is running
+  4. Already-cached announcements are skipped instantly (no delay)
+  5. If announcements are disabled or no API key is set, rotation starts immediately (no caching step)
+- **Existing auto-cache preserved**: The useEffect that watches rotation changes and pre-caches the next 3 upcoming entertainers still runs during active rotation
+- **Files**: `src/components/dj/AnnouncementSystem.jsx` (new `preCacheForRotationStart` method), `src/pages/DJBooth.jsx` (modified `startRotation`, new `preCachingForStart` state + progress UI)
+
 #### Cleanup: Removed Unused Code
 - Removed `public/neonaidj-launcher.html` (iframe-based launcher — broken approach, caused localStorage/audio issues)
 - Removed unused `/api/proxy/openai` and `/api/proxy/elevenlabs` server endpoints

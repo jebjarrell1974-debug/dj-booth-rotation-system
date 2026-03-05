@@ -495,9 +495,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     for (const type of types) {
       try {
         const result = await getOrGenerateAnnouncement(type, dancerName, null, level, type === ANNOUNCEMENT_TYPES.ROUND2 ? 2 : 1);
-        if (result.fromCache && result.url && result.url.startsWith('blob:')) {
-          URL.revokeObjectURL(result.url);
-        }
+        if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
         if (!result.fromCache) {
           await new Promise(resolve => setTimeout(resolve, 1500));
         }
@@ -541,9 +539,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
       try {
         const result = await getOrGenerateAnnouncement(type, name, nextName, level, round);
-        if (result.fromCache && result.url && result.url.startsWith('blob:')) {
-          URL.revokeObjectURL(result.url);
-        }
+        if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
         if (!result.fromCache) {
           await new Promise(r => setTimeout(r, 2000));
         }
@@ -554,6 +550,82 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     if (!preCacheCancelRef.current) {
       console.log(`✅ Pre-cache upcoming complete`);
     }
+  }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
+
+  const preCacheForRotationStart = useCallback(async (rotationDancers, onProgress, bufferCount = 2) => {
+    const config = getApiConfig();
+    if (!config.elevenLabsApiKey && !elevenLabsApiKey) {
+      console.warn('⚠️ No ElevenLabs API key — skipping rotation pre-cache');
+      return true;
+    }
+    preCacheCancelRef.current = false;
+
+    const level = getCurrentEnergyLevel(config);
+    const total = rotationDancers.length;
+    if (total === 0) return true;
+
+    const jobsPerDancer = total > 1 ? 4 : 3;
+    const makeJobs = (dancerIdx) => {
+      const d = rotationDancers[dancerIdx];
+      const nextD = rotationDancers[(dancerIdx + 1) % total];
+      const jobs = [
+        { type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1 },
+        { type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2 },
+        { type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1 },
+      ];
+      if (total > 1) {
+        jobs.push({ type: ANNOUNCEMENT_TYPES.TRANSITION, name: d.name, nextName: nextD.name, round: 1 });
+      }
+      return jobs;
+    };
+
+    const bufferDancerCount = Math.min(bufferCount, total);
+    const totalJobs = total * jobsPerDancer;
+
+    console.log(`🔄 Rotation pre-cache: ${bufferDancerCount} entertainers to buffer, ${total - bufferDancerCount} background`);
+
+    let bufferCompleted = 0;
+    for (let di = 0; di < bufferDancerCount; di++) {
+      if (preCacheCancelRef.current) return false;
+      const jobs = makeJobs(di);
+      for (const job of jobs) {
+        if (preCacheCancelRef.current) return false;
+        try {
+          const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, level, job.round);
+          if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
+          if (!result.fromCache) await new Promise(r => setTimeout(r, 1500));
+        } catch (err) {
+          console.error(`Pre-cache failed for ${job.type}-${job.name}:`, err.message);
+        }
+        bufferCompleted++;
+      }
+      onProgress?.({ completed: bufferCompleted, total: totalJobs, dancersDone: di + 1, dancersTotal: total, phase: 'buffer' });
+    }
+
+    if (bufferDancerCount < total) {
+      (async () => {
+        let bgCompleted = bufferCompleted;
+        for (let di = bufferDancerCount; di < total; di++) {
+          if (preCacheCancelRef.current) return;
+          const jobs = makeJobs(di);
+          for (const job of jobs) {
+            if (preCacheCancelRef.current) return;
+            try {
+              const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, level, job.round);
+              if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
+              if (!result.fromCache) await new Promise(r => setTimeout(r, 1500));
+            } catch (err) {
+              console.error(`Background pre-cache failed for ${job.type}-${job.name}:`, err.message);
+            }
+            bgCompleted++;
+          }
+          onProgress?.({ completed: bgCompleted, total: totalJobs, dancersDone: di + 1, dancersTotal: total, phase: 'background' });
+        }
+        console.log('✅ Background pre-cache complete for all entertainers');
+      })();
+    }
+
+    return true;
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
   React.useImperativeHandle(ref, () => ({
@@ -573,7 +645,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     },
     preCacheDancer,
-    preCacheUpcoming
+    preCacheUpcoming,
+    preCacheForRotationStart
   }));
 
   const preCacheAll = useCallback(async () => {
