@@ -641,6 +641,8 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     interstitialSongs: state.interstitialSongs || {},
     commercialFreq: state.commercialFreq || 'off',
     commercialCounter: state.commercialCounter || 0,
+    promoQueue: state.promoQueue || [],
+    availablePromos: state.availablePromos || [],
     skippedCommercials: state.skippedCommercials || [],
     updatedAt: Date.now(),
   };

@@ -46,6 +46,9 @@ export default function RotationPlaylistManager({
   onSkipDancer,
   currentDancerIndex,
   commercialCounter = 0,
+  availablePromos = [],
+  promoQueue = [],
+  onSwapPromo,
   currentSongNumber,
   breakSongsPerSet,
   onBreakSongsPerSetChange,
@@ -954,6 +957,26 @@ export default function RotationPlaylistManager({
                         const futureCount = commercialCounter + stepsFromCurrent;
                         if (futureCount % freqNum !== 0) return null;
 
+                        let promoSlotIndex = 0;
+                        for (let i = 0; i < index; i++) {
+                          if (i >= rotationDancers.length - 1) continue;
+                          let prevSteps;
+                          if (isRotationActive && currentDancerIndex != null) {
+                            prevSteps = (i - currentDancerIndex + totalEntertainers) % totalEntertainers;
+                            if (prevSteps === 0) prevSteps = totalEntertainers;
+                          } else {
+                            prevSteps = i + 1;
+                          }
+                          const prevFuture = commercialCounter + prevSteps;
+                          if (prevFuture % freqNum === 0 && !skippedCommercials.has(`commercial-after-${i}`)) {
+                            promoSlotIndex++;
+                          }
+                        }
+
+                        const promoKey = promoQueue[promoSlotIndex];
+                        const promo = promoKey ? availablePromos.find(p => p.cache_key === promoKey) : null;
+                        const promoName = promo ? (promo.dancer_name || promo.cache_key.replace(/^promo_/, '').replace(/_/g, ' ')) : null;
+
                         const commercialId = `commercial-after-${index}`;
                         if (skippedCommercials.has(commercialId)) return null;
                         return (
@@ -961,8 +984,24 @@ export default function RotationPlaylistManager({
                             <Radio className="w-4 h-4 text-amber-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Commercial Break</p>
-                              <p className="text-[10px] text-amber-500/60">Promo will play here</p>
+                              {promoName ? (
+                                <p className="text-[10px] text-amber-300/80 truncate">{promoName}</p>
+                              ) : (
+                                <p className="text-[10px] text-amber-500/60">Promo will play here</p>
+                              )}
                             </div>
+                            {availablePromos.length > 1 && onSwapPromo && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSwapPromo(promoSlotIndex);
+                                }}
+                                className="px-2 py-1 text-[10px] text-amber-400/70 hover:text-amber-300 hover:bg-amber-900/30 rounded transition-colors flex-shrink-0 border border-amber-500/20"
+                                title="Change promo"
+                              >
+                                Swap
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 setSkippedCommercials(prev => {

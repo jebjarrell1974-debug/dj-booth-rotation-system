@@ -110,6 +110,9 @@ export default function DJBooth() {
   const saveRotationRef = useRef(null);
   const commercialCounterRef = useRef(0);
   const promoShuffleRef = useRef([]);
+  const [availablePromos, setAvailablePromos] = useState([]);
+  const [promoQueue, setPromoQueue] = useState([]);
+  const swapPromoRef = useRef(null);
   
   const DUCK_SETTLE_MS = 300;
   const SONG_OVERLAP_DELAY_MS = 2000;
@@ -672,6 +675,12 @@ export default function DJBooth() {
             } catch {}
           }
           break;
+        case 'swapPromo':
+          if (cmd.payload.slotIndex != null) {
+            if (swapPromoRef.current) swapPromoRef.current(cmd.payload.slotIndex);
+            console.log('📺 Remote swapped promo at slot:', cmd.payload.slotIndex);
+          }
+          break;
         case 'deactivateTrack':
           if (cmd.payload.pin && cmd.payload.trackName) {
             (async () => {
@@ -805,6 +814,8 @@ export default function DJBooth() {
           interstitialSongs: interstitialSongsRef.current || {},
           commercialFreq: localStorage.getItem('neonaidj_commercial_freq') || 'off',
           commercialCounter: commercialCounterRef.current,
+          promoQueue: promoQueue,
+          availablePromos: availablePromos.map(p => ({ cache_key: p.cache_key, dancer_name: p.dancer_name })),
           skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),
           volume,
           voiceGain,
@@ -817,7 +828,7 @@ export default function DJBooth() {
     broadcast();
     const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos]);
 
   useEffect(() => {
     if (!activeStage) return;
@@ -1554,6 +1565,7 @@ export default function DJBooth() {
         promoShuffleRef.current = shuffled;
       }
       const nextKey = promoShuffleRef.current.shift();
+      setPromoQueue([...promoShuffleRef.current]);
       const promo = promos.find(p => p.cache_key === nextKey) || promos[0];
       const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(promo.cache_key)}`, { headers });
       if (!audioRes.ok) return false;
@@ -1583,6 +1595,54 @@ export default function DJBooth() {
       return false;
     }
   }, []);
+
+  const refreshPromoQueue = useCallback(async () => {
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch('/api/voiceovers', { headers });
+      if (!res.ok) return;
+      const all = await res.json();
+      const promos = all.filter(v => v.type === 'promo' || v.type === 'manual');
+      setAvailablePromos(promos);
+
+      const promoKeys = promos.map(p => p.cache_key).sort();
+      const currentQueue = promoShuffleRef.current;
+      const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key));
+      if (!queueValid) {
+        const shuffled = [...promoKeys];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        promoShuffleRef.current = shuffled;
+      }
+      setPromoQueue([...promoShuffleRef.current]);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refreshPromoQueue();
+    const interval = setInterval(refreshPromoQueue, 30000);
+    return () => clearInterval(interval);
+  }, [refreshPromoQueue]);
+
+  const swapPromoAtSlot = useCallback((slotIndex) => {
+    if (availablePromos.length <= 1) return;
+    const queue = [...promoShuffleRef.current];
+    if (slotIndex >= queue.length) return;
+    const currentKey = queue[slotIndex];
+    const allKeys = availablePromos.map(p => p.cache_key);
+    const currentIdx = allKeys.indexOf(currentKey);
+    const nextIdx = (currentIdx + 1) % allKeys.length;
+    queue[slotIndex] = allKeys[nextIdx];
+    promoShuffleRef.current = queue;
+    setPromoQueue([...queue]);
+  }, [availablePromos]);
+
+  useEffect(() => {
+    swapPromoRef.current = swapPromoAtSlot;
+  }, [swapPromoAtSlot]);
 
   const handleSkip = useCallback(async () => {
     if (watchdogRecoveringRef.current) {
@@ -3148,6 +3208,9 @@ export default function DJBooth() {
                 onAnnouncementsToggle={(enabled) => setAnnouncementsEnabled(enabled)}
                 currentDancerIndex={currentDancerIndex}
                 commercialCounter={commercialCounterRef.current}
+                availablePromos={availablePromos}
+                promoQueue={promoQueue}
+                onSwapPromo={swapPromoAtSlot}
                 onSkipDancer={(dancerId) => {
                   if (!isRotationActive) return;
                   const rot = [...rotationRef.current];

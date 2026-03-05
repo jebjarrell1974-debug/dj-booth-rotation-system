@@ -73,6 +73,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const interstitialSongs = liveBoothState?.interstitialSongs || {};
   const commercialFreq = liveBoothState?.commercialFreq || 'off';
   const commercialCounter = liveBoothState?.commercialCounter || 0;
+  const remotePromoQueue = liveBoothState?.promoQueue || [];
+  const remoteAvailablePromos = liveBoothState?.availablePromos || [];
 
   const skippedFromBooth = liveBoothState?.skippedCommercials || [];
   const [localSkipped, setLocalSkipped] = useState(new Set());
@@ -877,6 +879,25 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                         const futureCount = commercialCounter + stepsFromCurrent;
                         if (futureCount % freqNum !== 0) return null;
 
+                        let promoSlotIndex = 0;
+                        for (let i = 0; i < idx; i++) {
+                          if (i >= rotationList.length - 1) continue;
+                          let prevSteps;
+                          if (currentDancerIndex != null) {
+                            prevSteps = (i - currentDancerIndex + totalEntertainers) % totalEntertainers;
+                            if (prevSteps === 0) prevSteps = totalEntertainers;
+                          } else {
+                            prevSteps = i + 1;
+                          }
+                          const prevFuture = commercialCounter + prevSteps;
+                          if (prevFuture % freqNum === 0 && !skippedCommercials.has(`commercial-after-${i}`)) {
+                            promoSlotIndex++;
+                          }
+                        }
+                        const promoKey = remotePromoQueue[promoSlotIndex];
+                        const promo = promoKey ? remoteAvailablePromos.find(p => p.cache_key === promoKey) : null;
+                        const promoName = promo ? (promo.dancer_name || promo.cache_key.replace(/^promo_/, '').replace(/_/g, ' ')) : null;
+
                         const commercialId = `commercial-after-${idx}`;
                         if (skippedCommercials.has(commercialId)) return null;
                         return (
@@ -884,7 +905,21 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             <Radio className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Commercial Break</p>
+                              {promoName && (
+                                <p className="text-[9px] text-amber-300/80 truncate">{promoName}</p>
+                              )}
                             </div>
+                            {remoteAvailablePromos.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  boothApi.sendCommand('swapPromo', { slotIndex: promoSlotIndex });
+                                }}
+                                className="px-1.5 py-0.5 text-[9px] text-amber-400/70 active:text-amber-300 active:bg-amber-900/30 rounded flex-shrink-0 border border-amber-500/20"
+                              >
+                                Swap
+                              </button>
+                            )}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
