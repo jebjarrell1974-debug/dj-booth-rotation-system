@@ -272,7 +272,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable djbooth-update.service
 ```
 
-### Step 9: Set up Chromium kiosk autostart
+### Step 10: Set up Chromium kiosk autostart
 Opens fullscreen browser to the app on every boot. Waits for server to be ready before launching.
 ```bash
 mkdir -p ~/.config/autostart
@@ -285,7 +285,7 @@ X-GNOME-Autostart-enabled=true
 EOF
 ```
 
-### Step 10: Create desktop shortcut (optional)
+### Step 11: Create desktop shortcut (optional)
 For manually launching the app from the desktop.
 ```bash
 cat > ~/Desktop/DJBooth.desktop << 'EOF'
@@ -299,7 +299,7 @@ EOF
 chmod +x ~/Desktop/DJBooth.desktop
 ```
 
-### Step 11: Enable VNC remote desktop access (TigerVNC)
+### Step 12: Enable VNC remote desktop access (TigerVNC)
 Raspberry Pi OS Trixie uses Wayland, so the built-in RealVNC server doesn't work properly. Use TigerVNC's scraping server instead.
 ```bash
 sudo apt install -y tigervnc-scraping-server
@@ -322,20 +322,27 @@ sudo systemctl stop vncserver-x11-serviced
 sudo systemctl disable vncserver-x11-serviced
 ```
 
-### Step 12: Disable Wi-Fi (if using Ethernet)
-If the Pi is connected via Ethernet cable, disable Wi-Fi to prevent Wi-Fi authentication popups from freezing the kiosk. The Wayland compositor can hang when these dialogs appear over fullscreen Chromium.
+### Step 13: Configure Wi-Fi for iPad remote (or disable Wi-Fi)
+If the Pi uses a separate Wi-Fi network for iPad remote control (no internet on that network), set route metrics so ethernet always handles internet traffic:
+```bash
+sudo nmcli connection modify "WIFI_CONNECTION_NAME" ipv4.route-metric 600
+sudo nmcli connection modify "Wired connection 1" ipv4.route-metric 100
+```
+Replace `WIFI_CONNECTION_NAME` with the actual Wi-Fi SSID (e.g., `ShowclubVIP`). The update script also sets these automatically on every update.
+
+If the Pi does NOT use Wi-Fi at all, disable it to prevent authentication popups from freezing the kiosk:
 ```bash
 sudo nmcli radio wifi off
 ```
 To re-enable Wi-Fi later if needed: `sudo nmcli radio wifi on`
 
-### Step 13: Disable screen blanking
+### Step 14: Disable screen blanking
 Keeps the Pi screen on all night (no sleep/screensaver).
 ```bash
 sudo raspi-config nonint do_blanking 1
 ```
 
-### Step 14: Set timezone and daily reboot
+### Step 15: Set timezone and daily reboot
 Set the Pi to Central time and schedule a daily reboot at 8:30 AM to keep things fresh.
 ```bash
 sudo timedatectl set-timezone America/Chicago
@@ -343,12 +350,12 @@ sudo timedatectl set-timezone America/Chicago
 ```
 Verify: `sudo crontab -l` should show the reboot line. `timedatectl` should show `America/Chicago`.
 
-### Step 15: Copy music files
+### Step 16: Copy music files
 Copy music to `/home/USERNAME/Desktop/DJ MUSIC/`
 - Put songs in subfolders — folder names become genre categories (e.g., `Pop/`, `Hip Hop/`, `FEATURE/`)
 - Songs in the `FEATURE/` folder play to completion (no 3-minute cap)
 
-### Step 16: Start the app and verify
+### Step 17: Start the app and verify
 ```bash
 sudo systemctl start djbooth && sudo journalctl -u djbooth --no-pager -n 20
 ```
@@ -358,13 +365,13 @@ You should see:
 - Heartbeat client active
 - R2 cloud sync downloading/uploading voiceovers
 
-### Step 17: Configure the app in the browser
+### Step 18: Configure the app in the browser
 - Open `http://localhost:3001` on the Pi
 - Go to Configuration (master PIN: `36669`)
 - Set club name, ElevenLabs API key, OpenAI API key, voice ID
 - These settings are stored in the browser's localStorage on each Pi
 
-### Step 18: Reboot and verify full boot sequence
+### Step 19: Reboot and verify full boot sequence
 ```bash
 sudo reboot
 ```
@@ -458,6 +465,48 @@ cd ~/djbooth && git pull && cp public/fleet-monitor-standalone.js ~/fleet-monito
 - **Username**: `jebjarrell`
 - **Node path**: `/home/jebjarrell/.nvm/versions/node/v22.22.0/bin/node`
 - **Port**: 3001
+
+---
+
+## Session 24 — Mar 5, 2026
+
+### Fix: White Screen During Updates
+- **Problem**: Chrome kiosk showed "This site can't be reached" for ~30 seconds during service restarts because Chrome was still open when the server went down
+- **Solution**: Update script (`djbooth-update-github.sh`) now: stops watchdog → kills Chrome → restarts service → waits for health check → relaunches Chrome → restarts watchdog
+- **Watchdog service** (`djbooth-watchdog.sh`): New systemd service `djbooth-watchdog` that pings server every 5 seconds. If server goes down and comes back, it auto-refreshes Chrome via `xdotool key F5` (for unexpected crashes, not updates). Installed automatically by update script. Requires `xdotool` package (auto-installed)
+- **Race condition**: Update script stops watchdog before restart sequence to prevent both trying to relaunch Chrome simultaneously
+- **Failed approaches**: Tried iframe-based launcher page (`neonaidj-launcher.html`) — broke localStorage, audio, and cookies due to file:// → http://localhost cross-origin restrictions. Removed entirely
+
+### Fix: Wi-Fi Overriding Ethernet for Internet
+- **Problem**: Pi has ethernet (internet) AND Wi-Fi (local iPad remote network, no internet). Default Linux routing gave Wi-Fi priority, breaking all API calls (OpenAI, ElevenLabs)
+- **Root cause confirmed**: User verified "everything went back to normal the second I removed the wifi connections"
+- **Solution**: NetworkManager route metrics — `nmcli connection modify` sets ethernet to metric 100 (priority), Wi-Fi to metric 600 (local only)
+- **Persistence**: Update script now auto-configures route metrics on every update via nmcli
+- **Pi network**: Ethernet `10.1.10.41` (internet), Wi-Fi `172.21.33.107` (ShowclubVIP network for iPad remote)
+- **Pi Wi-Fi connections**: ShowclubVIP (active), Buydances, Jeb, Panda (saved but not active)
+
+### Fix: Playlist Saves Silent Failures
+- **Problem**: When entertainers added songs to their playlist on their phones, saves could fail silently — the song appeared in the list but never reached the database
+- **Solution**: Added `saveStatus` state to DancerView.jsx — shows "Saving..." (yellow), "Saved" (green), or "Save failed!" (red) next to "My Playlist" header
+- **File**: `src/pages/DancerView.jsx`
+
+### Fix: Rotation Songs Lost on Page Refresh
+- **Problem**: Songs assigned to entertainers for the current rotation were stored in memory only. If the DJ Booth page refreshed (during an update), all assignments were lost
+- **Solution**: `rotationSongs` state now persists to `localStorage` (key `djbooth_rotation_songs`) via useEffect. Loaded from localStorage on mount. Cleared when rotation is stopped
+- **File**: `src/pages/DJBooth.jsx`
+
+### Cleanup
+- Removed `public/neonaidj-launcher.html` (broken iframe launcher)
+- Removed unused `/api/proxy/openai` and `/api/proxy/elevenlabs` server endpoints (were added then reverted)
+- Update script reverts any autostart entries still pointing to launcher back to `http://localhost:3001`
+
+### Files Modified
+- `server/index.js` — removed proxy endpoints
+- `src/pages/DancerView.jsx` — save status feedback
+- `src/pages/DJBooth.jsx` — rotation songs localStorage persistence
+- `public/djbooth-update-github.sh` — kill Chrome before restart, watchdog stop/start, Wi-Fi routing, launcher revert
+- `public/djbooth-watchdog.sh` — NEW: watchdog script for auto-refresh on server recovery
+- Removed: `public/neonaidj-launcher.html`
 
 ---
 

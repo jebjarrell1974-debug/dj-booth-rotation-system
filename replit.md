@@ -53,6 +53,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Persistence**: Update script now auto-configures route metrics via `nmcli connection modify` on every update
 - **Pi network**: Ethernet `10.1.10.41`, Wi-Fi `172.21.33.107` (ShowclubVIP network for iPad remote)
 
+#### Fix: Playlist Save Feedback
+- **Problem**: Entertainers adding songs on their phones got no feedback on whether the save succeeded or failed
+- **Solution**: DancerView header now shows "Saving..." (yellow), "Saved" (green), or "Save failed!" (red)
+- **File**: `src/pages/DancerView.jsx`
+
+#### Fix: Rotation Songs Lost on Refresh
+- **Problem**: Songs assigned to entertainers for the current rotation were in memory only — lost on page refresh during updates
+- **Solution**: `rotationSongs` now persists to localStorage (`djbooth_rotation_songs`), loaded on mount, cleared when rotation stops
+- **File**: `src/pages/DJBooth.jsx`
+
 #### Cleanup: Removed Unused Code
 - Removed `public/neonaidj-launcher.html` (iframe-based launcher — broken approach, caused localStorage/audio issues)
 - Removed unused `/api/proxy/openai` and `/api/proxy/elevenlabs` server endpoints
@@ -60,6 +70,8 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 #### Files Modified
 - `server/index.js` — removed proxy endpoints
+- `src/pages/DancerView.jsx` — save status feedback
+- `src/pages/DJBooth.jsx` — rotation songs localStorage persistence
 - `public/djbooth-update-github.sh` — kill Chrome before restart, watchdog stop/start, Wi-Fi routing, launcher revert
 - `public/djbooth-watchdog.sh` — new watchdog script (auto-refresh Chrome on server recovery)
 - Removed: `public/neonaidj-launcher.html`

@@ -99,7 +99,8 @@ if [ -f "$WATCHDOG_SRC" ]; then
   cp "$WATCHDOG_SRC" "$WATCHDOG_DEST"
   chmod +x "$WATCHDOG_DEST"
 
-  if ! systemctl is-enabled djbooth-watchdog 2>/dev/null | grep -q enabled; then
+  WATCHDOG_ENABLED=$(systemctl is-enabled djbooth-watchdog 2>/dev/null || echo "not-found")
+  if [ "$WATCHDOG_ENABLED" != "enabled" ]; then
     WATCHDOG_USER=$(whoami)
     sudo tee /etc/systemd/system/djbooth-watchdog.service > /dev/null << WEOF
 [Unit]
