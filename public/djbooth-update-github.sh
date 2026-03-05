@@ -81,24 +81,51 @@ npm prune --production 2>&1 | tail -1
 
 rm -rf "$TMPDIR"
 
-LAUNCHER_SRC="$APP_DIR/public/neonaidj-launcher.html"
-LAUNCHER_DEST="/home/$(whoami)/neonaidj-launcher.html"
-if [ -f "$LAUNCHER_SRC" ]; then
-  cp "$LAUNCHER_SRC" "$LAUNCHER_DEST"
-  AUTOSTART_DIR="/home/$(whoami)/.config/autostart"
-  AUTOSTART_FILE="$AUTOSTART_DIR/chromium-djbooth.desktop"
-  if [ -d "$AUTOSTART_DIR" ] && [ -f "$AUTOSTART_FILE" ]; then
-    if grep -q "localhost:3001" "$AUTOSTART_FILE" 2>/dev/null; then
-      sed -i "s|http://localhost:3001|file://$LAUNCHER_DEST|g" "$AUTOSTART_FILE" 2>/dev/null && \
-        echo "Updated Chromium autostart to use launcher page" || true
-    fi
+for AFILE in /home/$(whoami)/.config/autostart/*.desktop /etc/xdg/lxsession/LXDE-pi/autostart; do
+  if [ -f "$AFILE" ] && grep -q "neonaidj-launcher" "$AFILE" 2>/dev/null; then
+    sed -i "s|file:///home/[^/]*/neonaidj-launcher.html|http://localhost:3001|g" "$AFILE" 2>/dev/null
+    echo "Reverted autostart to direct localhost: $AFILE"
   fi
-  LXDE_AUTOSTART="/etc/xdg/lxsession/LXDE-pi/autostart"
-  if [ -f "$LXDE_AUTOSTART" ] && grep -q "localhost:3001" "$LXDE_AUTOSTART" 2>/dev/null; then
-    sudo sed -i "s|http://localhost:3001|file://$LAUNCHER_DEST|g" "$LXDE_AUTOSTART" 2>/dev/null && \
-      echo "Updated LXDE autostart to use launcher page" || true
+done
+
+which xdotool >/dev/null 2>&1 || {
+  echo "Installing xdotool for browser auto-refresh..."
+  sudo apt-get install -y xdotool >/dev/null 2>&1 || true
+}
+
+WATCHDOG_SRC="$APP_DIR/public/djbooth-watchdog.sh"
+WATCHDOG_DEST="/home/$(whoami)/djbooth-watchdog.sh"
+if [ -f "$WATCHDOG_SRC" ]; then
+  cp "$WATCHDOG_SRC" "$WATCHDOG_DEST"
+  chmod +x "$WATCHDOG_DEST"
+
+  if ! systemctl is-enabled djbooth-watchdog 2>/dev/null | grep -q enabled; then
+    WATCHDOG_USER=$(whoami)
+    sudo tee /etc/systemd/system/djbooth-watchdog.service > /dev/null << WEOF
+[Unit]
+Description=DJ Booth Browser Watchdog
+After=graphical.target djbooth.service
+Wants=djbooth.service
+
+[Service]
+Type=simple
+User=$WATCHDOG_USER
+Environment=DISPLAY=:0
+ExecStart=/bin/bash $WATCHDOG_DEST
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target
+WEOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable djbooth-watchdog
+    sudo systemctl start djbooth-watchdog
+    echo "Watchdog service installed and started"
+  else
+    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    echo "Watchdog service updated"
   fi
-  echo "Launcher page installed: $LAUNCHER_DEST"
 fi
 
 if [ ! -f /swapfile ] && [ "$(free -m | awk '/^Mem:/{print $2}')" -lt 2048 ]; then
