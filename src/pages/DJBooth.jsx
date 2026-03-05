@@ -1876,7 +1876,8 @@ export default function DJBooth() {
         }
         
         if (announcementsEnabled) {
-          const announcementPromise = prefetchAnnouncement('round2', dancer.name, null, newSongNum);
+          const announcementType = songNum === 0 ? 'intro' : 'round2';
+          const announcementPromise = prefetchAnnouncement(announcementType, dancer.name, null, newSongNum);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           await playPrefetchedAnnouncement(announcementUrl);
