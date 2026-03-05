@@ -47,14 +47,10 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Fix (server cooldown endpoint)**: New `GET /api/history/cooldowns?hours=4` endpoint returns a map of `{track_name: timestamp}` from `play_history`. Added `getRecentCooldowns()` to `db.js`
 - **Fix (client loads from server)**: On startup, `DJBooth.jsx` now fetches cooldowns from the server AND merges with any surviving localStorage data. Server is the source of truth — even if localStorage is cleared, the server's `play_history` table preserves the full cooldown state
 
-#### Fix: Commercial Playback — Music Resuming During Commercial (REAL FIX - Session 27)
+#### Fix: Commercial Playback — Music Resuming During Commercial
 - **Problem**: ~35 seconds into a commercial, the previous song would start playing loudly
-- **Root cause (ACTUAL)**: DJBooth.jsx has a keep-alive interval (every 15 seconds) that calls `audioEngineRef.current.resume()` when `isPlayingRef.current` is true. But `isPlayingRef` (DJBooth's own ref) is set to true by the `onTimeUpdate` callback and was NEVER set to false during commercials. So every 15 seconds, the keep-alive called `resume()` which called `.play()` on the paused deck, un-pausing it. Additionally, the Web Audio API has a known issue where `HTMLAudioElement.pause()` does not reliably stop audio when routed through `createMediaElementSource()` — audio can continue through the buffer chain. The visibility change handler had the same vulnerability.
-- **Fix (4 layers)**:
-  1. **Keep-alive guard**: Added `!playingCommercialRef.current` check to the 15-second keep-alive interval in DJBooth.jsx
-  2. **Visibility change guard**: Added `!playingCommercialRef.current` check to the visibility change handler in DJBooth.jsx
-  3. **AudioEngine musicMutedRef flag**: New `musicMutedRef` ref in AudioEngine.jsx. `resume()` and `playTrack()` are blocked when this flag is true. Set by `muteMusic()`, cleared by `unmuteMusic()`
-  4. **Physical source disconnection**: `muteMusic()` now physically disconnects deck source nodes from the audio graph (`source.disconnect()`), pauses both decks, AND zeros their HTML volume. `unmuteMusic()` reconnects sources and restores volume. No connection = no audio path = impossible for sound to leak through regardless of play state
+- **Root cause**: `pauseAll()` paused both deck audio elements but did NOT cancel running `requestAnimationFrame` crossfade/safety-fade animations, and did NOT clear `ontimeupdate`/`onended` event handlers. Stale animations could swap active deck references or modify gains mid-commercial. Stale handlers could trigger handleTrackEnd cascades
+- **Fix**: `pauseAll()` in `AudioEngine.jsx` now cancels all animation frames (`fadeAnimationRef`, `safetyFadeRef`), resets `crossfadeInProgressRef`, and nulls out `ontimeupdate`/`onended` on both decks before pausing them
 
 #### Improvement: Voice Settings V7 — Natural Sound
 - Stability lowered significantly (0.35-0.50, was 0.55-0.78) — reduces monotone robotic delivery

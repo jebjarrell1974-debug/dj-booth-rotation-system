@@ -297,10 +297,9 @@ export default function DJBooth() {
       if (document.visibilityState === 'visible') {
         acquireWakeLock();
         resumeAudioContext();
-        if (isPlayingRef.current && audioEngineRef.current && !playingCommercialRef.current) {
+        if (isPlayingRef.current && audioEngineRef.current) {
           console.log('👁️ Page visible — resuming audio playback');
           setTimeout(() => {
-            if (playingCommercialRef.current) return;
             try {
               audioEngineRef.current?.resume();
               lastAudioActivityRef.current = Date.now();
@@ -329,7 +328,7 @@ export default function DJBooth() {
 
     const keepAliveInterval = setInterval(() => {
       resumeAudioContext();
-      if (isPlayingRef.current && audioEngineRef.current && !playingCommercialRef.current) {
+      if (isPlayingRef.current && audioEngineRef.current) {
         lastAudioActivityRef.current = Date.now();
         try { audioEngineRef.current?.resume(); } catch {}
       }
