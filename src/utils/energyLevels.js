@@ -73,15 +73,15 @@ export const VOICE_SETTINGS = {
     speed: 0.88,
   },
   3: {
-    stability: 0.45,
+    stability: 0.50,
     similarity_boost: 0.75,
-    style: 0.50,
+    style: 0.40,
     speed: 0.92,
   },
   4: {
-    stability: 0.38,
-    similarity_boost: 0.72,
-    style: 0.55,
+    stability: 0.45,
+    similarity_boost: 0.75,
+    style: 0.45,
     speed: 0.90,
   },
   5: {
@@ -205,6 +205,8 @@ BAD EXAMPLES (NEVER do this):
 "Coming back to the stage..." — WRONG, she never left
 "Back up on the main stage..." — WRONG, she's already there
 "Let's welcome back..." — WRONG, she didn't leave
+
+DELIVERY RULE: This is a SHORT, SMOOTH continuation — NOT a big intro. Keep your voice cool, confident, and conversational. Do NOT shout, yell, or hype it up like a big entrance. Think casual check-in with the crowd, not a stadium announcement. No exclamation marks. No ALL CAPS energy words.
 
 Output should be 1-2 sentences MAX. Keep it tight and simple. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
 
