@@ -89,6 +89,7 @@ export default function RotationPlaylistManager({
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
   const djOverridesRef = React.useRef(new Set());
+  const libraryPanelRef = useRef(null);
   const [serverTracks, setServerTracks] = useState([]);
   const [serverGenres, setServerGenres] = useState([]);
   const [serverTotalTracks, setServerTotalTracks] = useState(0);
@@ -121,6 +122,21 @@ export default function RotationPlaylistManager({
     songAssignmentsRef.current = songAssignments;
     onSongAssignmentsChange?.(songAssignments);
   }, [songAssignments]);
+
+  useEffect(() => {
+    if (musicSource === 'genres') return;
+    const handleClickOutside = (e) => {
+      if (libraryPanelRef.current && !libraryPanelRef.current.contains(e.target)) {
+        setMusicSource('genres');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [musicSource]);
 
   useEffect(() => {
     if (Object.keys(interstitialSongs).length > 0) {
@@ -390,20 +406,27 @@ export default function RotationPlaylistManager({
 
     if (source.droppableId === 'library' && destination.droppableId.startsWith('songs-')) {
       const dancerId = destination.droppableId.replace('songs-', '');
-      const dragId = result.draggableId.replace('lib-', '');
-      const track = displayedTracks.find(t => String(t.id) === dragId) || displayedTracks[source.index];
-      if (!track) return;
+      let trackName;
+      if (result.draggableId.startsWith('playlist-')) {
+        const parts = result.draggableId.replace('playlist-', '');
+        trackName = parts.substring(parts.indexOf('-') + 1);
+      } else {
+        const dragId = result.draggableId.replace('lib-', '');
+        const track = displayedTracks.find(t => String(t.id) === dragId) || displayedTracks[source.index];
+        if (!track) return;
+        trackName = track.name;
+      }
 
       djOverridesRef.current.add(dancerId);
       setSongAssignments(prev => {
         const current = [...(prev[dancerId] || [])];
-        if (current.includes(track.name)) {
+        if (current.includes(trackName)) {
           toast.error('Song already assigned');
           return prev;
         }
-        current.splice(destination.index, 0, track.name);
+        current.splice(destination.index, 0, trackName);
         const updated = { ...prev, [dancerId]: current };
-        onAutoSavePlaylist?.(dancerId, current, { type: 'add', song: track.name });
+        onAutoSavePlaylist?.(dancerId, current, { type: 'add', song: trackName });
         return updated;
       });
       return;
@@ -411,16 +434,23 @@ export default function RotationPlaylistManager({
 
     if (source.droppableId === 'library' && destination.droppableId.startsWith('break-')) {
       const breakKey = destination.droppableId.replace('break-', '');
-      const dragId = result.draggableId.replace('lib-', '');
-      const track = displayedTracks.find(t => String(t.id) === dragId) || displayedTracks[source.index];
-      if (!track) return;
+      let trackName;
+      if (result.draggableId.startsWith('playlist-')) {
+        const parts = result.draggableId.replace('playlist-', '');
+        trackName = parts.substring(parts.indexOf('-') + 1);
+      } else {
+        const dragId = result.draggableId.replace('lib-', '');
+        const track = displayedTracks.find(t => String(t.id) === dragId) || displayedTracks[source.index];
+        if (!track) return;
+        trackName = track.name;
+      }
       setInterstitialSongs(prev => {
         const current = [...(prev[breakKey] || [])];
-        if (current.includes(track.name)) {
+        if (current.includes(trackName)) {
           toast.error('Song already in break slot');
           return prev;
         }
-        current.splice(destination.index, 0, track.name);
+        current.splice(destination.index, 0, trackName);
         return { ...prev, [breakKey]: current };
       });
       return;
@@ -516,7 +546,7 @@ export default function RotationPlaylistManager({
   return (
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="w-1/2 border-r border-[#1e293b] flex flex-col">
+        <div ref={libraryPanelRef} className="w-1/2 border-r border-[#1e293b] flex flex-col">
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
@@ -587,28 +617,47 @@ export default function RotationPlaylistManager({
           )}
 
           {musicSource !== 'genres' ? (
+          <Droppable droppableId="library" isDropDisabled={true} type="song">
+            {(provided) => (
             <ScrollArea className="flex-1">
-              <div className="p-2">
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="p-2"
+              >
                 {playlistSongs.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
                     {selectedPlaylistDancer?.name} hasn't added any songs yet
                   </div>
                 ) : (
                   playlistSongs.map((songName, idx) => (
+                    <Draggable key={`playlist-${idx}-${songName}`} draggableId={`playlist-${idx}-${songName}`} index={idx}>
+                      {(provided, snapshot) => (
                     <div
-                      key={idx}
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
                       onClick={() => handleLibraryTrackClick(songName)}
-                      className="flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-pointer bg-[#151528] hover:bg-[#1e293b]"
+                      className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
+                        snapshot.isDragging
+                          ? 'bg-[#a855f7]/20 ring-2 ring-[#a855f7]'
+                          : 'bg-[#151528] hover:bg-[#1e293b]'
+                      } cursor-pointer`}
                     >
                       <ListMusic className="w-4 h-4 text-[#a855f7] flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm text-white truncate block">{songName}</span>
                       </div>
                     </div>
+                      )}
+                    </Draggable>
                   ))
                 )}
+                {provided.placeholder}
               </div>
             </ScrollArea>
+            )}
+          </Droppable>
           ) : (
           <Droppable droppableId="library" isDropDisabled={true} type="song">
             {(provided) => (
