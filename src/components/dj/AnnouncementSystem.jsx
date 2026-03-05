@@ -259,7 +259,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       },
       body: JSON.stringify({
         text: ttsText,
-        model_id: 'eleven_turbo_v2_5',
+        model_id: 'eleven_multilingual_v2',
         voice_settings: {
           stability: voiceSettings.stability,
           similarity_boost: voiceSettings.similarity_boost,
@@ -286,12 +286,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
     }
 
-    trackElevenLabsCall({ text: ttsText, model: 'eleven_turbo_v2_5', context: 'announcement-tts' });
+    trackElevenLabsCall({ text: ttsText, model: 'eleven_multilingual_v2', context: 'announcement-tts' });
     return await response.blob();
   }, [elevenLabsApiKey]);
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}`;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}-V3`;
   };
 
   const getSpecialsHash = () => {

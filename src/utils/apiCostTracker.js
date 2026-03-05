@@ -34,7 +34,7 @@ export function trackElevenLabsCall({ text, model, context }) {
   const estimatedCost = estimateElevenLabsCost(characters);
   logUsage({
     service: 'elevenlabs',
-    model: model || 'eleven_turbo_v2_5',
+    model: model || 'eleven_multilingual_v2',
     endpoint: 'text-to-speech',
     characters,
     promptTokens: 0,

@@ -61,34 +61,34 @@ export const getCurrentEnergyLevel = (config) => {
 
 export const VOICE_SETTINGS = {
   1: {
-    stability: 0.75,
-    similarity_boost: 0.80,
-    style: 0.15,
-    speed: 0.82,
+    stability: 0.78,
+    similarity_boost: 0.82,
+    style: 0.10,
+    speed: 0.95,
   },
   2: {
-    stability: 0.60,
-    similarity_boost: 0.78,
-    style: 0.25,
-    speed: 0.88,
+    stability: 0.70,
+    similarity_boost: 0.80,
+    style: 0.15,
+    speed: 0.97,
   },
   3: {
-    stability: 0.50,
-    similarity_boost: 0.75,
-    style: 0.40,
-    speed: 0.92,
+    stability: 0.62,
+    similarity_boost: 0.78,
+    style: 0.20,
+    speed: 1.0,
   },
   4: {
-    stability: 0.45,
-    similarity_boost: 0.75,
-    style: 0.45,
-    speed: 0.90,
+    stability: 0.55,
+    similarity_boost: 0.78,
+    style: 0.25,
+    speed: 1.02,
   },
   5: {
-    stability: 0.65,
-    similarity_boost: 0.80,
-    style: 0.20,
-    speed: 0.85,
+    stability: 0.72,
+    similarity_boost: 0.82,
+    style: 0.12,
+    speed: 0.97,
   },
 };
 
@@ -138,7 +138,20 @@ Never use the word "around" when announcing rounds.
 RHYTHM RULES:
 Maximum 2 sentences per line.
 6 to 16 words per sentence.
-Lines must feel speakable over bass-heavy music.`;
+Lines must feel speakable over bass-heavy music.
+
+TEXT-TO-SPEECH FORMATTING (CRITICAL — this text will be read aloud by a TTS engine):
+- Use commas to create natural breath pauses between phrases
+- Use ellipsis (...) for dramatic drawn-out pauses: "right about now... let's get it going"
+- Use em dashes (—) for emphasis breaks: "she's coming — and she's bringing the heat"
+- Use periods to create full stops between thoughts — do NOT run sentences together
+- NEVER use ALL CAPS for emphasis — the TTS engine will shout unnaturally. Use italics-style phrasing instead
+- NEVER use exclamation marks more than once per announcement — overuse makes TTS sound robotic and forced
+- Write numbers as words: "one" not "1", "twenty" not "20"
+- Spell out abbreviations: "VIP" should be written as "V I P" with spaces
+- Write contractions naturally: "don't", "she's", "let's", "we're"
+- Keep sentences between 5 and 14 words for the most natural TTS delivery
+- End the announcement on a smooth, calm note — no exclamation mark on the final sentence`;
 
 export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, clubName, clubSpecials = []) => {
   const level = Math.max(1, Math.min(5, energyLevel || 3));
@@ -176,9 +189,9 @@ NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say 
 DELIVERY RULE: The final time you say her name should sound smooth, cool, and confident — NOT shouted or yelled. End the announcement with a laid-back, suave delivery of the name. Think smooth radio DJ, not hype man screaming. Do NOT use exclamation marks on the final name mention.
 
 EXAMPLE (match this energy and structure, but create original lines — notice the final name is smooth, not shouted):
-"All right ladies and gentlemen main stage get ready for the ultimate performance. ${displayName} is coming up to make some dreams come true. That's right gentlemen grab some cash and hit that stage. This is ${displayName}."
-"Right about now I need all eyes on the main stage for ${displayName}. Fellas get those dollars ready because she's about to set it off. Coming to the stage, the one and only ${displayName}."
-"Let's fire up the main stage gentlemen. We're doing it right on a ${dayOfWeek} night. ${displayName} is heading your way so get those dollars out. Give it up for the lovely ${displayName}."
+"All right ladies and gentlemen... main stage, get ready for the ultimate performance. ${displayName} is coming up to make some dreams come true. That's right gentlemen, grab some cash and hit that stage. This is ${displayName}."
+"Right about now... I need all eyes on the main stage for ${displayName}. Fellas, get those dollars ready — she's about to set it off. Coming to the stage, the one and only ${displayName}."
+"Let's fire up the main stage, gentlemen. We're doing it right on a ${dayOfWeek} night. ${displayName} is heading your way, so get those dollars out. Give it up for the lovely ${displayName}."
 
 Output should be 3-5 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — say it 2-3 times, spaced out naturally.`}`;
 
@@ -196,10 +209,10 @@ STRUCTURE — keep it very short and punchy:
 Do NOT mention VIP, private dances, or buying drinks during round continuations.
 
 GOOD EXAMPLES (match this energy, create original lines):
-"${roundLabel} gentlemen. Let's keep it going one more time for ${displayName}."
+"${roundLabel}, gentlemen. Let's keep it going... one more time for ${displayName}."
 "We're not done yet. Giving you more of the beautiful ${displayName}."
-"${roundLabel} boys. Keep those dollars coming for ${displayName}."
-"She's still going gentlemen. ${roundLabel} with ${displayName}."
+"${roundLabel}, boys. Keep those dollars coming for ${displayName}."
+"She's still going, gentlemen. ${roundLabel} with ${displayName}."
 
 BAD EXAMPLES (NEVER do this):
 "Coming back to the stage..." — WRONG, she never left
@@ -222,9 +235,9 @@ STRUCTURE — wrap it up and drive VIP:
 4. Land her name naturally
 
 EXAMPLE (match this energy, create original lines):
-"Well gentlemen that's all the time you get with the amazing ${displayName}. She's finishing up her main stage and now available for some one-on-one VIP time."
-"Show some love for the beautiful ${displayName}. Don't let her walk away lonely gentlemen. She's available for that private VIP experience."
-"One more time make some noise for ${displayName}. Main stage is done but your chance for a private dance is just getting started."
+"Well gentlemen, that's all the time you get with the amazing ${displayName}. She's finishing up her main stage... and now available for some one-on-one V I P time."
+"Show some love for the beautiful ${displayName}. Don't let her walk away lonely, gentlemen — she's available for that private V I P experience."
+"One more time, make some noise for ${displayName}. Main stage is done... but your chance for a private dance is just getting started."
 
 Output should be 2-4 sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName} — use it.`}`;
 
@@ -245,8 +258,8 @@ STRUCTURE — thank outgoing, hype incoming:
 NAME REPETITION RULE: ${isGeneric ? 'Use generic references throughout.' : `Say the INCOMING entertainer's name ("${nextName}") 2-3 times, spaced naturally throughout the hype-up portion. The outgoing entertainer's name ("${outgoingRef}") only needs to be said once. In a loud club people need to hear the new name more than once.`}
 
 EXAMPLE (match this energy, create original lines):
-"One more time for the lovely ${outgoingRef}. Now let's fire up the main stage for ${nextName}. That's right gentlemen it's back to back. Get those dollars ready for the one and only ${nextName}."
-"Show some love for ${outgoingRef} gentlemen. Right about now ${nextName} is coming to the stage. Get your cash out because ${nextName} is about to make it happen."
+"One more time for the lovely ${outgoingRef}. Now let's fire up the main stage for ${nextName}. That's right, gentlemen... it's back to back. Get those dollars ready for the one and only ${nextName}."
+"Show some love for ${outgoingRef}, gentlemen. Right about now... ${nextName} is coming to the stage. Get your cash out — because ${nextName} is about to make it happen."
 
 Output should be 3-5 sentences. Rhyming and wordplay encouraged if natural (e.g. "doing it right on a ${dayOfWeek} night"). ${isGeneric ? 'Do not use a specific name.' : `Say ${nextName} 2-3 times, spaced out naturally.`}`;
   }

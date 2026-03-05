@@ -64,6 +64,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Root cause**: `playCommercialIfDue()` called `pauseAll()` only AFTER fetching the audio blob from the server (~500ms network delay). During that fetch, the previous track continued playing
 - **Fix**: Moved `pauseAll()` + `playingCommercialRef.current = true` to immediately after confirming promos exist — before the audio blob fetch. Also added `playingCommercialRef.current = false` on early return if audio fetch fails
 
+#### Improvement: Voice Announcement Quality Upgrade
+- **Model upgrade**: Switched from `eleven_turbo_v2_5` to `eleven_multilingual_v2` for significantly more natural, human-sounding speech
+- **Stability tuned up**: All energy levels bumped +0.10-0.15 stability for more consistent voice identity across announcements while keeping expressiveness. New ranges: L1=0.82, L2=0.72, L3=0.65, L4=0.58, L5=0.75
+- **Similarity boost increased**: Raised to 0.80-0.85 range for tighter voice identity matching
+- **Style reduced**: Slightly lower across all levels to reduce over-exaggeration
+- **TTS formatting rules added to system prompt**: Commas for breath pauses, ellipses for dramatic pauses, em dashes for emphasis breaks, no ALL CAPS (causes shouting), max one exclamation mark per announcement, "V I P" with spaces, numbers as words, sentences 5-14 words
+- **Example announcements updated**: All type examples now use proper TTS punctuation
+- **Cache key versioned**: Added `-V2` suffix to force regeneration of all cached voiceovers with the new model/settings. Old turbo-generated voiceovers won't be reused
+- **Cost**: Same per-character cost ($0.00003/char) — `eleven_multilingual_v2` is same price tier
+
 #### Fix: Auto-Select Songs for Dancers Without Playlists
 - **Problem**: Dancers with no/empty playlists got no songs assigned — `handleSkip` and `handleTrackEnd` immediately fell back to `playFallbackTrack` instead of selecting random songs
 - **Fix**: Both handlers now call `getDancerTracks()` to auto-select random songs when `rotationSongsRef` is empty for the current dancer, and store them in `rotationSongsRef` for proper set flow

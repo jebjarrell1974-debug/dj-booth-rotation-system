@@ -91,12 +91,12 @@ function PromoCreator({ onPlay, onSaved }) {
       },
       body: JSON.stringify({
         text: script,
-        model_id: 'eleven_turbo_v2_5',
+        model_id: 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.30,
-          similarity_boost: 0.75,
-          style: 0.85,
-          speed: 1.08,
+          stability: 0.62,
+          similarity_boost: 0.78,
+          style: 0.20,
+          speed: 1.0,
         }
       }),
     });
@@ -108,7 +108,7 @@ function PromoCreator({ onPlay, onSaved }) {
       throw new Error(`ElevenLabs error (${status})`);
     }
 
-    trackElevenLabsCall({ text: script, model: 'eleven_turbo_v2_5', context: 'promo-tts' });
+    trackElevenLabsCall({ text: script, model: 'eleven_multilingual_v2', context: 'promo-tts' });
     return await res.blob();
   };
 
