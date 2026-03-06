@@ -97,6 +97,7 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
     voiceDelay = 1.5,
     duckAttack = 0.3,
     duckRelease = 0.5,
+    leadingSilence = 1.5,
   } = options;
 
   const tempCtx = new AudioContext({ sampleRate: 44100 });
@@ -110,7 +111,7 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
     tempCtx.close();
   }
 
-  const totalDuration = voiceDelay + voiceBuffer.duration + fadeOutDuration + 1.0;
+  const totalDuration = leadingSilence + voiceDelay + voiceBuffer.duration + fadeOutDuration + 1.0;
   const sampleRate = 44100;
   const numChannels = Math.max(voiceBuffer.numberOfChannels, musicBuffer.numberOfChannels, 2);
   const offlineCtx = new OfflineAudioContext(numChannels, Math.ceil(totalDuration * sampleRate), sampleRate);
@@ -121,12 +122,12 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
 
   const musicGain = offlineCtx.createGain();
   musicGain.gain.setValueAtTime(0, 0);
-  musicGain.gain.linearRampToValueAtTime(musicVolume, fadeInDuration);
+  musicGain.gain.linearRampToValueAtTime(musicVolume, leadingSilence + fadeInDuration);
 
   const voiceRegions = detectVoiceActivity(voiceBuffer);
   for (const region of voiceRegions) {
-    const duckStart = Math.max(fadeInDuration, voiceDelay + region.start - 0.1);
-    const duckEnd = voiceDelay + region.end + 0.2;
+    const duckStart = Math.max(leadingSilence + fadeInDuration, leadingSilence + voiceDelay + region.start - 0.1);
+    const duckEnd = leadingSilence + voiceDelay + region.end + 0.2;
     musicGain.gain.setValueAtTime(musicVolume, Math.max(0, duckStart - duckAttack));
     musicGain.gain.linearRampToValueAtTime(duckLevel, duckStart);
     musicGain.gain.setValueAtTime(duckLevel, duckEnd);
@@ -139,7 +140,7 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
 
   musicSource.connect(musicGain);
   musicGain.connect(offlineCtx.destination);
-  musicSource.start(0);
+  musicSource.start(leadingSilence);
 
   const voiceSource = offlineCtx.createBufferSource();
   voiceSource.buffer = voiceBuffer;
@@ -147,7 +148,7 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
   voiceGainNode.gain.setValueAtTime(1.0, 0);
   voiceSource.connect(voiceGainNode);
   voiceGainNode.connect(offlineCtx.destination);
-  voiceSource.start(voiceDelay);
+  voiceSource.start(leadingSilence + voiceDelay);
 
   const rendered = await offlineCtx.startRendering();
   return encodeWav(rendered);

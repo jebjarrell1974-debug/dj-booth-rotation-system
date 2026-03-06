@@ -610,7 +610,9 @@ const AudioEngine = forwardRef(({
       safetyFading = true;
       const fadeStartVolume = newDeckGain.gain.value;
       const fadeStart = performance.now();
-      const fadeDur = SAFETY_FADE_SECONDS * 1000;
+      const shortTrack = resolvedDuration < 60;
+      const fadeSecs = shortTrack ? Math.min(2, resolvedDuration * 0.15) : SAFETY_FADE_SECONDS;
+      const fadeDur = fadeSecs * 1000;
 
       const animateOut = (now) => {
         const elapsed = now - fadeStart;
@@ -652,7 +654,9 @@ const AudioEngine = forwardRef(({
         return;
       }
 
-      const safetyFadePoint = resolvedDuration - SAFETY_FADE_SECONDS;
+      const isShortTrack = resolvedDuration < 60;
+      const effectiveSafetyFade = isShortTrack ? Math.min(2, resolvedDuration * 0.15) : SAFETY_FADE_SECONDS;
+      const safetyFadePoint = resolvedDuration - effectiveSafetyFade;
       if (time >= safetyFadePoint && !safetyFading) {
         startSafetyFade();
       }
@@ -663,7 +667,8 @@ const AudioEngine = forwardRef(({
         onTimeUpdateRef.current?.(time, resolvedDuration);
       }
 
-      const triggerPoint = Math.max(resolvedDuration - TRANSITION_LEAD_TIME, resolvedDuration * 0.5);
+      const effectiveLeadTime = isShortTrack ? Math.min(3, resolvedDuration * 0.15) : TRANSITION_LEAD_TIME;
+      const triggerPoint = Math.max(resolvedDuration - effectiveLeadTime, resolvedDuration * 0.85);
       if (time >= triggerPoint && !transitionTriggered) {
         transitionTriggered = true;
         onTrackEndRef.current?.();
@@ -865,24 +870,6 @@ const AudioEngine = forwardRef(({
     localStorage.setItem('neonaidj_voice_eq', JSON.stringify(saved));
   }, []);
 
-  const muteMusic = useCallback(() => {
-    if (musicBusGainRef.current && audioCtxRef.current) {
-      musicBusGainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
-    }
-    if (deckAGainRef.current && audioCtxRef.current) {
-      deckAGainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
-    }
-    if (deckBGainRef.current && audioCtxRef.current) {
-      deckBGainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
-    }
-  }, []);
-
-  const unmuteMusic = useCallback(() => {
-    if (musicBusGainRef.current && audioCtxRef.current) {
-      musicBusGainRef.current.gain.setValueAtTime(1.0, audioCtxRef.current.currentTime);
-    }
-  }, []);
-
   useImperativeHandle(ref, () => ({
     playTrack,
     pause,
@@ -890,8 +877,6 @@ const AudioEngine = forwardRef(({
     resume,
     duck,
     unduck,
-    muteMusic,
-    unmuteMusic,
     playAnnouncement,
     setVolume,
     setVoiceGain,

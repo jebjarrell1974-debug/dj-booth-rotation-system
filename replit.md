@@ -38,6 +38,45 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 6, 2026 — Session 27 (Flexible Drag-and-Drop Rotation Items)
+
+#### Feature: Commercials Folder in Music Library
+- Added "Commercials" option to the music source dropdown in RotationPlaylistManager
+- When selected, fetches promo/manual voiceovers from `/api/voiceovers`
+- Displays them as draggable items with TV icon in amber/gold color scheme
+- Draggable IDs use `commercial-{cacheKey}` prefix for identification
+
+#### Feature: Unified Interstitial Slots (Songs + Commercials Between Sets)
+- Drop zones between dancer sets are now always visible (previously only when break songs were enabled)
+- Drop zones accept both regular songs AND commercials from the Commercials folder
+- Commercial items stored in interstitialSongs with `[COMMERCIAL]{cacheKey}` prefix
+- Items in break slots are now draggable for reordering within a slot
+- Visual distinction: commercials in amber/gold, songs in violet
+- Each item has X button and drag handle for reordering
+
+#### Feature: Commercial Playback Through Break Slots
+- `resolveCommercialTrack()` helper in DJBooth.jsx fetches promo audio as blob URL with auth headers
+- All 4 break song resolution points (handleSkip first/next, handleTrackEnd first/next) handle `[COMMERCIAL]` items
+- Commercial interstitials set `playingCommercialRef.current = true` to skip play_history logging
+- Commercial interstitials use `commercialEndResolverRef` promise to block until track finishes
+- No DJ voice announcements around commercial items (outros/intros still play around regular break songs)
+- Blob URLs revoked after 5s delay for cleanup
+
+#### Feature: Auto-Commercial No-Double-Up
+- Auto-scheduled commercial display checks if break slot already has a manual `[COMMERCIAL]` item
+- If manual commercial exists in slot, auto-commercial indicator is hidden
+- After break songs with commercials finish, `playCommercialIfDue()` is skipped but counter still increments
+
+#### Fix: Short Track Crossfade Timing (AudioEngine.jsx)
+- Short tracks (<60s) now use `Math.min(3, duration * 0.15)` lead time instead of fixed 15s
+- Safety fade uses `Math.min(2, duration * 0.15)` instead of fixed 5s
+- A 20s commercial triggers transition at ~17s, not 10s
+
+#### Fix: Leading Silence Buffer on Promo Creation (audioMixer.js)
+- `mixPromo` now accepts `leadingSilence` option (default 1.5s)
+- Inserts silence at the beginning of mixed promo output
+- All timing offsets (music start, voice start, ducking regions) shifted by leadingSilence
+
 ### Mar 5, 2026 — Session 26 (Voice Natural Sound + Commercial Overlap Fix)
 
 #### Fix: 4-Hour Song Cooldown Now Survives App Restarts
@@ -47,10 +86,10 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Fix (server cooldown endpoint)**: New `GET /api/history/cooldowns?hours=4` endpoint returns a map of `{track_name: timestamp}` from `play_history`. Added `getRecentCooldowns()` to `db.js`
 - **Fix (client loads from server)**: On startup, `DJBooth.jsx` now fetches cooldowns from the server AND merges with any surviving localStorage data. Server is the source of truth — even if localStorage is cleared, the server's `play_history` table preserves the full cooldown state
 
-#### Fix: Commercial Playback — Music Resuming During Commercial
-- **Problem**: ~35 seconds into a commercial, the previous song would start playing loudly
-- **Root cause**: `pauseAll()` paused both deck audio elements but did NOT cancel running `requestAnimationFrame` crossfade/safety-fade animations, and did NOT clear `ontimeupdate`/`onended` event handlers. Stale animations could swap active deck references or modify gains mid-commercial. Stale handlers could trigger handleTrackEnd cascades
-- **Fix**: `pauseAll()` in `AudioEngine.jsx` now cancels all animation frames (`fadeAnimationRef`, `safetyFadeRef`), resets `crossfadeInProgressRef`, and nulls out `ontimeupdate`/`onended` on both decks before pausing them
+#### Simplification: Commercial Playback — Play As Regular Track
+- **Problem**: Old commercial system was overengineered — used separate pauseAll/muteMusic/playAnnouncement/unmuteMusic chain with voice channel, causing frequent failures (music bleeding through, commercials not playing)
+- **Fix**: Commercials now play through the normal `playTrack` music deck system, same as any song. Audio is fetched with auth headers as a blob URL. A `commercialEndResolverRef` promise pattern blocks the caller until the track finishes. Guards in `handleTrackEnd` and `handleSkip` resolve the promise (and stop playback on skip). `muteMusic`/`unmuteMusic` methods removed from AudioEngine. Commercial tracks are excluded from play_history logging
+- **Result**: Commercials get the same AutoGain, crossfade, and deck handling as regular songs — no special audio plumbing needed
 
 #### Improvement: Voice Settings V7 — Natural Sound
 - Stability lowered significantly (0.35-0.50, was 0.55-0.78) — reduces monotone robotic delivery
