@@ -256,6 +256,15 @@ app.get('/api/settings/has-dj-pin', (req, res) => {
   res.json({ hasPin: !!pin });
 });
 
+app.get('/api/config/defaults', (req, res) => {
+  const defaults = {};
+  if (process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
+  if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+  if (process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
+  if (process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
+  res.json(defaults);
+});
+
 const CONFIG_KEYS = [
   'openaiApiKey', 'elevenLabsApiKey', 'elevenLabsVoiceId',
   'announcementsEnabled', 'clubName', 'clubOpenHour', 'clubCloseHour', 'energyOverride'

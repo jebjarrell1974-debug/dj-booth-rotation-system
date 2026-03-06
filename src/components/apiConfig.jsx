@@ -26,9 +26,23 @@ const DEFAULTS = {
 };
 
 let cachedConfig = null;
+let serverDefaults = null;
+
+async function fetchServerDefaults() {
+  if (serverDefaults) return serverDefaults;
+  try {
+    const res = await fetch('/api/config/defaults');
+    if (res.ok) {
+      serverDefaults = await res.json();
+      return serverDefaults;
+    }
+  } catch {}
+  serverDefaults = {};
+  return serverDefaults;
+}
 
 function readFromStorage() {
-  return {
+  const local = {
     openaiApiKey: (localStorage.getItem(STORAGE_KEYS.openaiApiKey) || '').trim(),
     elevenLabsApiKey: (localStorage.getItem(STORAGE_KEYS.elevenLabsApiKey) || '').trim(),
     elevenLabsVoiceId: (localStorage.getItem(STORAGE_KEYS.elevenLabsVoiceId) || '').trim(),
@@ -40,9 +54,19 @@ function readFromStorage() {
     scriptModel: localStorage.getItem(STORAGE_KEYS.scriptModel) || 'gpt-4.1',
     clubSpecials: localStorage.getItem(STORAGE_KEYS.clubSpecials) || '',
   };
+
+  const sd = serverDefaults || {};
+  return {
+    ...local,
+    openaiApiKey: local.openaiApiKey || sd.openaiApiKey || '',
+    elevenLabsApiKey: local.elevenLabsApiKey || sd.elevenLabsApiKey || '',
+    elevenLabsVoiceId: local.elevenLabsVoiceId || sd.elevenLabsVoiceId || '',
+    scriptModel: local.scriptModel || sd.scriptModel || 'gpt-4.1',
+  };
 }
 
 export async function loadApiConfig() {
+  await fetchServerDefaults();
   cachedConfig = readFromStorage();
   return cachedConfig;
 }
