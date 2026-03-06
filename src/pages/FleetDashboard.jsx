@@ -49,7 +49,7 @@ function MiniBar({ value, max = 100, color = '#00d4ff', label }) {
   );
 }
 
-function HealthSparkline({ data, field, color = '#00d4ff', height = 40 }) {
+function HealthSparkline({ data, field, color = '#00d4ff', height = 40, unit = '%' }) {
   if (!data || data.length < 2) return <div className="text-xs text-gray-600">No data</div>;
   
   const values = data.map(d => d[field] || 0).reverse();
@@ -74,7 +74,7 @@ function HealthSparkline({ data, field, color = '#00d4ff', height = 40 }) {
         points={points}
       />
       <text x={w - 2} y={12} fill="#9ca3af" fontSize="10" textAnchor="end">
-        {Math.round(values[values.length - 1])}%
+        {Math.round(values[values.length - 1])}{unit}
       </text>
     </svg>
   );
@@ -185,7 +185,7 @@ function DeviceDetailModal({ device, onClose }) {
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">CPU Temperature</p>
-                <HealthSparkline data={heartbeats} field="cpu_temp" color="#ef4444" />
+                <HealthSparkline data={heartbeats} field="cpu_temp" color="#ef4444" unit="°C" />
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Memory Usage</p>

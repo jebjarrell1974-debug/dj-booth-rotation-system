@@ -72,6 +72,24 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Music path on Pony Nation Pi: `/home/neonaidj001/djbooth/music/` (set via Options page)
 - Replit should NOT have a music path set — no local music folder needed here
 
+### Mar 6, 2026 — Session 30 (Real System Health Metrics in Fleet Dashboard)
+
+#### Feature: Real Hardware Health Metrics
+- **Previous**: Health data came from browser (CPU always 0%, memory = JS heap, disk = browser storage quota)
+- **New**: `/api/health` endpoint on each Pi now returns real system metrics via Node.js
+  - **CPU Temperature**: Reads `/sys/class/thermal/thermal_zone0/temp` (Pi 5 throttles at 85°C)
+  - **System RAM**: `os.totalmem()` / `os.freemem()` — real memory usage, not browser heap
+  - **Disk Usage**: `df -B1 /` — actual SD card/SSD space used
+  - **OS Uptime**: `os.uptime()` — catches unexpected reboots
+  - **CPU Load**: `os.loadavg()` normalized by `os.cpus().length` — real CPU utilization percentage
+- `systemHealth.js` extracts these from `/api/health` response and includes in heartbeat payload
+- Fleet monitor already had fields for `cpuTemp`, `diskFree`, `diskTotal`, `memFree`, `memTotal` — now populated
+- `fleet_heartbeats` table: added `cpu_temp` column with migration for existing DBs
+- `recordHeartbeatInDb` fixed: properly stores memory_percent, disk_percent, cpu_temp (was hardcoded 0s before)
+- Fleet Dashboard detail modal: added **Temp** gauge with color coding (white < 60°C, yellow 60-75°C, red 75°C+)
+- Fleet Dashboard health history: added **CPU Temperature** sparkline chart (red) alongside CPU, Memory, Disk charts
+- Zero performance impact — reads a tiny text file + one system call + one `df` command per heartbeat (every 3 min)
+
 ### Mar 6, 2026 — Session 29 (Voice Studio Preview Workflow + Homebase Setup + Mic Fix)
 
 #### Feature: Record-Preview-Save Workflow
