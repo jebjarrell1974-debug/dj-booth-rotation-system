@@ -2095,17 +2095,17 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        if (announcementsEnabled) {
-          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
-          await playPrefetchedAnnouncement(outroUrl);
-        }
-
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
+        }
+
+        if (announcementsEnabled && commercialPlayed) {
+          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
+          await playPrefetchedAnnouncement(outroUrl);
         }
 
         lastAudioActivityRef.current = Date.now();
@@ -2636,17 +2636,17 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        if (announcementsEnabled) {
-          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
-          await playPrefetchedAnnouncement(outroUrl);
-        }
-
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
+        }
+
+        if (announcementsEnabled && commercialPlayed) {
+          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
+          await playPrefetchedAnnouncement(outroUrl);
         }
 
         lastAudioActivityRef.current = Date.now();

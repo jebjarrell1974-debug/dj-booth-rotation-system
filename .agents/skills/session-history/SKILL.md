@@ -245,14 +245,13 @@ EOF'
 ```
 
 ### Step 9: Create the auto-update service
-Pulls latest code from GitHub on every boot before the app starts. Replace `USERNAME`.
+Pulls latest code from GitHub on boot. Runs independently — does NOT block the app from starting. Replace `USERNAME`.
 ```bash
 sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << 'EOF'
 [Unit]
 Description=NEON AI DJ Auto-Update
 After=network-online.target
 Wants=network-online.target
-Before=djbooth.service
 
 [Service]
 Type=oneshot
@@ -271,6 +270,7 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable djbooth-update.service
 ```
+**CRITICAL**: Do NOT add `Before=djbooth.service` — that would block the app from starting until the update finishes (up to 5 minutes), which breaks offline/no-internet boot.
 
 ### Step 10: Set up Chromium kiosk autostart
 Opens fullscreen browser to the app on every boot. Waits for server to be ready before launching.

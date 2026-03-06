@@ -80,7 +80,7 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Music ramps back to full volume (0.8s release) after voice ends**
 - **5 seconds of full-volume music bed outro** — gives next crossfade proper audio to work with
 - Voice gain boosted to 1.3x for clarity over the bed
-- Peak normalization to 0.95 on final output — matches mastered music levels
+- **LUFS normalization** to -14 LUFS on final output — matches perceived loudness of mastered music (same target as AudioEngine auto-gain). Peak ceiling at 0.98 prevents clipping. Replaced old peak normalization which only matched the loudest spike, not perceived volume.
 - Old parameters removed: `musicVolume`, `fadeInDuration`, `fadeOutDuration`, `leadingSilence`
 - New parameters: `fullMusicIntro=5.0`, `fullMusicOutro=5.0`, `duckLevel=0.12`, `voiceDelay=0.5`, `duckAttack=0.5`, `duckRelease=0.8`, `voiceGain=1.3`
 - Callers in ManualAnnouncementPlayer now use defaults (no custom options)
