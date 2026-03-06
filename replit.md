@@ -54,6 +54,18 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Each entertainer gets 4 recording slots in Voice Studio: intro, round2, round3, outro (248 total recordings needed)
 - Inserted with `reported_by_devices: ['manual']` since added manually rather than via Pi heartbeat
 
+#### Update Script Fix
+- **Problem**: `djbooth-update.sh` backup step used `cp -r` which copied the entire `djbooth/` folder including 25,000 music files — got stuck for ages
+- **Fix**: Changed to `rsync -a --exclude='music' --exclude='voiceovers' --exclude='node_modules'` — backup now takes seconds
+- **File**: `public/djbooth-update-github.sh` (line 47-48)
+- **First-time fix on Pi**: Must download the new script first with `curl` before running update (old script on Pi still has `cp -r`)
+
+#### Boot Sequence & Sync Architecture
+- **R2 boot sync (voiceovers + music)** runs automatically every time the app starts — this is correct and intentional
+- Pi reboots daily at 8:30 AM → djbooth service starts → R2 sync downloads new voiceovers/music, uploads any locally-created ones
+- **Code updates (GitHub)** are currently manual only — run `~/djbooth-update.sh` via SSH
+- Code updates do NOT run automatically on reboot (user may want this added later)
+
 #### Key Reminders
 - **ALWAYS ask before making changes** — do not rush to implement
 - R2 boot sync (voiceovers + music) runs on every boot — this is intentional for Pi morning reboots
