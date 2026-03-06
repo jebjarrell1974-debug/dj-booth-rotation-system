@@ -38,6 +38,28 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 6, 2026 — Session 29 (R2 Boot Sync Fix + Entertainer Roster)
+
+#### R2 Boot Music Sync Fix
+- **Problem**: Auto-detect logic (`const defaultMusicPath = join(__dirname, '..', 'music')`) caused Replit to detect the local `./music` folder and download 16GB of music from R2 into Replit on boot
+- **Fix**: Removed auto-detect music path — MUSIC_PATH now only comes from `MUSIC_PATH` env var or the `music_path` setting in the database
+- **Boot sync kept intact**: Both voiceover and music R2 sync still run on every boot as intended — this is correct behavior for Pi units that reboot each morning
+- **Cleanup**: Deleted 16GB of downloaded music files from Replit's `./music/` folder
+- **R2 bucket untouched**: No duplicates were created in R2
+- **File**: `server/index.js` (removed `defaultMusicPath` auto-detect block)
+
+#### Pony Nation Entertainer Roster (62 Entertainers)
+- Added 62 entertainers to `fleet_dancer_roster` table for Voice Studio recording
+- Full list: Amelia, Amber, Amor, Anneliese, Avery, Bianca, Blair, Britney, Cameron, Cleo, Crystal, Dakota, Devin, Eliza, Emma, Enchantres, Erica, Fauna, Fendi, Hanna, Isabella, Jamie, Jasmine, Jalese, Jenn, Jules, Kaylani, Kingsley, Kitten, Kristin, Lacie, Lana, Liliah, Lily, Luna, Malia, Mia, Mieka, Milan, Minnie, Minx, Mohana, Morganna, Nadia, Natalia, Nikki, Rachel, Reese, Regina, River, Sage, Sara, Scarlette, Sierra, Simone, Sin, Stacy, Stunna, Tatiana, Valerie, Venom Rose, Yasmine
+- Each entertainer gets 4 recording slots in Voice Studio: intro, round2, round3, outro (248 total recordings needed)
+- Inserted with `reported_by_devices: ['manual']` since added manually rather than via Pi heartbeat
+
+#### Key Reminders
+- **ALWAYS ask before making changes** — do not rush to implement
+- R2 boot sync (voiceovers + music) runs on every boot — this is intentional for Pi morning reboots
+- Music path on Pony Nation Pi: `/home/neonaidj001/djbooth/music/` (set via Options page)
+- Replit should NOT have a music path set — no local music folder needed here
+
 ### Mar 6, 2026 — Session 28 (Voice Recording Studio + V9 Cache Key)
 
 #### Voice Cache V9
