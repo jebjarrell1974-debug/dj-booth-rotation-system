@@ -6,7 +6,7 @@ import {
   ArrowLeft, Mic, MicOff, Square, Play, Pause,
   SkipForward, SkipBack, Check, RefreshCw, Search,
   Download, Trash2, Volume2, AlertCircle,
-  Radio, Plus, Sparkles, Music, X
+  Radio, Plus, Sparkles, Music, X, Save, RotateCcw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -156,6 +156,14 @@ export default function VoiceStudio() {
   const [micError, setMicError] = useState('');
   const [suggestedScript, setSuggestedScript] = useState('');
   const [showPromoForm, setShowPromoForm] = useState(false);
+  const [previewBlob, setPreviewBlob] = useState(null);
+  const [previewRawBlob, setPreviewRawBlob] = useState(null);
+  const [previewDuration, setPreviewDuration] = useState(0);
+  const [previewItem, setPreviewItem] = useState(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const previewAudioRef = useRef(null);
+  const previewUrlRef = useRef(null);
 
   const [promoEventName, setPromoEventName] = useState('');
   const [promoDate, setPromoDate] = useState('');
@@ -409,43 +417,26 @@ export default function VoiceStudio() {
               }
             }
 
+            let finalBlob = processedMp3Blob;
             if (musicBlob) {
-              const mixedBlob = await mixPromo(processedMp3Blob, musicBlob, {
+              finalBlob = await mixPromo(processedMp3Blob, musicBlob, {
                 introSfx: promo.intro_sfx || 'none',
                 outroSfx: promo.outro_sfx || 'none',
                 fullMusicIntro: 3.0,
                 fullMusicOutro: 3.0,
                 outputFormat: 'mp3',
               });
-              await fleetAdmin.savePromo(capturedItem.promoId, mixedBlob);
-              setSavedMessage(`Promo saved with music bed: ${capturedItem.dancerName}`);
-            } else {
-              if (promo.music_bed && promo.music_bed !== 'none' && promo.music_bed !== 'random') {
-                setSavedMessage(`Promo saved (voice only — music bed failed to load): ${capturedItem.dancerName}`);
-              } else {
-                setSavedMessage(`Promo saved: ${capturedItem.dancerName}`);
-              }
-              await fleetAdmin.savePromo(capturedItem.promoId, processedMp3Blob);
             }
+            setPreviewBlob(finalBlob);
           } else {
-            await fleetAdmin.uploadRecording(
-              capturedItem.dancerName,
-              capturedItem.type,
-              processedMp3Blob,
-              rawBlob,
-              durationMs
-            );
-            const label = capturedItem.category === 'transition'
-              ? `${TYPE_LABELS[capturedItem.baseType] || capturedItem.baseType} #${capturedItem.variationNum}`
-              : `${capturedItem.dancerName} — ${TYPE_LABELS[capturedItem.type]}`;
-            setSavedMessage(`Saved ${label}`);
+            setPreviewBlob(processedMp3Blob);
           }
 
-          await loadData();
-          setTimeout(() => {
-            setCurrentIndex(prev => Math.min(prev + 1, activeQueue.length - 1));
-            setSavedMessage('');
-          }, 1200);
+          setPreviewRawBlob(rawBlob);
+          setPreviewDuration(durationMs);
+          setPreviewItem({ ...capturedItem });
+          if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+          previewUrlRef.current = null;
         } catch (err) {
           console.error('Processing error:', err);
           setMicError('Failed to process recording: ' + err.message);
@@ -478,6 +469,90 @@ export default function VoiceStudio() {
     setIsRecording(false);
     setAnalyserNode(null);
   }, []);
+
+  const playPreview = useCallback(() => {
+    if (!previewBlob) return;
+    if (isPlayingPreview && previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+      setIsPlayingPreview(false);
+      return;
+    }
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const url = URL.createObjectURL(previewBlob);
+    previewUrlRef.current = url;
+    const audio = new Audio(url);
+    audio.onended = () => { setIsPlayingPreview(false); previewAudioRef.current = null; };
+    audio.onerror = () => { setIsPlayingPreview(false); previewAudioRef.current = null; };
+    audio.play().catch(() => setIsPlayingPreview(false));
+    previewAudioRef.current = audio;
+    setIsPlayingPreview(true);
+  }, [previewBlob, isPlayingPreview]);
+
+  const discardPreview = useCallback(() => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setPreviewBlob(null);
+    setPreviewRawBlob(null);
+    setPreviewDuration(0);
+    setPreviewItem(null);
+    setIsPlayingPreview(false);
+    setMicError('');
+    setSavedMessage('');
+  }, []);
+
+  const savePreview = useCallback(async () => {
+    if (!previewBlob || !previewItem) return;
+    setIsSaving(true);
+    try {
+      if (previewItem.category === 'promo') {
+        await fleetAdmin.savePromo(previewItem.promoId, previewBlob);
+        const label = previewItem.promoData?.event_name || previewItem.dancerName;
+        setSavedMessage(`Promo saved: ${label}`);
+      } else {
+        await fleetAdmin.uploadRecording(
+          previewItem.dancerName,
+          previewItem.type,
+          previewBlob,
+          previewRawBlob,
+          previewDuration
+        );
+        const label = previewItem.category === 'transition'
+          ? `${TYPE_LABELS[previewItem.baseType] || previewItem.baseType} #${previewItem.variationNum}`
+          : `${previewItem.dancerName} — ${TYPE_LABELS[previewItem.type]}`;
+        setSavedMessage(`Saved ${label}`);
+      }
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+      }
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      setPreviewBlob(null);
+      setPreviewRawBlob(null);
+      setPreviewDuration(0);
+      setPreviewItem(null);
+      setIsPlayingPreview(false);
+      await loadData();
+      setTimeout(() => {
+        setCurrentIndex(prev => Math.min(prev + 1, activeQueue.length - 1));
+        setSavedMessage('');
+      }, 1500);
+    } catch (err) {
+      console.error('Save error:', err);
+      setMicError('Failed to save: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [previewBlob, previewRawBlob, previewDuration, previewItem, loadData, activeQueue.length]);
 
   const playRecording = useCallback((dancerName, type) => {
     const id = `${dancerName}-${type}`;
@@ -821,7 +896,7 @@ export default function VoiceStudio() {
           </div>
         )}
 
-        {currentItem && !isProcessing && (
+        {currentItem && !isProcessing && !isSaving && (
           <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6 mb-6">
             <div className="text-center mb-4">
               <p className="text-xs text-gray-500 mb-1 uppercase tracking-wider">
@@ -876,35 +951,73 @@ export default function VoiceStudio() {
 
             {isRecording && <LiveMeter analyser={analyserNode} />}
 
-            <div className="flex items-center justify-center gap-4 mt-6">
-              <Button variant="ghost" size="icon"
-                onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
-                disabled={currentIndex === 0 || isRecording}
-                className="text-gray-400 hover:text-white">
-                <SkipBack className="w-5 h-5" />
-              </Button>
+            {previewBlob && !isRecording && (
+              <div className="bg-[#08081a] border-2 border-green-500/30 rounded-xl p-4 mt-4">
+                <p className="text-xs text-green-400 uppercase tracking-wider text-center mb-3 font-bold">
+                  Recording Ready — {(previewDuration / 1000).toFixed(1)}s
+                </p>
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={discardPreview}
+                    title="Discard & Re-record"
+                    className="w-14 h-14 rounded-full bg-red-500/20 hover:bg-red-500/40 border border-red-500/40 flex items-center justify-center transition-all hover:scale-105 active:scale-95">
+                    <RotateCcw className="w-6 h-6 text-red-400" />
+                  </button>
 
-              {!isRecording ? (
-                <button onClick={startRecording}
-                  className="w-20 h-20 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95">
-                  <Mic className="w-8 h-8 text-white" />
-                </button>
-              ) : (
-                <button onClick={stopRecording}
-                  className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-all animate-pulse shadow-lg shadow-red-500/50">
-                  <Square className="w-8 h-8 text-white" />
-                </button>
-              )}
+                  <button onClick={playPreview}
+                    title={isPlayingPreview ? 'Stop' : 'Play Preview'}
+                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95 ${
+                      isPlayingPreview
+                        ? 'bg-yellow-500 hover:bg-yellow-400 shadow-lg shadow-yellow-500/30'
+                        : 'bg-green-500 hover:bg-green-400 shadow-lg shadow-green-500/30'
+                    }`}>
+                    {isPlayingPreview ? <Pause className="w-7 h-7 text-white" /> : <Play className="w-7 h-7 text-white ml-1" />}
+                  </button>
 
-              <Button variant="ghost" size="icon"
-                onClick={() => setCurrentIndex(Math.min(activeQueue.length - 1, currentIndex + 1))}
-                disabled={currentIndex >= activeQueue.length - 1 || isRecording}
-                className="text-gray-400 hover:text-white">
-                <SkipForward className="w-5 h-5" />
-              </Button>
-            </div>
+                  <button onClick={savePreview} disabled={isSaving}
+                    title="Save to Voice Library"
+                    className="w-14 h-14 rounded-full bg-[#00d4ff]/20 hover:bg-[#00d4ff]/40 border border-[#00d4ff]/40 flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50">
+                    <Save className="w-6 h-6 text-[#00d4ff]" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-center gap-6 mt-2">
+                  <span className="text-[10px] text-red-400">Re-record</span>
+                  <span className="text-[10px] text-green-400">Play Preview</span>
+                  <span className="text-[10px] text-[#00d4ff]">Save</span>
+                </div>
+              </div>
+            )}
 
-            {currentItem.isRecorded && currentItem.category !== 'promo' && (
+            {!previewBlob && (
+              <div className="flex items-center justify-center gap-4 mt-6">
+                <Button variant="ghost" size="icon"
+                  onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+                  disabled={currentIndex === 0 || isRecording}
+                  className="text-gray-400 hover:text-white">
+                  <SkipBack className="w-5 h-5" />
+                </Button>
+
+                {!isRecording ? (
+                  <button onClick={startRecording}
+                    className="w-20 h-20 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95">
+                    <Mic className="w-8 h-8 text-white" />
+                  </button>
+                ) : (
+                  <button onClick={stopRecording}
+                    className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-all animate-pulse shadow-lg shadow-red-500/50">
+                    <Square className="w-8 h-8 text-white" />
+                  </button>
+                )}
+
+                <Button variant="ghost" size="icon"
+                  onClick={() => setCurrentIndex(Math.min(activeQueue.length - 1, currentIndex + 1))}
+                  disabled={currentIndex >= activeQueue.length - 1 || isRecording}
+                  className="text-gray-400 hover:text-white">
+                  <SkipForward className="w-5 h-5" />
+                </Button>
+              </div>
+            )}
+
+            {currentItem.isRecorded && currentItem.category !== 'promo' && !previewBlob && (
               <div className="mt-4 text-center">
                 <Button variant="ghost" size="sm"
                   onClick={() => playRecording(currentItem.dancerName, currentItem.type)}
@@ -925,8 +1038,15 @@ export default function VoiceStudio() {
             <RefreshCw className="w-10 h-10 text-[#00d4ff] animate-spin mx-auto mb-3" />
             <p className="text-white font-medium">Processing recording...</p>
             <p className="text-xs text-gray-500 mt-1">
-              {currentItem?.category === 'promo' ? 'Mixing voice + music bed + SFX...' : 'Applying compression, EQ, normalization'}
+              {currentItem?.category === 'promo' ? 'Mixing voice + music bed + SFX...' : 'Applying compression, EQ, normalization — preview coming up'}
             </p>
+          </div>
+        )}
+
+        {isSaving && (
+          <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-8 mb-6 text-center">
+            <Save className="w-10 h-10 text-green-400 animate-pulse mx-auto mb-3" />
+            <p className="text-white font-medium">Saving to voice library...</p>
           </div>
         )}
 
