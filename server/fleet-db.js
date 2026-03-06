@@ -107,11 +107,29 @@ db.exec(`
     last_seen INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS promo_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_name TEXT NOT NULL,
+    date TEXT,
+    time TEXT,
+    venue TEXT,
+    details TEXT DEFAULT '',
+    vibe TEXT DEFAULT 'Hype',
+    length TEXT DEFAULT '30s',
+    music_bed TEXT DEFAULT '',
+    intro_sfx TEXT DEFAULT '',
+    outro_sfx TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    recorded_at INTEGER
+  );
+
   CREATE INDEX IF NOT EXISTS idx_heartbeats_device ON fleet_heartbeats(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_error_logs_device ON fleet_error_logs(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_sync_log_device ON fleet_sync_log(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_voiceovers_name ON fleet_voiceovers(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_voice_recordings_name ON voice_recordings(dancer_name);
+  CREATE INDEX IF NOT EXISTS idx_promo_requests_status ON promo_requests(status);
 `);
 
 function generateApiKey() {
@@ -416,4 +434,46 @@ export function upsertDancerRoster(dancerName, deviceId) {
 
 export function listDancerRoster() {
   return db.prepare('SELECT * FROM fleet_dancer_roster ORDER BY dancer_name ASC').all();
+}
+
+export function createPromoRequest(data) {
+  const now = Date.now();
+  const result = db.prepare(`
+    INSERT INTO promo_requests (event_name, date, time, venue, details, vibe, length, music_bed, intro_sfx, outro_sfx, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+  `).run(
+    data.event_name,
+    data.date || null,
+    data.time || null,
+    data.venue || null,
+    data.details || '',
+    data.vibe || 'Hype',
+    data.length || '30s',
+    data.music_bed || '',
+    data.intro_sfx || '',
+    data.outro_sfx || '',
+    now
+  );
+  return { id: result.lastInsertRowid, created_at: now };
+}
+
+export function listPromoRequests(status = null) {
+  if (status) {
+    return db.prepare('SELECT * FROM promo_requests WHERE status = ? ORDER BY created_at DESC').all(status);
+  }
+  return db.prepare('SELECT * FROM promo_requests ORDER BY created_at DESC').all();
+}
+
+export function getPromoRequest(id) {
+  return db.prepare('SELECT * FROM promo_requests WHERE id = ?').get(id);
+}
+
+export function deletePromoRequest(id) {
+  db.prepare('DELETE FROM promo_requests WHERE id = ?').run(id);
+}
+
+export function completePromoRequest(id) {
+  const now = Date.now();
+  db.prepare("UPDATE promo_requests SET status = 'recorded', recorded_at = ? WHERE id = ?").run(now, id);
+  return getPromoRequest(id);
 }

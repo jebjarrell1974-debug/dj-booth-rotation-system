@@ -44,39 +44,41 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Bumped announcement cache key from V8 to V9 to force regeneration with new voice model
 - All voiceovers regenerate fresh on next play
 
-#### Feature: Voice Recording Studio (Fleet Dashboard)
-- New page `/VoiceStudio` — lets DJ record announcements using USB mic directly in browser
-- Flashcard-style recording UI: shows name + type (intro/round2/outro), tap record, speak, tap stop
-- **Audio processing pipeline** (`src/utils/voiceProcessor.js`):
-  - High-pass filter 80Hz (removes rumble)
-  - DynamicsCompressor (threshold -24dB, ratio 12:1, attack 3ms, release 250ms)
-  - Presence EQ +4dB at 5kHz, air +2dB at 8kHz, low-mid cut -2dB at 300Hz
-  - Silence trimming (RMS-based), peak normalization to -1dB
-  - MP3 encoding via @breezystack/lamejs (192kbps)
-- **Both raw AND processed recordings stored** — raw recordings preserved for ElevenLabs voice clone training
-- Export raw recordings button downloads all raw files for voice clone improvement
-- **Database tables**: `voice_recordings` (processed_audio + raw_audio BLOBs), `fleet_dancer_roster` (unique names from fleet)
-- **API endpoints** in `server/fleet-routes.js`:
-  - POST `/voice-recordings/upload` — saves both processed + raw audio
-  - GET `/voice-recordings/audio/:name/:type` — serves processed audio (no auth, for playback)
-  - GET `/voice-recordings/raw/:name/:type` — serves raw audio (admin auth, for export)
-  - GET `/voice-recordings/pending` — all names with recording status
-  - GET `/voice-recordings/export-raw` — metadata for bulk raw download
-  - DELETE `/voice-recordings/:id` — remove a recording
-- **Fleet Dashboard badge**: shows pending recording count on Voice Studio card
-- **AnnouncementSystem integration**: checks for custom recording before AI TTS; custom recordings are energy-level-agnostic
-- Custom recordings cached in IndexedDB with `custom-recording-` prefix
-- Heartbeat extended: devices report `dancer_names` array, server maintains fleet-wide roster
-- Mic selection via `enumerateDevices()`, echoCancellation/noiseSuppression/autoGainControl all disabled for raw quality
-- 3 recordings per name (intro, round2, outro); transitions stay AI-generated
+#### Feature: Voice Recording Studio — Full Overhaul
+- Voice Studio is now the central recording hub with 3 tabs: **Entertainers**, **Transitions**, **Promos**
+- **Entertainers tab**: Same as before — names from fleet roster, record intro/round2/outro for each
+- **Transitions tab**: Generic recordings (between dancers + between songs in same set)
+  - `transition_1` through `transition_10` (between entertainers)
+  - `mid_set_1` through `mid_set_8` (between songs in same set)
+  - Stored with `dancer_name = '__generic__'` in voice_recordings table
+  - AnnouncementSystem rotates through available generic transitions before falling back to AI
+- **Promos tab**: Full promo request + recording workflow
+  - Request form with: Event Name, Date, Time, Venue, Details, Vibe (Hype/Party/Classy/Chill), Length (15s/30s/60s), Music Bed, Intro SFX, Outro SFX
+  - Promo requests stored in `promo_requests` DB table
+  - After recording voice, system auto-mixes with selected music bed + SFX using `audioMixer.js`
+  - Finished promo saved to voiceovers table (type='promo') so DJBooth can play it in commercial slots
+- **Script generator**: Each recording card shows a suggested script; "New Script" button uses OpenAI to generate varied suggestions
+- **AI Promo Creator REMOVED** from DJ Booth — ManualAnnouncementPlayer now only has Upload + Library
+- **promoGenerator.js DELETED** — no more AI script generation for promos
+- Audio processing pipeline unchanged (HPF, compression, EQ, trim, normalize, MP3)
+- ElevenLabs remains as fallback for entertainer names not yet recorded
+
+#### API Changes
+- POST `/promo-requests` — create promo request
+- GET `/promo-requests` — list promo requests (optional `?status=` filter)
+- DELETE `/promo-requests/:id` — remove request
+- PUT `/promo-requests/:id/complete` — mark recorded
+- POST `/promo-requests/:id/save-promo` — save final mixed MP3 to voiceovers table
 
 #### Key Files
-- `src/pages/VoiceStudio.jsx` — Recording studio page
+- `src/pages/VoiceStudio.jsx` — Full recording studio (entertainers + transitions + promos)
 - `src/utils/voiceProcessor.js` — Audio processing pipeline
-- `src/api/fleetApi.js` — Voice recording API client methods
-- `server/fleet-db.js` — voice_recordings + fleet_dancer_roster tables
-- `server/fleet-routes.js` — Voice recording API endpoints
-- `src/components/dj/AnnouncementSystem.jsx` — Custom recording fallback check
+- `src/utils/audioMixer.js` — Music bed + SFX mixing engine (used for promos)
+- `src/api/fleetApi.js` — All recording + promo request API client methods
+- `server/fleet-db.js` — voice_recordings, fleet_dancer_roster, promo_requests tables
+- `server/fleet-routes.js` — All voice recording + promo API endpoints
+- `src/components/dj/AnnouncementSystem.jsx` — Custom recording + generic transition fallback
+- `src/components/dj/ManualAnnouncementPlayer.jsx` — Simplified to upload + library only
 
 ### Mar 6, 2026 — Session 27 (Flexible Drag-and-Drop Rotation Items)
 

@@ -12,9 +12,10 @@ import {
   listUpdates, deleteUpdate, clearErrorLogs,
   saveRecording, getRecording, listRecordings, deleteRecording,
   getRecordingAudio, getRecordingRawAudio, getRecordingStats,
-  upsertDancerRoster, listDancerRoster
+  upsertDancerRoster, listDancerRoster,
+  createPromoRequest, listPromoRequests, getPromoRequest, deletePromoRequest, completePromoRequest
 } from './fleet-db.js';
-import { getSession } from './db.js';
+import { getSession, saveVoiceover } from './db.js';
 import { getFleetStatus } from './fleet-monitor.js';
 
 const router = express.Router();
@@ -497,6 +498,68 @@ router.get('/voice-recordings/pending', authenticateFleetAdmin, (req, res) => {
     res.json(pending);
   } catch (err) {
     res.status(500).json({ error: 'Failed to get pending recordings' });
+  }
+});
+
+router.post('/promo-requests', authenticateFleetAdmin, (req, res) => {
+  const { event_name } = req.body;
+  if (!event_name) return res.status(400).json({ error: 'event_name is required' });
+
+  try {
+    const result = createPromoRequest(req.body);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create promo request: ' + err.message });
+  }
+});
+
+router.get('/promo-requests', authenticateFleetAdmin, (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const requests = listPromoRequests(status);
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list promo requests' });
+  }
+});
+
+router.delete('/promo-requests/:id', authenticateFleetAdmin, (req, res) => {
+  try {
+    const existing = getPromoRequest(parseInt(req.params.id));
+    if (!existing) return res.status(404).json({ error: 'Promo request not found' });
+    deletePromoRequest(parseInt(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete promo request' });
+  }
+});
+
+router.put('/promo-requests/:id/complete', authenticateFleetAdmin, (req, res) => {
+  try {
+    const existing = getPromoRequest(parseInt(req.params.id));
+    if (!existing) return res.status(404).json({ error: 'Promo request not found' });
+    const updated = completePromoRequest(parseInt(req.params.id));
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to complete promo request: ' + err.message });
+  }
+});
+
+router.post('/promo-requests/:id/save-promo', authenticateFleetAdmin, express.json({ limit: '50mb' }), (req, res) => {
+  try {
+    const promo = getPromoRequest(parseInt(req.params.id));
+    if (!promo) return res.status(404).json({ error: 'Promo request not found' });
+
+    const { audio_base64 } = req.body;
+    if (!audio_base64) return res.status(400).json({ error: 'audio_base64 required' });
+
+    const cacheKey = `promo_${Date.now()}_${promo.event_name.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30)}`;
+    const audioBuffer = Buffer.from(audio_base64, 'base64');
+    const result = saveVoiceover(cacheKey, audioBuffer, promo.event_name, 'promo', promo.event_name, 3, promo.venue || null);
+    completePromoRequest(parseInt(req.params.id));
+    res.json({ ok: true, cacheKey: result.cacheKey });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save promo: ' + err.message });
   }
 });
 

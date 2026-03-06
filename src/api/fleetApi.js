@@ -180,6 +180,48 @@ export const fleetAdmin = {
     const res = await fleetFetch('/voice-recordings/export-raw');
     return res.json();
   },
+
+  async createPromoRequest(data) {
+    const res = await fleetFetch('/promo-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async listPromoRequests(status = null) {
+    const params = status ? `?status=${encodeURIComponent(status)}` : '';
+    const res = await fleetFetch(`/promo-requests${params}`);
+    return res.json();
+  },
+
+  async deletePromoRequest(id) {
+    const res = await fleetFetch(`/promo-requests/${id}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  async completePromoRequest(id) {
+    const res = await fleetFetch(`/promo-requests/${id}/complete`, { method: 'PUT' });
+    return res.json();
+  },
+
+  async savePromo(promoId, audioBlob) {
+    const toBase64 = (buf) => {
+      const bytes = new Uint8Array(buf);
+      const chunks = [];
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        chunks.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
+      }
+      return btoa(chunks.join(''));
+    };
+    const buf = await audioBlob.arrayBuffer();
+    const res = await fleetFetch(`/promo-requests/${promoId}/save-promo`, {
+      method: 'POST',
+      body: JSON.stringify({ audio_base64: toBase64(buf) }),
+    });
+    return res.json();
+  },
 };
 
 export class FleetSyncClient {
