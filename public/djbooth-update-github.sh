@@ -41,8 +41,9 @@ echo "Downloaded: ${FILESIZE} bytes"
 
 echo "[2/7] Backing up current installation..."
 if [ -f "$APP_DIR/package.json" ]; then
-  cp -r "$APP_DIR" "$BACKUP_DIR"
-  echo "Backup: $BACKUP_DIR"
+  mkdir -p "$BACKUP_DIR"
+  rsync -a --exclude='music' --exclude='voiceovers' --exclude='node_modules' "$APP_DIR/" "$BACKUP_DIR/"
+  echo "Backup: $BACKUP_DIR (skipped music/voiceovers/node_modules)"
 else
   echo "No existing installation found, skipping backup"
 fi
