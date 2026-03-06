@@ -104,6 +104,14 @@ V8 (CURRENT):   L1=stability 0.50/style 0.25/speed 0.92, L2=0.45/0.32/0.95, L3=0
 ```
 Change cache key in AnnouncementSystem.jsx back to V7 and restore old VOICE_SETTINGS in energyLevels.js.
 
+#### 5. Promo Creator rollback notes (if changes cause issues)
+Changes made to promo mixer in this session:
+- **LUFS target**: Changed from -14 to -10 (matches club music loudness). Rollback: set `targetLUFS = -14` in audioMixer.js
+- **True peak limiting**: Added -1.0 dB ceiling via `applyTruePeakLimiting()`. Rollback: remove the function call in mixPromo
+- **MP3 output**: Added 320kbps MP3 encoding via lamejs. Rollback: remove `encodeMp3` call, change outputFormat default to 'wav', revert download extension to .wav
+- **SFX**: Added intro/outro sound effects (10 bundled WAV files in public/sfx/). Rollback: set introSfx/outroSfx defaults to 'none', remove SFX UI from ManualAnnouncementPlayer.jsx
+- **Promo voice settings**: Updated to V8 (style 0.40, speed 0.97). Old values: style 0.30, speed 0.92
+
 #### 3. Voiceover duration sanity check (FUTURE)
 ElevenLabs occasionally produces glitched audio (backwards/repeated speech). Add a duration check after generation — if intro >20s, outro >25s, round2 >12s, or transition >25s, discard and regenerate (max 2 retries, then fall back to generic).
 

@@ -7,7 +7,7 @@ import { Upload, Play, Trash2, Mic, Radio, Sparkles, Music, ChevronDown, Downloa
 import { toast } from 'sonner';
 import { getApiConfig } from '@/components/apiConfig';
 import { generatePromoScript, VIBE_STYLES } from '@/utils/promoGenerator';
-import { mixPromo } from '@/utils/audioMixer';
+import { mixPromo, SFX_OPTIONS } from '@/utils/audioMixer';
 import { trackElevenLabsCall } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
@@ -47,6 +47,8 @@ function PromoCreator({ onPlay, onSaved }) {
   const [selectedBed, setSelectedBed] = useState('random');
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewBlob, setPreviewBlob] = useState(null);
+  const [introSfx, setIntroSfx] = useState('none');
+  const [outroSfx, setOutroSfx] = useState('none');
 
   useEffect(() => {
     const config = getApiConfig();
@@ -95,8 +97,8 @@ function PromoCreator({ onPlay, onSaved }) {
         voice_settings: {
           stability: 0.40,
           similarity_boost: 0.75,
-          style: 0.30,
-          speed: 0.92,
+          style: 0.40,
+          speed: 0.97,
           use_speaker_boost: true,
         }
       }),
@@ -164,7 +166,11 @@ function PromoCreator({ onPlay, onSaved }) {
       const musicBlob = await fetchMusicBed();
 
       setProgress({ step: 4, text: 'Mixing promo...' });
-      const mixedBlob = await mixPromo(voiceBlob, musicBlob);
+      const mixedBlob = await mixPromo(voiceBlob, musicBlob, {
+        introSfx,
+        outroSfx,
+        outputFormat: 'mp3',
+      });
 
       const url = URL.createObjectURL(mixedBlob);
       setPreviewUrl(url);
@@ -197,7 +203,11 @@ function PromoCreator({ onPlay, onSaved }) {
       const musicBlob = await fetchMusicBed();
 
       setProgress({ step: 4, text: 'Mixing promo...' });
-      const mixedBlob = await mixPromo(voiceBlob, musicBlob);
+      const mixedBlob = await mixPromo(voiceBlob, musicBlob, {
+        introSfx,
+        outroSfx,
+        outputFormat: 'mp3',
+      });
 
       const url = URL.createObjectURL(mixedBlob);
       setPreviewUrl(url);
@@ -261,7 +271,7 @@ function PromoCreator({ onPlay, onSaved }) {
     const url = URL.createObjectURL(previewBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${eventName || 'promo'}-${venue || 'venue'}.wav`;
+    a.download = `${eventName || 'promo'}-${venue || 'venue'}.mp3`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -389,6 +399,37 @@ function PromoCreator({ onPlay, onSaved }) {
             No tracks in "Promo Beds" folder. Add instrumental music to a folder called "Promo Beds" in your music library.
           </p>
         )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Intro SFX</label>
+          <select
+            value={introSfx}
+            onChange={(e) => setIntroSfx(e.target.value)}
+            disabled={generating}
+            className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
+            style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '30px' }}
+          >
+            {SFX_OPTIONS.map(sfx => (
+              <option key={sfx.id} value={sfx.id}>{sfx.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Outro SFX</label>
+          <select
+            value={outroSfx}
+            onChange={(e) => setOutroSfx(e.target.value)}
+            disabled={generating}
+            className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
+            style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '30px' }}
+          >
+            {SFX_OPTIONS.map(sfx => (
+              <option key={sfx.id} value={sfx.id}>{sfx.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {progress && (
