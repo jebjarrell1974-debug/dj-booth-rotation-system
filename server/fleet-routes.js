@@ -116,6 +116,25 @@ router.get('/heartbeats/:deviceId', authenticateFleetAdmin, (req, res) => {
   res.json(heartbeats);
 });
 
+router.post('/seed-roster', authenticateFleetAdmin, (req, res) => {
+  try {
+    const { names } = req.body;
+    if (!names || !Array.isArray(names)) return res.status(400).json({ error: 'names array required' });
+
+    let added = 0;
+    for (const name of names) {
+      if (name && typeof name === 'string') {
+        upsertDancerRoster(name.trim(), 'manual');
+        added++;
+      }
+    }
+    const roster = listDancerRoster();
+    res.json({ ok: true, added, total: roster.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to seed roster' });
+  }
+});
+
 router.post('/logs', authenticateDeviceMiddleware, (req, res) => {
   const { logs } = req.body;
   if (!logs || !Array.isArray(logs)) return res.status(400).json({ error: 'Logs array required' });
