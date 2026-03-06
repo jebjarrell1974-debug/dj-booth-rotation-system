@@ -246,6 +246,23 @@ export default function VoiceStudio() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+      }
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      if (audioElRef.current) {
+        audioElRef.current.pause();
+        audioElRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     async function fetchBeds() {
       try {
         const res = await fetch(`/api/music/tracks?genre=${encodeURIComponent('Promo Beds')}&limit=200`, {
@@ -731,15 +748,15 @@ export default function VoiceStudio() {
         </div>
 
         <div className="flex gap-2 mb-4">
-          <button onClick={() => { setActiveTab('entertainers'); setCurrentIndex(0); }} className={tabClasses('entertainers')}>
+          <button onClick={() => { setActiveTab('entertainers'); setCurrentIndex(0); discardPreview(); }} className={tabClasses('entertainers')}>
             Entertainers
             {totalPending > 0 && <Badge className="ml-1.5 bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px] px-1.5">{totalPending}</Badge>}
           </button>
-          <button onClick={() => { setActiveTab('transitions'); setCurrentIndex(0); }} className={tabClasses('transitions')}>
+          <button onClick={() => { setActiveTab('transitions'); setCurrentIndex(0); discardPreview(); }} className={tabClasses('transitions')}>
             Transitions
             <Badge className="ml-1.5 bg-purple-500/20 text-purple-400 border-purple-500/30 text-[10px] px-1.5">{transitionRecorded}</Badge>
           </button>
-          <button onClick={() => { setActiveTab('promos'); setCurrentIndex(0); }} className={tabClasses('promos')}>
+          <button onClick={() => { setActiveTab('promos'); setCurrentIndex(0); discardPreview(); }} className={tabClasses('promos')}>
             Promos
             {promoPending > 0 && <Badge className="ml-1.5 bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px] px-1.5">{promoPending}</Badge>}
           </button>

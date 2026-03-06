@@ -72,6 +72,45 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Music path on Pony Nation Pi: `/home/neonaidj001/djbooth/music/` (set via Options page)
 - Replit should NOT have a music path set — no local music folder needed here
 
+### Mar 6, 2026 — Session 29 (Voice Studio Preview Workflow + Homebase Setup + Mic Fix)
+
+#### Feature: Record-Preview-Save Workflow
+- **Previous**: Recording auto-saved immediately after stopping — no way to hear it first
+- **New workflow**: Record → Process → Preview → Approve/Re-record → Save
+  1. Red Record button: press to start, press to stop (same as before)
+  2. Audio processing runs automatically (HPF, compression, EQ, trim, normalize, MP3)
+  3. Preview panel appears with 3 buttons:
+     - **Re-record** (red circle with RotateCcw icon): discards take, ready for new recording
+     - **Play Preview** (green circle with Play icon): plays the PROCESSED audio so you hear exactly what it will sound like in the club
+     - **Save to Library** (blue circle with Save icon): uploads to voice library and advances to next item
+  4. For promos: preview includes the mixed version with music bed + SFX
+- Uses `ideal` instead of `exact` for device constraints (more reliable on Pi)
+- Preview audio stored as blob URL, cleaned up on discard/save
+
+#### Fix: Microphone Detection on Pi (PipeWire/Chromium Bug)
+- `navigator.mediaDevices.enumerateDevices()` hangs on Pi 5 with PipeWire
+- Workaround: Call `getUserMedia` first, extract device info from the track's `getSettings()`
+- Added 3-second timeout on `enumerateDevices` — falls back to getUserMedia device info
+- Rode NT-USB+ confirmed working on Pi 5 via `arecord -l` and `getUserMedia`
+- Must access Voice Studio at `http://localhost:3001/VoiceStudio` (not IP — secure context required for mediaDevices)
+
+#### Homebase Pi Setup Progress
+- Full djbooth app running with IS_HOMEBASE=true
+- Fleet dashboard + Voice Studio accessible
+- Pony Nation heartbeat delivering 59 entertainer names to fleet_dancer_roster
+- 177 pending recordings showing in Voice Studio
+- DB_PATH needs to be set to `/home/jebjarrell/data/djbooth.db` (pending user action)
+- API keys (ElevenLabs, OpenAI) need to be configured via browser Configuration page
+- Rode NT-USB+ mic detected by system; browser mic needs `pipewire-pulse` running (confirmed active)
+
+#### FUTURE: Energy Level Recordings (5 levels per recording type)
+- Currently each entertainer has 4 recording slots: intro, round2, round3, outro
+- Plan: expand to 5 energy levels per slot (L1-L5), matching the 5 voice energy levels already in the AI system
+- Start with "primetime energy" (current single level), then add the other 4
+- This is a database schema + UI change — NOT yet implemented
+- Recording types would become: intro_L1, intro_L2, intro_L3, intro_L4, intro_L5, round2_L1, etc.
+- Total per entertainer: 4 types x 5 levels = 20 recordings each
+
 ### Mar 6, 2026 — Session 28 (Voice Recording Studio + V9 Cache Key)
 
 #### Voice Cache V9
