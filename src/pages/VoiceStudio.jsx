@@ -198,13 +198,25 @@ export default function VoiceStudio() {
   useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then(devs => {
-      const audioInputs = devs.filter(d => d.kind === 'audioinput');
-      setDevices(audioInputs);
-      if (audioInputs.length > 0 && !selectedDevice) {
-        setSelectedDevice(audioInputs[0].deviceId);
+    async function detectMics() {
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+      } catch (err) {
+        console.warn('Mic permission request failed:', err.message);
       }
-    }).catch(() => {});
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devs.filter(d => d.kind === 'audioinput' && d.deviceId);
+        setDevices(audioInputs);
+        if (audioInputs.length > 0 && !selectedDevice) {
+          setSelectedDevice(audioInputs[0].deviceId);
+        }
+      } catch (err) {
+        console.warn('Device enumeration failed:', err.message);
+      }
+    }
+    detectMics();
   }, []);
 
   useEffect(() => {
