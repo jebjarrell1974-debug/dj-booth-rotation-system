@@ -728,12 +728,7 @@ app.post('/api/booth/commands/ack', authenticate, requireDJ, (req, res) => {
   res.json({ ok: true });
 });
 
-const defaultMusicPath = join(__dirname, '..', 'music');
 let MUSIC_PATH = process.env.MUSIC_PATH || getSetting('music_path') || '';
-if (!MUSIC_PATH && existsSync(defaultMusicPath)) {
-  MUSIC_PATH = defaultMusicPath;
-  console.log(`🎵 Auto-detected music folder: ${defaultMusicPath}`);
-}
 
 app.get('/api/settings/music-path', authenticate, requireDJ, (req, res) => {
   res.json({
@@ -1275,10 +1270,29 @@ async function initR2Sync() {
     updateBootStep('voiceoverUpload', 'error', err.message);
     console.error('☁️ R2 voiceover sync error:', err.message);
   }
-  updateBootStep('musicSync', 'skipped', 'Use manual sync');
-  updateBootStep('musicUpload', 'skipped', 'Use manual sync');
-  console.log('☁️ Music R2 sync skipped on boot — use manual Sync button in Fleet Dashboard');
-  {
+  try {
+    if (MUSIC_PATH) {
+      updateBootStep('musicSync', 'running', 'Downloading...');
+      const musicResult = await syncMusicFromR2(MUSIC_PATH);
+      updateBootStep('musicSync', 'done', `${musicResult.downloaded} new, ${musicResult.skipped} cached`);
+      console.log(`☁️ Music sync: ${musicResult.downloaded} new, ${musicResult.skipped} cached`);
+      if (musicResult.downloaded > 0) {
+        scanMusicFolder(MUSIC_PATH, true);
+      }
+
+      updateBootStep('musicUpload', 'running', 'Uploading...');
+      const musicUpResult = await syncMusicToR2(MUSIC_PATH);
+      updateBootStep('musicUpload', 'done', `${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+      console.log(`☁️ Music upload: ${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+    } else {
+      updateBootStep('musicSync', 'skipped');
+      updateBootStep('musicUpload', 'skipped');
+    }
+  } catch (err) {
+    updateBootStep('musicSync', 'error', err.message);
+    updateBootStep('musicUpload', 'error', err.message);
+    console.error('☁️ R2 music sync error:', err.message);
+  } finally {
     bootStatus.ready = true;
   }
 }
