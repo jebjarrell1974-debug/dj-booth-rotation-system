@@ -199,28 +199,39 @@ export default function VoiceStudio() {
 
   useEffect(() => {
     async function detectMics() {
-      console.log('🎤 Detecting microphones...');
-      console.log('🎤 mediaDevices available:', !!navigator.mediaDevices);
-      console.log('🎤 getUserMedia available:', !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
-      console.log('🎤 Secure context:', window.isSecureContext);
+      let fallbackDevice = null;
       try {
         const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('🎤 getUserMedia succeeded, tracks:', tempStream.getTracks().length);
+        const track = tempStream.getAudioTracks()[0];
+        if (track) {
+          const settings = track.getSettings();
+          fallbackDevice = {
+            deviceId: settings.deviceId || 'default',
+            kind: 'audioinput',
+            label: track.label || 'Microphone',
+            groupId: settings.groupId || ''
+          };
+        }
         tempStream.getTracks().forEach(t => t.stop());
       } catch (err) {
-        console.warn('🎤 Mic permission request failed:', err.name, err.message);
+        console.warn('Mic access failed:', err.message);
       }
+
+      let audioInputs = [];
       try {
-        const devs = await navigator.mediaDevices.enumerateDevices();
-        console.log('🎤 All devices found:', devs.length, devs.map(d => `${d.kind}:${d.label||'no-label'}:${d.deviceId?.slice(0,8)}`));
-        const audioInputs = devs.filter(d => d.kind === 'audioinput');
-        console.log('🎤 Audio inputs:', audioInputs.length, audioInputs.map(d => d.label || d.deviceId));
-        setDevices(audioInputs);
-        if (audioInputs.length > 0 && !selectedDevice) {
-          setSelectedDevice(audioInputs[0].deviceId);
-        }
-      } catch (err) {
-        console.warn('🎤 Device enumeration failed:', err.name, err.message);
+        const enumPromise = navigator.mediaDevices.enumerateDevices();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+        const devs = await Promise.race([enumPromise, timeoutPromise]);
+        audioInputs = devs.filter(d => d.kind === 'audioinput');
+      } catch {}
+
+      if (audioInputs.length === 0 && fallbackDevice) {
+        audioInputs = [fallbackDevice];
+      }
+
+      setDevices(audioInputs);
+      if (audioInputs.length > 0 && !selectedDevice) {
+        setSelectedDevice(audioInputs[0].deviceId);
       }
     }
     detectMics();
@@ -332,16 +343,17 @@ export default function VoiceStudio() {
     recordingItemRef.current = { ...currentItem };
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: { exact: selectedDevice },
-          sampleRate: 48000,
-          channelCount: 1,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        }
-      });
+      const audioConstraints = {
+        sampleRate: 48000,
+        channelCount: 1,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      };
+      if (selectedDevice && selectedDevice !== 'default') {
+        audioConstraints.deviceId = { ideal: selectedDevice };
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       streamRef.current = stream;
 
       const actx = new AudioContext({ sampleRate: 48000 });
