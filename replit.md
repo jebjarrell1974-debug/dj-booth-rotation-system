@@ -66,11 +66,19 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Code updates (GitHub)** are currently manual only — run `~/djbooth-update.sh` via SSH
 - Code updates do NOT run automatically on reboot (user may want this added later)
 
-#### Key Reminders
-- **ALWAYS ask before making changes** — do not rush to implement
+#### CRITICAL RULES — NEVER BREAK THESE
+- **ALWAYS ask before making ANY changes** — present what you plan to do, wait for approval, then implement
+- **NEVER tell the user to delete files on a Pi** — if disk space is needed, ask what they want to remove
+- **NEVER push files that don't belong on Pis** — no attached_assets, no .local/state, no sample music, no database files
+- **NEVER modify Pi service files, environment variables, or database paths** without explicit user approval
+- **GitHub push must ALWAYS exclude**: attached_assets, .local, music, voiceovers, .db/.db-wal/.db-shm, node_modules, dist, .cache, .config, .upm
+- **API keys are in browser localStorage on each Pi** — code updates should NEVER affect them, but disk corruption can wipe them
+- **Music path on Pony Nation Pi**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
+- **Music is synced to/from R2** — even if files are lost locally, R2 has the backup and will re-download on service restart
 - R2 boot sync (voiceovers + music) runs on every boot — this is intentional for Pi morning reboots
-- Music path on Pony Nation Pi: `/home/neonaidj001/djbooth/music/` (set via Options page)
 - Replit should NOT have a music path set — no local music folder needed here
+- **Before any GitHub push**: verify the file list does NOT contain screenshots, music files, database files, or Replit internal state files
+- **Test impact on Pi before pushing**: consider what the update script will do with every change
 
 ### Mar 6, 2026 — Session 30 (Real System Health Metrics + Direct Fleet Access)
 

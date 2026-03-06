@@ -147,39 +147,25 @@ export async function processRecording(audioBlob) {
 
   const hpf = offlineCtx.createBiquadFilter();
   hpf.type = 'highpass';
-  hpf.frequency.value = 80;
+  hpf.frequency.value = 60;
   hpf.Q.value = 0.707;
 
   const compressor = offlineCtx.createDynamicsCompressor();
-  compressor.threshold.value = -24;
-  compressor.ratio.value = 12;
-  compressor.attack.value = 0.003;
-  compressor.release.value = 0.25;
+  compressor.threshold.value = -18;
+  compressor.ratio.value = 3;
+  compressor.attack.value = 0.005;
+  compressor.release.value = 0.15;
 
   const presenceEq = offlineCtx.createBiquadFilter();
   presenceEq.type = 'peaking';
   presenceEq.frequency.value = 5000;
-  presenceEq.gain.value = 4;
+  presenceEq.gain.value = 1.5;
   presenceEq.Q.value = 1.0;
-
-  const airEq = offlineCtx.createBiquadFilter();
-  airEq.type = 'peaking';
-  airEq.frequency.value = 8000;
-  airEq.gain.value = 2;
-  airEq.Q.value = 1.0;
-
-  const lowMidCut = offlineCtx.createBiquadFilter();
-  lowMidCut.type = 'peaking';
-  lowMidCut.frequency.value = 300;
-  lowMidCut.gain.value = -2;
-  lowMidCut.Q.value = 1.0;
 
   source.connect(hpf);
   hpf.connect(compressor);
   compressor.connect(presenceEq);
-  presenceEq.connect(airEq);
-  airEq.connect(lowMidCut);
-  lowMidCut.connect(offlineCtx.destination);
+  presenceEq.connect(offlineCtx.destination);
 
   source.start(0);
 
