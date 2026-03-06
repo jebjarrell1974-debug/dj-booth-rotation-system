@@ -512,6 +512,14 @@ app.get('/api/usage/device-id', (req, res) => {
   res.json({ deviceId: SERVER_DEVICE_ID });
 });
 
+app.get('/api/config/capabilities', (req, res) => {
+  res.json({
+    isHomebase: process.env.IS_HOMEBASE === 'true',
+    hasVoiceStudio: process.env.IS_HOMEBASE === 'true',
+    deviceId: SERVER_DEVICE_ID,
+  });
+});
+
 app.use('/api/fleet', fleetRoutes);
 setupFleetMonitorRoutes(app);
 

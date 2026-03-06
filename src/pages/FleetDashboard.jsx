@@ -645,6 +645,14 @@ export default function FleetDashboard() {
   const [activeTab, setActiveTab] = useState('devices');
   const [showRegister, setShowRegister] = useState(false);
   const [viewingDevice, setViewingDevice] = useState(null);
+  const [isHomebase, setIsHomebase] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/config/capabilities')
+      .then(r => r.json())
+      .then(data => setIsHomebase(data.isHomebase || false))
+      .catch(() => {});
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -766,8 +774,8 @@ export default function FleetDashboard() {
               <p className="text-xs text-gray-500">API Costs (30d)</p>
             </div>
             <div
-              onClick={() => navigate('/VoiceStudio')}
-              className={`bg-[#0d0d1f] border rounded-lg p-3 text-center cursor-pointer hover:border-amber-400/50 transition-colors ${
+              onClick={() => isHomebase ? navigate('/VoiceStudio') : null}
+              className={`bg-[#0d0d1f] border rounded-lg p-3 text-center ${isHomebase ? 'cursor-pointer hover:border-amber-400/50' : ''} transition-colors ${
                 (overview.voiceoversNeeded || 0) > 0
                   ? 'border-amber-500/40 bg-gradient-to-b from-[#0d0d1f] to-[#1a1508]'
                   : 'border-[#1e293b]'

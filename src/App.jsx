@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -83,6 +83,15 @@ function PersistentDJBooth() {
 }
 
 function AppRoutes() {
+  const [isHomebase, setIsHomebase] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/config/capabilities')
+      .then(r => r.json())
+      .then(data => setIsHomebase(data.isHomebase || false))
+      .catch(() => setIsHomebase(false));
+  }, []);
+
   return (
     <>
       <PersistentDJBooth />
@@ -110,11 +119,13 @@ function AppRoutes() {
             <FleetDashboard />
           </ProtectedRoute>
         } />
-        <Route path="/VoiceStudio" element={
-          <ProtectedRoute allowedRole="dj">
-            <VoiceStudio />
-          </ProtectedRoute>
-        } />
+        {isHomebase && (
+          <Route path="/VoiceStudio" element={
+            <ProtectedRoute allowedRole="dj">
+              <VoiceStudio />
+            </ProtectedRoute>
+          } />
+        )}
         <Route path="/Help" element={
           <ProtectedRoute allowedRole="dj">
             <Help />
