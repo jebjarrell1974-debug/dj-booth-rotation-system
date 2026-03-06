@@ -72,7 +72,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Music path on Pony Nation Pi: `/home/neonaidj001/djbooth/music/` (set via Options page)
 - Replit should NOT have a music path set — no local music folder needed here
 
-### Mar 6, 2026 — Session 30 (Real System Health Metrics in Fleet Dashboard)
+### Mar 6, 2026 — Session 30 (Real System Health Metrics + Direct Fleet Access)
+
+#### Feature: Direct Fleet Dashboard Access at /fleet
+- **`/fleet`** route loads Fleet Dashboard directly — no login, no boot animation, no PIN
+- Auto-authenticates behind the scenes via `/api/fleet/auto-auth` endpoint
+- Boot screen skipped when URL starts with `/fleet` or `/FleetDashboard`
+- `fleetFetch` no longer redirects to `/` on 401 when on fleet pages
+- Both `/fleet` and `/FleetDashboard` routes work (lowercase is the primary URL)
+- Access from phone: `http://100.70.172.8:3001/fleet`
+
+### Archived — Session 30 (Real System Health Metrics in Fleet Dashboard)
 
 #### Feature: Real Hardware Health Metrics
 - **Previous**: Health data came from browser (CPU always 0%, memory = JS heap, disk = browser storage quota)
