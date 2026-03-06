@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Play, Trash2, Mic, Radio } from 'lucide-react';
+import { Upload, Play, Trash2, Mic, Radio, Send, CheckCircle, Clock, CalendarDays, MapPin, FileText, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
 const getAuthHeaders = () => {
@@ -25,10 +25,24 @@ const blobToBase64 = (blob) => {
   });
 };
 
+const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
+const LENGTH_OPTIONS = ['15s', '30s', '45s', '60s'];
+
 export default function ManualAnnouncementPlayer({ onPlay }) {
   const [uploading, setUploading] = useState(false);
   const [customName, setCustomName] = useState('');
   const queryClient = useQueryClient();
+
+  const [promoForm, setPromoForm] = useState({
+    event_name: '',
+    date: '',
+    time: '',
+    venue: '',
+    details: '',
+    vibe: 'Hype',
+    length: '30s'
+  });
+  const [submitting, setSubmitting] = useState(false);
 
   const { data: announcements = [] } = useQuery({
     queryKey: ['manual-announcements'],
@@ -40,6 +54,18 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
         return all.filter(a => a.type === 'manual' || a.type === 'promo');
       } catch { return []; }
     }
+  });
+
+  const { data: promoRequests = [] } = useQuery({
+    queryKey: ['club-promo-requests'],
+    queryFn: async () => {
+      try {
+        const res = await fetch('/api/promo-requests', { headers: getAuthHeaders() });
+        if (!res.ok) return [];
+        return await res.json();
+      } catch { return []; }
+    },
+    refetchInterval: 30000
   });
 
   const deleteMutation = useMutation({
@@ -115,9 +141,39 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
     }
   };
 
+  const handlePromoSubmit = async () => {
+    if (!promoForm.event_name.trim()) {
+      toast.error('Please enter an event or promo name');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/promo-requests', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(promoForm)
+      });
+      if (!res.ok) throw new Error('Submit failed');
+      toast.success('Promo request sent to Voice Studio!');
+      setPromoForm({ event_name: '', date: '', time: '', venue: '', details: '', vibe: 'Hype', length: '30s' });
+      queryClient.invalidateQueries({ queryKey: ['club-promo-requests'] });
+    } catch (err) {
+      console.error('Promo request error:', err);
+      toast.error('Failed to submit promo request');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const pendingRequests = promoRequests.filter(r => r.status === 'pending');
+  const completedRequests = promoRequests.filter(r => r.status === 'recorded');
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4 mb-4">
+    <div className="h-full flex flex-col gap-4">
+      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4">
         <div className="space-y-3">
           <Input
             placeholder="Custom name (optional)"
@@ -148,16 +204,16 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
         </div>
       </div>
 
-      <div className="flex-1 bg-[#151528] rounded-lg border border-[#1e293b] p-4 flex flex-col">
+      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4 flex flex-col" style={{ minHeight: '160px' }}>
         <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
           Promos & Announcements ({announcements.length})
         </h3>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1" style={{ maxHeight: '240px' }}>
           <div className="space-y-2">
             {announcements.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <Radio className="w-12 h-12 mx-auto mb-3 text-gray-700" />
+              <div className="text-center py-8 text-gray-500">
+                <Radio className="w-10 h-10 mx-auto mb-2 text-gray-700" />
                 <p className="text-sm">No promos or announcements yet</p>
                 <p className="text-xs text-gray-600 mt-1">Upload an audio file to get started</p>
               </div>
@@ -202,6 +258,140 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
             )}
           </div>
         </ScrollArea>
+      </div>
+
+      <div className="bg-[#151528] rounded-lg border border-[#7c3aed]/40 p-4">
+        <h3 className="text-sm font-semibold text-[#a78bfa] uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Send className="w-4 h-4" />
+          Request a Promo / Commercial
+        </h3>
+        <p className="text-xs text-gray-400 mb-4">
+          Submit a request and Voice Studio will produce the promo for you
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Event / Promo Name *</label>
+            <Input
+              placeholder="e.g. Friday Night VIP Party"
+              value={promoForm.event_name}
+              onChange={(e) => setPromoForm(f => ({ ...f, event_name: e.target.value }))}
+              className="bg-[#08081a] border-[#1e293b]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                <CalendarDays className="w-3 h-3" /> Date
+              </label>
+              <Input
+                type="date"
+                value={promoForm.date}
+                onChange={(e) => setPromoForm(f => ({ ...f, date: e.target.value }))}
+                className="bg-[#08081a] border-[#1e293b]"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> Time
+              </label>
+              <Input
+                type="time"
+                value={promoForm.time}
+                onChange={(e) => setPromoForm(f => ({ ...f, time: e.target.value }))}
+                className="bg-[#08081a] border-[#1e293b]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              <MapPin className="w-3 h-3" /> Venue
+            </label>
+            <Input
+              placeholder="e.g. Club Name, City"
+              value={promoForm.venue}
+              onChange={(e) => setPromoForm(f => ({ ...f, venue: e.target.value }))}
+              className="bg-[#08081a] border-[#1e293b]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              <FileText className="w-3 h-3" /> Details / What to Say
+            </label>
+            <textarea
+              placeholder="Describe what the promo should say — specials, drink prices, featured performers, etc."
+              value={promoForm.details}
+              onChange={(e) => setPromoForm(f => ({ ...f, details: e.target.value }))}
+              className="w-full bg-[#08081a] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder:text-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+              rows={3}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                <Zap className="w-3 h-3" /> Vibe
+              </label>
+              <select
+                value={promoForm.vibe}
+                onChange={(e) => setPromoForm(f => ({ ...f, vibe: e.target.value }))}
+                className="w-full bg-[#08081a] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+              >
+                {VIBE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> Length
+              </label>
+              <select
+                value={promoForm.length}
+                onChange={(e) => setPromoForm(f => ({ ...f, length: e.target.value }))}
+                className="w-full bg-[#08081a] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+              >
+                {LENGTH_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <Button
+            onClick={handlePromoSubmit}
+            disabled={submitting || !promoForm.event_name.trim()}
+            className="w-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            {submitting ? 'Sending...' : 'Send Request to Voice Studio'}
+          </Button>
+        </div>
+
+        {(pendingRequests.length > 0 || completedRequests.length > 0) && (
+          <div className="mt-4 pt-4 border-t border-[#1e293b]">
+            <h4 className="text-xs text-gray-400 uppercase tracking-wider mb-2">Your Requests</h4>
+            <div className="space-y-2">
+              {pendingRequests.map(r => (
+                <div key={r.id} className="flex items-center gap-2 bg-[#0d0d1f] rounded-lg p-2 border border-[#1e293b]">
+                  <Clock className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white truncate">{r.event_name}</p>
+                    <p className="text-[10px] text-yellow-400/70">Pending — waiting for Voice Studio</p>
+                  </div>
+                </div>
+              ))}
+              {completedRequests.map(r => (
+                <div key={r.id} className="flex items-center gap-2 bg-[#0d0d1f] rounded-lg p-2 border border-[#1e293b]">
+                  <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white truncate">{r.event_name}</p>
+                    <p className="text-[10px] text-green-400/70">Recorded — promo is ready</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import {
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage
 } from './db.js';
+import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats } from './r2sync.js';
@@ -426,6 +427,41 @@ app.delete('/api/voiceovers', authenticate, requireDJ, (req, res) => {
   const count = clearAllVoiceovers();
   console.log(`🗑️ Cleared all voiceovers: ${count} removed`);
   res.json({ ok: true, deleted: count });
+});
+
+app.post('/api/promo-requests', authenticate, (req, res) => {
+  try {
+    const { event_name, date, time, venue, details, vibe, length } = req.body;
+    if (!event_name || !event_name.trim()) {
+      return res.status(400).json({ error: 'Event name is required' });
+    }
+    const result = createPromoRequest({
+      event_name: event_name.trim(),
+      date: date || null,
+      time: time || null,
+      venue: venue || null,
+      details: details || '',
+      vibe: vibe || 'Hype',
+      length: length || '30s',
+      music_bed: '',
+      intro_sfx: '',
+      outro_sfx: ''
+    });
+    res.json({ ok: true, id: result.id });
+  } catch (err) {
+    console.error('Create promo request error:', err.message);
+    res.status(500).json({ error: 'Failed to create promo request' });
+  }
+});
+
+app.get('/api/promo-requests', authenticate, (req, res) => {
+  try {
+    const requests = listPromoRequests(req.query.status || null);
+    res.json(requests);
+  } catch (err) {
+    console.error('List promo requests error:', err.message);
+    res.status(500).json({ error: 'Failed to list promo requests' });
+  }
 });
 
 const SERVER_DEVICE_ID = process.env.DEVICE_ID || hostname() || 'local';
