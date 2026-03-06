@@ -654,6 +654,29 @@ export default function FleetDashboard() {
   const [showRegister, setShowRegister] = useState(false);
   const [viewingDevice, setViewingDevice] = useState(null);
   const [isHomebase, setIsHomebase] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    async function ensureAuth() {
+      const existing = sessionStorage.getItem('djbooth_token');
+      if (existing) {
+        setAuthReady(true);
+        return;
+      }
+      try {
+        const res = await fetch('/api/fleet/auto-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.token) {
+            sessionStorage.setItem('djbooth_token', data.token);
+            sessionStorage.setItem('djbooth_role', 'dj');
+          }
+        }
+      } catch {}
+      setAuthReady(true);
+    }
+    ensureAuth();
+  }, []);
 
   useEffect(() => {
     fetch('/api/config/capabilities')
@@ -680,7 +703,7 @@ export default function FleetDashboard() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { if (authReady) refresh(); }, [authReady, refresh]);
 
   useEffect(() => {
     const interval = setInterval(refresh, 60000);

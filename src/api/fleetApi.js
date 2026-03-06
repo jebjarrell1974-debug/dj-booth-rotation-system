@@ -12,8 +12,10 @@ async function fleetFetch(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (res.status === 401) {
-    sessionStorage.clear();
-    window.location.href = '/';
+    if (!window.location.pathname.startsWith('/fleet')) {
+      sessionStorage.clear();
+      window.location.href = '/';
+    }
     throw new Error('Session expired');
   }
 

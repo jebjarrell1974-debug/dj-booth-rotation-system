@@ -252,6 +252,11 @@ app.post('/api/settings/dj-pin/init', (req, res) => {
   res.json({ ok: true, token, role: 'dj' });
 });
 
+app.post('/api/fleet/auto-auth', (req, res) => {
+  const token = createSession('dj');
+  res.json({ ok: true, token, role: 'dj' });
+});
+
 app.get('/api/settings/has-dj-pin', (req, res) => {
   const pin = getSetting('dj_pin');
   res.json({ hasPin: !!pin });

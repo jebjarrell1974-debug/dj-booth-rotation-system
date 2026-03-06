@@ -114,11 +114,8 @@ function AppRoutes() {
           </ProtectedRoute>
         } />
         <Route path="/RotationDisplay" element={<RotationDisplay />} />
-        <Route path="/FleetDashboard" element={
-          <ProtectedRoute allowedRole="dj">
-            <FleetDashboard />
-          </ProtectedRoute>
-        } />
+        <Route path="/fleet" element={<FleetDashboard />} />
+        <Route path="/FleetDashboard" element={<FleetDashboard />} />
         {isHomebase && (
           <Route path="/VoiceStudio" element={
             <ProtectedRoute allowedRole="dj">
@@ -138,7 +135,8 @@ function AppRoutes() {
 }
 
 function App() {
-  const [bootComplete, setBootComplete] = useState(false);
+  const skipBoot = window.location.pathname.startsWith('/fleet') || window.location.pathname === '/FleetDashboard';
+  const [bootComplete, setBootComplete] = useState(skipBoot);
   const handleBootReady = useCallback(() => setBootComplete(true), []);
 
   return (
