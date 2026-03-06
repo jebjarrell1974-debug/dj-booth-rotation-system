@@ -515,6 +515,15 @@ app.get('/api/usage/device-id', (req, res) => {
 app.use('/api/fleet', fleetRoutes);
 setupFleetMonitorRoutes(app);
 
+app.get('/fleet-dashboard', (req, res) => {
+  const dashPath = join(__dirname, '..', 'public', 'fleet-dashboard.html');
+  if (existsSync(dashPath)) {
+    res.sendFile(dashPath);
+  } else {
+    res.status(404).send('Fleet dashboard not found');
+  }
+});
+
 app.get('/api/r2/status', authenticate, requireDJ, async (req, res) => {
   try {
     const stats = await getR2Stats();
@@ -1325,7 +1334,12 @@ if (isDirectRun) {
         }
       } catch {}
       let activeEntertainers = 0;
-      try { activeEntertainers = liveBoothState.rotation?.length || 0; } catch {}
+      let dancer_names = [];
+      try {
+        activeEntertainers = liveBoothState.rotation?.length || 0;
+        const allDancers = listDancers();
+        dancer_names = allDancers.map(d => d.name).filter(Boolean);
+      } catch {}
 
       return {
         trackCount: getMusicTrackCount(),
@@ -1334,6 +1348,7 @@ if (isDirectRun) {
         apiCosts,
         activeEntertainers,
         errorCount: errorCounter,
+        dancer_names,
       };
     });
     initR2Sync().catch(err => {

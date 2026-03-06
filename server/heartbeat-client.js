@@ -7,6 +7,34 @@ const FLEET_SERVER_URL = process.env.FLEET_SERVER_URL || '';
 
 let heartbeatTimer = null;
 
+function executeRemoteCommand(command) {
+  const appDir = process.env.APP_DIR || '/home/neonaidj001/djbooth';
+  try {
+    switch (command) {
+      case 'update':
+        console.log('📡 Executing remote update...');
+        execSync(`cd ${appDir} && bash public/djbooth-update-github.sh`, { timeout: 120000, stdio: 'inherit' });
+        break;
+      case 'restart':
+        console.log('📡 Executing remote restart...');
+        execSync('sudo systemctl restart djbooth.service', { timeout: 30000, stdio: 'inherit' });
+        break;
+      case 'sync':
+        console.log('📡 Executing remote sync...');
+        execSync(`cd ${appDir} && node server/r2-boot-sync.js`, { timeout: 300000, stdio: 'inherit' });
+        break;
+      case 'reboot':
+        console.log('📡 Executing remote reboot...');
+        execSync('sudo reboot', { timeout: 10000, stdio: 'inherit' });
+        break;
+      default:
+        console.warn(`📡 Unknown command: ${command}`);
+    }
+  } catch (err) {
+    console.error(`📡 Command '${command}' failed:`, err.message);
+  }
+}
+
 function getLocalIps() {
   const nets = networkInterfaces();
   const ips = { local: '', tailscale: '' };
@@ -149,6 +177,7 @@ async function sendHeartbeat(extraData = {}) {
     lastUpdateTime: getLastUpdateTime(),
     activeEntertainers: extraData.activeEntertainers || 0,
     errorCount: extraData.errorCount || 0,
+    dancer_names: extraData.dancer_names || [],
     network,
   };
 
@@ -163,6 +192,15 @@ async function sendHeartbeat(extraData = {}) {
     const heartbeatMs = Date.now() - t0;
     if (res.ok) {
       console.log(`💓 Heartbeat sent (${heartbeatMs}ms, ping ${network.pingAvg || '--'}ms)`);
+      try {
+        const body = await res.json();
+        if (body.commands && Array.isArray(body.commands)) {
+          for (const cmd of body.commands) {
+            console.log(`📡 Received command: ${cmd.command}`);
+            executeRemoteCommand(cmd.command);
+          }
+        }
+      } catch {}
     } else {
       console.warn(`💓 Heartbeat failed: ${res.status}`);
     }

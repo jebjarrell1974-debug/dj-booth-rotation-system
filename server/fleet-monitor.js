@@ -6,6 +6,7 @@ const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const devices = new Map();
+const pendingCommands = new Map();
 let checkInterval = null;
 
 function isTelegramConfigured() {
@@ -76,7 +77,7 @@ function recordHeartbeatInDb(deviceId, data) {
   }
 }
 
-function registerHeartbeat(deviceId, data) {
+async function registerHeartbeat(deviceId, data) {
   const now = Date.now();
   const existing = devices.get(deviceId);
   const wasOffline = existing?.status === 'offline';
@@ -101,7 +102,26 @@ function registerHeartbeat(deviceId, data) {
     status: 'online',
     lastError: data.lastError || null,
     apiCosts: data.apiCosts || null,
+    memFree: data.memFree || null,
+    memTotal: data.memTotal || null,
+    memPct: data.memPct || null,
+    serviceUptime: data.serviceUptime || null,
+    lastUpdateTime: data.lastUpdateTime || null,
+    activeEntertainers: data.activeEntertainers || 0,
+    errorCount: data.errorCount || 0,
+    network: data.network || null,
   });
+
+  if (data.dancer_names && Array.isArray(data.dancer_names)) {
+    try {
+      const { upsertDancerRoster } = await import('./fleet-db.js');
+      for (const name of data.dancer_names) {
+        if (name && typeof name === 'string') {
+          upsertDancerRoster(name.trim(), deviceId);
+        }
+      }
+    } catch {}
+  }
 
   ensureDeviceInDb(deviceId, data);
   recordHeartbeatInDb(deviceId, data);
@@ -200,10 +220,16 @@ function stopMonitoring() {
 }
 
 function setupFleetMonitorRoutes(app) {
-  app.post('/api/monitor/heartbeat', (req, res) => {
+  app.post('/api/monitor/heartbeat', async (req, res) => {
     const { deviceId, ...data } = req.body;
     if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
-    registerHeartbeat(deviceId, data);
+    await registerHeartbeat(deviceId, data);
+    const pending = pendingCommands.get(deviceId);
+    if (pending && pending.length > 0) {
+      const cmds = [...pending];
+      pendingCommands.delete(deviceId);
+      return res.json({ ok: true, timestamp: Date.now(), commands: cmds });
+    }
     res.json({ ok: true, timestamp: Date.now() });
   });
 
@@ -224,6 +250,19 @@ function setupFleetMonitorRoutes(app) {
     if (!message) return res.status(400).json({ error: 'message required' });
     await sendTelegram(`📢 <b>Broadcast</b>\n${message}`);
     res.json({ ok: true });
+  });
+
+  app.post('/api/monitor/command/:deviceId/:action', (req, res) => {
+    const { deviceId, action } = req.params;
+    const { pin } = req.body || {};
+    if (!deviceId || !action) return res.status(400).json({ error: 'deviceId and action required' });
+    const masterPin = process.env.MASTER_PIN || '36669';
+    if (pin !== masterPin) return res.status(403).json({ error: 'Invalid PIN' });
+    const validCommands = ['update', 'restart', 'sync', 'reboot'];
+    if (!validCommands.includes(action)) return res.status(400).json({ error: 'Invalid command' });
+    if (!pendingCommands.has(deviceId)) pendingCommands.set(deviceId, []);
+    pendingCommands.get(deviceId).push({ command: action, timestamp: Date.now() });
+    res.json({ ok: true, queued: action });
   });
 }
 

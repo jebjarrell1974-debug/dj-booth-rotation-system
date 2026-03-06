@@ -338,6 +338,17 @@ ElevenLabs occasionally produces glitched audio (backwards/repeated speech). Add
 - `public/djbooth-watchdog.sh` — new watchdog script (auto-refresh Chrome on server recovery)
 - Removed: `public/neonaidj-launcher.html`
 
+### Mar 6, 2026 — Session 25 (Homebase Full App Migration: Fleet Monitor + Command Relay)
+
+#### Feature: Full App Fleet Monitoring (Replacing Standalone Monitor)
+- **Purpose**: The homebase Pi can now run the full DJ Booth app instead of the standalone fleet monitor. The full app already had `fleet-monitor.js` with Telegram alerting, but was missing: dancer name roster sync from heartbeats, command relay (update/restart/sync/reboot), extended device metrics (memory, network, service uptime), and the fleet dashboard route.
+- **Changes**:
+  1. `server/fleet-monitor.js` — Added `pendingCommands` map for command relay; extended `registerHeartbeat` to store `memFree/memTotal/memPct/serviceUptime/lastUpdateTime/activeEntertainers/errorCount/network`; auto-upserts dancer roster from heartbeat `dancer_names`; heartbeat response now includes pending commands; added `/api/monitor/command/:deviceId/:action` route
+  2. `server/heartbeat-client.js` — Added `dancer_names` to heartbeat payload; added `executeRemoteCommand()` to handle commands received in heartbeat response (update/restart/sync/reboot)
+  3. `server/index.js` — Heartbeat extra data now includes `dancer_names` from `listDancers()`; added `/fleet-dashboard` route to serve fleet dashboard HTML from Express
+- **Homebase migration**: Instead of running `fleet-monitor-standalone.js` + `fleet-dashboard.html` as a separate service, homebase can now run the full `djbooth` app which includes everything: Voice Studio, fleet monitoring, Telegram alerts, command relay, and the fleet dashboard at `/fleet-dashboard`
+- **Command relay flow**: Dashboard queues command → stored in `pendingCommands` map → Pi's next heartbeat response delivers command → heartbeat client executes it (git pull, systemctl restart, r2 sync, or reboot)
+
 ### Mar 4, 2026 — Session 23 (Fleet Dashboard API Costs + Enhanced Fleet Metrics)
 
 #### Feature: Per-Unit API Costs in Fleet Dashboard
