@@ -14,11 +14,12 @@ import { processRecording } from '@/utils/voiceProcessor';
 import { mixPromo, SFX_OPTIONS } from '@/utils/audioMixer';
 import { getApiConfig } from '@/components/apiConfig';
 
-const ENTERTAINER_TYPES = ['intro', 'round2', 'outro'];
-const TYPE_LABELS = { intro: 'Intro', round2: 'Round 2', outro: 'Outro', transition: 'Transition', mid_set: 'Mid-Set' };
+const ENTERTAINER_TYPES = ['intro', 'round2', 'round3', 'outro'];
+const TYPE_LABELS = { intro: 'Intro', round2: 'Round 2', round3: 'Round 3', outro: 'Outro', transition: 'Transition', mid_set: 'Mid-Set' };
 const TYPE_PROMPTS = {
   intro: 'Introducing them to the stage',
   round2: 'Starting their second song',
+  round3: 'Starting their third song',
   outro: 'Thanking them as they leave the stage',
   transition: 'Generic transition between entertainers',
   mid_set: 'Between songs in the same set',
@@ -562,7 +563,8 @@ export default function VoiceStudio() {
         : 'Write a short DJ line (5-15 words) for between songs in the same entertainer\'s set at a strip club. Do NOT include any specific name. Make it exciting. Write ONLY the script text.';
     } else {
       const t = currentItem.type;
-      prompt = `Write a short, high-energy DJ ${t === 'intro' ? 'introduction' : t === 'round2' ? 'round 2 announcement' : 'outro/sendoff'} for an entertainer named "${currentItem.dancerName}" at a strip club. Write ONLY the script text the DJ should read (5-20 words). Make it punchy and exciting.`;
+      const typeLabel = t === 'intro' ? 'introduction' : t === 'round2' ? 'round 2 announcement' : t === 'round3' ? 'round 3 announcement' : 'outro/sendoff';
+      prompt = `Write a short, high-energy DJ ${typeLabel} for an entertainer named "${currentItem.dancerName}" at a strip club. Write ONLY the script text the DJ should read (5-20 words). Make it punchy and exciting.`;
     }
 
     try {

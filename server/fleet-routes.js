@@ -306,7 +306,7 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
   const roster = listDancerRoster();
   const recordings = listRecordings();
   const recordedSet = new Set(recordings.map(r => `${r.dancer_name}::${r.recording_type}`));
-  const recordingTypes = ['intro', 'round2', 'outro'];
+  const recordingTypes = ['intro', 'round2', 'round3', 'outro'];
   let pendingCount = 0;
   for (const dancer of roster) {
     for (const type of recordingTypes) {
@@ -481,7 +481,7 @@ router.get('/voice-recordings/pending', authenticateFleetAdmin, (req, res) => {
     const roster = listDancerRoster();
     const recordings = listRecordings();
     const recordedSet = new Set(recordings.map(r => `${r.dancer_name}::${r.recording_type}`));
-    const recordingTypes = ['intro', 'round2', 'outro'];
+    const recordingTypes = ['intro', 'round2', 'round3', 'outro'];
 
     const pending = roster.map(dancer => {
       const status = {};

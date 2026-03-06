@@ -728,7 +728,12 @@ app.post('/api/booth/commands/ack', authenticate, requireDJ, (req, res) => {
   res.json({ ok: true });
 });
 
+const defaultMusicPath = join(__dirname, '..', 'music');
 let MUSIC_PATH = process.env.MUSIC_PATH || getSetting('music_path') || '';
+if (!MUSIC_PATH && existsSync(defaultMusicPath)) {
+  MUSIC_PATH = defaultMusicPath;
+  console.log(`🎵 Auto-detected music folder: ${defaultMusicPath}`);
+}
 
 app.get('/api/settings/music-path', authenticate, requireDJ, (req, res) => {
   res.json({
