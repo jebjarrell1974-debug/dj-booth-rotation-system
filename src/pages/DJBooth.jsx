@@ -53,6 +53,14 @@ export default function DJBooth() {
   // Music tracks state (loaded from server)
   const [tracks, setTracks] = useState([]);
   
+  const [isHomebase, setIsHomebase] = useState(false);
+  useEffect(() => {
+    fetch('/api/config/capabilities')
+      .then(r => r.json())
+      .then(data => setIsHomebase(data.isHomebase || false))
+      .catch(() => {});
+  }, []);
+
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -3192,6 +3200,19 @@ export default function DJBooth() {
                   <Mic className="w-4 h-4 mr-1" />
                   Announcements
                 </Button>
+              )}
+              {isHomebase && (
+                <Link to="/VoiceStudio">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-400 hover:text-white"
+                    title="Voice Studio"
+                  >
+                    <Mic className="w-4 h-4 mr-1" />
+                    Voice Studio
+                  </Button>
+                </Link>
               )}
               <Link to={createPageUrl('Help')}>
                 <Button
