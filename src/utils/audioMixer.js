@@ -88,26 +88,9 @@ function encodeWav(audioBuffer) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-let _lamejsLoaded = false;
-
-async function ensureLamejs() {
-  if (_lamejsLoaded) return;
-  if (typeof window.lamejs !== 'undefined' && window.lamejs.Mp3Encoder) {
-    _lamejsLoaded = true;
-    return;
-  }
-  await new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = '/lame.min.js';
-    script.onload = () => { _lamejsLoaded = true; resolve(); };
-    script.onerror = () => reject(new Error('Failed to load MP3 encoder'));
-    document.head.appendChild(script);
-  });
-}
-
 async function encodeMp3(audioBuffer, bitrate = 320) {
-  await ensureLamejs();
-  const Mp3Encoder = window.lamejs.Mp3Encoder;
+  const lamejs = await import('@breezystack/lamejs');
+  const Mp3Encoder = lamejs.Mp3Encoder;
 
   const numChannels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
