@@ -62,6 +62,51 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - No DJ voice announcements around commercial items (outros/intros still play around regular break songs)
 - Blob URLs revoked after 5s delay for cleanup
 
+### PENDING TODO — Do On Pi When Not Busy
+
+#### 1. Fix boot delay (CRITICAL)
+The `djbooth-update.service` has `Before=djbooth.service` which blocks the app from starting until the update finishes (up to 5 minutes with no internet). Fix by replacing the service file:
+```bash
+sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << 'EOF'
+[Unit]
+Description=NEON AI DJ Auto-Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=neonaidj001
+WorkingDirectory=/home/neonaidj001/djbooth
+Environment=DJBOOTH_BOOT_UPDATE=1
+ExecStart=/home/neonaidj001/djbooth-update.sh
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+```
+
+#### 2. Wi-Fi / Ethernet routing fix
+Pi connects to club Wi-Fi (no internet, for iPad remote) and Ethernet (has internet). Wi-Fi takes over as default route and breaks all API calls. Fix by telling Wi-Fi to never be the default internet route:
+```bash
+sudo nmcli connection modify "WIFI_NAME_HERE" ipv4.never-default yes
+```
+Replace `WIFI_NAME_HERE` with the actual Wi-Fi network name. Run `nmcli connection show` to find it.
+
+#### 4. Voice settings rollback (if V8 sounds too wild)
+V8 bumped style and speed for more energy. If voices start yelling randomly or sounding unstable, roll back to V7 values:
+```
+V7 (ROLLBACK):  L1=stability 0.50/style 0.15/speed 0.88, L2=0.45/0.22/0.90, L3=0.40/0.30/0.92, L4=0.35/0.38/0.94, L5=0.48/0.18/0.90
+V8 (CURRENT):   L1=stability 0.50/style 0.25/speed 0.92, L2=0.45/0.32/0.95, L3=0.40/0.40/0.97, L4=0.38/0.45/1.0,  L5=0.48/0.22/0.92
+```
+Change cache key in AnnouncementSystem.jsx back to V7 and restore old VOICE_SETTINGS in energyLevels.js.
+
+#### 3. Voiceover duration sanity check (FUTURE)
+ElevenLabs occasionally produces glitched audio (backwards/repeated speech). Add a duration check after generation — if intro >20s, outro >25s, round2 >12s, or transition >25s, discard and regenerate (max 2 retries, then fall back to generic).
+
 #### Feature: Auto-Commercial No-Double-Up
 - Auto-scheduled commercial display checks if break slot already has a manual `[COMMERCIAL]` item
 - If manual commercial exists in slot, auto-commercial indicator is hidden
