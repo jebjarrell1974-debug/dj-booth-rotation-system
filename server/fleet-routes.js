@@ -316,6 +316,8 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
     }
   }
 
+  const pendingPromos = listPromoRequests('pending').length;
+
   const overview = {
     totalDevices: devices.length,
     onlineDevices: devices.filter(d => d.status === 'online').length,
@@ -323,6 +325,8 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
     totalVoiceovers: voiceovers.length,
     uniqueDancers: uniqueDancers.length,
     pendingRecordings: pendingCount,
+    pendingPromos,
+    voiceoversNeeded: pendingCount + pendingPromos,
     devices: devices.map(({ api_key, ...d }) => ({
       ...d,
       timeSinceHeartbeat: d.last_heartbeat ? Date.now() - d.last_heartbeat : null,

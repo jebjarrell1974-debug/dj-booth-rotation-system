@@ -58,14 +58,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - After recording voice, system auto-mixes with selected music bed + SFX using `audioMixer.js`
   - Finished promo saved to voiceovers table (type='promo') so DJBooth can play it in commercial slots
 - **Script generator**: Each recording card shows a suggested script; "New Script" button uses OpenAI to generate varied suggestions
-- **AI Promo Creator REMOVED** from DJ Booth — ManualAnnouncementPlayer now only has Upload + Library
+- **Club-side promo request form** added to DJ Booth Announcements tab — club staff can submit promo requests directly from the kiosk, which appear in Voice Studio for recording
+- **AI Promo Creator REMOVED** from DJ Booth — ManualAnnouncementPlayer now has Upload + Library + Request Form
 - **promoGenerator.js DELETED** — no more AI script generation for promos
 - Audio processing pipeline unchanged (HPF, compression, EQ, trim, normalize, MP3)
 - ElevenLabs remains as fallback for entertainer names not yet recorded
 
 #### API Changes
-- POST `/promo-requests` — create promo request
-- GET `/promo-requests` — list promo requests (optional `?status=` filter)
+- POST `/api/promo-requests` — create promo request (DJ Booth auth, club-side)
+- GET `/api/promo-requests` — list promo requests (DJ Booth auth, club-side)
+- POST `/api/fleet/promo-requests` — create promo request (fleet admin auth)
+- GET `/api/fleet/promo-requests` — list promo requests (fleet admin auth)
 - DELETE `/promo-requests/:id` — remove request
 - PUT `/promo-requests/:id/complete` — mark recorded
 - POST `/promo-requests/:id/save-promo` — save final mixed MP3 to voiceovers table

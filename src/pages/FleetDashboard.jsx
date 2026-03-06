@@ -733,55 +733,50 @@ export default function FleetDashboard() {
         )}
 
         {overview && (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-white">{overview.totalDevices}</p>
-              <p className="text-xs text-gray-500">Total Devices</p>
+              <p className="text-xs text-gray-500">Devices</p>
             </div>
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-green-400">{overview.onlineDevices}</p>
               <p className="text-xs text-gray-500">Online</p>
             </div>
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-[#00d4ff]">{overview.uniqueDancers}</p>
-              <p className="text-xs text-gray-500">Entertainers</p>
+              <p className={`text-2xl font-bold ${overview.offlineDevices > 0 ? 'text-red-400' : 'text-gray-600'}`}>{overview.offlineDevices}</p>
+              <p className="text-xs text-gray-500">Offline</p>
             </div>
             <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-purple-400">{overview.totalVoiceovers}</p>
               <p className="text-xs text-gray-500">Voiceovers</p>
             </div>
-            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-emerald-400">
-                ${(overview.devices || []).reduce((sum, d) => sum + (d.apiCosts?.total || 0), 0).toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-500">Fleet API Costs (30d)</p>
-            </div>
           </div>
         )}
 
         {overview && (
-          <div
-            onClick={() => navigate('/VoiceStudio')}
-            className="mb-6 bg-gradient-to-r from-[#0d0d1f] to-[#1a1035] border border-purple-500/30 rounded-xl p-4 cursor-pointer hover:border-purple-400/50 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
-                  <Mic className="w-5 h-5 text-purple-400" />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold flex items-center gap-2">
-                    Voice Recording Studio
-                    {(overview.pendingRecordings || 0) > 0 && (
-                      <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
-                        {overview.pendingRecordings} pending
-                      </Badge>
-                    )}
-                  </h3>
-                  <p className="text-xs text-gray-500">Record announcements with your own voice</p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-purple-400 transition-colors" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-[#00d4ff]">{overview.uniqueDancers}</p>
+              <p className="text-xs text-gray-500">Entertainers</p>
+            </div>
+            <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-400">
+                ${(overview.devices || []).reduce((sum, d) => sum + (d.apiCosts?.total || 0), 0).toFixed(2)}
+              </p>
+              <p className="text-xs text-gray-500">API Costs (30d)</p>
+            </div>
+            <div
+              onClick={() => navigate('/VoiceStudio')}
+              className={`bg-[#0d0d1f] border rounded-lg p-3 text-center cursor-pointer hover:border-amber-400/50 transition-colors ${
+                (overview.voiceoversNeeded || 0) > 0
+                  ? 'border-amber-500/40 bg-gradient-to-b from-[#0d0d1f] to-[#1a1508]'
+                  : 'border-[#1e293b]'
+              }`}
+            >
+              <p className={`text-2xl font-bold ${(overview.voiceoversNeeded || 0) > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                {overview.voiceoversNeeded || 0}
+              </p>
+              <p className="text-xs text-gray-500">Voiceovers Needed</p>
             </div>
           </div>
         )}
