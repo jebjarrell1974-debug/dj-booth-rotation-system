@@ -87,10 +87,31 @@ db.exec(`
     FOREIGN KEY (device_id) REFERENCES fleet_devices(device_id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS voice_recordings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dancer_name TEXT NOT NULL,
+    recording_type TEXT NOT NULL,
+    processed_audio BLOB,
+    raw_audio BLOB,
+    processed_size INTEGER DEFAULT 0,
+    raw_size INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    recorded_at INTEGER NOT NULL,
+    UNIQUE(dancer_name, recording_type)
+  );
+
+  CREATE TABLE IF NOT EXISTS fleet_dancer_roster (
+    dancer_name TEXT PRIMARY KEY,
+    reported_by_devices TEXT DEFAULT '[]',
+    first_seen INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_heartbeats_device ON fleet_heartbeats(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_error_logs_device ON fleet_error_logs(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_sync_log_device ON fleet_sync_log(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_voiceovers_name ON fleet_voiceovers(dancer_name);
+  CREATE INDEX IF NOT EXISTS idx_voice_recordings_name ON voice_recordings(dancer_name);
 `);
 
 function generateApiKey() {
@@ -316,4 +337,83 @@ export function clearErrorLogs(deviceId = null) {
   } else {
     db.prepare('DELETE FROM fleet_error_logs').run();
   }
+}
+
+export function saveRecording(dancerName, recordingType, processedAudio, rawAudio, durationMs) {
+  const now = Date.now();
+  const processedSize = processedAudio ? processedAudio.length : 0;
+  const rawSize = rawAudio ? rawAudio.length : 0;
+
+  const existing = db.prepare('SELECT id FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?')
+    .get(dancerName, recordingType);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE voice_recordings SET processed_audio = ?, raw_audio = ?, processed_size = ?, raw_size = ?, duration_ms = ?, recorded_at = ?
+      WHERE dancer_name = ? AND recording_type = ?
+    `).run(processedAudio, rawAudio, processedSize, rawSize, durationMs || 0, now, dancerName, recordingType);
+    return existing.id;
+  }
+
+  const result = db.prepare(`
+    INSERT INTO voice_recordings (dancer_name, recording_type, processed_audio, raw_audio, processed_size, raw_size, duration_ms, recorded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(dancerName, recordingType, processedAudio, rawAudio, processedSize, rawSize, durationMs || 0, now);
+  return result.lastInsertRowid;
+}
+
+export function getRecording(dancerName, recordingType) {
+  return db.prepare(`
+    SELECT id, dancer_name, recording_type, processed_size, raw_size, duration_ms, recorded_at
+    FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?
+  `).get(dancerName, recordingType);
+}
+
+export function listRecordings() {
+  return db.prepare(`
+    SELECT id, dancer_name, recording_type, processed_size, raw_size, duration_ms, recorded_at
+    FROM voice_recordings ORDER BY dancer_name ASC, recording_type ASC
+  `).all();
+}
+
+export function deleteRecording(id) {
+  db.prepare('DELETE FROM voice_recordings WHERE id = ?').run(id);
+}
+
+export function getRecordingAudio(dancerName, recordingType) {
+  return db.prepare('SELECT processed_audio, processed_size FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?')
+    .get(dancerName, recordingType);
+}
+
+export function getRecordingRawAudio(dancerName, recordingType) {
+  return db.prepare('SELECT raw_audio, raw_size FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?')
+    .get(dancerName, recordingType);
+}
+
+export function getRecordingStats() {
+  const total = db.prepare('SELECT COUNT(*) as count FROM voice_recordings').get();
+  const byType = db.prepare('SELECT recording_type, COUNT(*) as count FROM voice_recordings GROUP BY recording_type').all();
+  const uniqueNames = db.prepare('SELECT COUNT(DISTINCT dancer_name) as count FROM voice_recordings').get();
+  return { totalRecordings: total.count, uniqueNames: uniqueNames.count, byType };
+}
+
+export function upsertDancerRoster(dancerName, deviceId) {
+  const now = Date.now();
+  const existing = db.prepare('SELECT * FROM fleet_dancer_roster WHERE dancer_name = ?').get(dancerName);
+
+  if (existing) {
+    const devices = JSON.parse(existing.reported_by_devices || '[]');
+    if (!devices.includes(deviceId)) {
+      devices.push(deviceId);
+    }
+    db.prepare('UPDATE fleet_dancer_roster SET reported_by_devices = ?, last_seen = ? WHERE dancer_name = ?')
+      .run(JSON.stringify(devices), now, dancerName);
+  } else {
+    db.prepare('INSERT INTO fleet_dancer_roster (dancer_name, reported_by_devices, first_seen, last_seen) VALUES (?, ?, ?, ?)')
+      .run(dancerName, JSON.stringify([deviceId]), now, now);
+  }
+}
+
+export function listDancerRoster() {
+  return db.prepare('SELECT * FROM fleet_dancer_roster ORDER BY dancer_name ASC').all();
 }

@@ -399,6 +399,30 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return null;
   }, [loadFromServer]);
 
+  const checkCustomRecording = useCallback(async (dancerName, type) => {
+    if (!dancerName || dancerName === GENERIC_DANCER_NAME || type === ANNOUNCEMENT_TYPES.TRANSITION) return null;
+    const customCacheKey = `custom-recording-${dancerName}-${type}`;
+    const idbCached = await getCachedFromIndexedDB(customCacheKey);
+    if (idbCached) {
+      console.log(`🎤 Custom recording loaded from IndexedDB: ${dancerName}/${type}`);
+      return idbCached;
+    }
+    try {
+      const res = await fetch(`/api/fleet/voice-recordings/audio/${encodeURIComponent(dancerName)}/${encodeURIComponent(type)}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        await cacheToIndexedDB(customCacheKey, blob);
+        console.log(`🎤 Custom recording fetched and cached: ${dancerName}/${type}`);
+        return blob;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, energyLevel = null, roundNumber = 1) => {
     const config = getApiConfig();
     const level = energyLevel ?? getCurrentEnergyLevel(config);
@@ -406,6 +430,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const clubSuffix = getClubSuffix();
     const hasSpecials = specialsSuffix.length > 0;
     const key = getAnnouncementKey(type, dancerName, nextDancerName, level) + specialsSuffix + clubSuffix;
+
+    const customBlob = await checkCustomRecording(dancerName, type);
+    if (customBlob) {
+      console.log(`🎤 Using custom recording for ${dancerName}/${type} (skipping AI TTS)`);
+      return { url: URL.createObjectURL(customBlob), fromCache: true };
+    }
 
     const idbCached = await getCachedFromIndexedDB(key);
     if (idbCached) {
@@ -467,7 +497,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.error(`❌ No announcement available for ${type}: ${genError.message}`);
       throw genError;
     }
-  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer]);
+  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer, checkCustomRecording]);
 
   const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
     try {

@@ -38,6 +38,46 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 6, 2026 — Session 28 (Voice Recording Studio + V9 Cache Key)
+
+#### Voice Cache V9
+- Bumped announcement cache key from V8 to V9 to force regeneration with new voice model
+- All voiceovers regenerate fresh on next play
+
+#### Feature: Voice Recording Studio (Fleet Dashboard)
+- New page `/VoiceStudio` — lets DJ record announcements using USB mic directly in browser
+- Flashcard-style recording UI: shows name + type (intro/round2/outro), tap record, speak, tap stop
+- **Audio processing pipeline** (`src/utils/voiceProcessor.js`):
+  - High-pass filter 80Hz (removes rumble)
+  - DynamicsCompressor (threshold -24dB, ratio 12:1, attack 3ms, release 250ms)
+  - Presence EQ +4dB at 5kHz, air +2dB at 8kHz, low-mid cut -2dB at 300Hz
+  - Silence trimming (RMS-based), peak normalization to -1dB
+  - MP3 encoding via @breezystack/lamejs (192kbps)
+- **Both raw AND processed recordings stored** — raw recordings preserved for ElevenLabs voice clone training
+- Export raw recordings button downloads all raw files for voice clone improvement
+- **Database tables**: `voice_recordings` (processed_audio + raw_audio BLOBs), `fleet_dancer_roster` (unique names from fleet)
+- **API endpoints** in `server/fleet-routes.js`:
+  - POST `/voice-recordings/upload` — saves both processed + raw audio
+  - GET `/voice-recordings/audio/:name/:type` — serves processed audio (no auth, for playback)
+  - GET `/voice-recordings/raw/:name/:type` — serves raw audio (admin auth, for export)
+  - GET `/voice-recordings/pending` — all names with recording status
+  - GET `/voice-recordings/export-raw` — metadata for bulk raw download
+  - DELETE `/voice-recordings/:id` — remove a recording
+- **Fleet Dashboard badge**: shows pending recording count on Voice Studio card
+- **AnnouncementSystem integration**: checks for custom recording before AI TTS; custom recordings are energy-level-agnostic
+- Custom recordings cached in IndexedDB with `custom-recording-` prefix
+- Heartbeat extended: devices report `dancer_names` array, server maintains fleet-wide roster
+- Mic selection via `enumerateDevices()`, echoCancellation/noiseSuppression/autoGainControl all disabled for raw quality
+- 3 recordings per name (intro, round2, outro); transitions stay AI-generated
+
+#### Key Files
+- `src/pages/VoiceStudio.jsx` — Recording studio page
+- `src/utils/voiceProcessor.js` — Audio processing pipeline
+- `src/api/fleetApi.js` — Voice recording API client methods
+- `server/fleet-db.js` — voice_recordings + fleet_dancer_roster tables
+- `server/fleet-routes.js` — Voice recording API endpoints
+- `src/components/dj/AnnouncementSystem.jsx` — Custom recording fallback check
+
 ### Mar 6, 2026 — Session 27 (Flexible Drag-and-Drop Rotation Items)
 
 #### Feature: Commercials Folder in Music Library

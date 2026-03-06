@@ -9,7 +9,10 @@ import {
   createUpdate, getLatestUpdate, getUpdatePackage,
   recordSync, getSyncHistory,
   updateDeviceStatuses,
-  listUpdates, deleteUpdate, clearErrorLogs
+  listUpdates, deleteUpdate, clearErrorLogs,
+  saveRecording, getRecording, listRecordings, deleteRecording,
+  getRecordingAudio, getRecordingRawAudio, getRecordingStats,
+  upsertDancerRoster, listDancerRoster
 } from './fleet-db.js';
 import { getSession } from './db.js';
 import { getFleetStatus } from './fleet-monitor.js';
@@ -81,6 +84,15 @@ router.delete('/devices/:deviceId', authenticateFleetAdmin, (req, res) => {
 router.post('/heartbeat', authenticateDeviceMiddleware, (req, res) => {
   try {
     recordHeartbeat(req.device.device_id, req.body);
+
+    if (req.body.dancer_names && Array.isArray(req.body.dancer_names)) {
+      for (const name of req.body.dancer_names) {
+        if (name && typeof name === 'string') {
+          upsertDancerRoster(name.trim(), req.device.device_id);
+        }
+      }
+    }
+
     const latestUpdate = getLatestUpdate(req.device.device_id);
     res.json({
       ok: true,
@@ -290,12 +302,26 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
 
   const uniqueDancers = [...new Set(voiceovers.map(v => v.dancer_name))];
 
+  const roster = listDancerRoster();
+  const recordings = listRecordings();
+  const recordedSet = new Set(recordings.map(r => `${r.dancer_name}::${r.recording_type}`));
+  const recordingTypes = ['intro', 'round2', 'outro'];
+  let pendingCount = 0;
+  for (const dancer of roster) {
+    for (const type of recordingTypes) {
+      if (!recordedSet.has(`${dancer.dancer_name}::${type}`)) {
+        pendingCount++;
+      }
+    }
+  }
+
   const overview = {
     totalDevices: devices.length,
     onlineDevices: devices.filter(d => d.status === 'online').length,
     offlineDevices: devices.filter(d => d.status === 'offline').length,
     totalVoiceovers: voiceovers.length,
     uniqueDancers: uniqueDancers.length,
+    pendingRecordings: pendingCount,
     devices: devices.map(({ api_key, ...d }) => ({
       ...d,
       timeSinceHeartbeat: d.last_heartbeat ? Date.now() - d.last_heartbeat : null,
@@ -359,6 +385,119 @@ router.delete('/logs/clear', authenticateFleetAdmin, (req, res) => {
 router.get('/music/manifest/:deviceId', authenticateFleetAdmin, (req, res) => {
   const manifest = getMusicManifest(req.params.deviceId);
   res.json(manifest);
+});
+
+router.post('/voice-recordings/upload', authenticateFleetAdmin, express.json({ limit: '50mb' }), (req, res) => {
+  const { dancer_name, recording_type, processed_audio, raw_audio, duration_ms } = req.body;
+
+  if (!dancer_name || !recording_type) {
+    return res.status(400).json({ error: 'dancer_name and recording_type required' });
+  }
+  if (!processed_audio) {
+    return res.status(400).json({ error: 'processed_audio required' });
+  }
+
+  try {
+    const processedBuffer = Buffer.from(processed_audio, 'base64');
+    const rawBuffer = raw_audio ? Buffer.from(raw_audio, 'base64') : null;
+    const id = saveRecording(dancer_name, recording_type, processedBuffer, rawBuffer, duration_ms || 0);
+    res.json({ ok: true, id });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save recording: ' + err.message });
+  }
+});
+
+router.get('/voice-recordings/list', authenticateFleetAdmin, (req, res) => {
+  try {
+    const recordings = listRecordings();
+    res.json(recordings);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list recordings' });
+  }
+});
+
+router.get('/voice-recordings/audio/:dancerName/:type', (req, res) => {
+  try {
+    const result = getRecordingAudio(req.params.dancerName, req.params.type);
+    if (!result || !result.processed_audio) {
+      return res.status(404).json({ error: 'Recording not found' });
+    }
+    res.set('Content-Type', 'audio/mpeg');
+    res.set('Content-Length', result.processed_size);
+    res.send(result.processed_audio);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get recording audio' });
+  }
+});
+
+router.get('/voice-recordings/raw/:dancerName/:type', authenticateFleetAdmin, (req, res) => {
+  try {
+    const result = getRecordingRawAudio(req.params.dancerName, req.params.type);
+    if (!result || !result.raw_audio) {
+      return res.status(404).json({ error: 'Raw recording not found' });
+    }
+    res.set('Content-Type', 'audio/webm');
+    res.set('Content-Length', result.raw_size);
+    res.send(result.raw_audio);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get raw recording audio' });
+  }
+});
+
+router.get('/voice-recordings/export-raw', authenticateFleetAdmin, (req, res) => {
+  try {
+    const recordings = listRecordings();
+    const exportData = recordings.map(r => ({
+      id: r.id,
+      dancer_name: r.dancer_name,
+      recording_type: r.recording_type,
+      raw_size: r.raw_size,
+      duration_ms: r.duration_ms,
+      recorded_at: r.recorded_at,
+      download_url: `/api/fleet/voice-recordings/raw/${encodeURIComponent(r.dancer_name)}/${r.recording_type}`
+    }));
+    res.json(exportData);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to export raw recordings' });
+  }
+});
+
+router.delete('/voice-recordings/:id', authenticateFleetAdmin, (req, res) => {
+  try {
+    deleteRecording(parseInt(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete recording' });
+  }
+});
+
+router.get('/voice-recordings/pending', authenticateFleetAdmin, (req, res) => {
+  try {
+    const roster = listDancerRoster();
+    const recordings = listRecordings();
+    const recordedSet = new Set(recordings.map(r => `${r.dancer_name}::${r.recording_type}`));
+    const recordingTypes = ['intro', 'round2', 'outro'];
+
+    const pending = roster.map(dancer => {
+      const status = {};
+      for (const type of recordingTypes) {
+        status[type] = recordedSet.has(`${dancer.dancer_name}::${type}`);
+      }
+      return {
+        dancer_name: dancer.dancer_name,
+        reported_by_devices: JSON.parse(dancer.reported_by_devices || '[]'),
+        first_seen: dancer.first_seen,
+        last_seen: dancer.last_seen,
+        recordings: status,
+        complete: recordingTypes.every(t => status[t]),
+        missing: recordingTypes.filter(t => !status[t])
+      };
+    });
+
+    res.json(pending);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get pending recordings' });
+  }
 });
 
 setInterval(updateDeviceStatuses, 60 * 1000);

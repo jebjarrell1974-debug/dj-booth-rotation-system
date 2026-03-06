@@ -128,6 +128,58 @@ export const fleetAdmin = {
     const res = await fleetFetch(`/music/manifest/${deviceId}`);
     return res.json();
   },
+
+  async getRecordings() {
+    const res = await fleetFetch('/voice-recordings/list');
+    return res.json();
+  },
+
+  async getPendingRecordings() {
+    const res = await fleetFetch('/voice-recordings/pending');
+    return res.json();
+  },
+
+  async uploadRecording(dancerName, recordingType, processedBlob, rawBlob, durationMs) {
+    const toBase64 = (buf) => {
+      const bytes = new Uint8Array(buf);
+      const chunks = [];
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        chunks.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
+      }
+      return btoa(chunks.join(''));
+    };
+    const processedBuf = await processedBlob.arrayBuffer();
+    const body = {
+      dancer_name: dancerName,
+      recording_type: recordingType,
+      processed_audio: toBase64(processedBuf),
+      duration_ms: durationMs,
+    };
+    if (rawBlob) {
+      const rawBuf = await rawBlob.arrayBuffer();
+      body.raw_audio = toBase64(rawBuf);
+    }
+    const res = await fleetFetch('/voice-recordings/upload', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  },
+
+  async deleteRecording(id) {
+    const res = await fleetFetch(`/voice-recordings/${id}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  getRecordingAudioUrl(dancerName, type) {
+    return `${API_BASE}/voice-recordings/audio/${encodeURIComponent(dancerName)}/${encodeURIComponent(type)}`;
+  },
+
+  async exportRawRecordings() {
+    const res = await fleetFetch('/voice-recordings/export-raw');
+    return res.json();
+  },
 };
 
 export class FleetSyncClient {

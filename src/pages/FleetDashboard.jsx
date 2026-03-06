@@ -10,7 +10,7 @@ import {
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
   AlertCircle, Info, DollarSign
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
 
 function formatTimeAgo(timestamp) {
@@ -637,6 +637,7 @@ function UpdatesPanel({ devices }) {
 }
 
 export default function FleetDashboard() {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState(null);
   const [voiceovers, setVoiceovers] = useState([]);
   const [syncHistory, setSyncHistory] = useState([]);
@@ -754,6 +755,33 @@ export default function FleetDashboard() {
                 ${(overview.devices || []).reduce((sum, d) => sum + (d.apiCosts?.total || 0), 0).toFixed(2)}
               </p>
               <p className="text-xs text-gray-500">Fleet API Costs (30d)</p>
+            </div>
+          </div>
+        )}
+
+        {overview && (
+          <div
+            onClick={() => navigate('/VoiceStudio')}
+            className="mb-6 bg-gradient-to-r from-[#0d0d1f] to-[#1a1035] border border-purple-500/30 rounded-xl p-4 cursor-pointer hover:border-purple-400/50 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+                  <Mic className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-white font-semibold flex items-center gap-2">
+                    Voice Recording Studio
+                    {(overview.pendingRecordings || 0) > 0 && (
+                      <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                        {overview.pendingRecordings} pending
+                      </Badge>
+                    )}
+                  </h3>
+                  <p className="text-xs text-gray-500">Record announcements with your own voice</p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-purple-400 transition-colors" />
             </div>
           </div>
         )}
