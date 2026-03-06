@@ -199,21 +199,28 @@ export default function VoiceStudio() {
 
   useEffect(() => {
     async function detectMics() {
+      console.log('🎤 Detecting microphones...');
+      console.log('🎤 mediaDevices available:', !!navigator.mediaDevices);
+      console.log('🎤 getUserMedia available:', !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
+      console.log('🎤 Secure context:', window.isSecureContext);
       try {
         const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('🎤 getUserMedia succeeded, tracks:', tempStream.getTracks().length);
         tempStream.getTracks().forEach(t => t.stop());
       } catch (err) {
-        console.warn('Mic permission request failed:', err.message);
+        console.warn('🎤 Mic permission request failed:', err.name, err.message);
       }
       try {
         const devs = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devs.filter(d => d.kind === 'audioinput' && d.deviceId);
+        console.log('🎤 All devices found:', devs.length, devs.map(d => `${d.kind}:${d.label||'no-label'}:${d.deviceId?.slice(0,8)}`));
+        const audioInputs = devs.filter(d => d.kind === 'audioinput');
+        console.log('🎤 Audio inputs:', audioInputs.length, audioInputs.map(d => d.label || d.deviceId));
         setDevices(audioInputs);
         if (audioInputs.length > 0 && !selectedDevice) {
           setSelectedDevice(audioInputs[0].deviceId);
         }
       } catch (err) {
-        console.warn('Device enumeration failed:', err.message);
+        console.warn('🎤 Device enumeration failed:', err.name, err.message);
       }
     }
     detectMics();
