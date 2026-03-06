@@ -87,6 +87,21 @@ async function collectHealthData() {
       healthData.server_heap_used_mb = Math.round(mem.heapUsed / (1024 * 1024));
     }
     healthData.server_uptime_seconds = Math.round(serverMetrics.uptime || 0);
+
+    const sys = serverMetrics.system;
+    if (sys) {
+      healthData.cpuTemp = sys.cpuTemp;
+      healthData.memFree = sys.memFree;
+      healthData.memTotal = sys.memTotal;
+      healthData.memPct = sys.memPercent;
+      healthData.diskFree = sys.diskFree;
+      healthData.diskTotal = sys.diskTotal;
+      healthData.serviceUptime = Math.round(serverMetrics.uptime || 0);
+      healthData.uptime = sys.osUptime;
+      if (sys.memPercent != null) healthData.memory_percent = sys.memPercent;
+      if (sys.diskPercent != null) healthData.disk_percent = sys.diskPercent;
+      if (sys.loadAvg) healthData.cpu_percent = Math.round(((sys.loadAvg[0] || 0) / (sys.cpuCount || 1)) * 100);
+    }
   }
 
   return healthData;

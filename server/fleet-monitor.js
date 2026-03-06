@@ -56,17 +56,21 @@ function recordHeartbeatInDb(deviceId, data) {
       ? Math.round(((data.diskTotal - data.diskFree) / data.diskTotal) * 100)
       : 0;
 
+    const memPercent = data.memPct || data.memPercent || 0;
+    const cpuPercent = data.cpuPercent || 0;
+
     db.prepare(`
-      INSERT INTO fleet_heartbeats (device_id, timestamp, app_version, cpu_percent, memory_percent, disk_percent, uptime_seconds, active_dancers, is_playing)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO fleet_heartbeats (device_id, timestamp, app_version, cpu_percent, memory_percent, disk_percent, cpu_temp, uptime_seconds, active_dancers, is_playing)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       deviceId, now,
       data.version || '1.0.0',
-      data.cpuTemp ? parseFloat(data.cpuTemp) : 0,
-      0,
+      cpuPercent,
+      memPercent,
       diskPercent,
+      data.cpuTemp ? parseFloat(data.cpuTemp) : 0,
       data.uptime || 0,
-      0,
+      data.activeEntertainers || 0,
       0
     );
 

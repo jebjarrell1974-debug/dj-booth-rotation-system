@@ -23,6 +23,7 @@ db.exec(`
     cpu_percent REAL DEFAULT 0,
     memory_percent REAL DEFAULT 0,
     disk_percent REAL DEFAULT 0,
+    cpu_temp REAL DEFAULT 0,
     uptime_seconds INTEGER DEFAULT 0,
     active_dancers INTEGER DEFAULT 0,
     is_playing INTEGER DEFAULT 0,
@@ -125,12 +126,19 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_heartbeats_device ON fleet_heartbeats(device_id, timestamp);
+  CREATE INDEX IF NOT EXISTS idx_heartbeats_timestamp ON fleet_heartbeats(timestamp);
   CREATE INDEX IF NOT EXISTS idx_error_logs_device ON fleet_error_logs(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_sync_log_device ON fleet_sync_log(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_voiceovers_name ON fleet_voiceovers(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_voice_recordings_name ON voice_recordings(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_promo_requests_status ON promo_requests(status);
 `);
+
+try {
+  db.prepare("SELECT cpu_temp FROM fleet_heartbeats LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE fleet_heartbeats ADD COLUMN cpu_temp REAL DEFAULT 0");
+}
 
 function generateApiKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -186,16 +194,23 @@ export function recordHeartbeat(deviceId, data) {
   db.prepare('UPDATE fleet_devices SET last_heartbeat = ?, status = ?, app_version = ? WHERE device_id = ?')
     .run(now, 'online', data.app_version || '1.0.0', deviceId);
 
+  const diskPercent = (data.diskTotal && data.diskFree)
+    ? Math.round(((data.diskTotal - data.diskFree) / data.diskTotal) * 100)
+    : (data.disk_percent || 0);
+
+  const memPercent = data.memPct || data.memory_percent || 0;
+
   db.prepare(`
-    INSERT INTO fleet_heartbeats (device_id, timestamp, app_version, cpu_percent, memory_percent, disk_percent, uptime_seconds, active_dancers, is_playing)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO fleet_heartbeats (device_id, timestamp, app_version, cpu_percent, memory_percent, disk_percent, cpu_temp, uptime_seconds, active_dancers, is_playing)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     deviceId, now,
     data.app_version || '1.0.0',
     data.cpu_percent || 0,
-    data.memory_percent || 0,
-    data.disk_percent || 0,
-    data.uptime_seconds || 0,
+    memPercent,
+    diskPercent,
+    data.cpuTemp ? parseFloat(data.cpuTemp) : 0,
+    data.uptime || data.uptime_seconds || 0,
     data.active_dancers || 0,
     data.is_playing ? 1 : 0
   );

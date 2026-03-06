@@ -635,12 +635,46 @@ app.post('/api/admin/sync', async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  const os = await import('os');
+  const { execSync } = await import('child_process');
+
+  let cpuTemp = null;
+  try {
+    const raw = fs.readFileSync('/sys/class/thermal/thermal_zone0/temp', 'utf8').trim();
+    cpuTemp = parseFloat(raw) / 1000;
+  } catch {}
+
+  let diskFree = null, diskTotal = null;
+  try {
+    const dfOut = execSync('df -B1 / | tail -1', { timeout: 3000 }).toString().trim();
+    const parts = dfOut.split(/\s+/);
+    if (parts.length >= 4) {
+      diskTotal = parseInt(parts[1], 10);
+      diskFree = parseInt(parts[3], 10);
+    }
+  } catch {}
+
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+
   res.json({ 
     status: 'ok', 
     uptime: process.uptime(),
     memory: process.memoryUsage(),
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    system: {
+      cpuTemp,
+      memTotal: totalMem,
+      memFree: freeMem,
+      memPercent: Math.round(((totalMem - freeMem) / totalMem) * 100),
+      diskTotal,
+      diskFree,
+      diskPercent: (diskTotal && diskFree) ? Math.round(((diskTotal - diskFree) / diskTotal) * 100) : null,
+      osUptime: os.uptime(),
+      loadAvg: os.loadavg(),
+      cpuCount: os.cpus().length,
+    }
   });
 });
 

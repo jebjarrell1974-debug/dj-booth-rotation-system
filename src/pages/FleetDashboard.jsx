@@ -118,10 +118,14 @@ function DeviceDetailModal({ device, onClose }) {
 
         {latestHb && (
           <div className="p-4 border-b border-[#1e293b]">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="text-center">
                 <p className="text-xs text-gray-500">CPU</p>
                 <p className="text-lg font-bold text-white">{Math.round(latestHb.cpu_percent || 0)}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Temp</p>
+                <p className={`text-lg font-bold ${(latestHb.cpu_temp || 0) >= 75 ? 'text-red-400' : (latestHb.cpu_temp || 0) >= 60 ? 'text-yellow-400' : 'text-white'}`}>{latestHb.cpu_temp ? `${Math.round(latestHb.cpu_temp)}°C` : '-'}</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-gray-500">Memory</p>
@@ -178,6 +182,10 @@ function DeviceDetailModal({ device, onClose }) {
               <div>
                 <p className="text-xs text-gray-500 mb-1">CPU Usage (last {heartbeats.length} readings)</p>
                 <HealthSparkline data={heartbeats} field="cpu_percent" color="#3b82f6" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">CPU Temperature</p>
+                <HealthSparkline data={heartbeats} field="cpu_temp" color="#ef4444" />
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Memory Usage</p>
