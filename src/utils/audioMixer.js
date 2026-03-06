@@ -172,7 +172,22 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
 
   const rendered = await offlineCtx.startRendering();
 
-  const targetPeak = 0.95;
+  const targetLUFS = -14;
+  const peakCeiling = 0.98;
+
+  let sumSquares = 0;
+  let sampleCount = 0;
+  for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+    const data = rendered.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) {
+      sumSquares += data[i] * data[i];
+      sampleCount++;
+    }
+  }
+  const rms = Math.sqrt(sumSquares / Math.max(sampleCount, 1));
+  const currentLUFS = 20 * Math.log10(Math.max(rms, 1e-10));
+  const lufsGain = Math.pow(10, (targetLUFS - currentLUFS) / 20);
+
   let maxSample = 0;
   for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
     const data = rendered.getChannelData(ch);
@@ -181,16 +196,17 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
       if (abs > maxSample) maxSample = abs;
     }
   }
-  if (maxSample > 0.001) {
-    const normFactor = targetPeak / maxSample;
-    if (normFactor > 1.0 || normFactor < 0.95) {
-      for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
-        const data = rendered.getChannelData(ch);
-        for (let i = 0; i < data.length; i++) {
-          data[i] *= normFactor;
-        }
+  const peakAfterLufs = maxSample * lufsGain;
+  const normFactor = peakAfterLufs > peakCeiling ? lufsGain * (peakCeiling / peakAfterLufs) : lufsGain;
+
+  if (Math.abs(normFactor - 1.0) > 0.01) {
+    for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+      const data = rendered.getChannelData(ch);
+      for (let i = 0; i < data.length; i++) {
+        data[i] *= normFactor;
       }
     }
+    console.log(`🔊 PromoMix: LUFS=${currentLUFS.toFixed(1)}dB → target=${targetLUFS}dB, gain=${normFactor.toFixed(2)}x`);
   }
 
   return encodeWav(rendered);
