@@ -164,13 +164,7 @@ function PromoCreator({ onPlay, onSaved }) {
       const musicBlob = await fetchMusicBed();
 
       setProgress({ step: 4, text: 'Mixing promo...' });
-      const mixedBlob = await mixPromo(voiceBlob, musicBlob, {
-        musicVolume: 0.22,
-        duckLevel: 0.06,
-        fadeInDuration: 0.8,
-        fadeOutDuration: 2.5,
-        voiceDelay: 1.2,
-      });
+      const mixedBlob = await mixPromo(voiceBlob, musicBlob);
 
       const url = URL.createObjectURL(mixedBlob);
       setPreviewUrl(url);
@@ -203,13 +197,7 @@ function PromoCreator({ onPlay, onSaved }) {
       const musicBlob = await fetchMusicBed();
 
       setProgress({ step: 4, text: 'Mixing promo...' });
-      const mixedBlob = await mixPromo(voiceBlob, musicBlob, {
-        musicVolume: 0.22,
-        duckLevel: 0.06,
-        fadeInDuration: 0.8,
-        fadeOutDuration: 2.5,
-        voiceDelay: 1.2,
-      });
+      const mixedBlob = await mixPromo(voiceBlob, musicBlob);
 
       const url = URL.createObjectURL(mixedBlob);
       setPreviewUrl(url);

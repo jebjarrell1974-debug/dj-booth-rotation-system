@@ -90,14 +90,13 @@ function encodeWav(audioBuffer) {
 
 export async function mixPromo(voiceBlob, musicBlob, options = {}) {
   const {
-    musicVolume = 0.25,
-    duckLevel = 0.08,
-    fadeInDuration = 1.0,
-    fadeOutDuration = 2.0,
-    voiceDelay = 1.5,
-    duckAttack = 0.3,
-    duckRelease = 0.5,
-    leadingSilence = 1.5,
+    fullMusicIntro = 5.0,
+    fullMusicOutro = 5.0,
+    duckLevel = 0.12,
+    voiceDelay = 0.5,
+    duckAttack = 0.5,
+    duckRelease = 0.8,
+    voiceGain = 1.3,
   } = options;
 
   const tempCtx = new AudioContext({ sampleRate: 44100 });
@@ -111,7 +110,9 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
     tempCtx.close();
   }
 
-  const totalDuration = leadingSilence + voiceDelay + voiceBuffer.duration + fadeOutDuration + 1.0;
+  const voiceStart = fullMusicIntro + voiceDelay;
+  const voiceEnd = voiceStart + voiceBuffer.duration;
+  const totalDuration = voiceEnd + fullMusicOutro;
   const sampleRate = 44100;
   const numChannels = Math.max(voiceBuffer.numberOfChannels, musicBuffer.numberOfChannels, 2);
   const offlineCtx = new OfflineAudioContext(numChannels, Math.ceil(totalDuration * sampleRate), sampleRate);
@@ -120,36 +121,77 @@ export async function mixPromo(voiceBlob, musicBlob, options = {}) {
   musicSource.buffer = musicBuffer;
   musicSource.loop = true;
 
-  const musicGain = offlineCtx.createGain();
-  musicGain.gain.setValueAtTime(0, 0);
-  musicGain.gain.linearRampToValueAtTime(musicVolume, leadingSilence + fadeInDuration);
+  const musicGainNode = offlineCtx.createGain();
+  musicGainNode.gain.setValueAtTime(1.0, 0);
 
   const voiceRegions = detectVoiceActivity(voiceBuffer);
-  for (const region of voiceRegions) {
-    const duckStart = Math.max(leadingSilence + fadeInDuration, leadingSilence + voiceDelay + region.start - 0.1);
-    const duckEnd = leadingSilence + voiceDelay + region.end + 0.2;
-    musicGain.gain.setValueAtTime(musicVolume, Math.max(0, duckStart - duckAttack));
-    musicGain.gain.linearRampToValueAtTime(duckLevel, duckStart);
-    musicGain.gain.setValueAtTime(duckLevel, duckEnd);
-    musicGain.gain.linearRampToValueAtTime(musicVolume, duckEnd + duckRelease);
+  if (voiceRegions.length > 0) {
+    const firstVoiceStart = voiceStart + voiceRegions[0].start;
+    const duckBegin = Math.max(0, firstVoiceStart - duckAttack);
+    musicGainNode.gain.setValueAtTime(1.0, duckBegin);
+    musicGainNode.gain.linearRampToValueAtTime(duckLevel, firstVoiceStart);
+
+    for (let i = 0; i < voiceRegions.length; i++) {
+      const region = voiceRegions[i];
+      const regionStart = voiceStart + region.start;
+      const regionEnd = voiceStart + region.end;
+
+      musicGainNode.gain.setValueAtTime(duckLevel, regionStart);
+
+      if (i < voiceRegions.length - 1) {
+        const nextRegionStart = voiceStart + voiceRegions[i + 1].start;
+        const gap = nextRegionStart - regionEnd;
+        if (gap > duckRelease + duckAttack + 0.5) {
+          musicGainNode.gain.linearRampToValueAtTime(1.0, regionEnd + duckRelease);
+          musicGainNode.gain.setValueAtTime(1.0, nextRegionStart - duckAttack);
+          musicGainNode.gain.linearRampToValueAtTime(duckLevel, nextRegionStart);
+        } else {
+          musicGainNode.gain.setValueAtTime(duckLevel, regionEnd);
+        }
+      }
+    }
+
+    const lastVoiceEnd = voiceStart + voiceRegions[voiceRegions.length - 1].end;
+    musicGainNode.gain.setValueAtTime(duckLevel, lastVoiceEnd);
+    musicGainNode.gain.linearRampToValueAtTime(1.0, lastVoiceEnd + duckRelease);
   }
 
-  const fadeStart = totalDuration - fadeOutDuration;
-  musicGain.gain.setValueAtTime(musicVolume, fadeStart);
-  musicGain.gain.linearRampToValueAtTime(0, totalDuration);
+  musicGainNode.gain.setValueAtTime(1.0, totalDuration - 0.01);
 
-  musicSource.connect(musicGain);
-  musicGain.connect(offlineCtx.destination);
-  musicSource.start(leadingSilence);
+  musicSource.connect(musicGainNode);
+  musicGainNode.connect(offlineCtx.destination);
+  musicSource.start(0);
 
   const voiceSource = offlineCtx.createBufferSource();
   voiceSource.buffer = voiceBuffer;
   const voiceGainNode = offlineCtx.createGain();
-  voiceGainNode.gain.setValueAtTime(1.0, 0);
+  voiceGainNode.gain.setValueAtTime(voiceGain, 0);
   voiceSource.connect(voiceGainNode);
   voiceGainNode.connect(offlineCtx.destination);
-  voiceSource.start(leadingSilence + voiceDelay);
+  voiceSource.start(voiceStart);
 
   const rendered = await offlineCtx.startRendering();
+
+  const targetPeak = 0.95;
+  let maxSample = 0;
+  for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+    const data = rendered.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) {
+      const abs = Math.abs(data[i]);
+      if (abs > maxSample) maxSample = abs;
+    }
+  }
+  if (maxSample > 0.001) {
+    const normFactor = targetPeak / maxSample;
+    if (normFactor > 1.0 || normFactor < 0.95) {
+      for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+        const data = rendered.getChannelData(ch);
+        for (let i = 0; i < data.length; i++) {
+          data[i] *= normFactor;
+        }
+      }
+    }
+  }
+
   return encodeWav(rendered);
 }

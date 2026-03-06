@@ -72,10 +72,18 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Safety fade uses `Math.min(2, duration * 0.15)` instead of fixed 5s
 - A 20s commercial triggers transition at ~17s, not 10s
 
-#### Fix: Leading Silence Buffer on Promo Creation (audioMixer.js)
-- `mixPromo` now accepts `leadingSilence` option (default 1.5s)
-- Inserts silence at the beginning of mixed promo output
-- All timing offsets (music start, voice start, ducking regions) shifted by leadingSilence
+#### Rewrite: Promo Mix — Full-Volume Music Bookends (audioMixer.js)
+- `mixPromo` completely rewritten for broadcast-quality commercial output
+- **5 seconds of full-volume music bed intro** — crossfade from previous track blends seamlessly, sounds like a real song started
+- **Music ducks smoothly (0.5s attack) to 0.12 for voice regions** — voice plays over quiet bed
+- **Between voice gaps >1.8s, music returns to full volume** — sounds natural
+- **Music ramps back to full volume (0.8s release) after voice ends**
+- **5 seconds of full-volume music bed outro** — gives next crossfade proper audio to work with
+- Voice gain boosted to 1.3x for clarity over the bed
+- Peak normalization to 0.95 on final output — matches mastered music levels
+- Old parameters removed: `musicVolume`, `fadeInDuration`, `fadeOutDuration`, `leadingSilence`
+- New parameters: `fullMusicIntro=5.0`, `fullMusicOutro=5.0`, `duckLevel=0.12`, `voiceDelay=0.5`, `duckAttack=0.5`, `duckRelease=0.8`, `voiceGain=1.3`
+- Callers in ManualAnnouncementPlayer now use defaults (no custom options)
 
 ### Mar 5, 2026 — Session 26 (Voice Natural Sound + Commercial Overlap Fix)
 
