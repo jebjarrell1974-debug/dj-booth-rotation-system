@@ -126,9 +126,27 @@ export async function encodeToMp3(audioBuffer, bitrate = 192) {
   return new Blob(mp3Data, { type: 'audio/mpeg' });
 }
 
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function processWithAuphonic(audioBlob, authHeaders) {
   const arrayBuffer = await audioBlob.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  const base64 = arrayBufferToBase64(arrayBuffer);
 
   const resp = await fetch('/api/auphonic/process', {
     method: 'POST',
@@ -145,11 +163,7 @@ async function processWithAuphonic(audioBlob, authHeaders) {
   }
 
   const data = await resp.json();
-  const binaryStr = atob(data.audio_base64);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
+  const bytes = base64ToArrayBuffer(data.audio_base64);
   const processedBlob = new Blob([bytes], { type: 'audio/mpeg' });
 
   const tempCtx = new AudioContext();

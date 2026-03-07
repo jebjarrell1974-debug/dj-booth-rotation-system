@@ -540,10 +540,11 @@ app.post('/api/auphonic/process', authenticate, requireDJ, async (req, res) => {
     const processedBuffer = Buffer.from(await audioResp.arrayBuffer());
     console.log(`🎙️ Auphonic: Done! ${(processedBuffer.length / 1024).toFixed(0)}KB processed audio`);
 
+    const durationSec = parseFloat(detailData.data?.length || 0);
     res.json({
       ok: true,
       audio_base64: processedBuffer.toString('base64'),
-      duration_ms: detailData.data?.length_timestring ? parseFloat(detailData.data.length || 0) * 1000 : null,
+      duration_ms: durationSec > 0 ? Math.round(durationSec * 1000) : null,
       content_type: 'audio/mpeg',
     });
 
