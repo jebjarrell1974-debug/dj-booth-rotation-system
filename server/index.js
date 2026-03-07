@@ -428,6 +428,136 @@ app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/auphonic/process', authenticate, requireDJ, async (req, res) => {
+  const apiKey = process.env.AUPHONIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'AUPHONIC_API_KEY not configured' });
+
+  const { audio_base64 } = req.body;
+  if (!audio_base64) return res.status(400).json({ error: 'audio_base64 required' });
+
+  try {
+    const audioBuffer = Buffer.from(audio_base64, 'base64');
+    const boundary = '----AuphonicBoundary' + Date.now();
+
+    const fields = {
+      title: 'DJ Voiceover ' + new Date().toISOString(),
+      filtering: 'true',
+      denoise: 'true',
+      denoiseamount: '0',
+      dehum: '60',
+      leveler: 'true',
+      levelerstrength: '70',
+      normloudness: 'true',
+      loudnesstarget: '-16',
+      loudnessmethod: 'dialog',
+      maxpeak: '-2',
+      action: 'start',
+    };
+
+    let body = '';
+    for (const [key, val] of Object.entries(fields)) {
+      body += `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${val}\r\n`;
+    }
+    body += `--${boundary}\r\nContent-Disposition: form-data; name="output_files"; filename="output.json"\r\nContent-Type: application/json\r\n\r\n[{"format":"mp3","bitrate":"192"}]\r\n`;
+
+    const fileHeader = `--${boundary}\r\nContent-Disposition: form-data; name="input_file"; filename="recording.wav"\r\nContent-Type: audio/wav\r\n\r\n`;
+    const fileFooter = `\r\n--${boundary}--\r\n`;
+
+    const bodyStart = Buffer.from(body + fileHeader, 'utf-8');
+    const bodyEnd = Buffer.from(fileFooter, 'utf-8');
+    const fullBody = Buffer.concat([bodyStart, audioBuffer, bodyEnd]);
+
+    console.log('🎙️ Auphonic: Uploading audio for processing...');
+    const createResp = await fetch('https://auphonic.com/api/simple/productions.json', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body: fullBody,
+    });
+
+    if (!createResp.ok) {
+      const errText = await createResp.text();
+      console.error('🎙️ Auphonic create error:', errText);
+      return res.status(500).json({ error: 'Auphonic upload failed: ' + createResp.status });
+    }
+
+    const createData = await createResp.json();
+    const productionUuid = createData.data?.uuid;
+    if (!productionUuid) {
+      return res.status(500).json({ error: 'No production UUID returned' });
+    }
+
+    console.log(`🎙️ Auphonic: Production ${productionUuid} started, polling...`);
+
+    let status = 'Processing';
+    let attempts = 0;
+    const maxAttempts = 60;
+    while (attempts < maxAttempts) {
+      await new Promise(r => setTimeout(r, 3000));
+      attempts++;
+
+      const statusResp = await fetch(`https://auphonic.com/api/production/${productionUuid}.json`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+
+      if (!statusResp.ok) continue;
+      const statusData = await statusResp.json();
+      const statusCode = statusData.data?.status;
+
+      if (statusCode === 3) {
+        status = 'Done';
+        break;
+      } else if (statusCode === 9 || statusCode === 11 || statusCode === 13) {
+        console.error('🎙️ Auphonic: Production failed with status', statusCode);
+        return res.status(500).json({ error: 'Auphonic processing failed' });
+      }
+    }
+
+    if (status !== 'Done') {
+      return res.status(500).json({ error: 'Auphonic processing timed out' });
+    }
+
+    const detailResp = await fetch(`https://auphonic.com/api/production/${productionUuid}.json`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    const detailData = await detailResp.json();
+    const outputFiles = detailData.data?.output_files || [];
+    const mp3File = outputFiles.find(f => f.format === 'mp3') || outputFiles[0];
+
+    if (!mp3File?.download_url) {
+      return res.status(500).json({ error: 'No output file from Auphonic' });
+    }
+
+    const audioResp = await fetch(mp3File.download_url, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!audioResp.ok) {
+      return res.status(500).json({ error: 'Failed to download processed audio' });
+    }
+
+    const processedBuffer = Buffer.from(await audioResp.arrayBuffer());
+    console.log(`🎙️ Auphonic: Done! ${(processedBuffer.length / 1024).toFixed(0)}KB processed audio`);
+
+    res.json({
+      ok: true,
+      audio_base64: processedBuffer.toString('base64'),
+      duration_ms: detailData.data?.length_timestring ? parseFloat(detailData.data.length || 0) * 1000 : null,
+      content_type: 'audio/mpeg',
+    });
+
+    fetch(`https://auphonic.com/api/production/${productionUuid}.json`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    }).catch(() => {});
+
+  } catch (err) {
+    console.error('🎙️ Auphonic error:', err);
+    res.status(500).json({ error: 'Auphonic processing failed: ' + err.message });
+  }
+});
+
 app.delete('/api/voiceovers', authenticate, requireDJ, (req, res) => {
   const count = clearAllVoiceovers();
   console.log(`🗑️ Cleared all voiceovers: ${count} removed`);

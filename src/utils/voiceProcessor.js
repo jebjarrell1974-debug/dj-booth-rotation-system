@@ -126,18 +126,41 @@ export async function encodeToMp3(audioBuffer, bitrate = 192) {
   return new Blob(mp3Data, { type: 'audio/mpeg' });
 }
 
-export async function processRecording(audioBlob) {
-  const rawBlob = new Blob([audioBlob], { type: audioBlob.type });
-
+async function processWithAuphonic(audioBlob, authHeaders) {
   const arrayBuffer = await audioBlob.arrayBuffer();
-  const tempCtx = new AudioContext({ sampleRate: 44100 });
-  let decoded;
-  try {
-    decoded = await tempCtx.decodeAudioData(arrayBuffer);
-  } finally {
-    tempCtx.close();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+  const resp = await fetch('/api/auphonic/process', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+    },
+    body: JSON.stringify({ audio_base64: base64 }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || 'Auphonic processing failed');
   }
 
+  const data = await resp.json();
+  const binaryStr = atob(data.audio_base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  const processedBlob = new Blob([bytes], { type: 'audio/mpeg' });
+
+  const tempCtx = new AudioContext();
+  const decoded = await tempCtx.decodeAudioData(bytes.buffer.slice(0));
+  tempCtx.close();
+  const durationMs = Math.round(decoded.duration * 1000);
+
+  return { processedMp3Blob: processedBlob, durationMs };
+}
+
+function processLocally(decoded) {
   const sampleRate = 44100;
   const numChannels = 1;
   const offlineCtx = new OfflineAudioContext(numChannels, decoded.length, sampleRate);
@@ -168,20 +191,44 @@ export async function processRecording(audioBlob) {
   presenceEq.connect(offlineCtx.destination);
 
   source.start(0);
+  return offlineCtx.startRendering();
+}
 
-  let processed = await offlineCtx.startRendering();
+export async function processRecording(audioBlob, authHeaders = {}) {
+  const rawBlob = new Blob([audioBlob], { type: audioBlob.type });
 
+  try {
+    const result = await processWithAuphonic(audioBlob, authHeaders);
+    return {
+      processedMp3Blob: result.processedMp3Blob,
+      rawBlob,
+      durationMs: result.durationMs,
+      processedBy: 'auphonic',
+    };
+  } catch (auphonicErr) {
+    console.warn('Auphonic unavailable, falling back to local processing:', auphonicErr.message);
+  }
+
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const tempCtx = new AudioContext({ sampleRate: 44100 });
+  let decoded;
+  try {
+    decoded = await tempCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    tempCtx.close();
+  }
+
+  let processed = await processLocally(decoded);
   processed = trimSilence(processed, 0.01);
-
   normalizeBuffer(processed, -1);
 
   const durationMs = Math.round((processed.length / processed.sampleRate) * 1000);
-
   const processedMp3Blob = await encodeToMp3(processed, 192);
 
   return {
     processedMp3Blob,
     rawBlob,
     durationMs,
+    processedBy: 'local',
   };
 }

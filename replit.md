@@ -80,6 +80,18 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Before any GitHub push**: verify the file list does NOT contain screenshots, music files, database files, or Replit internal state files
 - **Test impact on Pi before pushing**: consider what the update script will do with every change
 
+### ElevenLabs Voice Clone Status
+- **Professional Voice Clone COMPLETED** — 3-hour recording session submitted and trained
+- **Result**: Clone does NOT sound realistic enough — sounds robotic, not human, not like the user
+- **30+ parameter adjustments attempted** across V1-V9 settings — none achieved acceptable quality
+- **Current voice settings (V9)**: L1=0.50/0.25/0.92, L2=0.45/0.32/0.95, L3=0.40/0.40/0.97, L4=0.38/0.45/1.0, L5=0.48/0.22/0.92; use_speaker_boost: true; model: eleven_multilingual_v2
+- **Conclusion**: ElevenLabs PVC is not producing acceptable results for this use case
+- **Auphonic API INTEGRATED** into Voice Studio — automatic professional post-processing (noise reduction, auto-EQ, leveling, loudness normalization)
+- **Flow**: Record → Auphonic processes → Preview polished audio → Save (falls back to local processing if Auphonic unavailable)
+- **Auphonic settings**: filtering=true, denoise=true (auto), dehum=60Hz, leveler=true (70%), loudness=-16 LUFS dialog-gated, maxpeak=-2dBTP, output=MP3 192kbps
+- **AUPHONIC_API_KEY** stored as environment variable (shared)
+- **DO NOT suggest more ElevenLabs voice tuning** — it has been exhaustively tried
+
 ### Mar 6, 2026 — Session 30 (Real System Health Metrics + Direct Fleet Access)
 
 #### Feature: Direct Fleet Dashboard Access at /fleet

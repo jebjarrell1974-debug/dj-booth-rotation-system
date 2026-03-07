@@ -417,7 +417,9 @@ export default function VoiceStudio() {
 
         setIsProcessing(true);
         try {
-          const { processedMp3Blob, rawBlob, durationMs } = await processRecording(blob);
+          const { processedMp3Blob, rawBlob, durationMs, processedBy } = await processRecording(blob, getAuthHeaders());
+          if (processedBy === 'auphonic') console.log('🎙️ Audio processed by Auphonic');
+          else console.log('🎙️ Audio processed locally (Auphonic unavailable)');
 
           if (capturedItem.category === 'promo' && capturedItem.promoData) {
             const promo = capturedItem.promoData;
@@ -1055,7 +1057,7 @@ export default function VoiceStudio() {
             <RefreshCw className="w-10 h-10 text-[#00d4ff] animate-spin mx-auto mb-3" />
             <p className="text-white font-medium">Processing recording...</p>
             <p className="text-xs text-gray-500 mt-1">
-              {currentItem?.category === 'promo' ? 'Mixing voice + music bed + SFX...' : 'Applying compression, EQ, normalization — preview coming up'}
+              {currentItem?.category === 'promo' ? 'Mixing voice + music bed + SFX...' : 'Sending to Auphonic for professional processing — this takes a moment...'}
             </p>
           </div>
         )}
