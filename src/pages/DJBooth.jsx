@@ -3511,7 +3511,8 @@ export default function DJBooth() {
                   setInterstitialSongsState(interstitials);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
                   const overrideSet = new Set(manualOverrides.map(id => String(id)));
-                  Object.entries(playlists).forEach(([dancerId, displayedSongs]) => {
+                  const playlistUpdates = [];
+                  for (const [dancerId, displayedSongs] of Object.entries(playlists)) {
                     const dancer = dancers.find(d => String(d.id) === String(dancerId));
                     const existingPlaylist = dancer?.playlist || [];
 
@@ -3523,12 +3524,25 @@ export default function DJBooth() {
                     }
 
                     if (updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i])) {
-                      updateDancerMutation.mutate({ 
-                        id: dancerId, 
-                        data: { playlist: updatedPlaylist } 
-                      });
+                      playlistUpdates.push({ id: dancerId, name: dancer?.name, playlist: updatedPlaylist });
                     }
-                  });
+                  }
+                  let saveErrors = 0;
+                  for (const update of playlistUpdates) {
+                    try {
+                      await localEntities.Dancer.update(update.id, { playlist: update.playlist });
+                      console.log(`💾 Saved ${update.name}'s playlist (${update.playlist.length} songs)`);
+                    } catch (err) {
+                      saveErrors++;
+                      console.error(`❌ Failed to save ${update.name}'s playlist:`, err.message);
+                    }
+                  }
+                  if (saveErrors > 0) {
+                    console.error(`❌ ${saveErrors} playlist save(s) failed — check connection`);
+                  }
+                  if (playlistUpdates.length > 0) {
+                    queryClient.invalidateQueries({ queryKey: ['dancers'] });
+                  }
                   if (tracks.length > 0) {
                     const updatedSongs = { ...(rotationSongsRef.current || {}) };
                     for (const [dancerId, songNames] of Object.entries(playlists)) {
@@ -3565,7 +3579,8 @@ export default function DJBooth() {
                       }
                     }
                     if (upcoming.length > 0) {
-                      setTimeout(() => announcementRef.current?.preCacheUpcoming(upcoming), 2000);
+                      console.log(`🎙️ Pre-caching voiceovers for ${upcoming.length} upcoming entertainer(s)`);
+                      announcementRef.current?.preCacheUpcoming(upcoming);
                     }
                   }
                   if (activeStage) {

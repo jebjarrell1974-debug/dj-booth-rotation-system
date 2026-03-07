@@ -224,47 +224,151 @@ function DeviceDetailModal({ device, onClose }) {
   );
 }
 
-function DeviceCard({ device, onDelete, onViewDetail }) {
+function formatDiskGB(free, total) {
+  if (!free || !total) return '--';
+  const freeGB = (free / 1073741824).toFixed(1);
+  const totalGB = (total / 1073741824).toFixed(1);
+  const pct = Math.round((free / total) * 100);
+  return `${freeGB}/${totalGB} GB (${pct}%)`;
+}
+
+function diskColorClass(free, total) {
+  if (!free || !total) return 'text-gray-400';
+  const pct = (free / total) * 100;
+  if (pct < 10) return 'text-red-400';
+  if (pct < 25) return 'text-yellow-400';
+  return 'text-gray-300';
+}
+
+function tempColorClass(temp) {
+  if (!temp) return 'text-gray-300';
+  if (temp > 80) return 'text-red-400';
+  if (temp > 70) return 'text-yellow-400';
+  return 'text-gray-300';
+}
+
+function formatUptime(seconds) {
+  if (!seconds) return '--';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function NetworkBars({ network }) {
+  if (!network || !network.pingOk) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-end gap-[1px] h-3">
+          {[3,5,8,11].map((h,i) => <span key={i} className="w-[3px] rounded-sm bg-red-400" style={{height:h}} />)}
+        </span>
+        <span className="text-red-400">{network?.packetLoss === 100 ? 'No Internet' : 'Down'}</span>
+      </span>
+    );
+  }
+  const avg = network.pingAvg;
+  let quality, cls, bars;
+  if (avg < 30) { quality = 'Excellent'; cls = 'text-green-400'; bars = 4; }
+  else if (avg < 60) { quality = 'Good'; cls = 'text-green-400'; bars = 3; }
+  else if (avg < 100) { quality = 'Fair'; cls = 'text-yellow-400'; bars = 2; }
+  else { quality = 'Poor'; cls = 'text-red-400'; bars = 1; }
+  const heights = [3,5,8,11];
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-end gap-[1px] h-3">
+        {heights.map((h,i) => <span key={i} className={`w-[3px] rounded-sm ${i < bars ? (cls.replace('text-','bg-')) : 'bg-gray-600'}`} style={{height:h}} />)}
+      </span>
+      <span className={cls}>{avg.toFixed(0)}ms</span>
+      <span className="text-gray-500 text-[10px]">{quality}</span>
+    </span>
+  );
+}
+
+function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands }) {
   const isOnline = device.status === 'online';
   const timeSince = device.timeSinceHeartbeat;
   const isStale = timeSince && timeSince > 10 * 60 * 1000;
+  const devId = device.device_id;
+
+  const cmdBtn = (action, label, icon, colorClass, borderClass) => {
+    const isPending = pendingCommands?.has(`${devId}-${action}`);
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onCommand(devId, action, device.device_name); }}
+        disabled={isPending || !isOnline}
+        className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-lg bg-[#1a1a2e] border ${borderClass} ${colorClass} text-xs font-medium hover:bg-opacity-20 active:scale-95 transition-all min-h-0 disabled:opacity-40 disabled:cursor-not-allowed`}>
+        {isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : icon} {label}
+      </button>
+    );
+  };
 
   return (
-    <div className={`bg-[#0d0d1f] border rounded-lg p-4 cursor-pointer hover:border-[#00d4ff]/30 transition-colors ${isStale ? 'border-red-500/30' : 'border-[#1e293b]'}`}
-      onClick={() => onViewDetail(device)}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'bg-red-400/60'}`} />
-          <div>
-            <h3 className="text-white font-medium">{device.device_name}</h3>
-            <p className="text-sm text-gray-400">{device.club_name || 'No club assigned'}</p>
-          </div>
+    <div className={`bg-[#0d0d1f] border rounded-xl overflow-hidden transition-colors ${isOnline ? 'border-[#1a3a2a]' : isStale ? 'border-red-500/30' : 'border-[#1e293b]'}`}>
+      <div className="px-4 pt-3 pb-2 flex items-start justify-between">
+        <div>
+          <h3 className="text-white font-semibold text-base">{device.device_name}</h3>
+          <p className="text-xs text-gray-500">{device.club_name || 'No club assigned'}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className={isOnline ? 'border-green-500/50 text-green-400' : 'border-red-500/50 text-red-400'}>
-            {isOnline ? 'Online' : 'Offline'}
-          </Badge>
-          <Button variant="ghost" size="icon" onClick={e => { e.stopPropagation(); onDelete(device.device_id); }}
-            className="text-gray-500 hover:text-red-400 h-8 w-8">
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
-        </div>
+        <Badge variant="outline" className={`text-xs font-semibold uppercase tracking-wide ${isOnline ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-red-500/30 text-red-400 bg-red-500/10'}`}>
+          {isOnline ? 'Online' : 'Offline'}
+        </Badge>
       </div>
-      <div className="mt-2 flex gap-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatTimeAgo(device.last_heartbeat)}</span>
-        <span>v{device.app_version}</span>
-        <span>Sync: {device.sync_hour}:{String(device.sync_minute).padStart(2, '0')}</span>
-        {device.apiCosts && (
-          <span className="flex items-center gap-1 text-emerald-400">
-            <DollarSign className="w-3 h-3" /> ${device.apiCosts.total?.toFixed(2)} (30d)
-          </span>
-        )}
+
+      <div className="px-4 pb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div className="flex justify-between"><span className="text-gray-500">CPU Temp</span><span className={tempColorClass(device.cpuTemp)}>{device.cpuTemp ? `${device.cpuTemp}°C` : '--'}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Uptime</span><span className="text-gray-300">{formatUptime(device.uptime)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Disk</span><span className={diskColorClass(device.diskFree, device.diskTotal)}>{formatDiskGB(device.diskFree, device.diskTotal)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Tracks</span><span className="text-gray-300">{device.trackCount || 0}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Voiceovers</span><span className="text-gray-300">{device.voiceoverCount || 0}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Version</span><span className="text-gray-300">{device.app_version || '--'}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Memory</span><span className={`${device.memPct > 90 ? 'text-red-400' : device.memPct > 75 ? 'text-yellow-400' : 'text-gray-300'}`}>{device.memPct != null ? `${device.memPct}% used` : '--'}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Service</span><span className="text-gray-300">{formatUptime(device.serviceUptime)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Entertainers</span><span className="text-pink-400">{device.activeEntertainers || 0}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Errors</span><span className={device.errorCount > 0 ? 'text-red-400' : 'text-gray-300'}>{device.errorCount || 0}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Last Update</span><span className="text-gray-300">{device.lastUpdateTime ? formatTimeAgo(device.lastUpdateTime) : '--'}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">IP</span><span className="text-gray-300">{device.tailscaleIp || '--'}</span></div>
+        <div className="flex justify-between col-span-2"><span className="text-gray-500">Network</span><span className="text-gray-300"><NetworkBars network={device.network} /></span></div>
       </div>
-      {isStale && !isOnline && (
-        <div className="mt-2 text-xs text-red-400 flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" /> No heartbeat in {formatTimeAgo(device.last_heartbeat)}
+
+      {(device.currentDancer || device.currentSong) && (
+        <div className="px-4 pb-2 text-xs">
+          <span className="text-gray-500">Now Playing: </span>
+          <span className="text-purple-400">{device.currentDancer || ''}{device.currentDancer && device.currentSong ? ' — ' : ''}{device.currentSong || ''}</span>
         </div>
       )}
+
+      <div className="px-4 pb-2 text-[11px] text-gray-600">Last seen: {formatTimeAgo(device.last_heartbeat)}</div>
+
+      {device.apiCosts && (
+        <div className="px-4 pb-2 border-t border-[#1a1a2e] pt-2">
+          <p className="text-[11px] text-gray-500 mb-1 flex items-center gap-1"><DollarSign className="w-3 h-3" /> API Costs (30 Day)</p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div><div className="text-[9px] text-gray-600 uppercase">Total</div><div className="text-xs font-semibold text-emerald-400">${(device.apiCosts.total || 0).toFixed(2)}</div></div>
+            <div><div className="text-[9px] text-gray-600 uppercase">ElevenLabs</div><div className="text-xs font-semibold text-purple-400">${(device.apiCosts.elevenlabs || 0).toFixed(2)}</div></div>
+            <div><div className="text-[9px] text-gray-600 uppercase">OpenAI</div><div className="text-xs font-semibold text-blue-400">${(device.apiCosts.openai || 0).toFixed(2)}</div></div>
+          </div>
+          <p className="text-[10px] text-gray-600 text-center mt-1">{device.apiCosts.calls || 0} API calls</p>
+        </div>
+      )}
+
+      <div className="border-t border-[#1e293b] px-3 py-2 flex gap-2">
+        {cmdBtn('update', 'Update', <Upload className="w-3.5 h-3.5" />, 'text-blue-400', 'border-blue-500/30')}
+        {cmdBtn('restart', 'Restart', <RefreshCw className="w-3.5 h-3.5" />, 'text-yellow-400', 'border-yellow-500/30')}
+        {cmdBtn('sync', 'Sync', <Activity className="w-3.5 h-3.5" />, 'text-purple-400', 'border-purple-500/30')}
+        {cmdBtn('reboot', 'Reboot', <AlertTriangle className="w-3.5 h-3.5" />, 'text-red-400', 'border-red-500/30')}
+      </div>
+      <div className="border-t border-[#1e293b]/50 px-3 py-1.5 flex gap-2">
+        <button onClick={(e) => { e.stopPropagation(); onViewDetail(device); }}
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-400 text-[11px] font-medium hover:text-blue-400 hover:bg-blue-500/10 transition-all">
+          <Eye className="w-3 h-3" /> Details
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onDelete(device.device_id); }}
+          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-500 text-[11px] font-medium hover:text-red-400 hover:bg-red-500/10 transition-all">
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -655,6 +759,9 @@ export default function FleetDashboard() {
   const [viewingDevice, setViewingDevice] = useState(null);
   const [isHomebase, setIsHomebase] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [fleetPin, setFleetPin] = useState(() => localStorage.getItem('fleet_pin') || '');
+  const [pendingCmds, setPendingCmds] = useState(new Set());
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     async function ensureAuth() {
@@ -705,10 +812,6 @@ export default function FleetDashboard() {
 
   useEffect(() => { if (authReady) refresh(); }, [authReady, refresh]);
 
-  useEffect(() => {
-    const interval = setInterval(refresh, 60000);
-    return () => clearInterval(interval);
-  }, [refresh]);
 
   const handleRegister = async (deviceName, clubName) => {
     const device = await fleetAdmin.registerDevice(deviceName, clubName);
@@ -721,6 +824,70 @@ export default function FleetDashboard() {
     await fleetAdmin.deleteDevice(deviceId);
     refresh();
   };
+
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  const handleCommand = useCallback(async (deviceId, action, deviceName) => {
+    if (!fleetPin) {
+      showToast('Enter your PIN first', 'error');
+      return;
+    }
+    if (action === 'reboot') {
+      if (!confirm(`REBOOT "${deviceName}"?\n\nThis will take 1-2 minutes to come back online.`)) return;
+    }
+    const key = `${deviceId}-${action}`;
+    setPendingCmds(prev => new Set([...prev, key]));
+    try {
+      const res = await fetch(`/api/monitor/command/${encodeURIComponent(deviceId)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: fleetPin }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const labels = { update: 'Update queued', restart: 'Restart queued', reboot: 'Reboot queued', sync: 'Sync queued' };
+        showToast(`${labels[action] || 'Queued'} — ${deviceName}`, 'success');
+        const timeout = action === 'update' ? 5000 : 3000;
+        setTimeout(() => {
+          setPendingCmds(prev => { const next = new Set(prev); next.delete(key); return next; });
+        }, timeout);
+      } else {
+        setPendingCmds(prev => { const next = new Set(prev); next.delete(key); return next; });
+        showToast(data.error || 'Command failed', 'error');
+      }
+    } catch (err) {
+      setPendingCmds(prev => { const next = new Set(prev); next.delete(key); return next; });
+      showToast(`Failed: ${err.message}`, 'error');
+    }
+  }, [fleetPin, showToast]);
+
+  const devices = overview?.devices || [];
+
+  const handleUpdateAll = useCallback(() => {
+    const onlineDevices = devices.filter(d => d.status === 'online');
+    if (onlineDevices.length === 0) { showToast('No online devices', 'error'); return; }
+    if (!confirm(`Update all ${onlineDevices.length} online device(s)?`)) return;
+    for (const d of onlineDevices) handleCommand(d.device_id, 'update', d.device_name);
+  }, [devices, handleCommand, showToast]);
+
+  const handleSyncAll = useCallback(() => {
+    const onlineDevices = devices.filter(d => d.status === 'online');
+    if (onlineDevices.length === 0) { showToast('No online devices', 'error'); return; }
+    for (const d of onlineDevices) handleCommand(d.device_id, 'sync', d.device_name);
+  }, [devices, handleCommand, showToast]);
+
+  const handleTestTelegram = useCallback(async () => {
+    try {
+      const res = await fetch('/api/monitor/test-telegram', { method: 'POST' });
+      if (res.ok) showToast('Test alert sent to Telegram', 'success');
+      else showToast('Telegram test failed', 'error');
+    } catch (err) {
+      showToast(`Telegram error: ${err.message}`, 'error');
+    }
+  }, [showToast]);
 
   const offlineCount = overview?.offlineDevices || 0;
   const hasOfflineAlert = offlineCount > 0 && (overview?.totalDevices || 0) > 0;
@@ -740,27 +907,49 @@ export default function FleetDashboard() {
     return acc;
   }, {});
 
-  const devices = overview?.devices || [];
+  const [refreshCountdown, setRefreshCountdown] = useState(60);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRefreshCountdown(prev => {
+        if (prev <= 1) {
+          refresh();
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [refresh]);
 
   return (
-    <div className="min-h-screen bg-[#08081a] text-white">
-      <div className="max-w-4xl mx-auto p-4">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Link to="/Configuration" className="text-gray-400 hover:text-white">
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
-                <Server className="w-5 h-5 text-[#00d4ff]" /> Fleet Dashboard
-              </h1>
-              <p className="text-sm text-gray-500">Manage your deployed Pi units</p>
-            </div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={refresh} className="text-gray-400 hover:text-white">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
+    <div className="fixed inset-0 overflow-y-auto bg-[#08081a] text-white fleet-compact" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="sticky top-0 z-50 bg-gradient-to-b from-[#0d0d2b] to-[#08081a] border-b border-[#1e293b] px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-[#00d4ff] tracking-wide" style={{textShadow: '0 0 20px rgba(0,212,255,0.4)'}}>NEON AI DJ</h1>
+          <p className="text-[11px] text-gray-500 tracking-wide">Fleet Command Center</p>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-600">{refreshCountdown}s</span>
+          <div className={`w-2 h-2 rounded-full ${overview ? 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-400'}`} />
+        </div>
+      </div>
+
+      <div className="sticky top-[52px] z-40 bg-[#0d0d1f] border-b border-[#1e293b] px-4 py-2 flex items-center gap-3">
+        <label className="text-xs text-gray-500 shrink-0">PIN:</label>
+        <input
+          type="password"
+          inputMode="numeric"
+          maxLength={10}
+          value={fleetPin}
+          onChange={(e) => { setFleetPin(e.target.value); localStorage.setItem('fleet_pin', e.target.value); }}
+          placeholder="Enter PIN"
+          className="bg-[#1a1a2e] border border-[#2d2d4a] rounded-md text-white px-2 py-1 text-sm w-24 outline-none focus:border-[#00d4ff]"
+          style={{ WebkitTextSecurity: 'disc' }}
+        />
+      </div>
+
+      <div className="max-w-4xl mx-auto p-4">
 
         {hasOfflineAlert && (
           <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2">
@@ -852,7 +1041,9 @@ export default function FleetDashboard() {
               devices.map(device => (
                 <DeviceCard key={device.device_id} device={device}
                   onDelete={handleDeleteDevice}
-                  onViewDetail={setViewingDevice} />
+                  onViewDetail={setViewingDevice}
+                  onCommand={handleCommand}
+                  pendingCommands={pendingCmds} />
               ))
             )}
           </div>
@@ -954,6 +1145,15 @@ export default function FleetDashboard() {
           <DeviceDetailModal device={viewingDevice} onClose={() => setViewingDevice(null)} />
         )}
       </div>
+
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-xl text-sm font-medium backdrop-blur-sm border animate-in fade-in slide-in-from-bottom-4 duration-300
+          ${toast.type === 'success' ? 'bg-green-500/20 border-green-500/40 text-green-300' :
+            toast.type === 'error' ? 'bg-red-500/20 border-red-500/40 text-red-300' :
+            'bg-blue-500/20 border-blue-500/40 text-blue-300'}`}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

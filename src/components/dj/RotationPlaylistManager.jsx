@@ -91,6 +91,7 @@ export default function RotationPlaylistManager({
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
   const djOverridesRef = React.useRef(new Set());
+  const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
   const [serverTracks, setServerTracks] = useState([]);
   const [serverGenres, setServerGenres] = useState([]);
@@ -154,6 +155,8 @@ export default function RotationPlaylistManager({
   }, [interstitialRemoteVersion]);
 
   useEffect(() => {
+    if (saveGuardRef.current > Date.now()) return;
+
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
       setSongAssignments(prev => {
         const fromActive = { ...prev };
@@ -579,6 +582,7 @@ export default function RotationPlaylistManager({
     const finalInterstitials = { ...interstitialSongs };
     const manualOverrides = [...djOverridesRef.current];
 
+    saveGuardRef.current = Date.now() + 5000;
     onSaveAll?.(localRotation, playlists, finalInterstitials, manualOverrides);
     toast.success('Rotation & playlists saved');
   };

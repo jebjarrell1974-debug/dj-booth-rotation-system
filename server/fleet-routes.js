@@ -315,9 +315,9 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
   const voiceovers = listVoiceovers();
 
   const fleetStatus = getFleetStatus();
-  const costMap = {};
+  const fleetMap = {};
   for (const dev of fleetStatus) {
-    if (dev.apiCosts) costMap[dev.deviceId] = dev.apiCosts;
+    fleetMap[dev.deviceId] = dev;
   }
 
   const uniqueDancers = [...new Set(voiceovers.map(v => v.dancer_name))];
@@ -346,11 +346,29 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
     pendingRecordings: pendingCount,
     pendingPromos,
     voiceoversNeeded: pendingCount + pendingPromos,
-    devices: devices.map(({ api_key, ...d }) => ({
-      ...d,
-      timeSinceHeartbeat: d.last_heartbeat ? Date.now() - d.last_heartbeat : null,
-      apiCosts: costMap[d.device_id] || null
-    }))
+    devices: devices.map(({ api_key, ...d }) => {
+      const live = fleetMap[d.device_id] || {};
+      return {
+        ...d,
+        timeSinceHeartbeat: d.last_heartbeat ? Date.now() - d.last_heartbeat : null,
+        apiCosts: live.apiCosts || null,
+        cpuTemp: live.cpuTemp || null,
+        diskFree: live.diskFree || null,
+        diskTotal: live.diskTotal || null,
+        uptime: live.uptime || null,
+        trackCount: live.trackCount || 0,
+        voiceoverCount: live.voiceoverCount || 0,
+        memPct: live.memPct || null,
+        serviceUptime: live.serviceUptime || null,
+        activeEntertainers: live.activeEntertainers || 0,
+        errorCount: live.errorCount || 0,
+        network: live.network || null,
+        tailscaleIp: live.tailscaleIp || '',
+        currentDancer: live.currentDancer || null,
+        currentSong: live.currentSong || null,
+        lastUpdateTime: live.lastUpdateTime || null,
+      };
+    })
   };
 
   res.json(overview);

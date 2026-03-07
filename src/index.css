@@ -122,6 +122,18 @@
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
+
+  .fleet-compact button,
+  .fleet-compact [role="button"] {
+    min-height: unset;
+    min-width: unset;
+  }
+
+  .fleet-compact .overflow-y-auto {
+    overscroll-behavior: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+  }
 }
 
 .remote-view {
