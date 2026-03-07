@@ -63,7 +63,9 @@ function getCpuTemp() {
 
 function getDiskInfo() {
   try {
-    const df = execSync("df -B1 / | tail -1", { encoding: 'utf8' }).trim().split(/\s+/);
+    const musicPath = process.env.MUSIC_PATH || process.env.HOME || '/';
+    const target = existsSync(musicPath) ? musicPath : '/';
+    const df = execSync(`df -B1 "${target}" | tail -1`, { encoding: 'utf8' }).trim().split(/\s+/);
     return { total: parseInt(df[1]), free: parseInt(df[3]) };
   } catch {
     return { total: null, free: null };

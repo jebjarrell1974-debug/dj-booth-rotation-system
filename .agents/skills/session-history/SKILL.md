@@ -50,6 +50,56 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Mar 7, 2026 — Session 27 (Fleet Command Buttons + Scroll Fix + USB SSD Plan)
+
+### Feature: Fleet Remote Command Buttons
+- **Added**: Update, Restart, Sync, Reboot buttons on every DeviceCard in `/fleet` page
+- **PIN authentication**: PIN input bar at top of fleet page, saved in localStorage (`fleet_pin`), sent with every command
+- **Command flow**: Buttons POST to `/api/monitor/command/:deviceId/:action` with PIN → server queues command → Pi picks up on next heartbeat poll
+- **UX**: Spinner on button while pending, clears immediately on error (invalid PIN, network fail), clears after timeout on success. Reboot shows confirmation dialog
+- **Disabled**: Buttons disabled for offline devices
+- **Toast notifications**: Success/error feedback at bottom of screen
+- **Bulk actions**: `handleUpdateAll` and `handleSyncAll` functions defined (not yet wired to UI buttons)
+- **Files**: `src/pages/FleetDashboard.jsx`
+
+### Fix: Fleet Page Scrolling on iPhone Safari
+- **Problem**: Fleet page wouldn't scroll on iPhone — content below fold was unreachable
+- **Root cause**: Global CSS (`src/index.css`) sets `overflow: hidden` on html, body, and `#root` for the DJ booth. Fleet page was trapped inside this non-scrollable container
+- **Failed approaches**: CSS class (`fleet-page`) overriding html/body overflow — didn't work on iOS Safari. `h-screen flex flex-col` with `flex-1 overflow-y-auto` inner container — also didn't scroll
+- **Working fix**: `fixed inset-0 overflow-y-auto` on outer container — takes element completely out of document flow (same technique as DeviceDetailModal which always scrolled). Header/PIN bar use `sticky` positioning
+- **Button sizing**: Added `.fleet-compact` CSS class to unset `min-height: 44px` / `min-width: 44px` on fleet page buttons (command buttons need to be compact)
+- **Files**: `src/pages/FleetDashboard.jsx`, `src/index.css`
+
+### Pushed to GitHub
+- Commit: "Fleet Command Center: remote command buttons, PIN auth, scroll fix"
+- Homebase needs `~/djbooth-update.sh` to pull changes
+
+### TODO: Next Session (USB SSD Music Library)
+- **Goal**: Use 1TB USB 3.2 SSD as homebase music library instead of SD card
+- **Why**: User DJs on other computers, wants to move SSD between them to add music, then plug back into homebase Pi
+- **Plan**: 
+  1. Get drive UUID via `lsblk` and `sudo blkid`
+  2. Create `/etc/fstab` entry with UUID so drive always mounts to same path (e.g., `/mnt/music-ssd`)
+  3. Update homebase's `MUSIC_PATH` env var to point to the SSD mount
+  4. R2 sync will distribute new music from homebase SSD to all fleet Pis automatically
+- **Key requirement**: Must mount to same path every time regardless of USB port
+- **Filesystem**: exFAT — user uses Windows, Mac, and Linux computers for DJing. exFAT works natively on all three. Always safely eject before unplugging
+- **Pi exFAT support**: May need `sudo apt install exfatprogs` on homebase if not already installed
+- **R2 music reset**: Wipe the `music/` prefix in R2 bucket and re-upload fresh from the USB SSD. Most filenames will be the same so dancer playlists won't be affected
+- **IMPORTANT**: Only change `MUSIC_PATH` on homebase — do NOT change it on any fleet Pis. Fleet units keep their existing music path. Only homebase reads from the USB SSD
+
+### TODO: Next Session (Homebase-Aware Update Script)
+- **Goal**: Update script should skip Chrome kill/relaunch on homebase
+- **How**: Check `IS_HOMEBASE=true` env var in `djbooth-update-github.sh`, skip kiosk browser restart if set
+- **File**: `public/djbooth-update-github.sh`
+
+### Investigation: Homebase Random Reboot
+- Homebase rebooted unexpectedly. No crontab found (`sudo crontab -l` returned empty)
+- Need to check `last reboot`, `journalctl --list-boots`, and `journalctl -b -1 -n 30` for cause
+- Possible causes: power blip, overheating, kernel panic
+
+---
+
 ## Mar 4, 2026 — Session 20 Changes
 
 ### New Features
