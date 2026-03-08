@@ -202,7 +202,16 @@ const AudioEngine = forwardRef(({
     deckBRef.current = deckB;
     voiceElRef.current = voice;
 
+    const dualDeckMonitor = setInterval(() => {
+      const a = deckARef.current;
+      const b = deckBRef.current;
+      if (a && b && !a.paused && !b.paused && a.src && b.src) {
+        console.error(`🚨 DUAL-DECK ALERT: Both decks playing! A.src=${a.src.substring(0, 60)}, B.src=${b.src.substring(0, 60)}, crossfading=${crossfadeInProgressRef.current}`);
+      }
+    }, 2000);
+
     return () => {
+      clearInterval(dualDeckMonitor);
       deckA.pause();
       deckA.src = '';
       deckB.pause();
@@ -436,14 +445,20 @@ const AudioEngine = forwardRef(({
 
   const playTrack = useCallback(async (fileHandle, crossfade = true) => {
     if (playTrackLockRef.current) {
-      console.log('⏳ PlayTrack: Waiting for previous track load to finish...');
-      try { await playTrackLockRef.current; } catch {}
+      console.log('🚫 PlayTrack: BLOCKED — another track is already loading, skipping this call');
+      return false;
     }
 
     let releaseLock;
     playTrackLockRef.current = new Promise(r => { releaseLock = r; });
 
     try {
+
+    const deckA = deckARef.current;
+    const deckB = deckBRef.current;
+    const aDeck = activeDeck.current;
+    console.log(`🔍 PlayTrack: DECK STATE before load — active=${aDeck}, A.paused=${deckA?.paused}, A.src=${deckA?.src ? 'set' : 'empty'}, B.paused=${deckB?.paused}, B.src=${deckB?.src ? 'set' : 'empty'}`);
+
     const trackData = await loadTrack(fileHandle);
     if (!trackData) {
       console.error('❌ PlayTrack: loadTrack returned null — file unreadable');
@@ -615,6 +630,8 @@ const AudioEngine = forwardRef(({
 
     isPlayingRef.current = true;
     setIsPlaying(true);
+
+    console.log(`🔍 PlayTrack: DECK STATE after play — active=${activeDeck.current}, A.paused=${deckARef.current?.paused}, B.paused=${deckBRef.current?.paused}`);
 
     const newDeck = inactiveDeck;
     const newDeckGain = inactiveGain;

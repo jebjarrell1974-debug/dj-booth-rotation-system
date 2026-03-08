@@ -62,6 +62,19 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Added `playTrackLockRef` mutex to AudioEngine's `playTrack` — serializes concurrent calls so only one track loads at a time
 - **Commit**: `afbfd5e`
 
+### Feature: Folder Lock shows actual picks + tap-to-reroll
+- When Folder Lock mode changes, all non-DJ-overridden assignments are cleared and re-picked under new mode
+- `rerollSong()` in RotationPlaylistManager: tap a folder-locked song to re-roll it from the same folders, excluding all other assigned songs
+- Visual: shuffle icon (amber) on folder-locked songs, hover highlight, currently-playing song cannot be re-rolled
+- **Files**: `src/components/dj/RotationPlaylistManager.jsx`
+
+### Feature: Dirty word filter for dancers
+- Songs with "dirty" (case-insensitive) in filename hidden from DancerView, stripped on playlist save, blocked on addSong
+- Server-side: `getMusicTracks` `excludeDirty` flag auto-set for dancer sessions
+- DJ/Manager can still see and assign dirty songs
+- **Files**: `server/db.js`, `server/index.js`, `src/pages/DancerView.jsx`
+- **Commit**: `3a82ec4`
+
 ### Bug Fix: Commercial voiceover pipeline
 - Commercials now call `audioEngineRef.current.playAnnouncement()` directly instead of going through AnnouncementSystem's generation pipeline
 - **Commit**: `6f6333e`

@@ -64,6 +64,22 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **Files**: `src/pages/DJBooth.jsx`
 - **Commit**: `b7a81a2`
 
+#### Feature: Folder Lock shows actual system-picked songs + tap-to-reroll
+- **Problem**: When Folder Lock was on, rotation panel showed stale playlist songs instead of the actual songs picked from folders
+- **Fix 1**: Added `prevMusicModeRef` effect — when music mode changes (dancer_first ↔ folders_only), clears all non-DJ-overridden song assignments so they get re-picked under the new mode
+- **Fix 2**: Added `rerollSong()` — when Folder Lock is on, tapping any song row (except currently playing) re-rolls it with a new random pick from the locked folders, excluding all other assigned songs
+- **Visual**: Folder Lock songs show a shuffle icon (amber) instead of music icon, with hover highlight. Currently-playing song cannot be re-rolled
+- **Files**: `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Feature: Dirty word filter for dancers
+- Songs with "dirty" (case-insensitive) anywhere in the filename are hidden from dancers
+- **Server**: `getMusicTracks` accepts `excludeDirty` flag, set automatically when session role is `dancer`
+- **Playlist save**: Server strips any dirty songs from dancer playlist on PUT `/api/playlist`
+- **DancerView**: Client-side `addSong` blocks dirty songs as safety net
+- **DJ/Manager**: Full access to all songs including dirty — no filter applied
+- **Files**: `server/db.js`, `server/index.js`, `src/pages/DancerView.jsx`
+- **Commit**: `3a82ec4`
+
 ### Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
 
 #### Feature: Generic Voiceover Fallbacks (Last Resort)
