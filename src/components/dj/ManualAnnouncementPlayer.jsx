@@ -3,8 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Play, Trash2, Mic, Radio, Send, CheckCircle, Clock, CalendarDays, MapPin, FileText, Zap } from 'lucide-react';
+import { Play, Trash2, Mic, Radio, Send, CheckCircle, Clock, CalendarDays, MapPin, FileText, Zap, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiConfig } from '@/components/apiConfig';
+import { localIntegrations } from '@/api/localEntities';
+import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
+import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem('djbooth_token');
@@ -13,24 +17,10 @@ const getAuthHeaders = () => {
   return headers;
 };
 
-const blobToBase64 = (blob) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
-
 const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
 const LENGTH_OPTIONS = ['15s', '30s', '45s', '60s'];
 
 export default function ManualAnnouncementPlayer({ onPlay }) {
-  const [uploading, setUploading] = useState(false);
-  const [customName, setCustomName] = useState('');
   const queryClient = useQueryClient();
 
   const [promoForm, setPromoForm] = useState({
@@ -81,49 +71,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
     }
   });
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    if (!file.type.startsWith('audio/')) {
-      toast.error('Please upload an audio file');
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const name = customName.trim() || file.name;
-      const cacheKey = `manual-${Date.now()}-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-      const audio_base64 = await blobToBase64(file);
-
-      const res = await fetch('/api/voiceovers', {
-        method: 'POST',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          cache_key: cacheKey,
-          audio_base64,
-          script: name,
-          type: 'manual',
-          dancer_name: name,
-          energy_level: 0
-        })
-      });
-
-      if (!res.ok) throw new Error('Upload failed');
-
-      queryClient.invalidateQueries({ queryKey: ['manual-announcements'] });
-      toast.success('Announcement uploaded');
-      setCustomName('');
-    } catch (error) {
-      console.error('Upload error:', error);
-      toast.error('Failed to upload announcement');
-    } finally {
-      setUploading(false);
-    }
-  };
 
   const handlePlay = async (announcement) => {
     if (onPlay) {
@@ -141,12 +89,130 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
     }
   };
 
+  const buildPromoPrompt = (form) => {
+    const parts = [
+      `You are a professional strip club DJ creating a promo voiceover script.`,
+      `Write a ${form.length || '30s'} promo with a ${(form.vibe || 'Hype').toLowerCase()} vibe.`,
+      `Event/Promo: ${form.event_name}`,
+    ];
+    if (form.date) parts.push(`Date: ${form.date}`);
+    if (form.time) parts.push(`Time: ${form.time}`);
+    if (form.venue) parts.push(`Venue: ${form.venue}`);
+    if (form.details) parts.push(`Details: ${form.details}`);
+    parts.push(
+      `Write the script as flowing spoken text — exactly what would be read over the mic.`,
+      `No labels, brackets, stage directions, or explanations. Just the spoken words.`,
+      `Use commas for breath pauses, ellipsis for drawn-out pauses.`,
+      `Keep it punchy, engaging, and club-appropriate.`
+    );
+    return parts.join('\n');
+  };
+
+  const generatePromoScript = async (form) => {
+    const config = getApiConfig();
+    const prompt = buildPromoPrompt(form);
+    const openaiKey = config.openaiApiKey || '';
+    const scriptModel = config.scriptModel || 'gpt-4.1';
+
+    if (openaiKey && scriptModel !== 'auto') {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: scriptModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.9,
+          max_tokens: 300,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`OpenAI ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      const usage = data.usage;
+      trackOpenAICall({
+        model: scriptModel,
+        promptTokens: usage?.prompt_tokens || estimateTokens(prompt),
+        completionTokens: usage?.completion_tokens || estimateTokens(data.choices?.[0]?.message?.content || ''),
+        context: `promo-script-${form.event_name}`,
+      });
+      const raw = data.choices?.[0]?.message?.content || '';
+      return raw.replace(/^\d+[\.\)]\s*/gm, '').replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim() || 'Check out this amazing event.';
+    }
+
+    const response = await localIntegrations.Core.InvokeLLM({ prompt });
+    const text = typeof response === 'string' ? response : (response?.script || response?.text || response?.content || JSON.stringify(response));
+    return text.replace(/^\d+[\.\)]\s*/gm, '').replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim() || 'Check out this amazing event.';
+  };
+
+  const generatePromoAudio = async (script) => {
+    const config = getApiConfig();
+    const apiKey = config.elevenLabsApiKey || '';
+    if (!apiKey) throw new Error('ElevenLabs API key not configured');
+
+    const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
+    const energyLevel = getCurrentEnergyLevel(config);
+    const voiceSettings = VOICE_SETTINGS[energyLevel] || VOICE_SETTINGS[3];
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        text: script,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: voiceSettings.stability,
+          similarity_boost: voiceSettings.similarity_boost,
+          style: voiceSettings.style,
+          speed: voiceSettings.speed,
+          use_speaker_boost: voiceSettings.use_speaker_boost !== false,
+        },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const status = response.status;
+      let detail = '';
+      try { const errBody = await response.json(); detail = errBody?.detail?.message || errBody?.detail || JSON.stringify(errBody); } catch {}
+      throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
+    }
+
+    trackElevenLabsCall({ text: script, model: 'eleven_multilingual_v2', context: 'promo-tts' });
+    return await response.blob();
+  };
+
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const handlePromoSubmit = async () => {
     if (!promoForm.event_name.trim()) {
       toast.error('Please enter an event or promo name');
       return;
     }
     setSubmitting(true);
+    const toastId = toast.loading('Submitting promo request...');
     try {
       const res = await fetch('/api/promo-requests', {
         method: 'POST',
@@ -157,12 +223,40 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
         body: JSON.stringify(promoForm)
       });
       if (!res.ok) throw new Error('Submit failed');
-      toast.success('Promo request sent to Voice Studio!');
-      setPromoForm({ event_name: '', date: '', time: '', venue: '', details: '', vibe: 'Hype', length: '30s' });
       queryClient.invalidateQueries({ queryKey: ['club-promo-requests'] });
+
+      toast.loading('Generating script...', { id: toastId });
+      const script = await generatePromoScript(promoForm);
+
+      toast.loading('Recording voice...', { id: toastId });
+      const audioBlob = await generatePromoAudio(script);
+
+      toast.loading('Saving promo...', { id: toastId });
+      const cacheKey = `promo-auto-${Date.now()}-${promoForm.event_name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const audio_base64 = await blobToBase64(audioBlob);
+      const saveRes = await fetch('/api/voiceovers', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          cache_key: cacheKey,
+          audio_base64,
+          script,
+          type: 'promo',
+          dancer_name: promoForm.event_name,
+          energy_level: getCurrentEnergyLevel(getApiConfig()),
+        })
+      });
+      if (!saveRes.ok) throw new Error('Failed to save voiceover');
+
+      queryClient.invalidateQueries({ queryKey: ['manual-announcements'] });
+      toast.success('Promo created and ready to play!', { id: toastId });
+      setPromoForm({ event_name: '', date: '', time: '', venue: '', details: '', vibe: 'Hype', length: '30s' });
     } catch (err) {
-      console.error('Promo request error:', err);
-      toast.error('Failed to submit promo request');
+      console.error('Promo auto-generation error:', err);
+      toast.error(`Promo generation failed: ${err.message}`, { id: toastId });
     } finally {
       setSubmitting(false);
     }
@@ -173,37 +267,6 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4">
-        <div className="space-y-3">
-          <Input
-            placeholder="Custom name (optional)"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            className="bg-[#08081a] border-[#1e293b]"
-          />
-          <label className="block">
-            <Button
-              as="span"
-              className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black cursor-pointer"
-              disabled={uploading}
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              {uploading ? 'Uploading...' : 'Upload Audio File'}
-            </Button>
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-          </label>
-          <p className="text-xs text-gray-500">
-            Upload MP3, WAV, or other audio files for announcements and advertisements
-          </p>
-        </div>
-      </div>
-
       <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4 flex flex-col" style={{ minHeight: '160px' }}>
         <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
           Promos & Announcements ({announcements.length})
@@ -215,7 +278,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
               <div className="text-center py-8 text-gray-500">
                 <Radio className="w-10 h-10 mx-auto mb-2 text-gray-700" />
                 <p className="text-sm">No promos or announcements yet</p>
-                <p className="text-xs text-gray-600 mt-1">Upload an audio file to get started</p>
+                <p className="text-xs text-gray-600 mt-1">Promos are managed from homebase or synced via cloud</p>
               </div>
             ) : (
               announcements.map((announcement) => (
@@ -266,7 +329,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
           Request a Promo / Commercial
         </h3>
         <p className="text-xs text-gray-400 mb-4">
-          Submit a request and Voice Studio will produce the promo for you
+          Auto-generates a voiceover and saves it to your Promos list
         </p>
 
         <div className="space-y-3">
@@ -362,8 +425,8 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
             disabled={submitting || !promoForm.event_name.trim()}
             className="w-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white"
           >
-            <Send className="w-4 h-4 mr-2" />
-            {submitting ? 'Sending...' : 'Send Request to Voice Studio'}
+            {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+            {submitting ? 'Generating Promo...' : 'Generate Promo'}
           </Button>
         </div>
 

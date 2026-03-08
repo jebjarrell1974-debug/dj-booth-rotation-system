@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Tv } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -102,7 +102,6 @@ export default function RotationPlaylistManager({
   const [serverCurrentPage, setServerCurrentPage] = useState(1);
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverLoading, setServerLoading] = useState(false);
-  const [commercialTracks, setCommercialTracks] = useState([]);
   const serverMountedRef = useRef(false);
   const searchTimeoutRef = useRef(null);
 
@@ -362,23 +361,6 @@ export default function RotationPlaylistManager({
     };
   }, [debouncedSearch, activeGenre]);
 
-  const fetchCommercials = useCallback(async () => {
-    try {
-      const res = await fetch('/api/voiceovers', { headers: getAuthHeaders() });
-      if (!res.ok) return;
-      const all = await res.json();
-      const promos = all.filter(v => v.type === 'promo' || v.type === 'manual');
-      setCommercialTracks(promos);
-    } catch (err) {
-      console.warn('Failed to fetch commercials:', err.message);
-    }
-  }, [getAuthHeaders]);
-
-  useEffect(() => {
-    if (musicSource === 'commercials') {
-      fetchCommercials();
-    }
-  }, [musicSource, fetchCommercials]);
 
   const loadMoreServerTracks = useCallback(() => {
     if (!serverLoading && serverHasMore) {
@@ -431,11 +413,6 @@ export default function RotationPlaylistManager({
     }
 
     const resolveTrackName = () => {
-      if (result.draggableId.startsWith('commercial-')) {
-        const cacheKey = result.draggableId.replace('commercial-', '');
-        const promo = commercialTracks.find(p => p.cache_key === cacheKey);
-        return promo ? `[COMMERCIAL]${promo.cache_key}` : null;
-      }
       if (result.draggableId.startsWith('playlist-')) {
         const parts = result.draggableId.replace('playlist-', '');
         return parts.substring(parts.indexOf('-') + 1);
@@ -449,10 +426,6 @@ export default function RotationPlaylistManager({
       const dancerId = destination.droppableId.replace('songs-', '');
       const trackName = resolveTrackName();
       if (!trackName) return;
-      if (trackName.startsWith('[COMMERCIAL]')) {
-        toast.error('Commercials can only be placed between sets');
-        return;
-      }
 
       djOverridesRef.current.add(dancerId);
       setSongAssignments(prev => {
@@ -511,10 +484,6 @@ export default function RotationPlaylistManager({
     if (source.droppableId === 'library' && destination.droppableId === 'autoplay-queue') {
       const trackName = resolveTrackName();
       if (!trackName) return;
-      if (trackName.startsWith('[COMMERCIAL]')) {
-        toast.error('Commercials cannot be added to autoplay queue');
-        return;
-      }
       const track = displayedTracks.find(t => t.name === trackName);
       if (!track) return;
       const trackObj = { ...track, url: `/api/music/stream/${track.id}`, autoFilled: false };
@@ -626,9 +595,7 @@ export default function RotationPlaylistManager({
               <span className="text-xs text-gray-500">
                 {musicSource === 'genres'
                   ? `${serverTracks.length} of ${serverTotalTracks} tracks`
-                  : musicSource === 'commercials'
-                    ? `${commercialTracks.length} promos`
-                    : `${playlistSongs.length} songs`
+                  : `${playlistSongs.length} songs`
                 }
               </span>
             </div>
@@ -643,7 +610,6 @@ export default function RotationPlaylistManager({
               style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '28px' }}
             >
               <option value="genres">Genre Folders</option>
-              <option value="commercials">Commercials</option>
               {activeDancers.map(d => (
                 <option key={d.id} value={d.id}>
                   {d.name}'s Playlist ({(d.playlist || []).length})
@@ -690,52 +656,7 @@ export default function RotationPlaylistManager({
             </div>
           )}
 
-          {musicSource === 'commercials' ? (
-          <Droppable droppableId="library" isDropDisabled={true} type="song">
-            {(provided) => (
-            <ScrollArea className="flex-1">
-              <div
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-                className="p-2"
-              >
-                {commercialTracks.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    No commercials created yet. Use the Announcements tab to create promos.
-                  </div>
-                ) : (
-                  commercialTracks.map((promo, idx) => {
-                    const displayName = promo.dancer_name || promo.cache_key.replace(/^promo_/, '').replace(/_/g, ' ');
-                    return (
-                    <Draggable key={`commercial-${promo.cache_key}`} draggableId={`commercial-${promo.cache_key}`} index={idx}>
-                      {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.draggableProps}
-                      {...provided.dragHandleProps}
-                      className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
-                        snapshot.isDragging
-                          ? 'bg-amber-500/20 ring-2 ring-amber-500'
-                          : 'bg-[#151528] hover:bg-[#1e293b]'
-                      }`}
-                    >
-                      <Tv className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm text-amber-200 truncate block">{displayName}</span>
-                        <span className="text-[10px] text-amber-500/60">Commercial</span>
-                      </div>
-                    </div>
-                      )}
-                    </Draggable>
-                    );
-                  })
-                )}
-                {provided.placeholder}
-              </div>
-            </ScrollArea>
-            )}
-          </Droppable>
-          ) : musicSource !== 'genres' ? (
+          {musicSource !== 'genres' ? (
           <Droppable droppableId="library" isDropDisabled={true} type="song">
             {(provided) => (
             <ScrollArea className="flex-1">
@@ -1114,50 +1035,35 @@ export default function RotationPlaylistManager({
                                     <Music2 className="w-3 h-3 text-violet-400" />
                                     <span className="text-[10px] text-violet-400 uppercase font-semibold tracking-wider">Between Sets</span>
                                   </div>
-                                  {breakSongs.map((songName, songIdx) => {
-                                    const isCommercial = songName.startsWith('[COMMERCIAL]');
-                                    const displayName = isCommercial
-                                      ? (songName.replace('[COMMERCIAL]', '').replace(/^promo_/, '').replace(/_/g, ' '))
-                                      : songName;
-                                    return (
+                                  {breakSongs.map((songName, songIdx) => (
                                     <Draggable key={`breakitem-${breakKey}-${songIdx}`} draggableId={`breakitem-${breakKey}-${songIdx}-${songName}`} index={songIdx}>
                                       {(itemProv, itemSnap) => (
                                     <div
                                       ref={itemProv.innerRef}
                                       {...itemProv.draggableProps}
                                       {...itemProv.dragHandleProps}
-                                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing ${
-                                        isCommercial
-                                          ? 'bg-amber-900/20 border-amber-500/20'
-                                          : 'bg-violet-900/20 border-violet-500/20'
-                                      } ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
+                                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing bg-violet-900/20 border-violet-500/20 ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
                                     >
                                       <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                                      {isCommercial
-                                        ? <Tv className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                                        : <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                      }
-                                      <span className={`text-xs truncate flex-1 ${isCommercial ? 'text-amber-300' : 'text-violet-300'}`}>{displayName}</span>
+                                      <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                                      <span className="text-xs truncate flex-1 text-violet-300">{songName}</span>
                                       <button
                                         onClick={() => removeInterstitialSong(breakKey, songIdx)}
-                                        className={`p-1 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0 ${
-                                          isCommercial ? 'text-amber-400/60' : 'text-violet-400/60'
-                                        }`}
+                                        className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
                                       >
                                         <X className="w-5 h-5" />
                                       </button>
                                     </div>
                                       )}
                                     </Draggable>
-                                    );
-                                  })}
+                                  ))}
                                 </div>
                               ) : (
                                 <div className={`flex items-center justify-center transition-colors rounded ${
                                   breakSnapshot.isDraggingOver ? 'h-[36px]' : 'h-[20px]'
                                 }`}>
                                   <p className="text-[10px] text-gray-600">
-                                    {breakSnapshot.isDraggingOver ? 'Drop song or commercial here' : '· · ·'}
+                                    {breakSnapshot.isDraggingOver ? 'Drop song here' : '· · ·'}
                                   </p>
                                 </div>
                               )}
@@ -1181,9 +1087,6 @@ export default function RotationPlaylistManager({
                         }
                         const futureCount = commercialCounter + stepsFromCurrent;
                         if (futureCount % freqNum !== 0) return null;
-
-                        const hasManualCommercial = breakSongs.some(s => s.startsWith('[COMMERCIAL]'));
-                        if (hasManualCommercial) return null;
 
                         const commercialId = `commercial-after-${index}`;
                         if (skippedCommercials.has(commercialId)) return null;

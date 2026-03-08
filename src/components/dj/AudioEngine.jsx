@@ -858,6 +858,18 @@ const AudioEngine = forwardRef(({
     localStorage.setItem('neonaidj_music_eq', JSON.stringify(saved));
   }, []);
 
+  const stopVoice = useCallback(() => {
+    const voice = voiceElRef.current;
+    if (voice) {
+      voice.pause();
+      voice.currentTime = 0;
+      voice.onended = null;
+      voice.onerror = null;
+      voice.ontimeupdate = null;
+    }
+    if (isDucked.current) unduck();
+  }, [unduck]);
+
   const setVoiceEq = useCallback((band, value) => {
     const v = Math.max(-12, Math.min(12, value));
     const ref_map = { bass: voiceEqBassRef, mid: voiceEqMidRef, treble: voiceEqTrebleRef };
@@ -878,6 +890,7 @@ const AudioEngine = forwardRef(({
     duck,
     unduck,
     playAnnouncement,
+    stopVoice,
     setVolume,
     setVoiceGain,
     seek,

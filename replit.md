@@ -38,6 +38,45 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 8, 2026 — Session 32 (Simplified Promo System — Auto-Generate + Promo Beds Playback)
+
+#### Promo Auto-Generation on Form Submit
+- DJ submits promo request form → app now auto-generates a voiceover immediately:
+  1. Builds prompt from form fields (event name, date, time, venue, details, vibe, length)
+  2. Calls OpenAI (configured script model) to generate a spoken script
+  3. Sends script to ElevenLabs TTS using configured voice clone
+  4. Saves audio to voiceovers DB (type='promo') with cache key `promo-auto-{timestamp}-{slug}`
+  5. Still sends the request to Voice Studio for manual recording if desired
+- Progress toasts show each step (Generating script → Recording voice → Saving)
+- File: `src/components/dj/ManualAnnouncementPlayer.jsx`
+
+#### Commercial Playback — Promo Beds + Live Ducking
+- `playCommercialIfDue` completely rewritten in DJBooth.jsx
+- Old approach: played a pre-mixed promo audio file as a single track
+- New approach:
+  1. Fetches random track from `Promo Beds` genre folder (`/api/music/tracks?genre=Promo%20Beds&limit=200`)
+  2. Plays Promo Beds song via `playTrack()` as a normal track
+  3. Waits 9 seconds (intro)
+  4. Plays voiceover via `playAnnouncement()` with `autoDuck: true` — leverages existing AudioEngine duck/unduck
+  5. Waits 9 seconds (outro) after voiceover finishes
+  6. Resolves commercial and transitions to next entertainer
+- `stopVoice()` method added to AudioEngine for skip/pause cleanup during commercials
+- No pre-mixing needed — all live audio layering
+- File: `src/pages/DJBooth.jsx`, `src/components/dj/AudioEngine.jsx`
+
+#### Dead Code Cleanup
+- Removed `resolveCommercialTrack()` from DJBooth.jsx
+- Removed all `[COMMERCIAL]` interstitial handling from break song resolution (4 blocks in handleSkip/handleTrackEnd)
+- Removed `breakHadCommercial` logic
+- Removed `commercialTracks` state and `fetchCommercials` from RotationPlaylistManager
+- Removed "Commercials" music source dropdown option
+- Removed commercials library view JSX (the `musicSource === 'commercials'` section)
+- Removed `[COMMERCIAL]` visual styling in break song list items (amber/gold → all violet now)
+- Removed `hasManualCommercial` auto-commercial suppression check
+- Removed `Tv` icon import from RotationPlaylistManager
+- Upload section previously removed from ManualAnnouncementPlayer (blobToBase64, Upload icon, uploading state, handleFileUpload)
+- Files: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`, `src/components/dj/ManualAnnouncementPlayer.jsx`
+
 ### Mar 8, 2026 — Session 30 (Song Selection Logic + Autoplay Queue)
 
 #### Song Selection Logic Improvements
@@ -86,12 +125,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - `FleetDashboard.jsx`: Collapsible "Service Logs" section per device card with error/warning color coding
 - Files: `server/heartbeat-client.js`, `server/fleet-monitor.js`, `server/fleet-routes.js`, `src/pages/FleetDashboard.jsx`
 
-#### Club Specials Staggering
+##### Club Specials Staggering
 - **Problem**: All club specials were dumped into every outro/transition prompt, making them repetitive and mechanical
 - **Fix**: Specials now stagger randomly — one special per announcement, only every 2nd or 3rd announcement (random), rotating through the list in order
 - **Counter refs**: `specialsAnnouncementCountRef`, `specialsRotationIndexRef`, `specialsNextTriggerRef` in `AnnouncementSystem.jsx`
 - **Prompt updated**: `buildAnnouncementPrompt` in `energyLevels.js` now gets 0 or 1 specials (singular "CLUB SPECIAL" prompt instead of plural)
-- **Files**: `src/components/dj/AnnouncementSystem.jsx` (getStaggeredSpecial), `src/utils/energyLevels.js` (prompt wording)
+- **Caching**: Outros/transitions with specials configured skip IndexedDB cache so staggering works (fresh generation each time)
+- **Files**: `src/components/dj/AnnouncementSystem.jsx` (getStaggeredSpecial, cache bypass), `src/utils/energyLevels.js` (prompt wording)
+
+##### GitHub Push
+- Pushed all Session 31 changes to GitHub: commit `9851155`
+- Includes: club specials staggering, no-applause scripts, skip/remove confirmations, talk-time indicator, voiceover 404 cleanup, fleet console logs
 
 #### Autoplay Queue Feature
 - **New feature**: When no entertainers are in rotation, a cyan "Autoplay Queue" bubble appears showing the next 10 songs
@@ -244,8 +288,8 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
   - Finished promo saved to voiceovers table (type='promo') so DJBooth can play it in commercial slots
 - **Script generator**: Each recording card shows a suggested script; "New Script" button uses OpenAI to generate varied suggestions
 - **Club-side promo request form** added to DJ Booth Announcements tab — club staff can submit promo requests directly from the kiosk, which appear in Voice Studio for recording
-- **AI Promo Creator REMOVED** from DJ Booth — ManualAnnouncementPlayer now has Upload + Library + Request Form
-- **promoGenerator.js DELETED** — no more AI script generation for promos
+- **AI Promo Creator REMOVED** from DJ Booth in Session 28 — re-added as auto-generation in Session 32
+- **promoGenerator.js DELETED** — auto-generation now built into ManualAnnouncementPlayer directly (Session 32)
 - Audio processing pipeline unchanged (HPF, compression, EQ, trim, normalize, MP3)
 - ElevenLabs remains as fallback for entertainer names not yet recorded
 
@@ -270,27 +314,15 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ### Mar 6, 2026 — Session 27 (Flexible Drag-and-Drop Rotation Items)
 
-#### Feature: Commercials Folder in Music Library
-- Added "Commercials" option to the music source dropdown in RotationPlaylistManager
-- When selected, fetches promo/manual voiceovers from `/api/voiceovers`
-- Displays them as draggable items with TV icon in amber/gold color scheme
-- Draggable IDs use `commercial-{cacheKey}` prefix for identification
+#### Feature: Commercials Folder in Music Library — REMOVED in Session 32
+- Superseded by Promo Beds + live ducking approach (see Session 32)
 
-#### Feature: Unified Interstitial Slots (Songs + Commercials Between Sets)
-- Drop zones between dancer sets are now always visible (previously only when break songs were enabled)
-- Drop zones accept both regular songs AND commercials from the Commercials folder
-- Commercial items stored in interstitialSongs with `[COMMERCIAL]{cacheKey}` prefix
-- Items in break slots are now draggable for reordering within a slot
-- Visual distinction: commercials in amber/gold, songs in violet
-- Each item has X button and drag handle for reordering
+#### Feature: Unified Interstitial Slots — Commercials Removed in Session 32
+- Drop zones between dancer sets still work for regular songs
+- `[COMMERCIAL]` prefix handling removed — break slots are songs-only now
 
-#### Feature: Commercial Playback Through Break Slots
-- `resolveCommercialTrack()` helper in DJBooth.jsx fetches promo audio as blob URL with auth headers
-- All 4 break song resolution points (handleSkip first/next, handleTrackEnd first/next) handle `[COMMERCIAL]` items
-- Commercial interstitials set `playingCommercialRef.current = true` to skip play_history logging
-- Commercial interstitials use `commercialEndResolverRef` promise to block until track finishes
-- No DJ voice announcements around commercial items (outros/intros still play around regular break songs)
-- Blob URLs revoked after 5s delay for cleanup
+#### Feature: Commercial Playback Through Break Slots — REMOVED in Session 32
+- `resolveCommercialTrack()` deleted; commercials now play via `playCommercialIfDue` with Promo Beds + live ducking
 
 ### PENDING TODO — Do On Pi When Not Busy
 

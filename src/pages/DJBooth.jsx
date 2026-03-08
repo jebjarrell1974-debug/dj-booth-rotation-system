@@ -888,7 +888,7 @@ export default function DJBooth() {
           commercialCounter: commercialCounterRef.current,
           promoQueue: promoQueue,
           availablePromos: availablePromos.map(p => ({ cache_key: p.cache_key, dancer_name: p.dancer_name })),
-          skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),
+          skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),  // kept for remote rotation display
           volume,
           voiceGain,
           trackTime: currentTimeRef.current || 0,
@@ -1763,46 +1763,84 @@ export default function DJBooth() {
       const nextKey = promoShuffleRef.current.shift();
       setPromoQueue([...promoShuffleRef.current]);
       const promo = promos.find(p => p.cache_key === nextKey) || promos[0];
-      const promoName = `📺 ${promo.dancer_name || promo.cache_key}`;
+      const promoName = promo.dancer_name || promo.cache_key;
 
       const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(promo.cache_key)}`, { headers });
       if (!audioRes.ok) {
-        console.warn('⚠️ Commercial audio fetch failed:', audioRes.status);
+        console.warn('⚠️ Commercial voiceover fetch failed:', audioRes.status);
         return false;
       }
-      const blob = await audioRes.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      const voiceBlob = await audioRes.blob();
+      const voiceoverUrl = URL.createObjectURL(voiceBlob);
 
-      console.log('📺 Playing commercial as track:', promoName);
+      const bedsRes = await fetch(`/api/music/tracks?genre=${encodeURIComponent('Promo Beds')}&limit=200`, { headers });
+      let bedTrack = null;
+      if (bedsRes.ok) {
+        const bedsData = await bedsRes.json();
+        const beds = bedsData.tracks || [];
+        if (beds.length > 0) {
+          bedTrack = beds[Math.floor(Math.random() * beds.length)];
+        }
+      }
+
+      if (!bedTrack) {
+        console.warn('⚠️ No Promo Beds tracks found — playing voiceover only');
+        playingCommercialRef.current = true;
+        lastAudioActivityRef.current = Date.now();
+        const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
+        try {
+          await playAnnouncement(voiceoverUrl, { autoDuck: true });
+        } finally {
+          clearInterval(keepAlive);
+          playingCommercialRef.current = false;
+          lastAudioActivityRef.current = Date.now();
+          setTimeout(() => URL.revokeObjectURL(voiceoverUrl), 5000);
+        }
+        return true;
+      }
+
+      console.log(`📺 Commercial: "${promoName}" over bed "${bedTrack.name}"`);
       playingCommercialRef.current = true;
       lastAudioActivityRef.current = Date.now();
 
-      const keepAlive = setInterval(() => {
-        lastAudioActivityRef.current = Date.now();
-      }, 2000);
+      const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
+      let commercialSkipped = false;
+
+      const skipPromise = new Promise(resolve => {
+        commercialEndResolverRef.current = () => { commercialSkipped = true; resolve(); };
+      });
+
+      const raceDelay = (ms) => Promise.race([new Promise(r => setTimeout(r, ms)), skipPromise]);
 
       try {
-        const trackOk = await playTrack(blobUrl, false, promoName);
+        const bedUrl = `/api/music/stream/${bedTrack.id}`;
+        const trackOk = await playTrack(bedUrl, false, `📺 ${promoName}`, 'Promo Beds');
         if (!trackOk) {
-          console.warn('⚠️ Commercial playTrack failed');
+          console.warn('⚠️ Commercial bed track failed');
           playingCommercialRef.current = false;
           clearInterval(keepAlive);
-          URL.revokeObjectURL(blobUrl);
+          URL.revokeObjectURL(voiceoverUrl);
           return false;
         }
 
-        await new Promise((resolve) => {
-          commercialEndResolverRef.current = resolve;
-          setTimeout(() => {
-            resolve();
-          }, 120000);
-        });
+        await raceDelay(9000);
+
+        if (!commercialSkipped) {
+          await Promise.race([
+            playAnnouncement(voiceoverUrl, { autoDuck: true }),
+            skipPromise
+          ]);
+        }
+
+        if (!commercialSkipped) {
+          await raceDelay(9000);
+        }
       } finally {
         clearInterval(keepAlive);
         playingCommercialRef.current = false;
         commercialEndResolverRef.current = null;
         lastAudioActivityRef.current = Date.now();
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+        setTimeout(() => URL.revokeObjectURL(voiceoverUrl), 5000);
       }
       return true;
     } catch (err) {
@@ -1811,24 +1849,7 @@ export default function DJBooth() {
       console.warn('⚠️ Commercial playback failed:', err.message);
       return false;
     }
-  }, [playTrack]);
-
-  const resolveCommercialTrack = useCallback(async (commercialName) => {
-    const cacheKey = commercialName.replace('[COMMERCIAL]', '');
-    try {
-      const token = sessionStorage.getItem('djbooth_token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const audioRes = await fetch(`/api/voiceovers/audio/${encodeURIComponent(cacheKey)}`, { headers });
-      if (!audioRes.ok) return null;
-      const blob = await audioRes.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const displayName = cacheKey.replace(/^promo_/, '').replace(/_/g, ' ');
-      return { url: blobUrl, name: `📺 ${displayName}`, isCommercial: true, blobUrl };
-    } catch (err) {
-      console.warn('⚠️ Failed to resolve commercial track:', err.message);
-      return null;
-    }
-  }, []);
+  }, [playTrack, playAnnouncement]);
 
   const refreshPromoQueue = useCallback(async () => {
     try {
@@ -1886,7 +1907,10 @@ export default function DJBooth() {
     lastSkipTimeRef.current = now;
     if (playingCommercialRef.current) {
       console.log('📺 HandleSkip: Skipping commercial');
-      if (audioEngineRef.current) audioEngineRef.current.pauseAll();
+      if (audioEngineRef.current) {
+        audioEngineRef.current.stopVoice();
+        audioEngineRef.current.pauseAll();
+      }
       commercialEndResolverRef.current?.();
       return;
     }
@@ -1931,39 +1955,23 @@ export default function DJBooth() {
 
       if (breakIdx < breakSongs.length) {
         const nextBreakName = breakSongs[breakIdx];
-        const isNextCommercial = nextBreakName.startsWith('[COMMERCIAL]');
-        let nextBreakTrack;
-        if (isNextCommercial) {
-          nextBreakTrack = await resolveCommercialTrack(nextBreakName);
-          if (nextBreakTrack) playingCommercialRef.current = true;
-        } else {
-          nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
-          if (!nextBreakTrack?.url) {
-            nextBreakTrack = tracks.find(t => t.url && (
-              t.name === nextBreakName ||
-              t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
-            ));
-          }
-          if (!nextBreakTrack?.url) {
-            nextBreakTrack = await resolveTrackByName(nextBreakName);
-          }
+        let nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = tracks.find(t => t.url && (
+            t.name === nextBreakName ||
+            t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
+          ));
+        }
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = await resolveTrackByName(nextBreakName);
         }
         if (nextBreakTrack?.url) {
-          console.log(`⏭️ HandleSkip: Skipping to next break ${isNextCommercial ? 'commercial' : 'song'}:`, nextBreakTrack.name);
+          console.log('⏭️ HandleSkip: Skipping to next break song:', nextBreakTrack.name);
           interstitialIndexRef.current = breakIdx + 1;
           setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
           lastAudioActivityRef.current = Date.now();
           const ok = await playTrack(nextBreakTrack.url, false, nextBreakTrack.name, nextBreakTrack.genre);
           if (!ok) await playFallbackTrack(false);
-          if (isNextCommercial && nextBreakTrack.blobUrl) {
-            await new Promise((resolve) => {
-              commercialEndResolverRef.current = resolve;
-              setTimeout(resolve, 120000);
-            });
-            playingCommercialRef.current = false;
-            commercialEndResolverRef.current = null;
-            setTimeout(() => URL.revokeObjectURL(nextBreakTrack.blobUrl), 5000);
-          }
           transitionInProgressRef.current = false;
           return;
         }
@@ -2132,25 +2140,18 @@ export default function DJBooth() {
           interstitialIndexRef.current = 1;
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           const firstBreakName = breakSongs[0];
-          const isFirstCommercial = firstBreakName.startsWith('[COMMERCIAL]');
-          let firstBreakTrack;
-          if (isFirstCommercial) {
-            firstBreakTrack = await resolveCommercialTrack(firstBreakName);
-            if (firstBreakTrack) playingCommercialRef.current = true;
-          } else {
-            firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
-            if (!firstBreakTrack?.url) {
-              firstBreakTrack = tracks.find(t => t.url && (
-                t.name === firstBreakName || 
-                t.name.replace(/\.[^.]+$/, '') === firstBreakName.replace(/\.[^.]+$/, '')
-              ));
-            }
-            if (!firstBreakTrack?.url) {
-              firstBreakTrack = await resolveTrackByName(firstBreakName);
-            }
+          let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = tracks.find(t => t.url && (
+              t.name === firstBreakName || 
+              t.name.replace(/\.[^.]+$/, '') === firstBreakName.replace(/\.[^.]+$/, '')
+            ));
+          }
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = await resolveTrackByName(firstBreakName);
           }
 
-          if (announcementsEnabled && !isFirstCommercial) {
+          if (announcementsEnabled) {
             const announcementPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
@@ -2169,24 +2170,14 @@ export default function DJBooth() {
             audioEngineRef.current?.unduck();
           } else {
             if (firstBreakTrack?.url) {
-              console.log(`🎵 HandleSkip: Playing break ${isFirstCommercial ? 'commercial' : 'song'}:`, firstBreakTrack.name);
+              console.log('🎵 HandleSkip: Playing break song:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
               const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre);
               if (!ok) await playFallbackTrack(true);
             } else {
-              console.error('❌ HandleSkip: Could not resolve break item:', firstBreakName);
+              console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
               await playFallbackTrack(true);
             }
-          }
-
-          if (isFirstCommercial && firstBreakTrack?.blobUrl) {
-            await new Promise((resolve) => {
-              commercialEndResolverRef.current = resolve;
-              setTimeout(resolve, 120000);
-            });
-            playingCommercialRef.current = false;
-            commercialEndResolverRef.current = null;
-            setTimeout(() => URL.revokeObjectURL(firstBreakTrack.blobUrl), 5000);
           }
 
           transitionInProgressRef.current = false;
@@ -2415,44 +2406,29 @@ export default function DJBooth() {
 
       if (breakIdx < breakSongs.length) {
         const nextBreakName = breakSongs[breakIdx];
-        const isNextCommercial = nextBreakName.startsWith('[COMMERCIAL]');
         let nextBreakTrack;
         interstitialIndexRef.current = breakIdx + 1;
         setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
 
-        if (isNextCommercial) {
-          nextBreakTrack = await resolveCommercialTrack(nextBreakName);
-          if (nextBreakTrack) playingCommercialRef.current = true;
-        } else {
-          nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
-          if (!nextBreakTrack?.url) {
-            nextBreakTrack = tracks.find(t => t.url && (
-              t.name === nextBreakName || 
-              t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
-            ));
-          }
-          if (!nextBreakTrack?.url) {
-            nextBreakTrack = await resolveTrackByName(nextBreakName);
-          }
+        nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = tracks.find(t => t.url && (
+            t.name === nextBreakName || 
+            t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
+          ));
+        }
+        if (!nextBreakTrack?.url) {
+          nextBreakTrack = await resolveTrackByName(nextBreakName);
         }
         if (nextBreakTrack?.url) {
-          console.log(`🎵 HandleTrackEnd: Playing next break ${isNextCommercial ? 'commercial' : 'song'}:`, nextBreakTrack.name);
+          console.log('🎵 HandleTrackEnd: Playing next break song:', nextBreakTrack.name);
           lastAudioActivityRef.current = Date.now();
           const ok = await playTrack(nextBreakTrack.url, true, nextBreakTrack.name, nextBreakTrack.genre);
           if (!ok) await playFallbackTrack(true);
-          if (isNextCommercial && nextBreakTrack.blobUrl) {
-            await new Promise((resolve) => {
-              commercialEndResolverRef.current = resolve;
-              setTimeout(resolve, 120000);
-            });
-            playingCommercialRef.current = false;
-            commercialEndResolverRef.current = null;
-            setTimeout(() => URL.revokeObjectURL(nextBreakTrack.blobUrl), 5000);
-          }
           transitionInProgressRef.current = false;
           return;
         } else {
-          console.error('❌ Could not resolve next break item:', nextBreakName);
+          console.error('❌ Could not resolve next break song:', nextBreakName);
         }
       }
 
@@ -2481,11 +2457,7 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        const breakHadCommercial = breakSongs.some(s => s.startsWith('[COMMERCIAL]'));
-        const commercialPlayed = breakHadCommercial ? false : await playCommercialIfDue();
-        if (breakHadCommercial) {
-          commercialCounterRef.current += 1;
-        }
+        const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
@@ -2694,25 +2666,18 @@ export default function DJBooth() {
           interstitialIndexRef.current = 1;
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           const firstBreakName = breakSongs[0];
-          const isFirstCommercial = firstBreakName.startsWith('[COMMERCIAL]');
-          let firstBreakTrack;
-          if (isFirstCommercial) {
-            firstBreakTrack = await resolveCommercialTrack(firstBreakName);
-            if (firstBreakTrack) playingCommercialRef.current = true;
-          } else {
-            firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
-            if (!firstBreakTrack?.url) {
-              firstBreakTrack = tracks.find(t => t.url && (
-                t.name === firstBreakName || 
-                t.name.replace(/\.[^.]+$/, '') === firstBreakName.replace(/\.[^.]+$/, '')
-              ));
-            }
-            if (!firstBreakTrack?.url) {
-              firstBreakTrack = await resolveTrackByName(firstBreakName);
-            }
+          let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = tracks.find(t => t.url && (
+              t.name === firstBreakName || 
+              t.name.replace(/\.[^.]+$/, '') === firstBreakName.replace(/\.[^.]+$/, '')
+            ));
+          }
+          if (!firstBreakTrack?.url) {
+            firstBreakTrack = await resolveTrackByName(firstBreakName);
           }
 
-          if (announcementsEnabled && !isFirstCommercial) {
+          if (announcementsEnabled) {
             const announcementPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
@@ -2731,24 +2696,14 @@ export default function DJBooth() {
             audioEngineRef.current?.unduck();
           } else {
             if (firstBreakTrack?.url) {
-              console.log(`🎵 Playing break ${isFirstCommercial ? 'commercial' : 'song'}:`, firstBreakTrack.name);
+              console.log('🎵 Playing break song:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
               const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre);
               if (!ok) await playFallbackTrack(true);
             } else {
-              console.error('❌ Could not resolve break item:', firstBreakName, '- falling back');
+              console.error('❌ Could not resolve break song:', firstBreakName, '- falling back');
               await playFallbackTrack(true);
             }
-          }
-
-          if (isFirstCommercial && firstBreakTrack?.blobUrl) {
-            await new Promise((resolve) => {
-              commercialEndResolverRef.current = resolve;
-              setTimeout(resolve, 120000);
-            });
-            playingCommercialRef.current = false;
-            commercialEndResolverRef.current = null;
-            setTimeout(() => URL.revokeObjectURL(firstBreakTrack.blobUrl), 5000);
           }
 
           transitionInProgressRef.current = false;
