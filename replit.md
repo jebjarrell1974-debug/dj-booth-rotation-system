@@ -1438,6 +1438,44 @@ ElevenLabs occasionally produces glitched audio (backwards/repeated speech). Add
   - Files changed: `src/pages/DancerView.jsx`, `src/api/serverApi.js` (added `musicApi`)
 - GitHub backup pushed
 
+## Sales Pitch — Key Selling Points
+
+### The AI DJ That Never Sleeps
+NEON AI DJ is a fully automated entertainment system that runs your club's music and stage rotations 24/7 — no human DJ required. It handles everything from entertainer introductions to stage transitions, all with a natural-sounding AI voice that adapts to the energy of the room.
+
+### Voice Announcements That Sound Human
+Every stage intro, transition, and outro is written fresh by AI and spoken by a custom-cloned voice. No two announcements are ever the same. The system adapts its tone, speed, and energy to match the time of night — laid back early on, high energy during peak hours. Per-entertainer phonetic pronunciation ensures every name sounds right, every time.
+
+### Built-In Redundancy — The Show Never Stops
+Five layers of voice fallback guarantee announcements always play:
+1. Previously cached voiceovers play instantly
+2. Fresh AI-generated announcements when online
+3. Cached versions from different energy levels
+4. Generic AI-generated fallbacks
+5. **40 pre-recorded generic voiceovers** as the absolute last resort — works with zero internet
+
+Even if the internet goes down completely, the system keeps announcing. Music playback is 100% local — it never depends on internet.
+
+### Fleet Management for Multi-Location Businesses
+Manage every unit from one dashboard. Real-time heartbeat monitoring, Telegram alerts if a unit goes offline, remote configuration, centralized voiceover library, play history tracking per device, and over-the-air updates. Know exactly what's playing at every location, right now.
+
+### iPad Remote Control
+DJs and managers can control the system from any iPad or phone on the same network. Real-time sync via Server-Sent Events — skip songs, trigger announcements, manage rotations, all from the floor.
+
+### Commercial Playback System
+Built-in promo system with auto-generated voiceovers laid over music beds with live audio ducking. Submit a promo request, the AI writes the script and generates the voiceover automatically. No production work needed.
+
+### Cost Tracking
+Per-unit API cost tracking for OpenAI and ElevenLabs so you always know exactly what each location is costing you.
+
+### Built for Reliability
+Runs on a $80 Raspberry Pi 5. Auto-recovers from audio dropouts, browser crashes, and power failures. Survives reboots with state persistence. 6AM daily auto-reboot keeps things fresh. WAL-mode SQLite database prevents corruption.
+
+### Voice Recording Studio (Homebase Only)
+Record custom voice intros for individual entertainers right from the browser. Upload, process, and distribute to all units through the fleet system.
+
+### Pricing: $400–$1,000/month subscription per location
+
 ## External Dependencies
 - **React**: Frontend UI development
 - **Vite**: Project build tool

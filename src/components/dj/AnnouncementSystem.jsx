@@ -474,6 +474,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return null;
   }, []);
 
+  const noRecordingSetRef = useRef(new Set());
+
   const checkCustomRecording = useCallback(async (dancerName, type) => {
     if (!dancerName || dancerName === GENERIC_DANCER_NAME) return null;
     const customCacheKey = `custom-recording-${dancerName}-${type}`;
@@ -482,6 +484,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.log(`🎤 Custom recording loaded from IndexedDB: ${dancerName}/${type}`);
       return idbCached;
     }
+    if (noRecordingSetRef.current.has(customCacheKey)) return null;
     try {
       const res = await fetch(`/api/fleet/voice-recordings/audio/${encodeURIComponent(dancerName)}/${encodeURIComponent(type)}`, {
         headers: getAuthHeaders()
@@ -492,6 +495,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         console.log(`🎤 Custom recording fetched and cached: ${dancerName}/${type}`);
         return blob;
       }
+      noRecordingSetRef.current.add(customCacheKey);
       return null;
     } catch {
       return null;

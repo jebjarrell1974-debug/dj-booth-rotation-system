@@ -50,6 +50,36 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
+
+### Feature: Fleet Play History
+- Each Pi sends recent play history (songs played since last heartbeat) in heartbeat payload
+- Fleet server stores in `fleet_play_history` table (90-day retention, auto-cleanup)
+- Deduplication via UNIQUE constraint on (device_id, track_name, played_at) + INSERT OR IGNORE
+- `lastPlayHistorySyncTime` persisted to `settings` table so no data lost across reboots
+- Limit raised from 100 to 500 rows per heartbeat (more than enough for 5-min intervals)
+- Fleet dashboard device detail modal has "Play History" tab with date picker + chronological song list
+- **Files**: `server/heartbeat-client.js`, `server/fleet-monitor.js`, `server/fleet-db.js`, `server/fleet-routes.js`, `src/api/fleetApi.js`, `src/pages/FleetDashboard.jsx`
+
+### Feature: Generic Voiceover Fallbacks (Last Resort — No Internet)
+- 40 pre-recorded generic voiceovers stored in fleet.db `voice_recordings` table under `__generic__`
+- 10 variations each for: intro, round2, outro, transition
+- **Fallback chain** (in order):
+  1. Cached voiceover for this entertainer (IndexedDB + server)
+  2. Fresh AI-generated (OpenAI script → ElevenLabs TTS) — requires internet
+  3. Cached version at different energy level for same entertainer
+  4. Generic AI-generated cached version
+  5. **Pre-recorded generic voiceover** — absolute last resort, zero internet needed
+- `checkGenericRecording()` in AnnouncementSystem.jsx cycles round-robin through variations
+- Cached in IndexedDB after first fetch so they work fully offline
+- Generation script: `server/generate-generic-voiceovers.js` (one-time, requires ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID env vars)
+- **Files**: `src/components/dj/AnnouncementSystem.jsx`, `server/generate-generic-voiceovers.js`, `server/fleet-db.js`
+
+### Sales Pitch Added to replit.md
+- Full sales pitch section with key selling points for club owners
+- Covers: AI voice, 5-layer redundancy, fleet management, iPad remote, promo system, cost tracking, reliability, voice studio
+- Pricing: $400–$1,000/month per location
+
 ## Mar 7, 2026 — Session 27 (Fleet Command Buttons + Scroll Fix + USB SSD Plan)
 
 ### Feature: Fleet Remote Command Buttons
@@ -762,6 +792,7 @@ The broadcast useEffect in DJBooth.jsx has a dependency array that controls when
 | `src/components/dj/DJOptions.jsx` | DJ Options panel — music mode + genre/folder selection |
 | `src/components/dj/AnnouncementSystem.jsx` | Voice announcement generation (ElevenLabs TTS, pronunciation map, caching) |
 | `src/utils/energyLevels.js` | Announcement prompts, energy levels, shift types, club name rules |
+| `server/generate-generic-voiceovers.js` | One-time script to generate 40 generic fallback voiceovers via ElevenLabs |
 | `src/utils/promoGenerator.js` | AI promo script generation (OpenAI/Replit LLM) |
 | `src/utils/audioMixer.js` | OfflineAudioContext mixing for promo voice+music, WAV encoding |
 | `src/api/serverApi.js` | Client-side API wrapper |
