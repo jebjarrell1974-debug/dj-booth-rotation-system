@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus } from 'lucide-react';
+import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus, RotateCcw } from 'lucide-react';
 
 const DANCER_COLORS = [
   '#00d4ff', '#ff2d55', '#00e5ff', '#2563eb', '#39ff14', 
@@ -93,9 +93,46 @@ export default function DancerRoster({
     }
   };
 
-  const handleEdit = () => {
+  const [resettingVoiceovers, setResettingVoiceovers] = useState(false);
+  const [voiceoverResetCount, setVoiceoverResetCount] = useState(null);
+
+  const resetVoiceoversForDancer = async (dancerName) => {
+    setResettingVoiceovers(true);
+    setVoiceoverResetCount(null);
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const res = await fetch(`/api/voiceovers/dancer/${encodeURIComponent(dancerName)}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVoiceoverResetCount(data.deleted || 0);
+        setTimeout(() => setVoiceoverResetCount(null), 3000);
+      }
+    } catch (e) {
+      console.error('Failed to reset voiceovers:', e);
+    } finally {
+      setResettingVoiceovers(false);
+    }
+  };
+
+  const handleEdit = async () => {
     if (editingDancer && editingDancer.name.trim()) {
+      const original = dancers.find(d => d.id === editingDancer.id);
+      const phoneticChanged = (original?.phonetic_name || '') !== (editingDancer.phonetic_name || '');
+      const nameChanged = (original?.name || '') !== (editingDancer.name || '');
+
       onEditDancer(editingDancer.id, { name: editingDancer.name, phonetic_name: editingDancer.phonetic_name || '' });
+
+      if (phoneticChanged || nameChanged) {
+        const dancerName = nameChanged ? original.name : editingDancer.name;
+        await resetVoiceoversForDancer(dancerName);
+        if (nameChanged && original.name !== editingDancer.name) {
+          await resetVoiceoversForDancer(editingDancer.name);
+        }
+      }
+
       setEditingDancer(null);
     }
   };
@@ -272,6 +309,20 @@ export default function DancerRoster({
                       <Button onClick={handleEdit} className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
                         Save Changes
                       </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => editingDancer?.name && resetVoiceoversForDancer(editingDancer.name)}
+                        disabled={resettingVoiceovers}
+                        className="w-full border-red-500/50 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                      >
+                        <RotateCcw className={`w-4 h-4 mr-2 ${resettingVoiceovers ? 'animate-spin' : ''}`} />
+                        {resettingVoiceovers ? 'Resetting...' : 'Reset Voiceovers'}
+                      </Button>
+                      {voiceoverResetCount !== null && (
+                        <p className="text-xs text-center text-green-400">
+                          {voiceoverResetCount > 0 ? `Cleared ${voiceoverResetCount} voiceover${voiceoverResetCount !== 1 ? 's' : ''}` : 'No voiceovers to clear'}
+                        </p>
+                      )}
                     </div>
                   </DialogContent>
                 </Dialog>

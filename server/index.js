@@ -9,7 +9,7 @@ import {
   createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer,
   createSession, getSession, touchSession, deleteSession, cleanExpiredSessions,
   syncSongs, listSongs,
-  saveVoiceover, getVoiceover, getVoiceoverFilePath, listVoiceovers, deleteVoiceover,
+  saveVoiceover, getVoiceover, getVoiceoverFilePath, listVoiceovers, deleteVoiceover, deleteVoiceoversByDancer,
   clearAllVoiceovers, cleanupOrphanedVoiceovers,
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
@@ -421,6 +421,13 @@ app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
     console.error('Failed to save voiceover:', err.message);
     res.status(500).json({ error: 'Failed to save voiceover' });
   }
+});
+
+app.delete('/api/voiceovers/dancer/:dancerName', authenticate, requireDJ, (req, res) => {
+  const dancerName = decodeURIComponent(req.params.dancerName);
+  const count = deleteVoiceoversByDancer(dancerName);
+  console.log(`🗑️ Reset voiceovers for "${dancerName}": ${count} removed`);
+  res.json({ ok: true, deleted: count });
 });
 
 app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {

@@ -364,6 +364,18 @@ export function deleteVoiceover(cacheKey) {
   }
 }
 
+export function deleteVoiceoversByDancer(dancerName) {
+  const rows = db.prepare('SELECT file_name FROM voiceovers WHERE dancer_name = ?').all(dancerName);
+  let deleted = 0;
+  for (const row of rows) {
+    const filePath = join(VOICEOVER_DIR, row.file_name);
+    try { if (existsSync(filePath)) unlinkSync(filePath); } catch (e) {}
+    deleted++;
+  }
+  db.prepare('DELETE FROM voiceovers WHERE dancer_name = ?').run(dancerName);
+  return deleted;
+}
+
 export function clearAllVoiceovers() {
   const rows = db.prepare('SELECT file_name FROM voiceovers').all();
   let deleted = 0;
