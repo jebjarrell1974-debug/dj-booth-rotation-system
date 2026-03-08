@@ -307,16 +307,9 @@ export default function DJBooth() {
       if (document.visibilityState === 'visible') {
         acquireWakeLock();
         resumeAudioContext();
-        if (isPlayingRef.current && audioEngineRef.current) {
-          console.log('👁️ Page visible — resuming audio playback');
-          setTimeout(() => {
-            try {
-              audioEngineRef.current?.resume();
-              lastAudioActivityRef.current = Date.now();
-            } catch (err) {
-              console.error('❌ Failed to resume after visibility change:', err.message);
-            }
-          }, 100);
+        if (isPlayingRef.current && audioEngineRef.current && !watchdogRecoveringRef.current && !transitionInProgressRef.current) {
+          console.log('👁️ Page visible — resuming audio context');
+          lastAudioActivityRef.current = Date.now();
         }
       }
     };
@@ -338,9 +331,8 @@ export default function DJBooth() {
 
     const keepAliveInterval = setInterval(() => {
       resumeAudioContext();
-      if (isPlayingRef.current && audioEngineRef.current) {
+      if (isPlayingRef.current && audioEngineRef.current && !watchdogRecoveringRef.current && !transitionInProgressRef.current) {
         lastAudioActivityRef.current = Date.now();
-        try { audioEngineRef.current?.resume(); } catch {}
       }
     }, 15000);
 
@@ -1184,9 +1176,11 @@ export default function DJBooth() {
   }, [recordSongPlayed, playFallbackTrack, isFeatureTrack]);
 
   const tracksLoadedRef = useRef(false);
+  const initialLoadGraceRef = useRef(true);
   useEffect(() => {
     if (remoteMode || tracksLoadedRef.current) return;
     tracksLoadedRef.current = true;
+    lastAudioActivityRef.current = Date.now();
     (async () => {
       const loaded = await refreshTracks();
       if (loaded && loaded.length > 0 && !isPlaying) {
@@ -1194,9 +1188,11 @@ export default function DJBooth() {
         const randomTrack = pool[Math.floor(Math.random() * pool.length)];
         if (randomTrack?.url) {
           lastAudioActivityRef.current = Date.now();
-          await playTrack(randomTrack.url, true, randomTrack.name, randomTrack.genre);
+          await playTrack(randomTrack.url, false, randomTrack.name, randomTrack.genre);
+          lastAudioActivityRef.current = Date.now();
         }
       }
+      setTimeout(() => { initialLoadGraceRef.current = false; }, 15000);
     })();
   }, [remoteMode]);
 
@@ -2726,6 +2722,7 @@ export default function DJBooth() {
       if (watchdogRecoveringRef.current) return;
       if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
+      if (initialLoadGraceRef.current) return;
       
       const silentFor = Date.now() - lastAudioActivityRef.current;
       if (silentFor < SILENCE_THRESHOLD) return;
@@ -2746,6 +2743,13 @@ export default function DJBooth() {
       transitionStartTimeRef.current = Date.now();
       
       try {
+        try {
+          audioEngineRef.current?.pauseAll();
+        } catch (e) {
+          console.warn('🐕 WATCHDOG: pauseAll() before recovery failed:', e.message);
+        }
+        await new Promise(r => setTimeout(r, 200));
+
         let recovered = false;
 
         try {
