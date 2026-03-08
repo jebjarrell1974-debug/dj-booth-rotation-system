@@ -38,6 +38,17 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 8, 2026 — Session 33 (Fleet Play History)
+
+#### Feature: Play History in Fleet Dashboard
+- Each Pi now sends recent play history (songs played since last heartbeat) in its heartbeat payload
+- Fleet server stores all play history in `fleet_play_history` table (90-day retention, auto-cleanup)
+- Fleet dashboard device detail modal has new "Play History" tab showing chronological song list
+- Date picker dropdown filters by day, shows song count per date
+- Each entry shows: time, track name, and entertainer name (if assigned)
+- **Pi impact**: Minimal — one extra SQLite query per heartbeat (every 5 min), small JSON payload
+- **Files**: `server/heartbeat-client.js` (getRecentPlayHistory + payload), `server/fleet-monitor.js` (storePlayHistory call), `server/fleet-db.js` (fleet_play_history table + helpers), `server/fleet-routes.js` (GET /play-history/:deviceId), `src/api/fleetApi.js` (getPlayHistory method), `src/pages/FleetDashboard.jsx` (Play History tab in DeviceDetailModal)
+
 ### Mar 8, 2026 — Session 32 (Simplified Promo System — Auto-Generate + Promo Beds Playback)
 
 #### Promo Auto-Generation on Form Submit

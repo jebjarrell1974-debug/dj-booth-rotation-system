@@ -85,6 +85,10 @@ function DeviceDetailModal({ device, onClose }) {
   const [logs, setLogs] = useState([]);
   const [activeSubTab, setActiveSubTab] = useState('health');
   const [loading, setLoading] = useState(true);
+  const [playHistory, setPlayHistory] = useState([]);
+  const [playDates, setPlayDates] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -96,6 +100,18 @@ function DeviceDetailModal({ device, onClose }) {
       setLogs(lg);
     }).finally(() => setLoading(false));
   }, [device.device_id]);
+
+  useEffect(() => {
+    if (activeSubTab !== 'history') return;
+    setHistoryLoading(true);
+    fleetAdmin.getPlayHistory(device.device_id, selectedDate)
+      .then(data => {
+        setPlayHistory(data.history || []);
+        if (!selectedDate) setPlayDates(data.dates || []);
+      })
+      .catch(() => { setPlayHistory([]); })
+      .finally(() => setHistoryLoading(false));
+  }, [device.device_id, activeSubTab, selectedDate]);
 
   const isOnline = device.status === 'online';
   const latestHb = heartbeats[0];
@@ -166,16 +182,16 @@ function DeviceDetailModal({ device, onClose }) {
         )}
 
         <div className="flex gap-1 p-2 border-b border-[#1e293b]">
-          {['health', 'logs'].map(tab => (
+          {['health', 'history', 'logs'].map(tab => (
             <button key={tab} onClick={() => setActiveSubTab(tab)}
               className={`flex-1 px-3 py-1.5 rounded text-sm ${activeSubTab === tab ? 'bg-[#00d4ff]/20 text-[#00d4ff]' : 'text-gray-400 hover:text-white'}`}>
-              {tab === 'health' ? 'Health History' : `Error Logs (${logs.length})`}
+              {tab === 'health' ? 'Health' : tab === 'history' ? 'Play History' : `Logs (${logs.length})`}
             </button>
           ))}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {loading ? (
+          {loading && activeSubTab !== 'history' ? (
             <p className="text-gray-500 text-center py-8">Loading...</p>
           ) : activeSubTab === 'health' ? (
             <div className="space-y-4">
@@ -200,6 +216,46 @@ function DeviceDetailModal({ device, onClose }) {
                 <p>Active entertainers: {latestHb?.active_dancers || 0}</p>
                 <p>Playing: {latestHb?.is_playing ? 'Yes' : 'No'}</p>
               </div>
+            </div>
+          ) : activeSubTab === 'history' ? (
+            <div>
+              {playDates.length > 0 && (
+                <div className="mb-3 flex items-center gap-2">
+                  <select
+                    value={selectedDate || ''}
+                    onChange={(e) => setSelectedDate(e.target.value || null)}
+                    className="bg-[#08081a] border border-[#1e293b] rounded-lg px-3 py-1.5 text-sm text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
+                    style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '28px' }}
+                  >
+                    <option value="">All Dates</option>
+                    {playDates.map(d => (
+                      <option key={d.date} value={d.date}>{d.date} ({d.count} songs)</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-gray-500">{playHistory.length} songs</span>
+                </div>
+              )}
+              {historyLoading ? (
+                <p className="text-gray-500 text-center py-8">Loading...</p>
+              ) : playHistory.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No play history yet</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {playHistory.map((item, i) => {
+                    const time = new Date(item.played_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const dateStr = new Date(item.played_at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+                    return (
+                      <div key={i} className="flex items-center gap-3 px-3 py-1.5 rounded hover:bg-[#151528] group">
+                        <span className="text-[10px] text-gray-600 w-16 text-right shrink-0 font-mono">{selectedDate ? time : `${dateStr} ${time}`}</span>
+                        <span className="text-sm text-gray-200 truncate flex-1">{item.track_name}</span>
+                        {item.dancer_name && (
+                          <span className="text-[10px] text-[#00d4ff]/60 shrink-0">{item.dancer_name}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-1">

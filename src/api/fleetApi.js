@@ -69,6 +69,13 @@ export const fleetAdmin = {
     return res.json();
   },
 
+  async getPlayHistory(deviceId, date = null, limit = 200, offset = 0) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (date) params.set('date', date);
+    const res = await fleetFetch(`/play-history/${deviceId}?${params}`);
+    return res.json();
+  },
+
   async getErrorLogs(deviceId = null, limit = 200) {
     const params = new URLSearchParams({ limit: String(limit) });
     if (deviceId) params.set('deviceId', deviceId);

@@ -116,6 +116,20 @@ router.get('/heartbeats/:deviceId', authenticateFleetAdmin, (req, res) => {
   res.json(heartbeats);
 });
 
+router.get('/play-history/:deviceId', authenticateFleetAdmin, async (req, res) => {
+  try {
+    const { getFleetPlayHistory, getFleetPlayHistoryDates } = await import('./fleet-db.js');
+    const limit = parseInt(req.query.limit) || 200;
+    const offset = parseInt(req.query.offset) || 0;
+    const date = req.query.date || null;
+    const history = getFleetPlayHistory(req.params.deviceId, limit, offset, date);
+    const dates = getFleetPlayHistoryDates(req.params.deviceId);
+    res.json({ history, dates });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch play history' });
+  }
+});
+
 router.post('/seed-roster', authenticateFleetAdmin, (req, res) => {
   try {
     const { names } = req.body;

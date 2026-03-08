@@ -6,6 +6,7 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const FLEET_SERVER_URL = process.env.FLEET_SERVER_URL || '';
 
 let heartbeatTimer = null;
+let lastPlayHistorySyncTime = null;
 
 function executeRemoteCommand(command) {
   const appDir = process.env.APP_DIR || '/home/neonaidj001/djbooth';
@@ -152,6 +153,26 @@ function getRecentServiceLogs() {
   }
 }
 
+async function getRecentPlayHistory() {
+  try {
+    const { default: db } = await import('./db.js');
+    if (!lastPlayHistorySyncTime) {
+      try {
+        const saved = db.prepare("SELECT value FROM settings WHERE key = 'last_play_history_sync'").get();
+        if (saved) lastPlayHistorySyncTime = saved.value;
+      } catch {}
+    }
+    const since = lastPlayHistorySyncTime || new Date(Date.now() - HEARTBEAT_INTERVAL_MS - 30000).toISOString().replace('T', ' ').replace('Z', '');
+    const rows = db.prepare(
+      `SELECT track_name, dancer_name, genre, played_at FROM play_history
+       WHERE played_at > ? ORDER BY played_at ASC LIMIT 500`
+    ).all(since);
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 function getDeviceId() {
   return process.env.DEVICE_ID || hostname() || 'unknown';
 }
@@ -166,6 +187,8 @@ async function sendHeartbeat(extraData = {}) {
 
   const memory = getMemoryInfo();
   const network = getNetworkLatency();
+
+  const recentPlays = await getRecentPlayHistory();
 
   const payload = {
     deviceId: getDeviceId(),
@@ -195,6 +218,7 @@ async function sendHeartbeat(extraData = {}) {
     dancer_names: extraData.dancer_names || [],
     network,
     recentLogs: getRecentServiceLogs(),
+    recentPlays,
   };
 
   try {
@@ -207,7 +231,14 @@ async function sendHeartbeat(extraData = {}) {
     });
     const heartbeatMs = Date.now() - t0;
     if (res.ok) {
-      console.log(`💓 Heartbeat sent (${heartbeatMs}ms, ping ${network.pingAvg || '--'}ms)`);
+      if (recentPlays.length > 0) {
+        lastPlayHistorySyncTime = recentPlays[recentPlays.length - 1].played_at;
+        try {
+          const { default: db } = await import('./db.js');
+          db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_play_history_sync', ?)").run(lastPlayHistorySyncTime);
+        } catch {}
+      }
+      console.log(`💓 Heartbeat sent (${heartbeatMs}ms, ping ${network.pingAvg || '--'}ms, ${recentPlays.length} plays)`);
       try {
         const body = await res.json();
         if (body.commands && Array.isArray(body.commands)) {

@@ -128,6 +128,15 @@ async function registerHeartbeat(deviceId, data) {
     } catch {}
   }
 
+  if (data.recentPlays && Array.isArray(data.recentPlays) && data.recentPlays.length > 0) {
+    try {
+      const { storePlayHistory } = await import('./fleet-db.js');
+      storePlayHistory(deviceId, data.recentPlays);
+    } catch (err) {
+      console.error('Fleet play history store error:', err.message);
+    }
+  }
+
   ensureDeviceInDb(deviceId, data);
   recordHeartbeatInDb(deviceId, data);
 

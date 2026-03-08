@@ -125,6 +125,18 @@ db.exec(`
     recorded_at INTEGER
   );
 
+  CREATE TABLE IF NOT EXISTS fleet_play_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    track_name TEXT NOT NULL,
+    dancer_name TEXT,
+    genre TEXT,
+    played_at TEXT NOT NULL,
+    received_at INTEGER NOT NULL,
+    FOREIGN KEY (device_id) REFERENCES fleet_devices(device_id) ON DELETE CASCADE,
+    UNIQUE(device_id, track_name, played_at)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_heartbeats_device ON fleet_heartbeats(device_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_heartbeats_timestamp ON fleet_heartbeats(timestamp);
   CREATE INDEX IF NOT EXISTS idx_error_logs_device ON fleet_error_logs(device_id, timestamp);
@@ -132,6 +144,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_voiceovers_name ON fleet_voiceovers(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_voice_recordings_name ON voice_recordings(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_promo_requests_status ON promo_requests(status);
+  CREATE INDEX IF NOT EXISTS idx_fleet_play_history_device ON fleet_play_history(device_id, played_at);
 `);
 
 try {
@@ -139,6 +152,10 @@ try {
 } catch {
   db.exec("ALTER TABLE fleet_heartbeats ADD COLUMN cpu_temp REAL DEFAULT 0");
 }
+
+try {
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_play_history_dedup ON fleet_play_history(device_id, track_name, played_at)");
+} catch {}
 
 function generateApiKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -491,4 +508,42 @@ export function completePromoRequest(id) {
   const now = Date.now();
   db.prepare("UPDATE promo_requests SET status = 'recorded', recorded_at = ? WHERE id = ?").run(now, id);
   return getPromoRequest(id);
+}
+
+export function storePlayHistory(deviceId, tracks) {
+  const now = Date.now();
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO fleet_play_history (device_id, track_name, dancer_name, genre, played_at, received_at) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const insertMany = db.transaction((items) => {
+    for (const t of items) {
+      insert.run(deviceId, t.track_name, t.dancer_name || null, t.genre || null, t.played_at, now);
+    }
+  });
+  insertMany(tracks);
+  const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM fleet_play_history WHERE played_at < ?').run(cutoff90);
+}
+
+export function getFleetPlayHistory(deviceId, limit = 200, offset = 0, date = null) {
+  if (date) {
+    return db.prepare(
+      `SELECT track_name, dancer_name, genre, played_at FROM fleet_play_history
+       WHERE device_id = ? AND date(played_at) = date(?)
+       ORDER BY played_at DESC LIMIT ? OFFSET ?`
+    ).all(deviceId, date, limit, offset);
+  }
+  return db.prepare(
+    `SELECT track_name, dancer_name, genre, played_at FROM fleet_play_history
+     WHERE device_id = ?
+     ORDER BY played_at DESC LIMIT ? OFFSET ?`
+  ).all(deviceId, limit, offset);
+}
+
+export function getFleetPlayHistoryDates(deviceId) {
+  return db.prepare(
+    `SELECT date(played_at) as date, COUNT(*) as count
+     FROM fleet_play_history WHERE device_id = ?
+     GROUP BY date(played_at) ORDER BY date DESC LIMIT 90`
+  ).all(deviceId);
 }
