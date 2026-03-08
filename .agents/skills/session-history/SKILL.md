@@ -104,6 +104,21 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Commit: "Fleet Command Center: remote command buttons, PIN auth, scroll fix"
 - Homebase needs `~/djbooth-update.sh` to pull changes
 
+### TODO: Next Session (Move Fleet Server to Homebase Pi)
+- **Goal**: Homebase Pi becomes the fleet server instead of Replit — always on, no sleeping
+- **Why**: Replit dev environment sleeps when idle, causing false offline alerts every 20-30 min overnight
+- **Architecture**: Homebase already runs the same Express server with fleet monitoring code. DJ booth routes (`/api/dancers`, etc.) and fleet routes (`/api/fleet/*`, `/api/monitor/*`) use separate namespaces on the same port 3001 — zero conflicts
+- **Steps**:
+  1. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars on homebase Pi (currently only on Replit)
+  2. Set `FLEET_SERVER_URL=http://localhost:3001` on homebase so it reports to itself
+  3. Set `FLEET_SERVER_URL=http://100.70.172.8:3001` on Pony Nation Pi (Tailscale IP of homebase)
+  4. Copy `fleet.db` from Replit to homebase OR let it build fresh as devices check in (generic voiceovers would need to be copied or regenerated)
+  5. Verify fleet dashboard works at `http://100.70.172.8:3001/fleet` from iPad
+  6. Remove/unset `FLEET_SERVER_URL` on Replit (optional — stops sending heartbeats to nowhere)
+- **No code changes needed** — all configuration
+- **Load impact**: Negligible — one heartbeat POST every 5 min per device
+- **Bonus**: Fleet dashboard accessible from any device on Tailscale network
+
 ### TODO: Next Session (USB SSD Music Library)
 - **Goal**: Use 1TB USB 3.2 SSD as homebase music library instead of SD card
 - **Why**: User DJs on other computers, wants to move SSD between them to add music, then plug back into homebase Pi

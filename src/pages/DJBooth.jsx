@@ -1789,7 +1789,7 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
         try {
-          await playAnnouncement(voiceoverUrl, { autoDuck: true });
+          await audioEngineRef.current?.playAnnouncement(voiceoverUrl, { autoDuck: true });
         } finally {
           clearInterval(keepAlive);
           playingCommercialRef.current = false;
@@ -1827,7 +1827,7 @@ export default function DJBooth() {
 
         if (!commercialSkipped) {
           await Promise.race([
-            playAnnouncement(voiceoverUrl, { autoDuck: true }),
+            audioEngineRef.current?.playAnnouncement(voiceoverUrl, { autoDuck: true }),
             skipPromise
           ]);
         }
@@ -1849,7 +1849,7 @@ export default function DJBooth() {
       console.warn('⚠️ Commercial playback failed:', err.message);
       return false;
     }
-  }, [playTrack, playAnnouncement]);
+  }, [playTrack]);
 
   const refreshPromoQueue = useCallback(async () => {
     try {
