@@ -38,7 +38,16 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
-### Mar 8, 2026 — Session 33 (Fleet Play History)
+### Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
+
+#### Feature: Generic Voiceover Fallbacks (Last Resort)
+- 40 pre-recorded generic voiceovers stored in fleet.db `voice_recordings` table under `__generic__`
+- 10 variations each for: intro, round2, outro, transition
+- **Fallback chain**: AI-generated → cached at different energy level → generic cached → **pre-recorded generic** (last resort)
+- Only used when there's no internet AND nothing was previously generated/cached
+- `checkGenericRecording()` in AnnouncementSystem.jsx cycles through variations round-robin
+- Cached in IndexedDB after first fetch so they work fully offline
+- Generation script: `server/generate-generic-voiceovers.js` (one-time, requires ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID env vars)
 
 #### Feature: Play History in Fleet Dashboard
 - Each Pi now sends recent play history (songs played since last heartbeat) in its heartbeat payload

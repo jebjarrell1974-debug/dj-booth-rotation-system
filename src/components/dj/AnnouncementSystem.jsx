@@ -443,37 +443,38 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return null;
   }, [loadFromServer]);
 
-  const genericTransitionIndexRef = useRef({ transition: 0, mid_set: 0 });
+  const genericIndexRef = useRef({ intro: 0, round2: 0, outro: 0, transition: 0 });
+
+  const checkGenericRecording = useCallback(async (type) => {
+    const typeKey = type === ANNOUNCEMENT_TYPES.ROUND2 ? 'round2' : type;
+    const genericName = '__generic__';
+    const idx = genericIndexRef.current;
+    const maxVariations = 10;
+    for (let attempt = 0; attempt < maxVariations; attempt++) {
+      idx[typeKey] = ((idx[typeKey] || 0) % maxVariations) + 1;
+      const recType = `${typeKey}_${idx[typeKey]}`;
+      const cacheKey = `custom-recording-${genericName}-${recType}`;
+      const idbCached = await getCachedFromIndexedDB(cacheKey);
+      if (idbCached) {
+        console.log(`🎤 Generic ${typeKey} from IndexedDB: ${recType}`);
+        return idbCached;
+      }
+      try {
+        const res = await fetch(`/api/fleet/voice-recordings/audio/${encodeURIComponent(genericName)}/${encodeURIComponent(recType)}`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          await cacheToIndexedDB(cacheKey, blob);
+          console.log(`🎤 Generic ${typeKey} fetched: ${recType}`);
+          return blob;
+        }
+      } catch {}
+    }
+    return null;
+  }, []);
 
   const checkCustomRecording = useCallback(async (dancerName, type) => {
-    if (type === ANNOUNCEMENT_TYPES.TRANSITION) {
-      const genericName = '__generic__';
-      const idx = genericTransitionIndexRef.current;
-      const maxVariations = 10;
-      for (let attempt = 0; attempt < maxVariations; attempt++) {
-        idx.transition = (idx.transition % maxVariations) + 1;
-        const recType = `transition_${idx.transition}`;
-        const cacheKey = `custom-recording-${genericName}-${recType}`;
-        const idbCached = await getCachedFromIndexedDB(cacheKey);
-        if (idbCached) {
-          console.log(`🎤 Generic transition from IndexedDB: ${recType}`);
-          return idbCached;
-        }
-        try {
-          const res = await fetch(`/api/fleet/voice-recordings/audio/${encodeURIComponent(genericName)}/${encodeURIComponent(recType)}`, {
-            headers: getAuthHeaders()
-          });
-          if (res.ok) {
-            const blob = await res.blob();
-            await cacheToIndexedDB(cacheKey, blob);
-            console.log(`🎤 Generic transition fetched: ${recType}`);
-            return blob;
-          }
-        } catch {}
-      }
-      return null;
-    }
-
     if (!dancerName || dancerName === GENERIC_DANCER_NAME) return null;
     const customCacheKey = `custom-recording-${dancerName}-${type}`;
     const idbCached = await getCachedFromIndexedDB(customCacheKey);
@@ -573,10 +574,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           return anyGenericLevel;
         }
       }
+      const genericRecording = await checkGenericRecording(type);
+      if (genericRecording) {
+        console.log(`🎤 Last-resort generic pre-recorded ${type} voiceover used`);
+        return { url: URL.createObjectURL(genericRecording), fromCache: true };
+      }
       console.error(`❌ No announcement available for ${type}: ${genError.message}`);
       throw genError;
     }
-  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer, checkCustomRecording]);
+  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording]);
 
   const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
     try {
