@@ -58,9 +58,18 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **4 transition points in DJBooth.jsx**: 2 fixed (handleSkip direct, handleTrackEnd direct), 1 OK as-is (after break songs — no outro needed)
 - **Commit**: `b7a81a2`
 
-### Bug Fix: Playback lock prevents dual songs on boot
+### Bug Fix: Playback lock prevents dual songs on boot (v1 — mutex, didn't fully fix)
 - Added `playTrackLockRef` mutex to AudioEngine's `playTrack` — serializes concurrent calls so only one track loads at a time
 - **Commit**: `afbfd5e`
+- **Problem**: Mutex waits then ALSO plays — both songs still end up on separate decks
+
+### Bug Fix: Dual-song boot — block-and-skip + diagnostics (v2)
+- Changed `playTrackLockRef` from wait-then-play to block-and-skip: second concurrent call returns false instead of waiting
+- Added dual-deck monitor: 2s interval checks if both decks are playing simultaneously, logs `🚨 DUAL-DECK ALERT`
+- Added deck state diagnostics: logs A/B paused/src state before and after each playTrack call
+- User confirmed: two different songs overlap simultaneously on Pi kiosk boot
+- Console shows only ONE `PlayTrack` log — second audio source is unidentified
+- **Commit**: `1d47282`
 
 ### Feature: Folder Lock shows actual picks + tap-to-reroll
 - When Folder Lock mode changes, all non-DJ-overridden assignments are cleared and re-picked under new mode

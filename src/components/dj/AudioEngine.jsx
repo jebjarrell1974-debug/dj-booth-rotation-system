@@ -205,8 +205,13 @@ const AudioEngine = forwardRef(({
     const dualDeckMonitor = setInterval(() => {
       const a = deckARef.current;
       const b = deckBRef.current;
-      if (a && b && !a.paused && !b.paused && a.src && b.src) {
-        console.error(`🚨 DUAL-DECK ALERT: Both decks playing! A.src=${a.src.substring(0, 60)}, B.src=${b.src.substring(0, 60)}, crossfading=${crossfadeInProgressRef.current}`);
+      if (a && b && !a.paused && !b.paused && a.src && b.src && !crossfadeInProgressRef.current) {
+        const active = activeDeck.current;
+        const stale = active === 'A' ? b : a;
+        const staleName = active === 'A' ? 'B' : 'A';
+        console.error(`🚨 DUAL-DECK FIX: Both decks playing outside crossfade! Force-pausing deck ${staleName}. A.src=${a.src.substring(0, 60)}, B.src=${b.src.substring(0, 60)}`);
+        stale.pause();
+        stale.src = '';
       }
     }, 2000);
 
