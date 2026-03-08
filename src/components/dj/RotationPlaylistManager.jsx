@@ -54,7 +54,10 @@ export default function RotationPlaylistManager({
   currentSongNumber,
   breakSongsPerSet,
   onBreakSongsPerSetChange,
-  onSongAssignmentsChange
+  onSongAssignmentsChange,
+  autoplayQueue = [],
+  onAutoplayQueueChange,
+  onAutoplayQueueRemove
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -502,6 +505,34 @@ export default function RotationPlaylistManager({
         current.splice(destination.index, 0, removed);
         return { ...prev, [breakKey]: current };
       });
+      return;
+    }
+
+    if (source.droppableId === 'library' && destination.droppableId === 'autoplay-queue') {
+      const trackName = resolveTrackName();
+      if (!trackName) return;
+      if (trackName.startsWith('[COMMERCIAL]')) {
+        toast.error('Commercials cannot be added to autoplay queue');
+        return;
+      }
+      const track = displayedTracks.find(t => t.name === trackName);
+      if (!track) return;
+      const trackObj = { ...track, url: `/api/music/stream/${track.id}`, autoFilled: false };
+      if (autoplayQueue.some(t => t.name === trackName)) {
+        toast.error('Song already in autoplay queue');
+        return;
+      }
+      const newQueue = [...autoplayQueue];
+      newQueue.splice(destination.index, 0, trackObj);
+      onAutoplayQueueChange?.(newQueue);
+      return;
+    }
+
+    if (source.droppableId === 'autoplay-queue' && destination.droppableId === 'autoplay-queue') {
+      const newQueue = [...autoplayQueue];
+      const [moved] = newQueue.splice(source.index, 1);
+      newQueue.splice(destination.index, 0, moved);
+      onAutoplayQueueChange?.(newQueue);
       return;
     }
   };
@@ -1221,10 +1252,73 @@ export default function RotationPlaylistManager({
                   {provided.placeholder}
 
                   {rotationDancers.length === 0 && (
-                    <div className="text-center py-12 text-gray-500">
-                      <Music2 className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-                      <p className="text-sm">No entertainers in rotation</p>
-                    </div>
+                    <Droppable droppableId="autoplay-queue" type="song">
+                      {(aqProvided, aqSnapshot) => (
+                        <div
+                          ref={aqProvided.innerRef}
+                          {...aqProvided.droppableProps}
+                          className={`mx-2 rounded-lg border border-dashed p-3 transition-colors ${
+                            aqSnapshot.isDraggingOver
+                              ? 'border-cyan-400/60 bg-cyan-900/20'
+                              : 'border-cyan-500/30 bg-cyan-900/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 px-1 mb-2">
+                            <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="text-[11px] text-cyan-400 uppercase font-semibold tracking-wider">Autoplay Queue</span>
+                            <span className="text-[10px] text-cyan-500/60 ml-auto">{autoplayQueue.length} song{autoplayQueue.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {autoplayQueue.length === 0 ? (
+                            <div className="text-center py-6 text-gray-500">
+                              <Music2 className="w-8 h-8 mx-auto mb-2 text-gray-700" />
+                              <p className="text-xs">Drag songs here to build your queue</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              {autoplayQueue.map((track, i) => (
+                                <Draggable key={`aq-${track.id}`} draggableId={`aq-${track.id}`} index={i}>
+                                  {(aqDragProvided, aqDragSnapshot) => (
+                                    <div
+                                      ref={aqDragProvided.innerRef}
+                                      {...aqDragProvided.draggableProps}
+                                      {...aqDragProvided.dragHandleProps}
+                                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-colors ${
+                                        i === 0
+                                          ? 'bg-cyan-900/30 border-cyan-500/40 ring-1 ring-cyan-500/20'
+                                          : track.autoFilled
+                                            ? 'bg-gray-800/40 border-gray-700/30'
+                                            : 'bg-cyan-900/15 border-cyan-600/25'
+                                      } ${aqDragSnapshot.isDragging ? 'shadow-lg shadow-cyan-500/20' : ''}`}
+                                    >
+                                      <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                                      {i === 0 ? (
+                                        <Play className="w-3 h-3 text-cyan-400 flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] text-gray-500 w-3 text-center flex-shrink-0">{i + 1}</span>
+                                      )}
+                                      <Music2 className={`w-3 h-3 flex-shrink-0 ${track.autoFilled ? 'text-gray-500' : 'text-cyan-400'}`} />
+                                      <span className={`text-xs truncate flex-1 ${
+                                        i === 0 ? 'text-cyan-300 font-medium' : track.autoFilled ? 'text-gray-400' : 'text-cyan-300/80'
+                                      }`}>{track.name}</span>
+                                      {track.genre && (
+                                        <span className="text-[9px] text-gray-600 flex-shrink-0">{track.genre}</span>
+                                      )}
+                                      <button
+                                        onClick={() => onAutoplayQueueRemove?.(i)}
+                                        className="p-0.5 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </Draggable>
+                              ))}
+                            </div>
+                          )}
+                          {aqProvided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
                   )}
                 </div>
               </ScrollArea>

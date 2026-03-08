@@ -83,6 +83,11 @@ export default function DJBooth() {
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
   const tracksRef = useRef([]);
+  const [autoplayQueue, setAutoplayQueue] = useState([]);
+  const autoplayQueueRef = useRef([]);
+  const autoplayFillInFlightRef = useRef(false);
+  const autoplayPlayingRef = useRef(false);
+  const autoplayFillVersionRef = useRef(0);
   const [rotationSongs, setRotationSongs] = useState(() => {
     try {
       const saved = localStorage.getItem('djbooth_rotation_songs');
@@ -368,6 +373,7 @@ export default function DJBooth() {
   const [clubSpecials, setClubSpecials] = useState('');
 
   const announcementRef = useRef(null);
+  const announcementsEnabledRef = useRef(true);
 
   const [configLoaded, setConfigLoaded] = useState(false);
 
@@ -382,6 +388,10 @@ export default function DJBooth() {
       setConfigLoaded(true);
     });
   }, []);
+
+  useEffect(() => {
+    announcementsEnabledRef.current = announcementsEnabled;
+  }, [announcementsEnabled]);
 
   useEffect(() => {
     if (!configLoaded) return;
@@ -410,6 +420,18 @@ export default function DJBooth() {
         const remaining = Math.max(0, dur - time);
         timeDisplayRef.current.textContent = fmt(remaining);
         timeDisplayRef.current.style.display = '';
+        const el = timeDisplayRef.current;
+        if (!announcementsEnabledRef.current && isRotationActiveRef.current && remaining <= 30 && remaining > 0) {
+          el.style.color = remaining <= 15 ? '#ef4444' : '#eab308';
+          el.style.fontSize = '1rem';
+          el.style.fontWeight = '700';
+          el.style.animation = 'talkPulse 0.8s ease-in-out infinite';
+        } else {
+          el.style.color = '';
+          el.style.fontSize = '';
+          el.style.fontWeight = '';
+          el.style.animation = '';
+        }
       } else {
         timeDisplayRef.current.style.display = 'none';
       }
@@ -433,6 +455,16 @@ export default function DJBooth() {
         const remaining = Math.max(0, dur - currentPos);
         remoteTimeDisplayRef.current.textContent = fmt(remaining);
         remoteTimeDisplayRef.current.style.display = '';
+        const el = remoteTimeDisplayRef.current;
+        if (!announcementsEnabledRef.current && remaining <= 30 && remaining > 0) {
+          el.style.color = remaining <= 15 ? '#ef4444' : '#eab308';
+          el.style.fontWeight = '700';
+          el.style.animation = 'talkPulse 0.8s ease-in-out infinite';
+        } else {
+          el.style.color = '';
+          el.style.fontWeight = '';
+          el.style.animation = '';
+        }
       } else {
         remoteTimeDisplayRef.current.style.display = 'none';
       }
@@ -1123,6 +1155,90 @@ export default function DJBooth() {
     return false;
   }, [tracks, filterCooldown, recordSongPlayed]);
 
+  const AUTOPLAY_QUEUE_SIZE = 10;
+
+  const fillAutoplayQueue = useCallback(async (currentQueue = []) => {
+    const needed = AUTOPLAY_QUEUE_SIZE - currentQueue.length;
+    if (needed <= 0) return currentQueue;
+    if (autoplayFillInFlightRef.current) return currentQueue;
+    autoplayFillInFlightRef.current = true;
+    const fillVersion = ++autoplayFillVersionRef.current;
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const opts = djOptionsRef.current;
+      const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
+      const cooldowns = songCooldownRef.current || {};
+      const nowMs = Date.now();
+      const recentNames = Object.entries(cooldowns)
+        .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
+        .map(([name]) => name);
+      const queueNames = currentQueue.map(t => t.name);
+      const allExclude = [...new Set([...recentNames, ...queueNames])];
+      const excludeParam = allExclude.length > 0 ? `&exclude=${encodeURIComponent(allExclude.join(','))}` : '';
+      const res = await fetch(`/api/music/random?count=${needed}${genresParam}${excludeParam}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(5000)
+      });
+      if (fillVersion !== autoplayFillVersionRef.current) return autoplayQueueRef.current;
+      if (res.ok) {
+        const data = await res.json();
+        const latestQueue = autoplayQueueRef.current;
+        const latestNames = new Set(latestQueue.map(t => t.name));
+        const newTracks = (data.tracks || [])
+          .filter(t => !latestNames.has(t.name))
+          .map(t => ({ ...t, url: `/api/music/stream/${t.id}`, autoFilled: true }));
+        const filled = [...latestQueue, ...newTracks].slice(0, AUTOPLAY_QUEUE_SIZE);
+        autoplayQueueRef.current = filled;
+        setAutoplayQueue(filled);
+        return filled;
+      }
+    } catch (err) {
+      console.warn('⚠️ AutoplayQueue fill failed:', err.message);
+    } finally {
+      autoplayFillInFlightRef.current = false;
+    }
+    return currentQueue;
+  }, []);
+
+  const updateAutoplayQueue = useCallback((newQueue) => {
+    autoplayQueueRef.current = newQueue;
+    setAutoplayQueue(newQueue);
+  }, []);
+
+  const playFromAutoplayQueue = useCallback(async (crossfade = true) => {
+    if (autoplayPlayingRef.current) return false;
+    autoplayPlayingRef.current = true;
+    try {
+      let queue = autoplayQueueRef.current;
+      if (queue.length === 0) {
+        const filled = await fillAutoplayQueue([]);
+        queue = autoplayQueueRef.current;
+        if (queue.length === 0) return playFallbackTrack(crossfade);
+      }
+      const track = queue[0];
+      const remaining = queue.slice(1);
+      updateAutoplayQueue(remaining);
+      fillAutoplayQueue(remaining);
+      console.log(`🎵 AutoplayQueue: Playing "${track.name}", ${remaining.length} remaining`);
+      recordSongPlayed(track.name);
+      setIsPlaying(true);
+      const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, crossfade);
+      if (success === false) {
+        console.warn('⚠️ AutoplayQueue: Track failed, trying fallback');
+        return playFallbackTrack(crossfade);
+      }
+      return success;
+    } finally {
+      autoplayPlayingRef.current = false;
+    }
+  }, [fillAutoplayQueue, updateAutoplayQueue, playFallbackTrack, recordSongPlayed]);
+
+  useEffect(() => {
+    if (rotation.length === 0 && !isRotationActive && tracks.length > 0 && autoplayQueueRef.current.length === 0) {
+      fillAutoplayQueue([]);
+    }
+  }, [rotation.length, isRotationActive, tracks.length, fillAutoplayQueue]);
+
   const isFeatureTrack = useCallback((name, genre) => {
     if (genre && genre.toUpperCase() === 'FEATURE') return true;
     if (!name) return false;
@@ -1267,7 +1383,7 @@ export default function DJBooth() {
 
     const activeGenres = opts?.activeGenres?.length > 0 ? opts.activeGenres : [];
     const rawPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
-    const dancerPlaylist = fisherYatesShuffle(rawPlaylist);
+    const dancerPlaylist = rawPlaylist;
 
     try {
       const token = sessionStorage.getItem('djbooth_token');
@@ -1766,6 +1882,7 @@ export default function DJBooth() {
   const handleSkip = useCallback(async () => {
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
+    if (!window.confirm('Skip this song?')) return;
     lastSkipTimeRef.current = now;
     if (playingCommercialRef.current) {
       console.log('📺 HandleSkip: Skipping commercial');
@@ -2099,6 +2216,18 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
+        const finishedDancer = dnc.find(d => d.id === finishedDancerId);
+        if (finishedDancer) {
+          getDancerTracks(finishedDancer).then(prePicked => {
+            if (!isRotationActiveRef.current) return;
+            if (!rotationRef.current.includes(finishedDancerId)) return;
+            const latest = { ...rotationSongsRef.current, [finishedDancerId]: prePicked };
+            setRotationSongs(latest);
+            rotationSongsRef.current = latest;
+            console.log(`🎵 Pre-picked for ${finishedDancer.name} (bottom): [${prePicked.map(t => t.name).join(', ')}]`);
+          }).catch(e => console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message));
+        }
+
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
@@ -2250,10 +2379,19 @@ export default function DJBooth() {
       }
       lastAudioActivityRef.current = Date.now();
       try {
-        const ok = await playFallbackTrack(true);
-        if (!ok) {
-          console.error('🚨 HandleTrackEnd (no rotation): All recovery failed — resuming active deck');
-          audioEngineRef.current?.resume();
+        if (autoplayQueueRef.current.length > 0) {
+          console.log('🎵 HandleTrackEnd (no rotation): Playing from autoplay queue');
+          const ok = await playFromAutoplayQueue(true);
+          if (ok === false) {
+            const fallbackOk = await playFallbackTrack(true);
+            if (!fallbackOk) audioEngineRef.current?.resume();
+          }
+        } else {
+          const ok = await playFallbackTrack(true);
+          if (!ok) {
+            console.error('🚨 HandleTrackEnd (no rotation): All recovery failed — resuming active deck');
+            audioEngineRef.current?.resume();
+          }
         }
       } catch (err) {
         console.error('🚨 HandleTrackEnd (no rotation): Unexpected error:', err);
@@ -2640,6 +2778,18 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
+        const finishedDancer = dnc.find(d => d.id === finishedDancerId);
+        if (finishedDancer) {
+          getDancerTracks(finishedDancer).then(prePicked => {
+            if (!isRotationActiveRef.current) return;
+            if (!rotationRef.current.includes(finishedDancerId)) return;
+            const latest = { ...rotationSongsRef.current, [finishedDancerId]: prePicked };
+            setRotationSongs(latest);
+            rotationSongsRef.current = latest;
+            console.log(`🎵 Pre-picked for ${finishedDancer.name} (bottom): [${prePicked.map(t => t.name).join(', ')}]`);
+          }).catch(e => console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message));
+        }
+
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
@@ -2834,6 +2984,18 @@ export default function DJBooth() {
     if (!rotation.includes(dancerId)) {
       const newRotation = [...rotation, dancerId];
       setRotation(newRotation);
+
+      const dancer = dancers.find(d => d.id === dancerId);
+      if (dancer && isRotationActive) {
+        getDancerTracks(dancer).then(prePicked => {
+          if (!isRotationActiveRef.current) return;
+          if (!rotationRef.current.includes(dancerId)) return;
+          const latest = { ...rotationSongsRef.current, [dancerId]: prePicked };
+          setRotationSongs(latest);
+          rotationSongsRef.current = latest;
+          console.log(`🎵 Pre-picked for ${dancer.name} (added): [${prePicked.map(t => t.name).join(', ')}]`);
+        }).catch(e => console.warn('⚠️ Pre-pick failed for', dancer?.name, e.message));
+      }
     }
   };
 
@@ -2856,6 +3018,9 @@ export default function DJBooth() {
   }, []);
 
   const removeFromRotation = (dancerId) => {
+    const dancer = dancers.find(d => d.id === dancerId);
+    const name = dancer?.name || 'this entertainer';
+    if (!window.confirm(`Remove ${name} from the rotation?`)) return;
     setRotation(rotation.filter(id => id !== dancerId));
   };
 
@@ -3687,6 +3852,17 @@ export default function DJBooth() {
                   }
                 }}
                 onSongAssignmentsChange={setPlannedSongAssignments}
+                autoplayQueue={autoplayQueue}
+                onAutoplayQueueChange={(newQueue) => {
+                  updateAutoplayQueue(newQueue);
+                  fillAutoplayQueue(newQueue);
+                }}
+                onAutoplayQueueRemove={(index) => {
+                  const newQueue = [...autoplayQueueRef.current];
+                  newQueue.splice(index, 1);
+                  updateAutoplayQueue(newQueue);
+                  fillAutoplayQueue(newQueue);
+                }}
               />
             )}
             

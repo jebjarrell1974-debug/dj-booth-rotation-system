@@ -70,6 +70,28 @@ const blobToBase64 = (blob) => {
   });
 };
 
+const CURRENT_VOICE_VERSION = 'V10';
+
+const cleanupStaleIDBEntries = async () => {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.getAllKeys();
+    request.onsuccess = () => {
+      const keys = request.result || [];
+      let removed = 0;
+      for (const key of keys) {
+        if (typeof key === 'string' && !key.includes(`-${CURRENT_VOICE_VERSION}`)) {
+          store.delete(key);
+          removed++;
+        }
+      }
+      if (removed > 0) console.log(`🧹 Cleaned ${removed} stale voiceover entries from IndexedDB`);
+    };
+  } catch {}
+};
+
 const ANNOUNCEMENT_TYPES = {
   INTRO: 'intro',
   ROUND2: 'round2',
@@ -99,6 +121,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const [generatingType, setGeneratingType] = useState(null);
   const [preCacheError, setPreCacheError] = useState(null);
   const preCacheStartTimeRef = useRef(0);
+  const specialsAnnouncementCountRef = useRef(0);
+  const specialsRotationIndexRef = useRef(0);
+  const specialsNextTriggerRef = useRef(Math.floor(Math.random() * 2) + 2);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -122,6 +147,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     };
     loadServerCacheStatus();
+    cleanupStaleIDBEntries();
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -153,10 +179,28 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return text || 'Welcome to the stage.';
   };
 
+  const getStaggeredSpecial = useCallback((type) => {
+    if (type !== 'outro' && type !== 'transition') return [];
+    const config = getApiConfig();
+    const allSpecials = (config.clubSpecials || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (allSpecials.length === 0) return [];
+
+    specialsAnnouncementCountRef.current++;
+    if (specialsAnnouncementCountRef.current < specialsNextTriggerRef.current) return [];
+
+    specialsAnnouncementCountRef.current = 0;
+    specialsNextTriggerRef.current = Math.floor(Math.random() * 2) + 2;
+
+    const idx = specialsRotationIndexRef.current % allSpecials.length;
+    specialsRotationIndexRef.current = idx + 1;
+    console.log(`🎤 Club special #${idx + 1}/${allSpecials.length}: "${allSpecials[idx]}" (next in ${specialsNextTriggerRef.current} announcements)`);
+    return [allSpecials[idx]];
+  }, []);
+
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, energyLevel = 3, roundNumber = 1) => {
     const config = getApiConfig();
     const clubName = config.clubName || '';
-    const specials = (config.clubSpecials || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const specials = getStaggeredSpecial(type);
     const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, energyLevel, roundNumber, clubName, specials);
 
     const openaiKey = config.openaiApiKey || '';
@@ -459,6 +503,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const specialsSuffix = getSpecialsHash();
     const clubSuffix = getClubSuffix();
     const hasSpecials = specialsSuffix.length > 0;
+    const isSpecialsEligible = hasSpecials && (type === 'outro' || type === 'transition');
     const key = getAnnouncementKey(type, dancerName, nextDancerName, level) + specialsSuffix + clubSuffix;
 
     const customBlob = await checkCustomRecording(dancerName, type);
@@ -467,11 +512,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       return { url: URL.createObjectURL(customBlob), fromCache: true };
     }
 
-    const idbCached = await getCachedFromIndexedDB(key);
-    if (idbCached) {
-      console.log(`✅ Loaded from IndexedDB (session cache): ${key}`);
-      setCacheStatus(prev => ({ ...prev, [key]: true }));
-      return { url: URL.createObjectURL(idbCached), fromCache: true };
+    if (!isSpecialsEligible) {
+      const idbCached = await getCachedFromIndexedDB(key);
+      if (idbCached) {
+        console.log(`✅ Loaded from IndexedDB (session cache): ${key}`);
+        setCacheStatus(prev => ({ ...prev, [key]: true }));
+        return { url: URL.createObjectURL(idbCached), fromCache: true };
+      }
     }
 
     if (!hasSpecials) {
@@ -484,24 +531,26 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
 
     try {
-      console.log(`🎙️ Generating new announcement: ${key} (Energy L${level})${hasSpecials ? ' [with specials]' : ''}`);
+      console.log(`🎙️ Generating new announcement: ${key} (Energy L${level})${isSpecialsEligible ? ' [specials staggered]' : hasSpecials ? ' [with specials]' : ''}`);
       setGeneratingType(type);
       const script = await generateScript(type, dancerName, nextDancerName, level, roundNumber);
       const audioBlob = await generateAudio(script, level);
 
-      await cacheToIndexedDB(key, audioBlob);
+      if (!isSpecialsEligible) {
+        await cacheToIndexedDB(key, audioBlob);
+      }
 
       if (!hasSpecials) {
         await saveToServer(key, audioBlob, script, type, dancerName, level);
       } else {
-        console.log(`📢 Specials active — voiceover saved to session only (not permanent cache)`);
+        console.log(`📢 Specials active — voiceover not cached (staggered specials vary each time)`);
       }
 
       setCacheStatus(prev => ({ ...prev, [key]: true }));
       if (!hasSpecials) setServerCacheCount(prev => prev + 1);
       setGeneratingType(null);
 
-      console.log(`✅ Cached announcement: ${key} (L${level})${hasSpecials ? ' [session only]' : ' — saved to server'}`);
+      console.log(`✅ Generated announcement: ${key} (L${level})${isSpecialsEligible ? ' [fresh, staggered]' : !hasSpecials ? ' — saved to server' : ''}`);
       return { url: URL.createObjectURL(audioBlob), fromCache: false };
     } catch (genError) {
       setGeneratingType(null);

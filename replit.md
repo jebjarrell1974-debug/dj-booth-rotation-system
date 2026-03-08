@@ -38,6 +38,70 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 8, 2026 — Session 30 (Song Selection Logic + Autoplay Queue)
+
+#### Song Selection Logic Improvements
+- **Playlist order respected**: Removed `fisherYatesShuffle` on dancer playlists — songs play in assigned order, skipping cooldown songs
+- **Pre-pick on rotation flip**: When a dancer finishes and rotates to bottom, their next songs are picked immediately (async, non-blocking)
+- **Pre-pick on add**: When an entertainer is added to rotation while active, songs are picked right away
+- **3-tier server fallback** in `selectTracksForSet()`: (1) Walk playlist in order, skip cooldown songs → (2) Pick least-recently-played playlist songs even if on cooldown → (3) Random filler from active genres/backup folder
+- **Stale pre-pick guards**: All async pre-picks verify rotation is still active and dancer still in rotation before committing
+- **Files**: `src/pages/DJBooth.jsx` (getDancerTracks, handleSkip, handleTrackEnd, addToRotation), `server/db.js` (selectTracksForSet)
+
+#### Session 31 Changes
+
+##### No Applause/Noise in Voice Scripts
+- Added explicit NEVER DO rules to SYSTEM_PROMPT banning crowd noise requests, applause calls, "give it up", "make some noise", etc.
+- Updated all example scripts (intro, outro, transition) to remove applause/cheering language
+- Also reinforced in per-type instructions: "Do not ask for applause or cheering"
+- Files: `src/utils/energyLevels.js`
+
+##### Skip + Remove Confirmations
+- `handleSkip` now shows `window.confirm('Skip this song?')` before executing
+- `removeFromRotation` now shows `window.confirm('Remove [name] from the rotation?')` before executing
+- Files: `src/pages/DJBooth.jsx`
+
+##### Time-to-Talk Countdown Indicator
+- When voice announcements are disabled and rotation is active, countdown flashes + changes color in last 30s
+- White → yellow at 30s, yellow → red at 15s, with CSS pulse animation (`talkPulse`)
+- Works on both local (`timeDisplayRef`) and remote (`remoteTimeDisplayRef`) timers
+- Added `announcementsEnabledRef` to sync state to ref for timer interval access
+- Files: `src/pages/DJBooth.jsx`, `src/index.css`
+
+##### Song Cooldown Persistence
+- Confirmed: 4-hour cooldown already persists across reboots via SQLite `play_history` table
+- Client loads from localStorage + merges with server `/api/history/cooldowns?hours=4` on startup
+- No code changes needed — verified working (75+ cooldowns loaded after restart in testing)
+
+##### Voiceover 404 Cleanup
+- Added `cleanupStaleIDBEntries()` in `AnnouncementSystem.jsx` that purges old-version cache entries from IndexedDB on load
+- Only keeps entries matching current version tag (`V10`)
+- Files: `src/components/dj/AnnouncementSystem.jsx`
+
+##### Fleet Console Logs
+- `heartbeat-client.js`: Added `getRecentServiceLogs()` — captures last 50 journalctl warning/error lines from `djbooth.service`
+- Included as `recentLogs` in heartbeat payload
+- `fleet-monitor.js`: Stores `recentLogs` in device memory map
+- `fleet-routes.js`: Passes `recentLogs` in dashboard overview response
+- `FleetDashboard.jsx`: Collapsible "Service Logs" section per device card with error/warning color coding
+- Files: `server/heartbeat-client.js`, `server/fleet-monitor.js`, `server/fleet-routes.js`, `src/pages/FleetDashboard.jsx`
+
+#### Club Specials Staggering
+- **Problem**: All club specials were dumped into every outro/transition prompt, making them repetitive and mechanical
+- **Fix**: Specials now stagger randomly — one special per announcement, only every 2nd or 3rd announcement (random), rotating through the list in order
+- **Counter refs**: `specialsAnnouncementCountRef`, `specialsRotationIndexRef`, `specialsNextTriggerRef` in `AnnouncementSystem.jsx`
+- **Prompt updated**: `buildAnnouncementPrompt` in `energyLevels.js` now gets 0 or 1 specials (singular "CLUB SPECIAL" prompt instead of plural)
+- **Files**: `src/components/dj/AnnouncementSystem.jsx` (getStaggeredSpecial), `src/utils/energyLevels.js` (prompt wording)
+
+#### Autoplay Queue Feature
+- **New feature**: When no entertainers are in rotation, a cyan "Autoplay Queue" bubble appears showing the next 10 songs
+- **Drag and drop**: DJs can drag songs from the music browser into the queue at any position, reorder within the queue, and remove songs
+- **Auto-fill**: System auto-fills queue to 10 songs from active genres; after DJ-picked songs are played, auto-fill continues
+- **Playback integration**: `handleTrackEnd` uses autoplay queue when rotation is empty — plays queue songs in order with crossfade
+- **Race condition guards**: Fill requests use version tracking and in-flight flag; playback uses mutex to prevent concurrent shifts
+- **Visual design**: Cyan theme matching app accent; first song highlighted with play icon; DJ-picked songs vs auto-filled songs visually distinct
+- **Files**: `src/pages/DJBooth.jsx` (autoplayQueue state, fillAutoplayQueue, playFromAutoplayQueue), `src/components/dj/RotationPlaylistManager.jsx` (autoplay queue bubble UI)
+
 ### Mar 6, 2026 — Session 29 (R2 Boot Sync Fix + Entertainer Roster)
 
 #### R2 Boot Music Sync Fix

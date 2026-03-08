@@ -114,6 +114,7 @@ async function registerHeartbeat(deviceId, data) {
     activeEntertainers: data.activeEntertainers || 0,
     errorCount: data.errorCount || 0,
     network: data.network || null,
+    recentLogs: data.recentLogs || [],
   });
 
   if (data.dancer_names && Array.isArray(data.dancer_names)) {

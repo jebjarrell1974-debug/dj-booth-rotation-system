@@ -367,6 +367,7 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
         currentDancer: live.currentDancer || null,
         currentSong: live.currentSong || null,
         lastUpdateTime: live.lastUpdateTime || null,
+        recentLogs: live.recentLogs || [],
       };
     })
   };

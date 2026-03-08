@@ -353,6 +353,21 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
         </div>
       )}
 
+      {device.recentLogs && device.recentLogs.length > 0 && (
+        <div className="border-t border-[#1a1a2e] px-3 py-2">
+          <details>
+            <summary className="text-[11px] text-gray-500 cursor-pointer hover:text-gray-300 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-yellow-500" /> Service Logs ({device.recentLogs.length})
+            </summary>
+            <div className="mt-1.5 max-h-40 overflow-y-auto bg-black/40 rounded p-2 text-[10px] font-mono text-gray-400 space-y-0.5">
+              {device.recentLogs.map((line, i) => (
+                <div key={i} className={line.toLowerCase().includes('error') ? 'text-red-400' : 'text-yellow-400/70'}>{line}</div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
+
       <div className="border-t border-[#1e293b] px-3 py-2 flex gap-2">
         {cmdBtn('update', 'Update', <Upload className="w-3.5 h-3.5" />, 'text-blue-400', 'border-blue-500/30')}
         {cmdBtn('restart', 'Restart', <RefreshCw className="w-3.5 h-3.5" />, 'text-yellow-400', 'border-yellow-500/30')}

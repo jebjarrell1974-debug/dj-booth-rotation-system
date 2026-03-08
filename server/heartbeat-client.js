@@ -139,6 +139,19 @@ function getNetworkLatency() {
   }
 }
 
+function getRecentServiceLogs() {
+  try {
+    const out = execSync(
+      'journalctl -u djbooth.service --no-pager -n 200 -p warning --output=short-iso 2>/dev/null || true',
+      { timeout: 5000, encoding: 'utf8' }
+    );
+    const lines = out.trim().split('\n').filter(l => l.trim() && !l.startsWith('--'));
+    return lines.slice(-50);
+  } catch {
+    return [];
+  }
+}
+
 function getDeviceId() {
   return process.env.DEVICE_ID || hostname() || 'unknown';
 }
@@ -181,6 +194,7 @@ async function sendHeartbeat(extraData = {}) {
     errorCount: extraData.errorCount || 0,
     dancer_names: extraData.dancer_names || [],
     network,
+    recentLogs: getRecentServiceLogs(),
   };
 
   try {

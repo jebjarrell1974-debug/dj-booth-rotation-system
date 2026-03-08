@@ -562,6 +562,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
 export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
   const result = [];
   const usedNames = new Set(excludeNames);
+  const selectedNames = new Set();
 
   if (dancerPlaylist.length > 0) {
     for (const trackName of dancerPlaylist) {
@@ -571,7 +572,31 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
       if (track) {
         result.push(track);
         usedNames.add(track.name);
+        selectedNames.add(track.name);
       }
+    }
+  }
+
+  if (result.length < count && dancerPlaylist.length > 0) {
+    const playlistCandidates = [];
+    for (const trackName of dancerPlaylist) {
+      if (selectedNames.has(trackName)) continue;
+      const track = readDb.prepare(
+        `SELECT t.id, t.name, t.path, t.genre, COALESCE(h.last_played, '1970-01-01') as last_played
+         FROM music_tracks t
+         LEFT JOIN (SELECT track_name, MAX(played_at) AS last_played FROM play_history GROUP BY track_name) h
+         ON t.name = h.track_name
+         WHERE t.name = ? AND t.blocked = 0`
+      ).get(trackName);
+      if (track) playlistCandidates.push(track);
+    }
+    playlistCandidates.sort((a, b) => (a.last_played || '').localeCompare(b.last_played || ''));
+    for (const { last_played, ...track } of playlistCandidates) {
+      if (result.length >= count) break;
+      if (selectedNames.has(track.name)) continue;
+      result.push(track);
+      usedNames.add(track.name);
+      selectedNames.add(track.name);
     }
   }
 
