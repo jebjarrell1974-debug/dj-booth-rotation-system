@@ -50,6 +50,22 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Mar 8, 2026 — Session 34 (Commercial Ordering Fix + Dual-Song Boot Fix)
+
+### Bug Fix: Commercial plays AFTER outro, not before
+- **Problem**: Commercial was playing before outro voiceover — wrong order
+- **Fix**: In `handleSkip` and `handleTrackEnd`, check `isCommercialDue()` first. If commercial coming: play standalone outro → commercial → next track → standalone intro. If no commercial: use combined `transition` announcement (outro+intro in one) as before
+- **4 transition points in DJBooth.jsx**: 2 fixed (handleSkip direct, handleTrackEnd direct), 1 OK as-is (after break songs — no outro needed)
+- **Commit**: `b7a81a2`
+
+### Bug Fix: Playback lock prevents dual songs on boot
+- Added `playTrackLockRef` mutex to AudioEngine's `playTrack` — serializes concurrent calls so only one track loads at a time
+- **Commit**: `afbfd5e`
+
+### Bug Fix: Commercial voiceover pipeline
+- Commercials now call `audioEngineRef.current.playAnnouncement()` directly instead of going through AnnouncementSystem's generation pipeline
+- **Commit**: `6f6333e`
+
 ## Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
 
 ### Feature: Fleet Play History

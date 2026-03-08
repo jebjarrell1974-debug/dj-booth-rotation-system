@@ -167,6 +167,7 @@ export default function DancerView() {
   }, [debouncedSave]);
 
   const addSong = useCallback((songName) => {
+    if (/dirty/i.test(songName)) return;
     const current = playlistRef.current;
     const updated = [...current, songName];
     updatePlaylist(updated);

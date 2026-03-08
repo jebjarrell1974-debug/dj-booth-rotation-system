@@ -445,9 +445,12 @@ export function getBlockedTracks() {
   return readDb.prepare("SELECT MIN(id) as id, name, MIN(genre) as genre, MIN(blocked_at) as blocked_at FROM music_tracks WHERE blocked = 1 GROUP BY name ORDER BY blocked_at DESC").all();
 }
 
-export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '' } = {}) {
+export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '', excludeDirty = false } = {}) {
   let where = ['blocked = 0'];
   let params = [];
+  if (excludeDirty) {
+    where.push("name NOT LIKE '%dirty%' COLLATE NOCASE");
+  }
   if (search) {
     where.push('(name LIKE ? OR path LIKE ?)');
     params.push(`%${search}%`, `%${search}%`);

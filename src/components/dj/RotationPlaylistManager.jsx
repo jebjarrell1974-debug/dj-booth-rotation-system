@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Shuffle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -262,6 +262,20 @@ export default function RotationPlaylistManager({
     })();
   }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs, djOptions]);
 
+  const prevMusicModeRef = useRef(djOptions?.musicMode || 'dancer_first');
+  useEffect(() => {
+    const currentMode = djOptions?.musicMode || 'dancer_first';
+    if (prevMusicModeRef.current === currentMode) return;
+    prevMusicModeRef.current = currentMode;
+    const nonOverridden = Object.keys(songAssignmentsRef.current).filter(id => !djOverridesRef.current.has(id));
+    if (nonOverridden.length === 0) return;
+    setSongAssignments(prev => {
+      const updated = { ...prev };
+      nonOverridden.forEach(id => { delete updated[id]; });
+      return updated;
+    });
+  }, [djOptions?.musicMode]);
+
   const prevSongsPerSetRef = useRef(songsPerSet);
   useEffect(() => {
     if (prevSongsPerSetRef.current === songsPerSet) return;
@@ -516,6 +530,65 @@ export default function RotationPlaylistManager({
       return updated;
     });
   };
+
+  const rerollSong = useCallback(async (dancerId, songIndex) => {
+    const isFoldersOnly = djOptions?.musicMode === 'folders_only';
+    if (!isFoldersOnly) return;
+
+    const allAssigned = [];
+    Object.entries(songAssignmentsRef.current).forEach(([id, songs]) => {
+      if (songs) songs.forEach(n => { if (id !== dancerId || songs.indexOf(n) !== songIndex) allAssigned.push(n); });
+    });
+
+    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const res = await fetch('/api/music/select', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          count: 1,
+          excludeNames: [...new Set(allAssigned)],
+          genres: activeGenres,
+          dancerPlaylist: []
+        }),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newTrack = data.tracks?.[0];
+        if (newTrack) {
+          djOverridesRef.current.add(dancerId);
+          setSongAssignments(prev => {
+            const current = [...(prev[dancerId] || [])];
+            current[songIndex] = newTrack.name;
+            return { ...prev, [dancerId]: current };
+          });
+          toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Re-roll failed:', err.message);
+    }
+
+    const genrePool = filterByGenres(serverTracks.length > 0 ? serverTracks : tracks, activeGenres);
+    const excludeSet = new Set(allAssigned);
+    const available = genrePool.filter(t => !excludeSet.has(t.name));
+    if (available.length > 0) {
+      const pick = available[Math.floor(Math.random() * available.length)];
+      djOverridesRef.current.add(dancerId);
+      setSongAssignments(prev => {
+        const current = [...(prev[dancerId] || [])];
+        current[songIndex] = pick.name;
+        return { ...prev, [dancerId]: current };
+      });
+      toast.success(`Re-rolled: ${pick.name.replace(/\.[^.]+$/, '')}`);
+    } else {
+      toast.error('No other songs available to pick from');
+    }
+  }, [djOptions, tracks, serverTracks]);
 
   const handleAddToRotation = (dancerId) => {
     if (!localRotation.includes(dancerId)) {
@@ -884,7 +957,7 @@ export default function RotationPlaylistManager({
                       </div>
                     );
                   })()}
-                  {rotationDancers.map((dancer, index) => {
+                  {(() => { const isFoldersOnlyMode = djOptions?.musicMode === 'folders_only'; return rotationDancers.map((dancer, index) => {
                     const assigned = songAssignments[dancer.id] || [];
                     const breakKey = `after-${dancer.id}`;
                     const breakSongs = interstitialSongs[breakKey] || [];
@@ -975,6 +1048,7 @@ export default function RotationPlaylistManager({
                                         const isPlayed = isCurrentDancer && songIdx < (currentSongNumber - 1);
                                         const isNowPlaying = isCurrentDancer && songIdx === (currentSongNumber - 1);
                                         if (isPlayed) return null;
+                                        const canReroll = isFoldersOnlyMode && !isNowPlaying;
                                         return (
                                           <Draggable key={`${dancer.id}-${songName}`} draggableId={`assigned-${dancer.id}-${songName}`} index={songIdx}>
                                             {(songDragProvided, songDragSnapshot) => (
@@ -982,19 +1056,26 @@ export default function RotationPlaylistManager({
                                                 ref={songDragProvided.innerRef}
                                                 {...songDragProvided.draggableProps}
                                                 {...songDragProvided.dragHandleProps}
+                                                onClick={canReroll ? () => rerollSong(dancer.id, songIdx) : undefined}
                                                 className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${
                                                   songDragSnapshot.isDragging
                                                     ? 'bg-[#00d4ff]/20 border-[#00d4ff]'
                                                     : isNowPlaying
                                                       ? 'bg-[#00d4ff]/15 border-[#00d4ff]/50'
-                                                      : 'bg-[#0d0d1f] border-[#1e293b]'
+                                                      : canReroll
+                                                        ? 'bg-[#0d0d1f] border-[#1e293b] hover:border-amber-500/50 hover:bg-amber-900/10 cursor-pointer'
+                                                        : 'bg-[#0d0d1f] border-[#1e293b]'
                                                 }`}
                                               >
                                                 <span className="text-xs font-bold w-4 flex-shrink-0 text-[#00d4ff]">{isNowPlaying ? '▶' : songIdx + 1}</span>
-                                                <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-500'}`} />
+                                                {canReroll ? (
+                                                  <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
+                                                ) : (
+                                                  <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-500'}`} />
+                                                )}
                                                 <span className={`text-xs truncate flex-1 ${isNowPlaying ? 'text-white font-medium' : 'text-gray-300'}`}>{songName}</span>
                                                 <button
-                                                  onClick={() => removeSong(dancer.id, songIdx)}
+                                                  onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
                                                   className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
                                                 >
                                                   <X className="w-5 h-5" />
@@ -1151,7 +1232,7 @@ export default function RotationPlaylistManager({
                       })()}
                       </React.Fragment>
                     );
-                  })}
+                  }); })()}
                   {provided.placeholder}
 
                   {rotationDancers.length === 0 && (

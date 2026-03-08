@@ -358,7 +358,8 @@ app.put('/api/playlist', authenticate, (req, res) => {
   if (req.session.role !== 'dancer') return res.status(403).json({ error: 'Entertainer access only' });
   const { playlist } = req.body;
   if (!Array.isArray(playlist)) return res.status(400).json({ error: 'Playlist must be an array' });
-  const dancer = updateDancer(req.session.dancer_id, { playlist });
+  const cleanPlaylist = playlist.filter(name => !/dirty/i.test(name));
+  const dancer = updateDancer(req.session.dancer_id, { playlist: cleanPlaylist });
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   res.json({ playlist: dancer.playlist });
 });
@@ -963,7 +964,8 @@ app.get('/api/music/tracks', authenticate, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 100, 5000);
   const search = req.query.search || '';
   const genre = req.query.genre || '';
-  const result = getMusicTracks({ page, limit, search, genre });
+  const excludeDirty = req.session.role === 'dancer';
+  const result = getMusicTracks({ page, limit, search, genre, excludeDirty });
   const genres = getMusicGenres();
   res.json({ ...result, genres });
 });

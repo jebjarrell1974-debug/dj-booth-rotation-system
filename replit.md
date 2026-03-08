@@ -55,6 +55,15 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - **No audio behavior changes** — only prevents concurrent track loading
 - **Files**: `src/components/dj/AudioEngine.jsx`
 
+#### Bug Fix: Commercial plays AFTER outro, not before
+- **Problem**: Commercial was playing before the outro voiceover — wrong order. DJ heard "commercial → outro → next dancer" instead of "outro → commercial → next dancer"
+- **Root cause**: In both `handleSkip` and `handleTrackEnd`, `playCommercialIfDue()` was called BEFORE the outro announcement
+- **Fix**: Reordered to: (1) check `isCommercialDue()` first, (2) if commercial coming, play outro with duck/unduck, (3) THEN play commercial, (4) then next track + intro
+- **Non-commercial transitions unchanged**: When no commercial is due, the combined `transition` announcement (outro+intro in one) still plays as before — no double-outro
+- **4 transition points**: 2 fixed (handleSkip direct, handleTrackEnd direct), 1 OK as-is (after break songs — no outro needed), 1 is the definition itself
+- **Files**: `src/pages/DJBooth.jsx`
+- **Commit**: `b7a81a2`
+
 ### Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
 
 #### Feature: Generic Voiceover Fallbacks (Last Resort)
