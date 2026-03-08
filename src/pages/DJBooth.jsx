@@ -1773,6 +1773,12 @@ export default function DJBooth() {
       const voiceBlob = await audioRes.blob();
       const voiceoverUrl = URL.createObjectURL(voiceBlob);
 
+      if (!audioEngineRef.current) {
+        console.warn('⚠️ AudioEngine not ready — skipping commercial');
+        URL.revokeObjectURL(voiceoverUrl);
+        return false;
+      }
+
       const bedsRes = await fetch(`/api/music/tracks?genre=${encodeURIComponent('Promo Beds')}&limit=200`, { headers });
       let bedTrack = null;
       if (bedsRes.ok) {

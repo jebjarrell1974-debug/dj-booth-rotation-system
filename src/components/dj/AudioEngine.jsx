@@ -60,6 +60,7 @@ const AudioEngine = forwardRef(({
   const isPlayingRef = useRef(false);
   const isDucked = useRef(false);
   const crossfadeInProgressRef = useRef(false);
+  const playTrackLockRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -434,9 +435,20 @@ const AudioEngine = forwardRef(({
   }, []);
 
   const playTrack = useCallback(async (fileHandle, crossfade = true) => {
+    if (playTrackLockRef.current) {
+      console.log('⏳ PlayTrack: Waiting for previous track load to finish...');
+      try { await playTrackLockRef.current; } catch {}
+    }
+
+    let releaseLock;
+    playTrackLockRef.current = new Promise(r => { releaseLock = r; });
+
+    try {
     const trackData = await loadTrack(fileHandle);
     if (!trackData) {
       console.error('❌ PlayTrack: loadTrack returned null — file unreadable');
+      releaseLock();
+      playTrackLockRef.current = null;
       return false;
     }
 
@@ -477,6 +489,8 @@ const AudioEngine = forwardRef(({
       await inactiveDeck.load();
     } catch (loadErr) {
       console.error('❌ PlayTrack: Audio load failed:', loadErr.message);
+      releaseLock();
+      playTrackLockRef.current = null;
       return false;
     }
 
@@ -594,6 +608,8 @@ const AudioEngine = forwardRef(({
       crossfadeInProgressRef.current = false;
       console.error('❌ PlayTrack: play() failed:', playErr.message);
       activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
+      releaseLock();
+      playTrackLockRef.current = null;
       return false;
     }
 
@@ -685,7 +701,15 @@ const AudioEngine = forwardRef(({
     newDeck.ontimeupdate = timeUpdateHandler;
     newDeck.onended = endedHandler;
 
+    releaseLock();
+    playTrackLockRef.current = null;
     return true;
+    } catch (outerErr) {
+      console.error('❌ PlayTrack: Unexpected error:', outerErr.message);
+      releaseLock();
+      playTrackLockRef.current = null;
+      return false;
+    }
   }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource, analyzeTrackLoudness]);
 
   const duck = useCallback(() => {

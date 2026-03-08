@@ -38,6 +38,23 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 
 ## Session Notes
 
+### Mar 8, 2026 — Session 34 (Commercial Voiceover Bug Fix + Playback Lock)
+
+#### Bug Fix: Commercial voiceovers now bypass AnnouncementSystem
+- **Problem**: `playCommercialIfDue` called DJBooth's `playAnnouncement` wrapper, which: (1) checked `announcementsEnabled` and silently skipped commercials when announcements were off, and (2) passed the blob URL into `getOrGenerateAnnouncement` which treated it as a `type` string and tried to generate audio instead of playing the existing blob
+- **Fix**: Commercials now call `audioEngineRef.current.playAnnouncement(voiceoverUrl, { autoDuck: true })` directly, bypassing the AnnouncementSystem entirely since the voiceover audio is already fetched as a blob URL
+- **Guard**: Added `audioEngineRef.current` null check before commercial playback — returns false (skips commercial) if AudioEngine isn't ready yet
+- **Removed**: `forcePlay` option from DJBooth's `playAnnouncement` wrapper (no longer needed since commercials bypass it entirely)
+- **Files**: `src/pages/DJBooth.jsx`
+- **Commit**: `6f6333e`
+
+#### Bug Fix: Playback lock prevents dual songs on boot
+- **Problem**: On full Pi reboot, two songs would play simultaneously. AudioEngine's `playTrack` had no concurrency guard — two async calls could both load onto separate decks and both end up playing
+- **Root cause**: `playTrack` is async (loadTrack → analyzeTrackLoudness → play). During those awaits, a second call could enter the function, get a different deck, and start playing alongside the first
+- **Fix**: Added `playTrackLockRef` mutex to AudioEngine's `playTrack`. If a track is already being loaded, the second call waits for the first to finish before proceeding. Lock is released on every exit path (success, error, load failure)
+- **No audio behavior changes** — only prevents concurrent track loading
+- **Files**: `src/components/dj/AudioEngine.jsx`
+
 ### Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
 
 #### Feature: Generic Voiceover Fallbacks (Last Resort)
