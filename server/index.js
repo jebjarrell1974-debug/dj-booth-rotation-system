@@ -424,7 +424,8 @@ app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
 });
 
 app.delete('/api/voiceovers/dancer/:dancerName', authenticate, requireDJ, (req, res) => {
-  const dancerName = decodeURIComponent(req.params.dancerName);
+  const dancerName = decodeURIComponent(req.params.dancerName).trim();
+  if (!dancerName) return res.status(400).json({ error: 'Dancer name is required' });
   const count = deleteVoiceoversByDancer(dancerName);
   console.log(`🗑️ Reset voiceovers for "${dancerName}": ${count} removed`);
   res.json({ ok: true, deleted: count });

@@ -120,15 +120,19 @@ export default function DancerRoster({
   const handleEdit = async () => {
     if (editingDancer && editingDancer.name.trim()) {
       const original = dancers.find(d => d.id === editingDancer.id);
-      const phoneticChanged = (original?.phonetic_name || '') !== (editingDancer.phonetic_name || '');
-      const nameChanged = (original?.name || '') !== (editingDancer.name || '');
+      if (!original) {
+        setEditingDancer(null);
+        return;
+      }
+      const phoneticChanged = (original.phonetic_name || '') !== (editingDancer.phonetic_name || '');
+      const nameChanged = original.name !== editingDancer.name;
+      const oldName = original.name;
 
       onEditDancer(editingDancer.id, { name: editingDancer.name, phonetic_name: editingDancer.phonetic_name || '' });
 
       if (phoneticChanged || nameChanged) {
-        const dancerName = nameChanged ? original.name : editingDancer.name;
-        await resetVoiceoversForDancer(dancerName);
-        if (nameChanged && original.name !== editingDancer.name) {
+        await resetVoiceoversForDancer(oldName);
+        if (nameChanged) {
           await resetVoiceoversForDancer(editingDancer.name);
         }
       }
