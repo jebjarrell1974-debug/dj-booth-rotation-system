@@ -313,10 +313,11 @@ The application is deployed via Replit as an autoscale target, with Vite buildin
 - Must access Voice Studio at `http://localhost:3001/VoiceStudio` (not IP — secure context required for mediaDevices)
 
 #### Pi Fleet Units
-- **Homebase**: username=`homebase`, Tailscale=`100.95.238.71`, hostname=`homebase`, `IS_HOMEBASE=true`, app at `/home/homebase/djbooth`, 1TB microSD, music at `/home/homebase/djbooth/music`
-- **neonaidj001** (Pony Nation): username=`neonaidj001`, Tailscale=`100.115.212.34`, 62 entertainers, needs `FLEET_SERVER_URL` updated to new homebase
-- **neonaidj002**: username=`neonaidj002`, Tailscale=`100.84.191.94`, 256GB SanDisk PRO microSD, `FLEET_SERVER_URL=http://100.95.238.71:3001`, env vars in systemd service file (no .env)
-- **neonaidj003**: username=`neonaidj003`, Tailscale=`100.127.6.114`, `FLEET_SERVER_URL=http://100.95.238.71:3001`
+- **Homebase**: username=`homebase`, password=`homebase`, Tailscale=`100.95.238.71`, hostname=`homebase`, `IS_HOMEBASE=true`, app at `/home/homebase/djbooth`, 1TB microSD, music at `/home/homebase/djbooth/music`
+- **neonaidj001** (Pony Nation): username=`neonaidj001`, password=`neonaidj001`, Tailscale=`100.115.212.34`, 62 entertainers, `FLEET_SERVER_URL` updated to new homebase
+- **neonaidj002**: username=`neonaidj002`, password=`neonaidj002`, Tailscale=`100.84.191.94`, 256GB SanDisk PRO microSD, `FLEET_SERVER_URL=http://100.95.238.71:3001`
+- **neonaidj003**: username=`neonaidj003`, password=`neonaidj003`, Tailscale=`100.127.6.114`, `FLEET_SERVER_URL=http://100.95.238.71:3001` (being reflashed)
+- Passwords match the unit username for all kiosk units
 - Old homebase hardware (jebjarrell, 100.70.172.8) was repurposed as neonaidj002
 
 #### Fleet Shared Config

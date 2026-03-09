@@ -130,6 +130,28 @@ app.get('/__health', (req, res) => {
   res.status(200).send('OK');
 });
 
+app.get('/api/fleet-env', (req, res) => {
+  if (process.env.IS_HOMEBASE !== 'true') {
+    return res.status(403).send('Only available on homebase');
+  }
+  const FLEET_KEYS = [
+    'PORT', 'NODE_ENV', 'FLEET_SERVER_URL',
+    'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID',
+    'OPENAI_API_KEY', 'AUPHONIC_API_KEY',
+    'R2_ACCOUNT_ID', 'R2_BUCKET_NAME', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
+    'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'
+  ];
+  const lines = [];
+  for (const key of FLEET_KEYS) {
+    let val = process.env[key] || '';
+    if (key === 'FLEET_SERVER_URL') val = `http://100.95.238.71:3001`;
+    if (key === 'PORT') val = '3001';
+    if (key === 'NODE_ENV') val = 'production';
+    if (val) lines.push(`${key}=${val}`);
+  }
+  res.type('text/plain').send(lines.join('\n') + '\n');
+});
+
 app.get('/api/boot-status', (req, res) => {
   const steps = Object.entries(bootStatus.steps)
     .filter(([, s]) => s.status !== 'skipped')

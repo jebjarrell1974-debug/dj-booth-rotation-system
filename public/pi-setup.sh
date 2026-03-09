@@ -62,18 +62,21 @@ npx vite build 2>&1 | tail -5
 
 echo "[5/8] Setting up environment variables..."
 if [ ! -f "$APP_DIR/.env" ]; then
-  cat > "$APP_DIR/.env" << 'ENVEOF'
+  FLEET_SERVER="http://100.95.238.71:3001"
+  echo "Fetching fleet config from homebase..."
+  HTTP_CODE=$(curl -sf -o "$APP_DIR/.env" -w "%{http_code}" "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "000")
+  if [ "$HTTP_CODE" = "200" ] && [ -s "$APP_DIR/.env" ]; then
+    echo ".env downloaded from homebase"
+  else
+    echo "Could not reach homebase for env config."
+    echo "Make sure the homebase is running at $FLEET_SERVER"
+    echo "You can manually create $APP_DIR/.env later."
+    cat > "$APP_DIR/.env" << 'ENVEOF'
 PORT=3001
 NODE_ENV=production
 FLEET_SERVER_URL=http://100.95.238.71:3001
-ELEVENLABS_API_KEY=6e6ca8d3c96256409bf197b076d0ede7fae7183d9bc02374d1e2be55fdd71342
-ELEVENLABS_VOICE_ID=8RV9Jl85RVagCJGw9qhY
-R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
-R2_BUCKET_NAME=neonaidj
-R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
-R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
 ENVEOF
-  echo ".env created"
+  fi
 else
   echo ".env already exists"
 fi
