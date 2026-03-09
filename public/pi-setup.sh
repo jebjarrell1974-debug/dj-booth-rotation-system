@@ -138,7 +138,70 @@ DEOF
 chmod +x ~/Desktop/neonaidj.desktop
 gio set ~/Desktop/neonaidj.desktop metadata::trusted true 2>/dev/null || true
 
-echo "[8/8] Downloading update script..."
+echo "[8/12] Setting up passwordless sudo..."
+NOPASSWD_FILE="/etc/sudoers.d/010_${UNIT_USER}-nopasswd"
+if [ ! -f "$NOPASSWD_FILE" ]; then
+  echo "$UNIT_USER ALL=(ALL) NOPASSWD: ALL" | sudo tee "$NOPASSWD_FILE" > /dev/null
+  sudo chmod 0440 "$NOPASSWD_FILE"
+  sudo visudo -c -f "$NOPASSWD_FILE" > /dev/null 2>&1 && echo "Passwordless sudo configured" || { sudo rm -f "$NOPASSWD_FILE"; echo "WARNING: sudoers validation failed, skipping"; }
+fi
+
+echo "[9/12] Setting up swap file..."
+if [ ! -f /swapfile ] && [ "$(free -m | awk '/^Mem:/{print $2}')" -lt 2048 ]; then
+  sudo fallocate -l 1G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile >/dev/null 2>&1
+  sudo swapon /swapfile 2>/dev/null
+  grep -q '/swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+  echo "1GB swap file created"
+else
+  echo "Swap already exists or not needed"
+fi
+
+echo "[10/12] Setting up browser watchdog..."
+WATCHDOG_SRC="$APP_DIR/public/djbooth-watchdog.sh"
+WATCHDOG_DEST="$UNIT_HOME/djbooth-watchdog.sh"
+if [ -f "$WATCHDOG_SRC" ]; then
+  cp "$WATCHDOG_SRC" "$WATCHDOG_DEST"
+  chmod +x "$WATCHDOG_DEST"
+  if ! systemctl is-enabled djbooth-watchdog 2>/dev/null | grep -q enabled; then
+    sudo tee /etc/systemd/system/djbooth-watchdog.service > /dev/null << WEOF
+[Unit]
+Description=DJ Booth Browser Watchdog
+After=graphical.target djbooth.service
+Wants=djbooth.service
+
+[Service]
+Type=simple
+User=$UNIT_USER
+Environment=DISPLAY=:0
+ExecStart=/bin/bash $WATCHDOG_DEST
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target
+WEOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable djbooth-watchdog
+    sudo systemctl start djbooth-watchdog
+    echo "Watchdog service installed"
+  else
+    echo "Watchdog already running"
+  fi
+fi
+
+echo "[11/12] Setting up network priority (Ethernet=internet, WiFi=local)..."
+ETH_CONN=$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | grep eth0 | cut -d: -f1)
+WIFI_CONN=$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | grep wlan0 | cut -d: -f1)
+if [ -n "$ETH_CONN" ]; then
+  sudo nmcli connection modify "$ETH_CONN" ipv4.route-metric 100 2>/dev/null && echo "Ethernet priority set (metric 100)" || true
+fi
+if [ -n "$WIFI_CONN" ]; then
+  sudo nmcli connection modify "$WIFI_CONN" ipv4.route-metric 600 2>/dev/null && echo "WiFi set to local only (metric 600)" || true
+fi
+
+echo "[12/12] Downloading update script..."
 curl -o "$UNIT_HOME/djbooth-update.sh" "https://raw.githubusercontent.com/$GITHUB_REPO/main/public/djbooth-update-github.sh" && chmod +x "$UNIT_HOME/djbooth-update.sh"
 
 echo ""
