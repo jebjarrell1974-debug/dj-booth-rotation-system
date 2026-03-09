@@ -70,6 +70,41 @@ cp "${EXTRACTED_DIR}tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}postcss.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}index.html" "$APP_DIR/" 2>/dev/null || true
 
+echo "[4.5/7] Ensuring fleet environment variables..."
+ENV_FILE="$APP_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Creating .env with fleet defaults..."
+  cat > "$ENV_FILE" << 'ENVEOF'
+PORT=3001
+NODE_ENV=production
+FLEET_SERVER_URL=http://100.95.238.71:3001
+ELEVENLABS_API_KEY=6e6ca8d3c96256409bf197b076d0ede7fae7183d9bc02374d1e2be55fdd71342
+ELEVENLABS_VOICE_ID=8RV9Jl85RVagCJGw9qhY
+R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
+R2_BUCKET_NAME=neonaidj
+R2_ACCESS_KEY_ID=aff9bfa35cb78f2df9a749922c12acdf
+R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0
+ENVEOF
+  echo "Fleet .env created"
+else
+  KEYS_TO_CHECK="ELEVENLABS_API_KEY ELEVENLABS_VOICE_ID R2_ACCOUNT_ID R2_BUCKET_NAME R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY"
+  for KEY in $KEYS_TO_CHECK; do
+    if ! grep -q "^${KEY}=" "$ENV_FILE" 2>/dev/null; then
+      case $KEY in
+        ELEVENLABS_API_KEY) echo "${KEY}=6e6ca8d3c96256409bf197b076d0ede7fae7183d9bc02374d1e2be55fdd71342" >> "$ENV_FILE" ;;
+        ELEVENLABS_VOICE_ID) echo "${KEY}=8RV9Jl85RVagCJGw9qhY" >> "$ENV_FILE" ;;
+        R2_ACCOUNT_ID) echo "${KEY}=bb98a67dc31c28d8f39a55429bccb759" >> "$ENV_FILE" ;;
+        R2_BUCKET_NAME) echo "${KEY}=neonaidj" >> "$ENV_FILE" ;;
+        R2_ACCESS_KEY_ID) echo "${KEY}=aff9bfa35cb78f2df9a749922c12acdf" >> "$ENV_FILE" ;;
+        R2_SECRET_ACCESS_KEY) echo "${KEY}=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f59339b605f50c152d0" >> "$ENV_FILE" ;;
+      esac
+      echo "Added missing key: $KEY"
+    fi
+  done
+  grep -q "^NODE_ENV=" "$ENV_FILE" || echo "NODE_ENV=production" >> "$ENV_FILE"
+  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.95.238.71:3001" >> "$ENV_FILE"
+fi
+
 echo "[5/7] Building frontend..."
 if [ -d "${EXTRACTED_DIR}src" ]; then
   cp -r "${EXTRACTED_DIR}src" "$APP_DIR/"
@@ -160,9 +195,13 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
 
   sudo systemctl stop djbooth-watchdog 2>/dev/null || true
 
-  echo "Closing browser before restart..."
-  pkill -f "chromium" 2>/dev/null || pkill -f "chrome" 2>/dev/null || true
-  sleep 2
+  if [ "$IS_HOMEBASE" != "true" ]; then
+    echo "Closing browser before restart..."
+    pkill -f "chromium" 2>/dev/null || pkill -f "chrome" 2>/dev/null || true
+    sleep 2
+  else
+    echo "Homebase mode — skipping browser kill"
+  fi
 
   sudo systemctl restart "$SERVICE_NAME"
 
@@ -177,10 +216,14 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
 
   if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
     echo ""
-    echo "UPDATE SUCCESSFUL — relaunching browser..."
     echo ""
-    bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
-    disown
+    if [ "$IS_HOMEBASE" != "true" ]; then
+      echo "UPDATE SUCCESSFUL — relaunching browser..."
+      bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+      disown
+    else
+      echo "UPDATE SUCCESSFUL — homebase mode, no browser relaunch"
+    fi
     CLEANUP_COUNT=$(ls -d "${APP_DIR}.backup-"* 2>/dev/null | head -n -3 | wc -l)
     if [ "$CLEANUP_COUNT" -gt "0" ]; then
       ls -d "${APP_DIR}.backup-"* 2>/dev/null | head -n -3 | xargs rm -rf

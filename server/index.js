@@ -925,6 +925,26 @@ app.post('/api/booth/commands/ack', authenticate, requireDJ, (req, res) => {
 });
 
 let MUSIC_PATH = process.env.MUSIC_PATH || getSetting('music_path') || '';
+if (!MUSIC_PATH) {
+  const homeDir = process.env.HOME || `/home/${process.env.USER || 'pi'}`;
+  const appDir = process.cwd();
+  const candidates = [
+    join(appDir, 'music'),
+    join(appDir, 'Music'),
+    join(homeDir, 'djbooth', 'music'),
+    join(homeDir, 'djbooth', 'Music'),
+    join(homeDir, 'music'),
+    join(homeDir, 'Music')
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+      MUSIC_PATH = candidate;
+      setSetting('music_path', candidate);
+      console.log(`🎵 Auto-detected music folder: ${candidate}`);
+      break;
+    }
+  }
+}
 
 app.get('/api/settings/music-path', authenticate, requireDJ, (req, res) => {
   res.json({
