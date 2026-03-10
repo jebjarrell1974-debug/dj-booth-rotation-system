@@ -12,6 +12,18 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Database path**: Production uses `/home/runner/data/djbooth.db` (outside project dir to survive republishing). Dev uses `./djbooth.db`. Configurable via `DB_PATH` env var.
 - **Default master PIN**: `36669`
 
+## Confirmed Fleet Devices
+
+| Unit | Username | Hostname | Tailscale IP | Role | Club |
+|---|---|---|---|---|---|
+| Homebase | `homebase` | `raspberrypi` | `100.95.238.71` | Fleet server + DJ booth | Homebase |
+| neonaidj001 | `neonaidj001` | `raspberrypi` | `100.115.212.34` | DJ booth | Pony Nation |
+| neonaidj003 | unknown | unknown | `100.81.90.125` | DJ booth | Unknown venue |
+
+- Homebase `.env` must have `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
+- All venue Pis must have `FLEET_SERVER_URL=http://100.95.238.71:3001`
+- Fleet dashboard accessible at `http://100.95.238.71:3001/fleet` from any Tailscale device
+
 ## Architecture Summary
 
 ### Development (Replit)
@@ -149,9 +161,9 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Steps**:
   1. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars on homebase Pi (currently only on Replit)
   2. Set `FLEET_SERVER_URL=http://localhost:3001` on homebase so it reports to itself
-  3. Set `FLEET_SERVER_URL=http://100.70.172.8:3001` on Pony Nation Pi (Tailscale IP of homebase)
+  3. Set `FLEET_SERVER_URL=http://100.95.238.71:3001` on Pony Nation Pi (Tailscale IP of homebase)
   4. Copy `fleet.db` from Replit to homebase OR let it build fresh as devices check in (generic voiceovers would need to be copied or regenerated)
-  5. Verify fleet dashboard works at `http://100.70.172.8:3001/fleet` from iPad
+  5. Verify fleet dashboard works at `http://100.95.238.71:3001/fleet` from iPad
   6. Remove/unset `FLEET_SERVER_URL` on Replit (optional — stops sending heartbeats to nowhere)
 - **No code changes needed** — all configuration
 - **Load impact**: Negligible — one heartbeat POST every 5 min per device
@@ -361,13 +373,13 @@ Environment=R2_SECRET_ACCESS_KEY=5d16cff7dea0d46a32a5ddab9e24cf8a6e94ac3c65521f5
 Environment=R2_BUCKET_NAME=neonaidj
 Environment=TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA
 Environment=TELEGRAM_CHAT_ID=8567217273
-Environment=FLEET_SERVER_URL=http://100.70.172.8:3001
+Environment=FLEET_SERVER_URL=http://100.95.238.71:3001
 Environment=DEVICE_ID=DEVICEID
 Environment="CLUB_NAME=CLUBNAME"
 EOF'
 sudo systemctl daemon-reload
 ```
-Note: `FLEET_SERVER_URL` points to the fleet monitor server running on "raspberrypi" (Tailscale IP `100.70.172.8`). This is the always-on Pi that monitors all fleet devices and sends Telegram alerts when a device goes offline. If the fleet monitor moves to a different machine, update this IP.
+Note: `FLEET_SERVER_URL` points to the fleet monitor server running on homebase (Tailscale IP `100.95.238.71`). This is the always-on Pi that monitors all fleet devices and sends Telegram alerts when a device goes offline. If the fleet monitor moves to a different machine, update this IP.
 
 ### Step 8: Enable remote admin commands (Fleet Command Center)
 Allow the djbooth server to restart its service and reboot the Pi remotely via the Fleet Command Center dashboard. Replace `USERNAME`.
