@@ -15,6 +15,9 @@ import FleetDashboard from '@/pages/FleetDashboard';
 import VoiceStudio from '@/pages/VoiceStudio';
 import Help from '@/pages/Help';
 
+// Set title immediately before any component mounts so Wayfire window-rules can match it
+if (window.location.pathname === '/RotationDisplay') { document.title = 'NEON DJ Rotation'; }
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
