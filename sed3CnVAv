@@ -1,11 +1,10 @@
-modules = ["nodejs-20", "postgresql-16", "python-3.11"]
+modules = ["nodejs-20", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 packages = ["unzip"]
 
 [agent]
 expertMode = true
-integrations = ["github:1.0.0"]
 
 [workflows]
 runButton = "Project"
@@ -28,12 +27,12 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd /home/runner/workspace && PORT=3001 node server/index.js & sleep 2 && node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5000"
+args = "cd /home/runner/workspace && node server/index.js & sleep 2 && node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5000"
 waitForPort = 5000
 
 [[ports]]
 localPort = 3001
-externalPort = 3001
+externalPort = 80
 
 [[ports]]
 localPort = 5000
@@ -41,13 +40,12 @@ externalPort = 80
 
 [[ports]]
 localPort = 5001
-externalPort = 3002
+externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "prod-server.cjs"]
-build = ["echo", "skip"]
-
+run = ["bash", "-c", "NODE_ENV=production node server/index.js"]
+build = ["bash", "-c", "npx vite build && cp public/djbooth-pi-install.tar.gz dist/public/ && cp public/download.html dist/public/"]
 
 [userenv]
 

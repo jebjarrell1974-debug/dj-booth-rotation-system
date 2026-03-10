@@ -521,18 +521,14 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   if (pool.length < count) {
     const fallbackConditions = ['t.blocked = 0'];
     const fallbackParams = [];
-    if (excludeNames.length > 0) {
-      fallbackConditions.push(`t.name NOT IN (${excludeNames.map(() => '?').join(',')})`);
-      fallbackParams.push(...excludeNames);
+    const fallbackExcluded = [...new Set([...allExcluded, ...pool.map(t => t.name)])];
+    if (fallbackExcluded.length > 0) {
+      fallbackConditions.push(`t.name NOT IN (${fallbackExcluded.map(() => '?').join(',')})`);
+      fallbackParams.push(...fallbackExcluded);
     }
     if (genres.length > 0) {
       fallbackConditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
       fallbackParams.push(...genres);
-    }
-    const usedNames = new Set(pool.map(t => t.name));
-    if (usedNames.size > 0) {
-      fallbackConditions.push(`t.name NOT IN (${[...usedNames].map(() => '?').join(',')})`);
-      fallbackParams.push(...usedNames);
     }
     const fbWhere = fallbackConditions.join(' AND ');
     fallbackParams.push((count - pool.length) * 4);
@@ -543,14 +539,12 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
        LEFT JOIN (
          SELECT track_name, MAX(played_at) AS last_played
          FROM play_history
-         WHERE played_at > datetime('now', 'localtime', '-8 hours')
          GROUP BY track_name
        ) h ON t.name = h.track_name
        WHERE ${fbWhere}
-       ORDER BY RANDOM()
+       ORDER BY h.last_played ASC NULLS FIRST
        LIMIT ?`
     ).all(...fallbackParams);
-    fallback.sort((a, b) => (a.last_played || '').localeCompare(b.last_played || ''));
     pool = [...pool, ...fallback.map(({ last_played, ...t }) => t)];
   }
 
@@ -581,9 +575,17 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
   }
 
   if (result.length < count && dancerPlaylist.length > 0) {
+    const recentlyPlayed4h = new Set(
+      readDb.prepare(
+        `SELECT track_name FROM play_history
+         WHERE played_at > datetime('now', 'localtime', '-4 hours')
+         GROUP BY track_name`
+      ).all().map(r => r.track_name)
+    );
     const playlistCandidates = [];
     for (const trackName of dancerPlaylist) {
       if (selectedNames.has(trackName)) continue;
+      if (recentlyPlayed4h.has(trackName)) continue;
       const track = readDb.prepare(
         `SELECT t.id, t.name, t.path, t.genre, COALESCE(h.last_played, '1970-01-01') as last_played
          FROM music_tracks t

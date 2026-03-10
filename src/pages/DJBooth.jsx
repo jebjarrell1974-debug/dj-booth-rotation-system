@@ -603,7 +603,14 @@ export default function DJBooth() {
         const token = sessionStorage.getItem('djbooth_token');
         const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
         const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
-        const excludeNames = [...new Set(Object.values(current).flat())];
+        const cooldowns = songCooldownRef.current || {};
+        const nowMs = Date.now();
+        const cooldownNames = Object.entries(cooldowns)
+          .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
+          .map(([name]) => name);
+        const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
+        const existingBreakNames = Object.values(current).flat();
+        const excludeNames = [...new Set([...cooldownNames, ...assignedNames, ...existingBreakNames])];
         const res = await fetch('/api/music/select', {
           method: 'POST', headers,
           body: JSON.stringify({ count: totalNeeded, excludeNames, genres: activeGenres, dancerPlaylist: [] }),
@@ -1909,7 +1916,6 @@ export default function DJBooth() {
   const handleSkip = useCallback(async () => {
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
-    if (!window.confirm('Skip this song?')) return;
     lastSkipTimeRef.current = now;
     if (playingCommercialRef.current) {
       console.log('📺 HandleSkip: Skipping commercial');
@@ -2414,9 +2420,43 @@ export default function DJBooth() {
       const breakIdx = interstitialIndexRef.current;
 
       if (breakIdx < breakSongs.length) {
-        const nextBreakName = breakSongs[breakIdx];
+        let nextBreakName = breakSongs[breakIdx];
         let nextBreakTrack;
         interstitialIndexRef.current = breakIdx + 1;
+
+        const cooldowns = songCooldownRef.current || {};
+        const nowMs = Date.now();
+        const isOnCooldown = cooldowns[nextBreakName] && (nowMs - cooldowns[nextBreakName]) < COOLDOWN_MS;
+        if (isOnCooldown) {
+          console.log('⏭️ HandleTrackEnd: Break song on cooldown, finding replacement:', nextBreakName);
+          try {
+            const token = sessionStorage.getItem('djbooth_token');
+            const cooldownNames = Object.entries(cooldowns).filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS).map(([n]) => n);
+            const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
+            const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
+            const excludeAll = [...new Set([...cooldownNames, ...assignedNames, ...allBreakNames])];
+            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const res = await fetch('/api/music/select', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: JSON.stringify({ count: 1, excludeNames: excludeAll, genres: activeGenres, dancerPlaylist: [] }),
+              signal: AbortSignal.timeout(5000)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.tracks?.length > 0) {
+                nextBreakName = data.tracks[0].name;
+                const updatedBreakSongs = [...breakSongs];
+                updatedBreakSongs[breakIdx] = nextBreakName;
+                interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updatedBreakSongs };
+                console.log('🎵 HandleTrackEnd: Replaced cooldown break song with:', nextBreakName);
+              }
+            }
+          } catch (err) {
+            console.warn('⚠️ HandleTrackEnd: Break song replacement failed:', err.message);
+          }
+        }
+
         setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
 
         nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
@@ -2986,8 +3026,6 @@ export default function DJBooth() {
 
   const removeFromRotation = (dancerId) => {
     const dancer = dancers.find(d => d.id === dancerId);
-    const name = dancer?.name || 'this entertainer';
-    if (!window.confirm(`Remove ${name} from the rotation?`)) return;
     setRotation(rotation.filter(id => id !== dancerId));
   };
 
