@@ -759,6 +759,22 @@ app.post('/api/admin/update', async (req, res) => {
   child.unref();
 });
 
+let _stageState = null;
+
+app.post('/api/stage/sync', (req, res) => {
+  const body = req.body || {};
+  if (body.is_active) {
+    _stageState = { ...body, syncedAt: Date.now() };
+  } else if (body.is_active === false && _stageState) {
+    _stageState = null;
+  }
+  res.json({ ok: true });
+});
+
+app.get('/api/stage/current', (req, res) => {
+  res.json(_stageState || { empty: true });
+});
+
 app.get('/api/system/display-rotation', async (req, res) => {
   try {
     const os = await import('os');

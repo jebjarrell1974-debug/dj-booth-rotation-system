@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { localEntities } from '@/api/localEntities';
 import { useQuery } from '@tanstack/react-query';
 
@@ -31,13 +31,25 @@ const STYLES = `
   }
 `;
 
+const LABEL_STYLE = {
+  background: 'linear-gradient(90deg, #00d4ff, #2563eb, #00d4ff)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text'
+};
+
 export default function RotationDisplay() {
-  const { data: stages = [] } = useQuery({
-    queryKey: ['stages'],
-    queryFn: () => localEntities.Stage.list(),
-    refetchInterval: 10000,
+  useEffect(() => {
+    document.title = 'NEON DJ Rotation';
+    return () => { document.title = 'NEON AI DJ'; };
+  }, []);
+
+  const { data: stageState = null } = useQuery({
+    queryKey: ['stage-server'],
+    queryFn: () => fetch('/api/stage/current').then(r => r.json()),
+    refetchInterval: 5000,
     refetchIntervalInBackground: true,
-    staleTime: 9000
+    staleTime: 4000
   });
 
   const { data: dancers = [] } = useQuery({
@@ -48,15 +60,13 @@ export default function RotationDisplay() {
     staleTime: 9000
   });
 
-  const stage = useMemo(() => stages.find(s => s.is_active) || null, [stages]);
-
   const validRotation = useMemo(() => {
-    if (!stage?.rotation_order || dancers.length === 0) return [];
+    if (!stageState?.rotation_order || stageState.empty || dancers.length === 0) return [];
     const dancerIds = new Set(dancers.map(d => d.id));
-    return stage.rotation_order.filter(id => dancerIds.has(id));
-  }, [stage, dancers]);
+    return stageState.rotation_order.filter(id => dancerIds.has(id));
+  }, [stageState, dancers]);
 
-  if (!stage || validRotation.length === 0) {
+  if (!stageState || stageState.empty || !stageState.is_active || validRotation.length === 0) {
     return (
       <div className="h-screen bg-[#08081a] flex items-center justify-center">
         <style>{STYLES}</style>
@@ -68,7 +78,7 @@ export default function RotationDisplay() {
     );
   }
 
-  const currentIndex = Math.min(stage.current_dancer_index || 0, validRotation.length - 1);
+  const currentIndex = Math.min(stageState.current_dancer_index || 0, validRotation.length - 1);
   const currentDancerId = validRotation[currentIndex];
   const currentDancer = dancers.find(d => d.id === currentDancerId);
 
@@ -85,15 +95,7 @@ export default function RotationDisplay() {
       <style>{STYLES}</style>
 
       <div className="h-[25%] flex flex-col items-center justify-center px-8 border-b border-[#1e293b]">
-        <p
-          className="stage-label text-2xl font-bold tracking-widest uppercase mb-2"
-          style={{
-            background: 'linear-gradient(90deg, #00d4ff, #2563eb, #00d4ff)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
-          }}
-        >
+        <p className="stage-label text-2xl font-bold tracking-widest uppercase mb-2" style={LABEL_STYLE}>
           Currently On Stage
         </p>
         <h1
@@ -105,14 +107,7 @@ export default function RotationDisplay() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <p className="stage-label text-2xl font-bold tracking-widest uppercase text-center pt-5 pb-3"
-          style={{
-            background: 'linear-gradient(90deg, #00d4ff, #2563eb, #00d4ff)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
-          }}
-        >
+        <p className="stage-label text-2xl font-bold tracking-widest uppercase text-center pt-5 pb-3" style={LABEL_STYLE}>
           Next On Stage
         </p>
         <div className="flex-1 flex flex-col justify-evenly px-8 pb-6">

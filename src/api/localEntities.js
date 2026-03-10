@@ -175,9 +175,34 @@ function createServerDancerStore() {
   };
 }
 
+function syncStageToServer(stage) {
+  if (!stage) return;
+  fetch('/api/stage/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stage)
+  }).catch(() => {});
+}
+
+const _stageStore = createEntityStore('stage');
+
 export const localEntities = {
   Dancer: createServerDancerStore(),
-  Stage: createEntityStore('stage'),
+  Stage: {
+    list: _stageStore.list,
+    filter: _stageStore.filter,
+    delete: _stageStore.delete,
+    create: async (data) => {
+      const result = await _stageStore.create(data);
+      if (result.is_active) syncStageToServer(result);
+      return result;
+    },
+    update: async (id, data) => {
+      const result = await _stageStore.update(id, data);
+      syncStageToServer(result);
+      return result;
+    },
+  },
   AnnouncementCache: createEntityStore('announcement_cache'),
 };
 
