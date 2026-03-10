@@ -449,6 +449,8 @@ x0vncserver -display :0 -rfbauth ~/.vnc/passwd -rfbport 5901 -localhost no &
 ```
 Connect from any device with Tailscale using a VNC viewer app at `TAILSCALE_IP:5901` (e.g. `100.115.212.34:5901`). Leave username blank, enter your VNC password.
 
+Once VNC is set up and the Pi's Tailscale IP is reporting via heartbeat, the **Fleet Command Center will automatically show a "Remote" button** on that device's card. Tap it and RealVNC Viewer opens directly connected to that Pi's screen. No manual IP entry needed.
+
 Note: Uses port 5901 (not 5900) to avoid conflicts with the built-in RealVNC service. Disable the built-in RealVNC to prevent conflicts:
 ```bash
 sudo systemctl stop vncserver-x11-serviced

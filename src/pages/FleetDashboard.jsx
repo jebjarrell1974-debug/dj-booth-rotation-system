@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronRight, Copy, Check, History,
   Upload, Package, Search, Filter, XCircle, 
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
-  AlertCircle, Info, DollarSign
+  AlertCircle, Info, DollarSign, Monitor
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -435,6 +435,15 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
           className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-400 text-[11px] font-medium hover:text-blue-400 hover:bg-blue-500/10 transition-all">
           <Eye className="w-3 h-3" /> Details
         </button>
+        {device.tailscaleIp && isOnline && (
+          <a
+            href={`vnc://${device.tailscaleIp}:5901`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-400 text-[11px] font-medium hover:text-cyan-400 hover:bg-cyan-500/10 transition-all"
+            title={`Remote Desktop — ${device.tailscaleIp}`}>
+            <Monitor className="w-3 h-3" /> Remote
+          </a>
+        )}
         <button onClick={(e) => { e.stopPropagation(); onDelete(device.device_id); }}
           className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-500 text-[11px] font-medium hover:text-red-400 hover:bg-red-500/10 transition-all">
           <Trash2 className="w-3 h-3" />
