@@ -1306,9 +1306,7 @@ export default function DJBooth() {
     lastAudioActivityRef.current = Date.now();
     (async () => {
       const loaded = await refreshTracks();
-      const savedStages = await localEntities.Stage.filter(s => s.is_active).catch(() => []);
-      const hasActiveRotation = savedStages && savedStages.length > 0;
-      if (loaded && loaded.length > 0 && !isPlaying && !hasActiveRotation) {
+      if (loaded && loaded.length > 0 && !isPlaying) {
         const pool = filterCooldown(loaded);
         const randomTrack = pool[Math.floor(Math.random() * pool.length)];
         if (randomTrack?.url) {
