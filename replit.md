@@ -13,7 +13,7 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 - Minimize CPU/GPU usage for local hardware operation
 - Do not modify `AudioEngine.jsx` audio behavior (crossfade, ducking, gain bus architecture are finalized). The `loadTrack` method accepts both URL strings and FileSystemFileHandle objects. Voice announcements route through a separate GainNode (`voiceGainRef`) for independent volume boost (default 1.5x / 150%).
 - Production database stored at `/home/runner/data/djbooth.db` (outside project directory) to survive republishing. Development uses `./djbooth.db`. Configurable via `DB_PATH` env var.
-- **ALWAYS ask before making ANY changes** — present what you plan to do, wait for approval, then implement
+- **ALWAYS ask before making ANY changes** — describe exactly what you plan to change and why, wait for explicit approval, THEN implement. This applies to every single file edit, terminal command on the Pi, and code change — no exceptions, even for "obvious" fixes.
 - **NEVER tell the user to delete files on a Pi** — if disk space is needed, ask what they want to remove
 - **NEVER push files that don't belong on Pis** — no attached_assets, no .local/state, no sample music, no database files
 - **NEVER modify Pi service files, environment variables, or database paths** without explicit user approval

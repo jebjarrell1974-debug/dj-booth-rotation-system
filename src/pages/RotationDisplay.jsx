@@ -100,7 +100,7 @@ export default function RotationDisplay() {
         </p>
         <h1
           key={currentDancerId}
-          className="current-name text-7xl font-black text-white uppercase tracking-wider text-center leading-tight"
+          className="current-name text-8xl font-black text-white uppercase tracking-wider text-center leading-tight"
         >
           {currentDancer ? currentDancer.name : '—'}
         </h1>
@@ -110,10 +110,10 @@ export default function RotationDisplay() {
         <p className="stage-label text-2xl font-bold tracking-widest uppercase text-center pt-5 pb-3" style={LABEL_STYLE}>
           Next On Stage
         </p>
-        <div className="flex-1 flex flex-col justify-evenly px-8 pb-6">
+        <div className="flex flex-col gap-4 px-8 pb-6">
           {nextDancers.map((dancer) => (
             <div key={dancer.id} className="text-center">
-              <h3 className="next-name text-4xl font-bold text-white uppercase tracking-wider">
+              <h3 className="next-name text-5xl font-bold text-white uppercase tracking-wider">
                 {dancer.name}
               </h3>
             </div>

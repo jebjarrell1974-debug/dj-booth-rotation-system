@@ -62,6 +62,58 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Mar 10, 2026 — Session 35 (HDMI-2 Display Placement — IN PROGRESS)
+
+### Problem: Rotation display window opens on HDMI-1 instead of HDMI-2
+- **Setup**: Pi 5, Bookworm, labwc 0.9.2 (switched from Wayfire). HDMI-A-1 = main kiosk (1920×1080 at 0,0). HDMI-A-2 = rotation display TV (1080×1920, transform 90° CCW, logical position 1920,0).
+- **Root cause of original failures**: Wayfire has an unfixable bug — cross-output window placement never works. Switched to labwc which has proper MoveToOutput support.
+
+### What was tried this session
+1. **labwc rc.xml windowRule** with `identifier="neon-dj-display"` + `<action name="MoveToOutput" output="HDMI-A-2"/>` + `<action name="Maximize"/>` — CONFIRMED app_id is correct (`neon-dj-display` verified via `WAYLAND_DEBUG=1`). Rule fires correctly for test window (went to HDMI-2) but NOT for the actual display browser.
+2. **`--user-data-dir=/home/.../chromium-display`** — first tried with existing state. Suspected profile saved HDMI-1 position and restored it.
+3. **`--user-data-dir=/tmp/chromium-display`** (always fresh, cleared on reboot) — still went to HDMI-1.
+4. **`--ozone-platform=x11 --window-position=1920,0 --window-size=1080,1920`** — tried last, result unknown (user took a break).
+
+### Current state of Pi files
+- `~/.config/labwc/rc.xml`: Has `<windowRule identifier="neon-dj-display">` with MoveToOutput HDMI-A-2 + Maximize
+- `~/.config/labwc/autostart`: Runs `wlr-randr --output HDMI-A-2 --transform 90` for display rotation
+- `~/.config/autostart/djbooth-display.desktop`: Uses `/tmp/chromium-display` as user-data-dir (latest version)
+- Kiosk desktop: `~/.config/autostart/djbooth-kiosk.desktop` (separate --class=neon-dj-kiosk instance)
+- **No display browser is currently running** (killed before break)
+
+### Key confirmed facts
+- `--class=neon-dj-display` correctly sets Wayland app_id to `"neon-dj-display"` (proven via WAYLAND_DEBUG=1)
+- labwc MoveToOutput rule DOES fire for test instances — test window (PID 3120, `--user-data-dir=/tmp/chromium-test`, `--app=about:blank`) correctly went to HDMI-2
+- Same rule does NOT fire (or is overridden) for actual display browser with real URL `http://localhost:3001/RotationDisplay`
+- The difference between working test and failing real browser: the URL. Test used `about:blank`; real uses actual localhost URL.
+
+### Next steps to try (in order of likelihood)
+1. **Verify `--ozone-platform=x11 --window-position=1920,0` works** (was the last command given, result unknown):
+   ```bash
+   pkill -f "RotationDisplay" 2>/dev/null; pkill -f "chromium-display" 2>/dev/null; sleep 1; chromium --ozone-platform=x11 --app=http://localhost:3001/RotationDisplay --window-position=1920,0 --window-size=1080,1920 --user-data-dir=/tmp/chromium-display --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required &
+   ```
+2. **Try cursor-position approach**: In labwc, new windows open on the output where the cursor is. Move cursor to HDMI-A-2 first, THEN launch Chromium. Need to check if `ydotool` or `wlrctl` is installed: `which ydotool wlrctl`.
+3. **Try `--kiosk` instead of `--app`** with X11 mode: `chromium --ozone-platform=x11 --kiosk --window-position=1920,0 http://localhost:3001/RotationDisplay`
+4. **Try `cage`**: Cage is a single-window kiosk compositor. Run `cage -d -r -- chromium --kiosk http://localhost:3001/RotationDisplay` with `WAYLAND_DISPLAY` pointed to HDMI-A-2. But requires cage to be installed (`sudo apt install cage`).
+5. **Check `wlr-output-management` protocol**: Use `wlrctl` to move the window AFTER it opens on HDMI-1.
+
+### Display browser launch command (current best attempt)
+```bash
+chromium --ozone-platform=x11 --app=http://localhost:3001/RotationDisplay --window-position=1920,0 --window-size=1080,1920 --user-data-dir=/tmp/chromium-display --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required
+```
+
+### Desktop file (current)
+```ini
+[Desktop Entry]
+Type=Application
+Name=NEON AI DJ Rotation Display
+Exec=bash -c 'until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done && sleep 2 && chromium --app=http://localhost:3001/RotationDisplay --class=neon-dj-display --user-data-dir=/tmp/chromium-display --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required'
+X-GNOME-Autostart-enabled=true
+```
+**Note**: Desktop file still uses native Wayland (no --ozone-platform=x11). If X11 approach works in manual test, update desktop file to match.
+
+---
+
 ## Mar 8, 2026 — Session 34 (Commercial Ordering Fix + Dual-Song Boot Fix)
 
 ### Bug Fix: Commercial plays AFTER outro, not before
