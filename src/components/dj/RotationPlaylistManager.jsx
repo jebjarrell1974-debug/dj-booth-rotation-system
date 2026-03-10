@@ -532,9 +532,6 @@ export default function RotationPlaylistManager({
   };
 
   const rerollSong = useCallback(async (dancerId, songIndex) => {
-    const isFoldersOnly = djOptions?.musicMode === 'folders_only';
-    if (!isFoldersOnly) return;
-
     const allAssigned = [];
     Object.entries(songAssignmentsRef.current).forEach(([id, songs]) => {
       if (songs) songs.forEach(n => { if (id !== dancerId || songs.indexOf(n) !== songIndex) allAssigned.push(n); });
@@ -1048,7 +1045,7 @@ export default function RotationPlaylistManager({
                                         const isPlayed = isCurrentDancer && songIdx < (currentSongNumber - 1);
                                         const isNowPlaying = isCurrentDancer && songIdx === (currentSongNumber - 1);
                                         if (isPlayed) return null;
-                                        const canReroll = isFoldersOnlyMode && !isNowPlaying;
+                                        const canReroll = !isNowPlaying;
                                         return (
                                           <Draggable key={`${dancer.id}-${songName}`} draggableId={`assigned-${dancer.id}-${songName}`} index={songIdx}>
                                             {(songDragProvided, songDragSnapshot) => (
