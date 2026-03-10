@@ -1992,6 +1992,12 @@ export default function DJBooth() {
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
       console.log('⏭️ HandleSkip: No more break songs, advancing to next dancer');
+      const clearedInterstitials = { ...interstitialSongsRef.current };
+      delete clearedInterstitials[breakKey];
+      interstitialSongsRef.current = clearedInterstitials;
+      setInterstitialSongsState(clearedInterstitials);
+      setInterstitialRemoteVersion(v => v + 1);
+      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
     }
 
     transitionInProgressRef.current = true;
@@ -2483,6 +2489,12 @@ export default function DJBooth() {
       playingInterstitialRef.current = false;
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
+      const clearedInterstitials2 = { ...interstitialSongsRef.current };
+      delete clearedInterstitials2[breakKey];
+      interstitialSongsRef.current = clearedInterstitials2;
+      setInterstitialSongsState(clearedInterstitials2);
+      setInterstitialRemoteVersion(v => v + 1);
+      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials2)); } catch {}
 
       const newRotation = [...rot];
       const newIdx = idx;
