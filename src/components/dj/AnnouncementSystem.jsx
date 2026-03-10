@@ -15,6 +15,23 @@ const getAuthHeaders = () => {
   return headers;
 };
 
+const detectDayOfWeek = (script) => {
+  if (!script) return null;
+  const patterns = [
+    { re: /\b(sunday|sun)\b/i, dow: 0 },
+    { re: /\b(monday|mon)\b/i, dow: 1 },
+    { re: /\b(tuesday|tue|tues)\b/i, dow: 2 },
+    { re: /\b(wednesday|wed)\b/i, dow: 3 },
+    { re: /\b(thursday|thu|thur|thurs)\b/i, dow: 4 },
+    { re: /\b(friday|fri)\b/i, dow: 5 },
+    { re: /\b(saturday|sat)\b/i, dow: 6 },
+  ];
+  for (const { re, dow } of patterns) {
+    if (re.test(script)) return dow;
+  }
+  return null;
+};
+
 const DB_NAME = 'djAnnouncementsDB';
 const STORE_NAME = 'announcements';
 
@@ -379,7 +396,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           type,
           dancer_name: dancerName,
           energy_level: energyLevel,
-          club_name: clubName
+          club_name: clubName,
+          day_of_week: detectDayOfWeek(script)
         })
       });
       if (res.ok) {
@@ -410,6 +428,18 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
   }, []);
 
+  const checkServerCacheMeta = useCallback(async (cacheKey) => {
+    try {
+      const res = await fetch(`/api/voiceovers/check/${encodeURIComponent(cacheKey)}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) return await res.json();
+      return { exists: false, day_of_week: null };
+    } catch {
+      return { exists: false, day_of_week: null };
+    }
+  }, []);
+
   const checkServerCache = useCallback(async (cacheKey) => {
     try {
       const res = await fetch(`/api/voiceovers/check/${encodeURIComponent(cacheKey)}`, {
@@ -427,21 +457,35 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
   const findCachedAtAnyLevel = useCallback(async (type, dancerName, nextDancerName) => {
     const clubSuffix = getClubSuffix();
+    const todayDow = new Date().getDay();
     for (let l = 1; l <= 5; l++) {
       const altKey = getAnnouncementKey(type, dancerName, nextDancerName, l) + clubSuffix;
-      const idb = await getCachedFromIndexedDB(altKey);
-      if (idb) {
-        console.log(`✅ Found cached ${type} for ${dancerName} at L${l} (IndexedDB)`);
-        return { url: URL.createObjectURL(idb), fromCache: true };
-      }
-      const serverBlob = await loadFromServer(altKey);
-      if (serverBlob) {
-        await cacheToIndexedDB(altKey, serverBlob);
-        return { url: URL.createObjectURL(serverBlob), fromCache: true };
+      const meta = await checkServerCacheMeta(altKey);
+      if (meta.exists) {
+        if (meta.day_of_week !== null && meta.day_of_week !== undefined && meta.day_of_week !== todayDow) {
+          console.log(`⏭️ Skipping cached ${type} for ${dancerName} L${l} — tagged day ${meta.day_of_week}, today ${todayDow}`);
+          continue;
+        }
+        const idb = await getCachedFromIndexedDB(altKey);
+        if (idb) {
+          console.log(`✅ Found cached ${type} for ${dancerName} at L${l} (IndexedDB)`);
+          return { url: URL.createObjectURL(idb), fromCache: true };
+        }
+        const serverBlob = await loadFromServer(altKey);
+        if (serverBlob) {
+          await cacheToIndexedDB(altKey, serverBlob);
+          return { url: URL.createObjectURL(serverBlob), fromCache: true };
+        }
+      } else {
+        const idb = await getCachedFromIndexedDB(altKey);
+        if (idb) {
+          console.log(`✅ Found cached ${type} for ${dancerName} at L${l} (IndexedDB only)`);
+          return { url: URL.createObjectURL(idb), fromCache: true };
+        }
       }
     }
     return null;
-  }, [loadFromServer]);
+  }, [loadFromServer, checkServerCacheMeta]);
 
   const genericIndexRef = useRef({ intro: 0, round2: 0, outro: 0, transition: 0 });
 
@@ -517,7 +561,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       return { url: URL.createObjectURL(customBlob), fromCache: true };
     }
 
-    if (!isSpecialsEligible) {
+    const todayDow = new Date().getDay();
+    const meta = await checkServerCacheMeta(key);
+    const wrongDay = meta.exists && meta.day_of_week !== null && meta.day_of_week !== undefined && meta.day_of_week !== todayDow;
+    if (wrongDay) {
+      console.log(`⏭️ Skipping cached voiceover ${key} — tagged day ${meta.day_of_week}, today ${todayDow}`);
+    }
+
+    if (!wrongDay && !isSpecialsEligible) {
       const idbCached = await getCachedFromIndexedDB(key);
       if (idbCached) {
         console.log(`✅ Loaded from IndexedDB (session cache): ${key}`);
@@ -526,7 +577,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     }
 
-    if (!hasSpecials) {
+    if (!wrongDay && !hasSpecials) {
       const serverBlob = await loadFromServer(key);
       if (serverBlob) {
         await cacheToIndexedDB(key, serverBlob);
@@ -586,7 +637,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.error(`❌ No announcement available for ${type}: ${genError.message}`);
       throw genError;
     }
-  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording]);
+  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording, checkServerCacheMeta]);
 
   const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
     try {

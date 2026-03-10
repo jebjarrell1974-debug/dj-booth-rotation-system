@@ -405,7 +405,7 @@ app.get('/api/voiceovers', authenticate, requireDJ, (req, res) => {
 
 app.get('/api/voiceovers/check/:cacheKey', authenticate, (req, res) => {
   const vo = getVoiceover(req.params.cacheKey);
-  res.json({ exists: !!vo, cacheKey: req.params.cacheKey });
+  res.json({ exists: !!vo, cacheKey: req.params.cacheKey, day_of_week: vo?.day_of_week ?? null });
 });
 
 app.get('/api/voiceovers/check', authenticate, (req, res) => {
@@ -428,13 +428,14 @@ app.get('/api/voiceovers/audio/:cacheKey', authenticate, (req, res) => {
 });
 
 app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
-  const { cache_key, script, type, dancer_name, energy_level, audio_base64, club_name } = req.body;
+  const { cache_key, script, type, dancer_name, energy_level, audio_base64, club_name, day_of_week } = req.body;
   if (!cache_key || !type || !audio_base64) {
     return res.status(400).json({ error: 'cache_key, type, and audio_base64 required' });
   }
   try {
     const audioBuffer = Buffer.from(audio_base64, 'base64');
-    const result = saveVoiceover(cache_key, audioBuffer, script || null, type, dancer_name || null, parseInt(energy_level) || 3, club_name || null);
+    const parsedDow = (day_of_week !== undefined && day_of_week !== null) ? parseInt(day_of_week) : null;
+    const result = saveVoiceover(cache_key, audioBuffer, script || null, type, dancer_name || null, parseInt(energy_level) || 3, club_name || null, Number.isInteger(parsedDow) ? parsedDow : null);
     res.json({ ok: true, ...result });
     if (isR2Configured() && result.fileName) {
       const voiceoverPath = getVoiceoverFilePath(cache_key);

@@ -154,6 +154,12 @@ try {
   db.exec("ALTER TABLE dancers ADD COLUMN phonetic_name TEXT DEFAULT ''");
 }
 
+try {
+  db.prepare("SELECT day_of_week FROM voiceovers LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE voiceovers ADD COLUMN day_of_week INTEGER");
+}
+
 function getVoiceoverDir() {
   if (process.env.VOICEOVER_PATH) {
     const dir = process.env.VOICEOVER_PATH;
@@ -323,15 +329,15 @@ export function listSongs() {
   return db.prepare('SELECT name FROM songs ORDER BY name ASC').all().map(r => r.name);
 }
 
-export function saveVoiceover(cacheKey, audioBuffer, script, type, dancerName, energyLevel, clubName) {
+export function saveVoiceover(cacheKey, audioBuffer, script, type, dancerName, energyLevel, clubName, dayOfWeek) {
   const fileName = cacheKey.replace(/[^a-zA-Z0-9_-]/g, '_') + '.mp3';
   const filePath = join(VOICEOVER_DIR, fileName);
   writeFileSync(filePath, Buffer.from(audioBuffer));
   db.prepare(
-    `INSERT OR REPLACE INTO voiceovers (cache_key, file_name, script, type, dancer_name, energy_level, club_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(cacheKey, fileName, script || null, type, dancerName || null, energyLevel || 3, clubName || null);
-  return { cacheKey, fileName, clubName: clubName || null };
+    `INSERT OR REPLACE INTO voiceovers (cache_key, file_name, script, type, dancer_name, energy_level, club_name, day_of_week)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(cacheKey, fileName, script || null, type, dancerName || null, energyLevel || 3, clubName || null, dayOfWeek ?? null);
+  return { cacheKey, fileName, clubName: clubName || null, dayOfWeek: dayOfWeek ?? null };
 }
 
 const VOICEOVER_VALID_AFTER = '2026-03-04';
