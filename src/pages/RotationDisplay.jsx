@@ -113,7 +113,7 @@ export default function RotationDisplay() {
         <div className="flex flex-col gap-4 px-8 pb-6">
           {nextDancers.map((dancer) => (
             <div key={dancer.id} className="text-center">
-              <h3 className="next-name text-5xl font-bold text-white uppercase tracking-wider">
+              <h3 className="next-name text-6xl font-bold text-white uppercase tracking-wider">
                 {dancer.name}
               </h3>
             </div>
