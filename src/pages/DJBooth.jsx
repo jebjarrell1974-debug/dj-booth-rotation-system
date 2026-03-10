@@ -3730,6 +3730,7 @@ export default function DJBooth() {
                   if (tracks.length > 0) {
                     const updatedSongs = { ...(rotationSongsRef.current || {}) };
                     for (const [dancerId, songNames] of Object.entries(playlists)) {
+                      if (!overrideSet.has(String(dancerId))) continue;
                       const resolved = [];
                       for (const name of songNames) {
                         let track = tracks.find(t => t.name === name);
