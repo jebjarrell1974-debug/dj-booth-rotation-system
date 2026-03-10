@@ -3,6 +3,17 @@ HEALTH_URL="http://localhost:3001/__health"
 CHECK_INTERVAL=5
 SERVER_WAS_DOWN=false
 
+# Wait for boot to complete before starting to monitor.
+# Prevents race conditions where the watchdog launches a browser
+# at the same time as the autostart desktop files.
+UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 999)
+if [ "$UPTIME_SEC" -lt 120 ]; then
+  WAIT=$((120 - UPTIME_SEC))
+  echo "$(date): Boot guard — waiting ${WAIT}s for autostart to complete"
+  sleep "$WAIT"
+fi
+echo "$(date): Watchdog monitoring started"
+
 while true; do
   if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
     if [ "$SERVER_WAS_DOWN" = true ]; then
