@@ -43,7 +43,7 @@ export default function RotationDisplay() {
   const currentDancer = dancers.find(d => d.id === currentDancerId);
 
   const nextDancers = [];
-  for (let i = 1; i <= Math.min(6, validRotation.length - 1); i++) {
+  for (let i = 1; i <= Math.min(10, validRotation.length - 1); i++) {
     const nextIndex = (currentIndex + i) % validRotation.length;
     const nextDancerId = validRotation[nextIndex];
     const dancer = dancers.find(d => d.id === nextDancerId);
@@ -52,29 +52,23 @@ export default function RotationDisplay() {
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
-      <div className="flex-1 flex flex-col items-center justify-center px-10 pt-10 pb-6">
-        <h2 className="text-3xl font-bold text-[#00d4ff] mb-5 tracking-widest uppercase">
+      <div className="h-[25%] flex flex-col items-center justify-center px-8 border-b border-[#1e293b]">
+        <p className="text-2xl font-bold text-[#00d4ff] tracking-widest uppercase mb-2">
           Currently On Stage
-        </h2>
-        {currentDancer ? (
-          <h1 className="text-8xl font-black text-white uppercase tracking-wider text-center leading-tight">
-            {currentDancer.name}
-          </h1>
-        ) : (
-          <h1 className="text-8xl font-black text-white/40 uppercase">—</h1>
-        )}
+        </p>
+        <h1 className="text-7xl font-black text-white uppercase tracking-wider text-center leading-tight">
+          {currentDancer ? currentDancer.name : '—'}
+        </h1>
       </div>
 
-      <div className="border-t border-[#1e293b] mx-8" />
-
-      <div className="flex-1 flex flex-col items-center px-10 pt-6 pb-10">
-        <h2 className="text-3xl font-bold text-[#00d4ff] mb-6 tracking-widest uppercase">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <p className="text-2xl font-bold text-[#00d4ff] tracking-widest uppercase text-center pt-5 pb-3">
           Next On Stage
-        </h2>
-        <div className="w-full flex flex-col flex-1 justify-evenly">
+        </p>
+        <div className="flex-1 flex flex-col justify-evenly px-8 pb-6">
           {nextDancers.map((dancer) => (
-            <div key={dancer.id} className="text-center py-1">
-              <h3 className="text-5xl font-bold text-white uppercase tracking-wider">
+            <div key={dancer.id} className="text-center">
+              <h3 className="text-4xl font-bold text-white uppercase tracking-wider">
                 {dancer.name}
               </h3>
             </div>
