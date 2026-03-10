@@ -135,7 +135,7 @@ function AppRoutes() {
 }
 
 function App() {
-  const skipBoot = window.location.pathname.startsWith('/fleet') || window.location.pathname === '/FleetDashboard';
+  const skipBoot = window.location.pathname.startsWith('/fleet') || window.location.pathname === '/FleetDashboard' || window.location.pathname === '/RotationDisplay';
   const [bootComplete, setBootComplete] = useState(skipBoot);
   const handleBootReady = useCallback(() => setBootComplete(true), []);
 
