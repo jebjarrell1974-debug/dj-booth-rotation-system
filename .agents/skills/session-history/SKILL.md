@@ -449,6 +449,18 @@ x0vncserver -display :0 -rfbauth ~/.vnc/passwd -rfbport 5901 -localhost no &
 ```
 Connect from any device with Tailscale using a VNC viewer app at `TAILSCALE_IP:5901` (e.g. `100.115.212.34:5901`). Leave username blank, enter your VNC password.
 
+To make VNC **start automatically on every boot** (so the Remote button in Fleet Dashboard always works):
+```bash
+cat > ~/.config/autostart/vnc-server.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=VNC Server
+Exec=bash -c 'sleep 5 && killall x0vncserver 2>/dev/null; x0vncserver -display :0 -rfbauth ~/.vnc/passwd -rfbport 5901 -localhost no'
+X-GNOME-Autostart-enabled=true
+EOF
+```
+This waits 5 seconds after desktop loads (to let the display settle), then starts VNC. Resource impact is negligible — ~1-2% CPU at idle, 10-30MB RAM. Only does real work when someone is actively connected.
+
 Once VNC is set up and the Pi's Tailscale IP is reporting via heartbeat, the **Fleet Command Center will automatically show a "Remote" button** on that device's card. Tap it and RealVNC Viewer opens directly connected to that Pi's screen. No manual IP entry needed.
 
 Note: Uses port 5901 (not 5900) to avoid conflicts with the built-in RealVNC service. Disable the built-in RealVNC to prevent conflicts:
