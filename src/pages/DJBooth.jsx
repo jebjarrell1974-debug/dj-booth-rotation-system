@@ -593,10 +593,9 @@ export default function DJBooth() {
         if (existing.length > count) {
           current[key] = existing.slice(0, count);
         }
-        const need = count - (current[key] || []).length;
-        if (need > 0) {
-          slotsNeeding.push({ key, existing: current[key] || [], need });
-          totalNeeded += need;
+        if (existing.length === 0) {
+          slotsNeeding.push({ key, existing: [], need: count });
+          totalNeeded += count;
         }
       }
       if (totalNeeded > 0) {
@@ -3683,6 +3682,7 @@ export default function DJBooth() {
                   rotationRef.current = newRotation;
                   interstitialSongsRef.current = interstitials;
                   setInterstitialSongsState(interstitials);
+                  setInterstitialRemoteVersion(v => v + 1);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
                   const overrideSet = new Set(manualOverrides.map(id => String(id)));
                   const playlistUpdates = [];
@@ -3690,6 +3690,7 @@ export default function DJBooth() {
                     const dancer = dancers.find(d => String(d.id) === String(dancerId));
                     const existingPlaylist = dancer?.playlist || [];
 
+                    if (!overrideSet.has(String(dancerId))) continue;
                     const playlistSet = new Set(existingPlaylist);
                     const newSongs = displayedSongs.filter(s => !playlistSet.has(s));
                     const updatedPlaylist = [...existingPlaylist, ...newSongs];
