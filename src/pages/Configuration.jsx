@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, Trash2, MonitorOff, BarChart3 } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, RotateCw, Trash2, MonitorOff, Monitor, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
@@ -64,6 +64,8 @@ export default function Configuration() {
   const [apiCostsLoading, setApiCostsLoading] = useState(false);
   const [apiCostPeriod, setApiCostPeriod] = useState('30');
   const [apiDeviceId, setApiDeviceId] = useState('');
+  const [displayRotation, setDisplayRotation] = useState('normal');
+  const [displayRotationSaving, setDisplayRotationSaving] = useState(false);
 
   const config = getApiConfig();
   const currentLevel = getCurrentEnergyLevel({ clubOpenHour, clubCloseHour, energyOverride: config.energyOverride });
@@ -118,6 +120,11 @@ export default function Configuration() {
     fetch('/api/usage/device-id')
       .then(r => r.json())
       .then(data => setApiDeviceId(data.deviceId || ''))
+      .catch(() => {});
+
+    fetch('/api/system/display-rotation')
+      .then(r => r.json())
+      .then(data => setDisplayRotation(data.transform || 'normal'))
       .catch(() => {});
   }, [isUnlocked]);
 
@@ -1389,6 +1396,59 @@ export default function Configuration() {
             ))}
           </div>
         )}
+
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Monitor className="w-4 h-4 text-[#2563eb]" />
+            <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Display Screen Rotation (HDMI 2)</h3>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">Set the rotation for the second screen showing the rotation lineup. Applies immediately and persists after reboot.</p>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {[
+              { value: 'normal', label: 'Normal', icon: <Monitor className="w-4 h-4" /> },
+              { value: '90', label: 'Rotate Left', icon: <RotateCcw className="w-4 h-4" /> },
+              { value: '270', label: 'Rotate Right', icon: <RotateCw className="w-4 h-4" /> },
+              { value: '180', label: 'Flipped', icon: <RotateCcw className="w-4 h-4 rotate-180" /> },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setDisplayRotation(opt.value)}
+                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                  displayRotation === opt.value
+                    ? 'border-[#00d4ff] bg-[#00d4ff]/10 text-[#00d4ff]'
+                    : 'border-[#1e293b] text-gray-400 hover:border-[#2563eb] hover:text-gray-300'
+                }`}
+              >
+                {opt.icon}
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={async () => {
+              setDisplayRotationSaving(true);
+              try {
+                const res = await fetch('/api/system/display-rotation', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ transform: displayRotation })
+                });
+                const data = await res.json();
+                if (!res.ok) { toast.error(data.error || 'Failed to apply rotation'); return; }
+                toast.success('Display rotation applied and saved');
+              } catch {
+                toast.error('Failed to reach server');
+              } finally {
+                setDisplayRotationSaving(false);
+              }
+            }}
+            disabled={displayRotationSaving}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#2563eb]/20 border border-[#2563eb]/40 text-[#00d4ff] hover:bg-[#2563eb]/30 transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            {displayRotationSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {displayRotationSaving ? 'Applying...' : 'Apply Rotation'}
+          </button>
+        </div>
 
         <div className="bg-[#0d0d1f] rounded-xl border border-red-500/20 p-5">
           <h3 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">Kiosk Control</h3>

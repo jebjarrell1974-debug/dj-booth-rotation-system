@@ -759,6 +759,56 @@ app.post('/api/admin/update', async (req, res) => {
   child.unref();
 });
 
+app.get('/api/system/display-rotation', async (req, res) => {
+  try {
+    const os = await import('os');
+    const fs = await import('fs');
+    const wayfireIni = `${os.default.homedir()}/.config/wayfire.ini`;
+    let transform = 'normal';
+    if (fs.existsSync(wayfireIni)) {
+      const content = fs.readFileSync(wayfireIni, 'utf8');
+      const sectionMatch = content.match(/\[output:HDMI-A-2\]([\s\S]*?)(?=\n\[|$)/);
+      if (sectionMatch) {
+        const m = sectionMatch[1].match(/transform\s*=\s*(\S+)/);
+        if (m) transform = m[1].trim();
+      }
+    }
+    res.json({ transform });
+  } catch (err) {
+    res.json({ transform: 'normal' });
+  }
+});
+
+app.post('/api/system/display-rotation', async (req, res) => {
+  const { transform } = req.body || {};
+  const validTransforms = ['normal', '90', '180', '270'];
+  if (!validTransforms.includes(transform)) {
+    return res.status(400).json({ error: 'Invalid transform value' });
+  }
+  try {
+    const os = await import('os');
+    const fs = await import('fs');
+    const { execSync } = await import('child_process');
+    const wayfireIni = `${os.default.homedir()}/.config/wayfire.ini`;
+    let content = '';
+    if (fs.existsSync(wayfireIni)) content = fs.readFileSync(wayfireIni, 'utf8');
+    if (content.includes('[output:HDMI-A-2]')) {
+      if (/\[output:HDMI-A-2\][\s\S]*?transform\s*=/.test(content)) {
+        content = content.replace(/((?:^|\n)\[output:HDMI-A-2\][\s\S]*?)transform\s*=\s*\S+/, `$1transform = ${transform}`);
+      } else {
+        content = content.replace('[output:HDMI-A-2]', `[output:HDMI-A-2]\ntransform = ${transform}`);
+      }
+    } else {
+      content += `\n[output:HDMI-A-2]\ntransform = ${transform}\n`;
+    }
+    fs.writeFileSync(wayfireIni, content);
+    try { execSync(`wlr-randr --output HDMI-A-2 --transform ${transform}`, { timeout: 5000 }); } catch {}
+    res.json({ ok: true, transform });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/admin/restart', async (req, res) => {
   const { pin } = req.body || {};
   if (!pin || pin !== getMasterPin()) {
