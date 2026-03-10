@@ -3690,10 +3690,11 @@ export default function DJBooth() {
                     const dancer = dancers.find(d => String(d.id) === String(dancerId));
                     const existingPlaylist = dancer?.playlist || [];
 
-                    const updatedPlaylist = [...displayedSongs];
-                    const changed = updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i]);
-                    if (changed) {
-                      console.log(`🎵 Saving ${dancer?.name}'s playlist: ${updatedPlaylist.length} songs (was ${existingPlaylist.length})`);
+                    const playlistSet = new Set(existingPlaylist);
+                    const newSongs = displayedSongs.filter(s => !playlistSet.has(s));
+                    const updatedPlaylist = [...existingPlaylist, ...newSongs];
+                    if (newSongs.length > 0) {
+                      console.log(`🎵 Added ${newSongs.length} song(s) to ${dancer?.name}'s permanent playlist: ${newSongs.join(', ')}`);
                       playlistUpdates.push({ id: dancerId, name: dancer?.name, playlist: updatedPlaylist });
                     }
                   }
