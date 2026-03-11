@@ -202,28 +202,28 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       <div className="flex items-center px-3 py-2 border-b border-[#151528] flex-shrink-0 gap-3 min-h-0">
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isConnected ? (isPlaying ? 'bg-green-400 animate-pulse' : 'bg-yellow-400') : 'bg-red-500'}`} />
-          <span className="text-[11px] text-gray-500">{isConnected ? (isPlaying ? 'Live' : 'Connected') : 'Offline'}</span>
+          <span className="text-sm text-gray-500">{isConnected ? (isPlaying ? 'Live' : 'Connected') : 'Offline'}</span>
         </div>
 
         {isRotationActive && currentDancer ? (
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: currentDancer.color || '#00d4ff' }}>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-base flex-shrink-0" style={{ backgroundColor: currentDancer.color || '#00d4ff' }}>
               {currentDancer.name?.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white truncate">{currentDancer.name}</span>
-                <span className="text-xs text-[#00d4ff] flex-shrink-0">{currentSongNumber}/{songsPerSet}</span>
+                <span className="text-lg font-bold text-white truncate">{currentDancer.name}</span>
+                <span className="text-base text-[#00d4ff] flex-shrink-0">{currentSongNumber}/{songsPerSet}</span>
               </div>
-              {currentTrack && <div className="text-[11px] text-gray-500 truncate">{isPlaying ? '▶' : '⏸'} {stripExt(currentTrack)}</div>}
+              {currentTrack && <div className="text-sm text-gray-500 truncate">{isPlaying ? '▶' : '⏸'} {stripExt(currentTrack)}</div>}
             </div>
             <div className="w-20 h-1 bg-[#1e293b] rounded-full flex-shrink-0 overflow-hidden">
               <div ref={progressRef} className="h-full bg-[#00d4ff] rounded-full" style={{ width: '0%', transition: 'none' }} />
             </div>
-            <span ref={countdownRef} className="text-xs font-mono text-[#00d4ff] tabular-nums flex-shrink-0 w-10 text-right" />
+            <span ref={countdownRef} className="text-base font-mono text-[#00d4ff] tabular-nums flex-shrink-0 w-10 text-right" />
           </div>
         ) : (
-          <div className="flex-1 text-xs text-gray-600">{isConnected ? 'Rotation not active' : 'Connecting...'}</div>
+          <div className="flex-1 text-base text-gray-600">{isConnected ? 'Rotation not active' : 'Connecting...'}</div>
         )}
 
         <button onClick={onLogout} className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-gray-500 active:text-white active:bg-[#151528] flex-shrink-0">
@@ -245,24 +245,24 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-3 flex-shrink-0">
                 {currentDancer ? (
                   <div className="flex items-center gap-2.5">
-                    <div className="w-11 h-11 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: currentDancer.color || '#00d4ff' }}>
+                    <div className="w-11 h-11 rounded-full flex items-center justify-center text-black font-bold text-xl flex-shrink-0" style={{ backgroundColor: currentDancer.color || '#00d4ff' }}>
                       {currentDancer.name?.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-base font-bold text-white truncate">{currentDancer.name}</div>
-                      <div className="text-xs text-[#00d4ff]">Song {currentSongNumber} of {songsPerSet}</div>
-                      {currentTrack && <div className="text-[11px] text-gray-500 truncate mt-0.5">{stripExt(currentTrack)}</div>}
+                      <div className="text-lg font-bold text-white truncate">{currentDancer.name}</div>
+                      <div className="text-base text-[#00d4ff]">Song {currentSongNumber} of {songsPerSet}</div>
+                      {currentTrack && <div className="text-sm text-gray-500 truncate mt-0.5">{stripExt(currentTrack)}</div>}
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm text-gray-600 text-center py-1">{isRotationActive ? 'Loading...' : 'No active entertainer'}</div>
+                  <div className="text-lg text-gray-600 text-center py-1">{isRotationActive ? 'Loading...' : 'No active entertainer'}</div>
                 )}
               </div>
 
               {/* Skip */}
               <button
                 onClick={() => boothApi.sendCommand('skip')}
-                className="h-14 rounded-xl bg-[#00d4ff] text-black font-bold text-lg flex items-center justify-center gap-2 active:opacity-80 flex-shrink-0"
+                className="h-14 rounded-xl bg-[#00d4ff] text-black font-bold text-xl flex items-center justify-center gap-2 active:opacity-80 flex-shrink-0"
               >
                 <SkipForward className="w-6 h-6" />
                 SKIP
@@ -271,7 +271,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               {/* Announce toggle */}
               <button
                 onClick={() => boothApi.sendCommand('toggleAnnouncements')}
-                className={`h-11 rounded-xl border flex items-center justify-center gap-2 font-semibold text-sm active:opacity-80 flex-shrink-0 ${
+                className={`h-11 rounded-xl border flex items-center justify-center gap-2 font-semibold text-lg active:opacity-80 flex-shrink-0 ${
                   announcementsEnabled
                     ? 'bg-[#00d4ff]/15 border-[#00d4ff]/40 text-[#00d4ff]'
                     : 'bg-[#1e293b] border-[#2e2e5a] text-gray-500'
@@ -286,15 +286,15 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <button
                   onClick={() => { if (currentTrack) setShowDeactivatePin(true); }}
                   disabled={!currentTrack}
-                  className="h-11 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center gap-2 text-red-400 text-sm font-semibold active:bg-red-500/20 disabled:opacity-30 flex-shrink-0"
+                  className="h-11 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center gap-2 text-red-400 text-lg font-semibold active:bg-red-500/20 disabled:opacity-30 flex-shrink-0"
                 >
                   <Ban className="w-4 h-4" />
                   Deactivate Song
                 </button>
               ) : (
                 <div className="rounded-xl bg-[#0d0d1f] border border-red-500/30 p-3 flex-shrink-0">
-                  <div className="text-[11px] text-red-400 mb-1">Enter DJ PIN to deactivate:</div>
-                  <div className="text-[10px] text-gray-500 truncate mb-2">{stripExt(currentTrack)}</div>
+                  <div className="text-sm text-red-400 mb-1">Enter DJ PIN to deactivate:</div>
+                  <div className="text-xs text-gray-500 truncate mb-2">{stripExt(currentTrack)}</div>
                   <input
                     type="password"
                     value={deactivatePin}
@@ -302,10 +302,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     placeholder="PIN"
                     maxLength={10}
                     autoFocus
-                    className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-2.5 py-2 text-sm text-center font-mono mb-2 focus:outline-none focus:border-red-500"
+                    className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-2.5 py-2 text-lg text-center font-mono mb-2 focus:outline-none focus:border-red-500"
                   />
                   <div className="flex gap-2">
-                    <button onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }} className="flex-1 h-9 rounded-lg bg-[#1e293b] text-gray-400 text-sm">Cancel</button>
+                    <button onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }} className="flex-1 h-9 rounded-lg bg-[#1e293b] text-gray-400 text-lg">Cancel</button>
                     <button
                       onClick={() => {
                         if (deactivatePin) {
@@ -314,7 +314,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           setDeactivatePin('');
                         }
                       }}
-                      className="flex-1 h-9 rounded-lg bg-red-500 text-white text-sm font-bold"
+                      className="flex-1 h-9 rounded-lg bg-red-500 text-white text-lg font-bold"
                     >Deactivate</button>
                   </div>
                 </div>
@@ -324,11 +324,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-3 flex-shrink-0">
                 <div className="flex items-center gap-1.5 mb-2">
                   <Volume2 className="w-3.5 h-3.5 text-gray-400" />
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">Music Volume</span>
+                  <span className="text-xs text-gray-500 uppercase tracking-wider">Music Volume</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => boothApi.sendCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })} className="w-11 h-11 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Minus className="w-4 h-4" /></button>
-                  <div className="flex-1 text-center font-bold text-xl">{Math.round(currentVolume * 100)}%</div>
+                  <div className="flex-1 text-center font-bold text-2xl">{Math.round(currentVolume * 100)}%</div>
                   <button onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })} className="w-11 h-11 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Plus className="w-4 h-4" /></button>
                 </div>
               </div>
@@ -337,22 +337,22 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               <div className="rounded-xl bg-[#0d0d1f] border border-[#a855f7]/20 p-3 flex-shrink-0">
                 <div className="flex items-center gap-1.5 mb-2">
                   <Mic className="w-3.5 h-3.5 text-[#a855f7]" />
-                  <span className="text-[10px] text-[#a855f7] uppercase tracking-wider">Voice Volume</span>
+                  <span className="text-xs text-[#a855f7] uppercase tracking-wider">Voice Volume</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })} className="w-11 h-11 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Minus className="w-4 h-4" /></button>
-                  <div className="flex-1 text-center font-bold text-xl text-[#a855f7]">{Math.round(currentVoiceGain * 100)}%</div>
+                  <div className="flex-1 text-center font-bold text-2xl text-[#a855f7]">{Math.round(currentVoiceGain * 100)}%</div>
                   <button onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(3, currentVoiceGain + 0.1) })} className="w-11 h-11 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Plus className="w-4 h-4" /></button>
                 </div>
               </div>
 
               {/* Songs Per Set */}
               <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-3 flex-shrink-0">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Songs Per Set</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Songs Per Set</div>
                 <div className="flex gap-1.5">
                   {[1, 2, 3, 4, 5].map(n => (
                     <button key={n} onClick={() => boothApi.sendCommand('setSongsPerSet', { count: n })}
-                      className={`flex-1 h-10 rounded-xl font-bold text-sm ${n === songsPerSet ? 'bg-[#00d4ff] text-black' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
+                      className={`flex-1 h-10 rounded-xl font-bold text-lg ${n === songsPerSet ? 'bg-[#00d4ff] text-black' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
                       {n}
                     </button>
                   ))}
@@ -361,11 +361,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
               {/* Break Songs Per Set */}
               <div className="rounded-xl bg-[#0d0d1f] border border-[#1e293b] p-3 flex-shrink-0">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Break Songs Per Set</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Break Songs Per Set</div>
                 <div className="flex gap-1.5">
                   {[0, 1, 2, 3].map(n => (
                     <button key={n} onClick={() => boothApi.sendCommand('setBreakSongsPerSet', { count: n })}
-                      className={`flex-1 h-10 rounded-xl font-bold text-sm ${n === breakSongsPerSet ? 'bg-violet-500 text-white' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
+                      className={`flex-1 h-10 rounded-xl font-bold text-lg ${n === breakSongsPerSet ? 'bg-violet-500 text-white' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
                       {n}
                     </button>
                   ))}
@@ -378,7 +378,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
               {/* Energy Level */}
               <div className="flex-shrink-0 px-3 pt-3 pb-2.5 border-b border-[#151528]">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Club Energy Level</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Club Energy Level</div>
                 <div className="flex gap-2">
                   {Object.entries(ENERGY_LEVELS).map(([lvl, info]) => {
                     const n = parseInt(lvl);
@@ -387,13 +387,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                       <button
                         key={n}
                         onClick={() => onOptionsChange?.({ ...djOptions, energyLevel: n })}
-                        className={`flex-1 h-12 rounded-xl font-bold text-sm flex flex-col items-center justify-center gap-0.5 transition-colors border ${
+                        className={`flex-1 h-12 rounded-xl font-bold text-lg flex flex-col items-center justify-center gap-0.5 transition-colors border ${
                           isActive ? 'text-white border-transparent' : 'bg-[#0d0d1f] border-[#1e293b] text-gray-500 active:bg-[#1e293b]'
                         }`}
                         style={isActive ? { backgroundColor: info.color, borderColor: info.color } : {}}
                       >
                         <span>{n}</span>
-                        <span className="text-[9px] font-normal opacity-80">{info.short}</span>
+                        <span className="text-[11px] font-normal opacity-80">{info.short}</span>
                       </button>
                     );
                   })}
@@ -402,12 +402,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
               {/* Rotation list */}
               <div className="flex-1 overflow-y-auto px-3 py-2">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">
                   Rotation — {rotationDancers.length} entertainer{rotationDancers.length !== 1 ? 's' : ''}
                 </div>
                 <div className="space-y-1.5">
                   {rotationDancers.length === 0 && (
-                    <div className="text-center py-8 text-sm text-gray-600">No rotation active</div>
+                    <div className="text-center py-8 text-lg text-gray-600">No rotation active</div>
                   )}
                   {rotationDancers.map((dancer, idx) => {
                     const isOnStage = idx === currentDancerIndex && isRotationActive;
@@ -416,14 +416,14 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     return (
                       <div key={dancer.id} className={`rounded-xl border p-3 ${isOnStage ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40' : 'bg-[#0d0d1f] border-[#1e293b]'}`}>
                         <div className="flex items-center gap-2">
-                          <div className={`text-xs font-bold w-5 text-center flex-shrink-0 ${isOnStage ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isOnStage ? '▶' : idx + 1}</div>
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                          <div className={`text-base font-bold w-5 text-center flex-shrink-0 ${isOnStage ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isOnStage ? '▶' : idx + 1}</div>
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                             {dancer.name?.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className={`text-sm font-semibold ${isOnStage ? 'text-white' : 'text-gray-300'}`}>{dancer.name}</div>
+                            <div className={`text-lg font-semibold ${isOnStage ? 'text-white' : 'text-gray-300'}`}>{dancer.name}</div>
                             {upcomingSongs.length > 0 && (
-                              <div className="text-[10px] text-gray-500 truncate">{upcomingSongs.map(stripExt).join(' · ')}</div>
+                              <div className="text-xs text-gray-500 truncate">{upcomingSongs.map(stripExt).join(' · ')}</div>
                             )}
                           </div>
                           <div className="flex gap-1 flex-shrink-0">
@@ -449,15 +449,15 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 {/* Add to rotation */}
                 {allActiveDancers.filter(d => !rotationList.includes(d.id)).length > 0 && (
                   <div className="mt-3">
-                    <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Add to Rotation</div>
+                    <div className="text-xs text-gray-600 uppercase tracking-wider mb-2">Add to Rotation</div>
                     <div className="space-y-1">
                       {allActiveDancers.filter(d => !rotationList.includes(d.id)).map(dancer => (
                         <button key={dancer.id} onClick={() => boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id })}
                           className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-[#0d0d1f] border border-[#1e293b] active:bg-[#1e293b]">
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-base flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                             {dancer.name?.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-sm text-gray-300 flex-1 text-left">{dancer.name}</span>
+                          <span className="text-lg text-gray-300 flex-1 text-left">{dancer.name}</span>
                           <Plus className="w-4 h-4 text-[#00d4ff]" />
                         </button>
                       ))}
@@ -473,10 +473,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         {tab === 'rotation' && (
           <div className="h-full flex flex-col overflow-hidden">
             <div className="flex-shrink-0 flex items-center gap-3 px-3 py-2 border-b border-[#151528]">
-              <span className="text-xs text-gray-500 flex-1">{hasUnsaved ? '● Unsaved changes' : 'Tap a dancer to manage songs'}</span>
+              <span className="text-base text-gray-500 flex-1">{hasUnsaved ? '● Unsaved changes' : 'Tap a dancer to manage songs'}</span>
               <button
                 onClick={handleSaveAll}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold ${hasUnsaved ? 'bg-green-500 text-black animate-pulse' : 'bg-[#00d4ff] text-black'}`}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-lg font-bold ${hasUnsaved ? 'bg-green-500 text-black animate-pulse' : 'bg-[#00d4ff] text-black'}`}
               >
                 <Save className="w-4 h-4" />
                 Save All
@@ -485,7 +485,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
               {rotationDancers.length === 0 && (
-                <div className="text-center py-12 text-sm text-gray-600">No rotation active. Add entertainers from the Live tab.</div>
+                <div className="text-center py-12 text-lg text-gray-600">No rotation active. Add entertainers from the Live tab.</div>
               )}
 
               {rotationDancers.map((dancer, idx) => {
@@ -498,13 +498,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 return (
                   <div key={dancer.id} className={`rounded-xl border ${isOnStage ? 'border-[#00d4ff]/50 bg-[#00d4ff]/5' : 'border-[#1e293b] bg-[#0d0d1f]'}`}>
                     <button className="w-full flex items-center gap-2.5 px-3 py-3" onClick={() => setExpandedDancer(isExpanded ? null : dancer.id)}>
-                      <div className={`text-xs font-bold w-5 text-center flex-shrink-0 ${isOnStage ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isOnStage ? '▶' : idx + 1}</div>
+                      <div className={`text-base font-bold w-5 text-center flex-shrink-0 ${isOnStage ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isOnStage ? '▶' : idx + 1}</div>
                       <div className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                         {dancer.name?.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 text-left min-w-0">
-                        <div className="text-sm font-semibold text-white">{dancer.name}</div>
-                        <div className="text-[11px] text-gray-500">{songs.length} song{songs.length !== 1 ? 's' : ''} assigned{breakSongsPerSet > 0 ? ` · ${breakSongsPerSet} break slot${breakSongsPerSet !== 1 ? 's' : ''}` : ''}</div>
+                        <div className="text-lg font-semibold text-white">{dancer.name}</div>
+                        <div className="text-sm text-gray-500">{songs.length} song{songs.length !== 1 ? 's' : ''} assigned{breakSongsPerSet > 0 ? ` · ${breakSongsPerSet} break slot${breakSongsPerSet !== 1 ? 's' : ''}` : ''}</div>
                       </div>
                       <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                     </button>
@@ -513,7 +513,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                       <div className="px-3 pb-3 border-t border-[#1e293b]">
                         <div className="pt-2 space-y-1.5">
                           {songs.length === 0 && (
-                            <div className="text-xs text-gray-600 text-center py-2">No songs — system auto-picks at stage time</div>
+                            <div className="text-base text-gray-600 text-center py-2">No songs — system auto-picks at stage time</div>
                           )}
                           {songs.map((song, songIdx) => {
                             const isNowPlaying = isOnStage && songIdx === (currentSongNumber - 1);
@@ -521,8 +521,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             const isRerolling = rerolling[rerollKey];
                             return (
                               <div key={songIdx} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border ${isNowPlaying ? 'bg-[#00d4ff]/10 border-[#00d4ff]/30' : 'bg-[#08081a] border-[#1e293b]'}`}>
-                                <span className={`text-xs font-bold w-4 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isNowPlaying ? '▶' : songIdx + 1}</span>
-                                <span className="text-xs text-gray-300 flex-1 truncate">{stripExt(song)}</span>
+                                <span className={`text-base font-bold w-4 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isNowPlaying ? '▶' : songIdx + 1}</span>
+                                <span className="text-base text-gray-300 flex-1 truncate">{stripExt(song)}</span>
                                 {!isNowPlaying && (
                                   <>
                                     <button onClick={() => rerollSong(dancer.id, songIdx)} disabled={isRerolling}
@@ -540,22 +540,22 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           })}
 
                           <button onClick={() => { setAssigningTo(dancer.id); setTab('library'); }}
-                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#2e2e5a] text-[#00d4ff] text-xs active:bg-[#00d4ff]/10">
+                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#2e2e5a] text-[#00d4ff] text-base active:bg-[#00d4ff]/10">
                             <Plus className="w-3.5 h-3.5" />
                             Add Song from Library
                           </button>
 
                           {breakSongsPerSet > 0 && (
                             <div className="mt-2 pt-2 border-t border-[#1e293b]">
-                              <div className="text-[10px] text-violet-400 uppercase tracking-wider mb-1.5">Break Songs</div>
+                              <div className="text-xs text-violet-400 uppercase tracking-wider mb-1.5">Break Songs</div>
                               {breakSlots.map((slot, i) => (
                                 <button
                                   key={i}
                                   onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
                                   className="w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg border border-violet-500/20 bg-violet-900/10 mb-1 active:bg-violet-500/20 active:border-violet-500/40"
                                 >
-                                  <span className="text-[10px] font-bold text-violet-400 w-5 flex-shrink-0">B{i + 1}</span>
-                                  <span className="text-xs text-gray-300 flex-1 text-left truncate">{slot ? stripExt(slot) : <span className="text-gray-600">Tap to pick from library</span>}</span>
+                                  <span className="text-xs font-bold text-violet-400 w-5 flex-shrink-0">B{i + 1}</span>
+                                  <span className="text-base text-gray-300 flex-1 text-left truncate">{slot ? stripExt(slot) : <span className="text-gray-600">Tap to pick from library</span>}</span>
                                   <Music className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
                                 </button>
                               ))}
@@ -577,13 +577,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
             {(assigningTo || assigningBreak) && (
               <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-[#00d4ff]/10 border-b border-[#00d4ff]/30">
                 <div className="w-2 h-2 rounded-full bg-[#00d4ff] animate-pulse flex-shrink-0" />
-                <span className="text-sm text-[#00d4ff] flex-1">
+                <span className="text-lg text-[#00d4ff] flex-1">
                   {assigningBreak
                     ? `Tap a track for break slot B${assigningBreak.index + 1}`
                     : `Tap a track to add to ${dancers?.find(d => d.id === assigningTo)?.name || 'entertainer'}`}
                 </span>
                 <button onClick={() => { setAssigningTo(null); setAssigningBreak(null); setTab('rotation'); }}
-                  className="text-xs text-gray-400 px-2 py-1 rounded-lg active:bg-[#1e293b]">Cancel</button>
+                  className="text-base text-gray-400 px-2 py-1 rounded-lg active:bg-[#1e293b]">Cancel</button>
               </div>
             )}
 
@@ -591,24 +591,24 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               <div className="flex-1 flex items-center gap-2 bg-[#0d0d1f] border border-[#1e293b] rounded-xl px-3">
                 <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
                 <input value={libSearch} onChange={e => setLibSearch(e.target.value)} placeholder="Search tracks..."
-                  className="flex-1 bg-transparent text-sm text-white py-2.5 focus:outline-none placeholder-gray-600" />
+                  className="flex-1 bg-transparent text-lg text-white py-2.5 focus:outline-none placeholder-gray-600" />
                 {libSearch && <button onClick={() => setLibSearch('')} className="text-gray-500 flex-shrink-0"><X className="w-4 h-4" /></button>}
               </div>
               <select value={libGenre} onChange={e => setLibGenre(e.target.value)}
-                className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:border-[#00d4ff] min-w-[130px]">
+                className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl px-3 py-2 text-lg text-white appearance-none focus:outline-none focus:border-[#00d4ff] min-w-[130px]">
                 <option value="">All Folders</option>
                 {libGenres.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
               </select>
             </div>
 
             <div className="flex-shrink-0 px-3 py-1.5 flex items-center justify-between">
-              <span className="text-xs text-gray-600">{libTotal.toLocaleString()} tracks</span>
-              {(assigningTo || assigningBreak) && <span className="text-xs text-[#00d4ff]">Tap to assign →</span>}
+              <span className="text-base text-gray-600">{libTotal.toLocaleString()} tracks</span>
+              {(assigningTo || assigningBreak) && <span className="text-base text-[#00d4ff]">Tap to assign →</span>}
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 pb-2">
               {libLoading && libTracks.length === 0 ? (
-                <div className="text-center py-12 text-sm text-gray-600">Loading...</div>
+                <div className="text-center py-12 text-lg text-gray-600">Loading...</div>
               ) : (
                 <div className="space-y-1">
                   {libTracks.map(track => (
@@ -617,8 +617,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left border border-[#1e293b] bg-[#0d0d1f] ${(assigningTo || assigningBreak) ? 'active:bg-[#00d4ff]/10 active:border-[#00d4ff]/40' : 'cursor-default'}`}>
                       <Music className="w-4 h-4 text-gray-600 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm text-white truncate">{stripExt(track.name)}</div>
-                        {track.genre && <div className="text-[10px] text-gray-600">{track.genre}</div>}
+                        <div className="text-lg text-white truncate">{stripExt(track.name)}</div>
+                        {track.genre && <div className="text-xs text-gray-600">{track.genre}</div>}
                       </div>
                       {(assigningTo || assigningBreak) && <Plus className="w-4 h-4 text-[#00d4ff] flex-shrink-0" />}
                     </button>
@@ -634,12 +634,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           <div className="h-full flex gap-3 p-3 overflow-hidden">
             <div className="flex-1 flex flex-col bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
               <div className="px-3 pt-3 pb-2 flex-shrink-0 border-b border-[#1e293b]">
-                <div className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Promo Queue</div>
-                <div className="text-[10px] text-gray-600 mt-0.5">Plays between entertainer sets</div>
+                <div className="text-base font-semibold text-gray-300 uppercase tracking-wider">Promo Queue</div>
+                <div className="text-xs text-gray-600 mt-0.5">Plays between entertainer sets</div>
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {promoQueue.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-gray-600">No promos queued</div>
+                  <div className="text-center py-8 text-lg text-gray-600">No promos queued</div>
                 ) : promoQueue.map((promo, idx) => {
                   const promoId = promo?.cache_key || promo?.id || String(idx);
                   const promoName = promo?.dancer_name || promo?.cache_key?.replace(/^promo_/, '').replace(/_/g, ' ') || 'Promo';
@@ -647,13 +647,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   return (
                     <div key={promoId} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-[#1e293b] bg-[#08081a] ${isSkipped ? 'opacity-40' : ''}`}>
                       <Radio className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                      <span className="text-sm text-white flex-1 truncate capitalize">{promoName}</span>
+                      <span className="text-lg text-white flex-1 truncate capitalize">{promoName}</span>
                       <button onClick={() => boothApi.sendCommand('swapPromo', { slotIndex: idx })}
-                        className="px-2.5 py-1 rounded-lg text-xs bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]">Swap</button>
+                        className="px-2.5 py-1 rounded-lg text-base bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]">Swap</button>
                       <button
                         onClick={() => { boothApi.sendCommand('skipCommercial', { commercialId: promoId }); setLocalSkipped(prev => new Set([...prev, promoId])); }}
                         disabled={isSkipped}
-                        className="px-2.5 py-1 rounded-lg text-xs bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25 disabled:opacity-30">Skip</button>
+                        className="px-2.5 py-1 rounded-lg text-base bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25 disabled:opacity-30">Skip</button>
                     </div>
                   );
                 })}
@@ -662,11 +662,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
             <div className="w-[220px] flex flex-col gap-3">
               <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-3">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Commercial Frequency</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Commercial Frequency</div>
                 <div className="space-y-1">
                   {[['off', 'Off'], ['1', 'Every Set'], ['2', 'Every 2nd Set'], ['3', 'Every 3rd Set']].map(([val, label]) => (
                     <button key={val} onClick={() => onOptionsChange?.({ ...djOptions, commercialFreq: val })}
-                      className={`w-full flex items-center px-3 py-2 rounded-lg text-sm text-left ${commercialFreq === val ? 'bg-violet-500 text-white font-semibold' : 'text-gray-400 active:bg-[#1e293b]'}`}>
+                      className={`w-full flex items-center px-3 py-2 rounded-lg text-lg text-left ${commercialFreq === val ? 'bg-violet-500 text-white font-semibold' : 'text-gray-400 active:bg-[#1e293b]'}`}>
                       {label}
                     </button>
                   ))}
@@ -674,16 +674,16 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               </div>
 
               <div className="flex-1 bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
-                <div className="px-3 pt-3 pb-2 text-[10px] text-gray-500 uppercase tracking-wider border-b border-[#1e293b]">Available Promos</div>
+                <div className="px-3 pt-3 pb-2 text-xs text-gray-500 uppercase tracking-wider border-b border-[#1e293b]">Available Promos</div>
                 <div className="overflow-y-auto p-2 space-y-1">
                   {availablePromos.length === 0 ? (
-                    <div className="text-center py-4 text-xs text-gray-600">None available</div>
+                    <div className="text-center py-4 text-base text-gray-600">None available</div>
                   ) : availablePromos.map((promo, idx) => {
                     const promoName = promo?.dancer_name || promo?.cache_key?.replace(/^promo_/, '').replace(/_/g, ' ') || 'Promo';
                     return (
                       <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
                         <Radio className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                        <span className="text-xs text-gray-400 truncate capitalize">{promoName}</span>
+                        <span className="text-base text-gray-400 truncate capitalize">{promoName}</span>
                       </div>
                     );
                   })}
@@ -716,7 +716,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           >
             {tab === id && <div className="absolute top-0 inset-x-0 h-0.5 bg-[#00d4ff] rounded-b" />}
             <Icon className="w-5 h-5" />
-            <span className="text-[10px] font-medium">{label}</span>
+            <span className="text-xs font-medium">{label}</span>
             {id === 'rotation' && hasUnsaved && (
               <div className="absolute top-1.5 right-1/4 w-1.5 h-1.5 rounded-full bg-green-400" />
             )}
