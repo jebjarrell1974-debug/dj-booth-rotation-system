@@ -845,7 +845,7 @@ export default function FleetDashboard() {
 
   useEffect(() => {
     async function ensureAuth() {
-      const existing = sessionStorage.getItem('djbooth_token');
+      const existing = localStorage.getItem('djbooth_token');
       if (existing) {
         setAuthReady(true);
         return;
@@ -855,7 +855,7 @@ export default function FleetDashboard() {
         if (res.ok) {
           const data = await res.json();
           if (data.token) {
-            sessionStorage.setItem('djbooth_token', data.token);
+            localStorage.setItem('djbooth_token', data.token);
             sessionStorage.setItem('djbooth_role', 'dj');
           }
         }

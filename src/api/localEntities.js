@@ -74,7 +74,7 @@ const openUploadDB = () => {
 const DANCER_BACKUP_KEY = 'djbooth_dancer_backup';
 
 function createServerDancerStore() {
-  const getToken = () => sessionStorage.getItem('djbooth_token');
+  const getToken = () => localStorage.getItem('djbooth_token');
   const headers = () => {
     const h = { 'Content-Type': 'application/json' };
     const token = getToken();
@@ -84,7 +84,7 @@ function createServerDancerStore() {
 
   const handle401 = (res) => {
     if (res.status === 401) {
-      sessionStorage.removeItem('djbooth_token');
+      localStorage.removeItem('djbooth_token');
       sessionStorage.removeItem('djbooth_role');
       sessionStorage.removeItem('djbooth_dancer_id');
       sessionStorage.removeItem('djbooth_dancer_name');

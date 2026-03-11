@@ -87,7 +87,7 @@ export default function Configuration() {
 
   useEffect(() => {
     if (!isUnlocked) return;
-    const token = sessionStorage.getItem('djbooth_token');
+    const token = localStorage.getItem('djbooth_token');
     if (!token) return;
     fetch('/api/settings/master-pin', {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -133,7 +133,7 @@ export default function Configuration() {
     try {
       const days = parseInt(apiCostPeriod) || 30;
       const startDate = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch(`/api/usage/summary?startDate=${startDate}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -170,7 +170,7 @@ export default function Configuration() {
       const res = await fetch('/api/dancers', {
         headers: (() => {
           const h = {};
-          const token = sessionStorage.getItem('djbooth_token');
+          const token = localStorage.getItem('djbooth_token');
           if (token) h['Authorization'] = `Bearer ${token}`;
           return h;
         })()
@@ -191,7 +191,7 @@ export default function Configuration() {
   const { data: voiceovers = [] } = useQuery({
     queryKey: ['voiceovers-stats'],
     queryFn: async () => {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/voiceovers', {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
@@ -231,7 +231,7 @@ export default function Configuration() {
       let skipped = 0;
       const authHeaders = (() => {
         const h = {};
-        const token = sessionStorage.getItem('djbooth_token');
+        const token = localStorage.getItem('djbooth_token');
         if (token) h['Authorization'] = `Bearer ${token}`;
         return h;
       })();
@@ -367,7 +367,7 @@ export default function Configuration() {
       setIsImportingVoiceovers(true);
       setImportProgress('Scanning folder...');
 
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const authHeaders = {};
       if (token) authHeaders['Authorization'] = `Bearer ${token}`;
 
@@ -488,7 +488,7 @@ export default function Configuration() {
       if (masterRes.ok) {
         const masterData = await masterRes.json();
         if (masterPinInput === masterData.pin) {
-          sessionStorage.setItem('djbooth_token', token);
+          localStorage.setItem('djbooth_token', token);
           setIsUnlocked(true);
           return;
         }
@@ -658,7 +658,7 @@ export default function Configuration() {
                       if (!musicPath.trim()) { toast.error('Enter a folder path'); return; }
                       setMusicPathSaving(true);
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/settings/music-path', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -730,7 +730,7 @@ export default function Configuration() {
                       onClick={async () => {
                         setBlockedLoading(true);
                         try {
-                          const token = sessionStorage.getItem('djbooth_token');
+                          const token = localStorage.getItem('djbooth_token');
                           const res = await fetch('/api/music/unblock', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -795,7 +795,7 @@ export default function Configuration() {
                   onClick={async () => {
                     if (!window.confirm(`Delete all ${voStats.total} voiceovers? They will be regenerated fresh with the current voice engine.`)) return;
                     try {
-                      const token = sessionStorage.getItem('djbooth_token');
+                      const token = localStorage.getItem('djbooth_token');
                       const res = await fetch('/api/voiceovers', {
                         method: 'DELETE',
                         headers: { Authorization: `Bearer ${token}` }
@@ -953,7 +953,7 @@ export default function Configuration() {
                       if (djPin.length !== 5) { toast.error('PIN must be exactly 5 digits'); return; }
                       setPinSaving(true);
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/settings/dj-pin', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1000,7 +1000,7 @@ export default function Configuration() {
                       if (masterPin.length !== 5) { toast.error('PIN must be exactly 5 digits'); return; }
                       setMasterPinSaving(true);
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/settings/master-pin', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1228,7 +1228,7 @@ export default function Configuration() {
               onClick={async () => {
                 setR2Loading(true);
                 try {
-                  const token = sessionStorage.getItem('djbooth_token');
+                  const token = localStorage.getItem('djbooth_token');
                   const res = await fetch('/api/r2/status', { headers: { Authorization: `Bearer ${token}` } });
                   const data = await res.json();
                   setR2Status(data);
@@ -1267,7 +1267,7 @@ export default function Configuration() {
                     onClick={async () => {
                       setR2Syncing(s => ({ ...s, voUp: true }));
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/r2/sync/voiceovers', {
                           method: 'POST',
                           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -1289,7 +1289,7 @@ export default function Configuration() {
                     onClick={async () => {
                       setR2Syncing(s => ({ ...s, voDown: true }));
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/r2/sync/voiceovers', {
                           method: 'POST',
                           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -1318,7 +1318,7 @@ export default function Configuration() {
                       setR2Syncing(s => ({ ...s, muUp: true }));
                       toast.info('Uploading music — this may take a while for large libraries...');
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/r2/sync/music', {
                           method: 'POST',
                           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -1341,7 +1341,7 @@ export default function Configuration() {
                       setR2Syncing(s => ({ ...s, muDown: true }));
                       toast.info('Downloading music — this may take a while for large libraries...');
                       try {
-                        const token = sessionStorage.getItem('djbooth_token');
+                        const token = localStorage.getItem('djbooth_token');
                         const res = await fetch('/api/r2/sync/music', {
                           method: 'POST',
                           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -1456,7 +1456,7 @@ export default function Configuration() {
             onClick={async () => {
               if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
               try {
-                const token = sessionStorage.getItem('djbooth_token');
+                const token = localStorage.getItem('djbooth_token');
                 await fetch('/api/kiosk/exit', {
                   method: 'POST',
                   headers: {

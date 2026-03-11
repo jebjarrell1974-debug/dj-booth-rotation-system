@@ -104,7 +104,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const fetchLib = useCallback(async (search, genre) => {
     setLibLoading(true);
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const params = new URLSearchParams({ page: '1', limit: '300' });
       if (search) params.set('search', search);
       if (genre && !search) params.set('genre', genre);
@@ -163,7 +163,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         });
       });
       const genres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/music/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -217,7 +217,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
     setPromoSubmitting(true);
     setPromoStatus('Generating script...');
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
       await fetch('/api/promo-requests', { method: 'POST', headers, body: JSON.stringify(promoForm) });

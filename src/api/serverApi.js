@@ -17,15 +17,15 @@ function getBoothIp() {
 }
 
 function getToken() {
-  return sessionStorage.getItem('djbooth_token');
+  return localStorage.getItem('djbooth_token');
 }
 
 function setToken(token) {
-  sessionStorage.setItem('djbooth_token', token);
+  localStorage.setItem('djbooth_token', token);
 }
 
 function clearToken() {
-  sessionStorage.removeItem('djbooth_token');
+  localStorage.removeItem('djbooth_token');
   sessionStorage.removeItem('djbooth_role');
   sessionStorage.removeItem('djbooth_dancer_id');
   sessionStorage.removeItem('djbooth_dancer_name');

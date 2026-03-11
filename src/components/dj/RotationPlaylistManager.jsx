@@ -183,7 +183,7 @@ export default function RotationPlaylistManager({
     const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
 
     (async () => {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
       const batchExcludes = [];
 
@@ -316,7 +316,7 @@ export default function RotationPlaylistManager({
   }, [songsPerSet, tracks, dancers, djOptions]);
 
   const getAuthHeaders = useCallback(() => {
-    const token = sessionStorage.getItem('djbooth_token');
+    const token = localStorage.getItem('djbooth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
 
@@ -539,7 +539,7 @@ export default function RotationPlaylistManager({
 
     const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
       const res = await fetch('/api/music/select', {
         method: 'POST',

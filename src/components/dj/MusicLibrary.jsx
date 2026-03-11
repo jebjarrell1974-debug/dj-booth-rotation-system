@@ -36,7 +36,7 @@ export default function MusicLibrary({
   const playlistSongs = selectedPlaylistDancer?.playlist || [];
 
   const getAuthHeaders = useCallback(() => {
-    const token = sessionStorage.getItem('djbooth_token');
+    const token = localStorage.getItem('djbooth_token');
     return {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {})

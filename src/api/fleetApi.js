@@ -1,7 +1,7 @@
 const API_BASE = '/api/fleet';
 
 function getToken() {
-  return sessionStorage.getItem('djbooth_token');
+  return localStorage.getItem('djbooth_token');
 }
 
 async function fleetFetch(path, options = {}) {

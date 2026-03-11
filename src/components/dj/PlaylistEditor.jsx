@@ -31,7 +31,7 @@ export default function PlaylistEditor({
   }, [searchQuery]);
 
   const getAuthHeaders = useCallback(() => {
-    const token = sessionStorage.getItem('djbooth_token');
+    const token = localStorage.getItem('djbooth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
 

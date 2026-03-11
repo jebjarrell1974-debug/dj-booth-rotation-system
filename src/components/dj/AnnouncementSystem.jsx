@@ -9,7 +9,7 @@ import { VOICE_SETTINGS, ENERGY_LEVELS, buildAnnouncementPrompt } from '@/utils/
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
-  const token = sessionStorage.getItem('djbooth_token');
+  const token = localStorage.getItem('djbooth_token');
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;

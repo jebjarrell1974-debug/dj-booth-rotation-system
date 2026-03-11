@@ -132,7 +132,7 @@ function LiveMeter({ analyser }) {
 }
 
 const getAuthHeaders = () => {
-  const token = sessionStorage.getItem('djbooth_token');
+  const token = localStorage.getItem('djbooth_token');
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
@@ -611,7 +611,7 @@ export default function VoiceStudio() {
         alert('No raw recordings to export');
         return;
       }
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       for (const rec of data) {
         const res = await fetch(rec.download_url, {
           headers: { 'Authorization': `Bearer ${token}` }

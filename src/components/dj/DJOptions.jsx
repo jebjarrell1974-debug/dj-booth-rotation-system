@@ -476,7 +476,7 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
           onClick={async () => {
             if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
             try {
-              const token = sessionStorage.getItem('djbooth_token');
+              const token = localStorage.getItem('djbooth_token');
               await fetch('/api/kiosk/exit', {
                 method: 'POST',
                 headers: {

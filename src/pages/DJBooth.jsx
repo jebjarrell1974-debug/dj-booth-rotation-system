@@ -182,7 +182,7 @@ export default function DJBooth() {
         }
       } catch {}
       try {
-        const token = sessionStorage.getItem('djbooth_token');
+        const token = localStorage.getItem('djbooth_token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch('/api/history/cooldowns?hours=4', { headers });
         if (res.ok) {
@@ -225,7 +225,7 @@ export default function DJBooth() {
         if (dancer) resolvedDancer = dancer.name;
       }
     }
-    const token = sessionStorage.getItem('djbooth_token');
+    const token = localStorage.getItem('djbooth_token');
     if (token) {
       fetch('/api/history/played', {
         method: 'POST',
@@ -601,7 +601,7 @@ export default function DJBooth() {
         }
       }
       if (totalNeeded > 0) {
-        const token = sessionStorage.getItem('djbooth_token');
+        const token = localStorage.getItem('djbooth_token');
         const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
         const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
         const cooldowns = songCooldownRef.current || {};
@@ -786,7 +786,7 @@ export default function DJBooth() {
                   return;
                 }
                 const loginData = await verifyRes.json().catch(() => ({}));
-                const authToken = loginData.token || sessionStorage.getItem('djbooth_token');
+                const authToken = loginData.token || localStorage.getItem('djbooth_token');
                 if (!authToken) {
                   console.warn('⚠️ Remote deactivate: no auth token available');
                   return;
@@ -1044,7 +1044,7 @@ export default function DJBooth() {
     if (now - lastRefreshTimeRef.current < 5000) return null;
     lastRefreshTimeRef.current = now;
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/music/tracks?limit=100', {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -1103,7 +1103,7 @@ export default function DJBooth() {
     }
 
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
       const cooldowns = songCooldownRef.current || {};
@@ -1183,7 +1183,7 @@ export default function DJBooth() {
     autoplayFillInFlightRef.current = true;
     const fillVersion = ++autoplayFillVersionRef.current;
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
       const cooldowns = songCooldownRef.current || {};
@@ -1285,7 +1285,7 @@ export default function DJBooth() {
       }
     }
     const name = trackName || decodeURIComponent(trackUrl.split('/').pop().split('?')[0]) || null;
-    if (name) recordSongPlayed(name);
+    if (name) recordSongPlayed(name, null, trackGenre);
     if (isFeatureTrack(name, trackGenre)) {
       console.log('🌟 PlayTrack: FEATURE track detected — playing full duration:', name);
       audioEngineRef.current.setMaxDuration(3600);
@@ -1368,7 +1368,7 @@ export default function DJBooth() {
 
   const resolveTrackByName = useCallback(async (trackName) => {
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch(`/api/music/track-by-name/${encodeURIComponent(trackName)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -1405,7 +1405,7 @@ export default function DJBooth() {
     const dancerPlaylist = rawPlaylist;
 
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/music/select', {
         method: 'POST',
         headers: {
@@ -1761,7 +1761,7 @@ export default function DJBooth() {
     } catch {}
 
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch('/api/voiceovers', { headers });
       if (!res.ok) return false;
@@ -1879,7 +1879,7 @@ export default function DJBooth() {
 
   const refreshPromoQueue = useCallback(async () => {
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch('/api/voiceovers', { headers });
       if (!res.ok) return;
@@ -2115,7 +2115,7 @@ export default function DJBooth() {
 
         if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
           try {
-            const token = sessionStorage.getItem('djbooth_token');
+            const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
             const cooldowns = songCooldownRef.current || {};
             const nowMs = Date.now();
@@ -2360,7 +2360,7 @@ export default function DJBooth() {
     const trackName = currentTrack;
     if (!trackName) return;
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
       const res = await fetch('/api/music/block', {
         method: 'POST',
@@ -2449,7 +2449,7 @@ export default function DJBooth() {
         if (isOnCooldown) {
           console.log('⏭️ HandleTrackEnd: Break song on cooldown, finding replacement:', nextBreakName);
           try {
-            const token = sessionStorage.getItem('djbooth_token');
+            const token = localStorage.getItem('djbooth_token');
             const cooldownNames = Object.entries(cooldowns).filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS).map(([n]) => n);
             const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
             const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
@@ -2684,7 +2684,7 @@ export default function DJBooth() {
 
         if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
           try {
-            const token = sessionStorage.getItem('djbooth_token');
+            const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
             const cooldowns = songCooldownRef.current || {};
             const nowMs = Date.now();
@@ -2935,7 +2935,7 @@ export default function DJBooth() {
         let recovered = false;
 
         try {
-          const token = sessionStorage.getItem('djbooth_token');
+          const token = localStorage.getItem('djbooth_token');
           const wdCooldowns = songCooldownRef.current || {};
           const wdNow = Date.now();
           const wdRecent = Object.entries(wdCooldowns)

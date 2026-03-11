@@ -100,7 +100,7 @@ export default function DancerRoster({
     setResettingVoiceovers(true);
     setVoiceoverResetCount(null);
     try {
-      const token = sessionStorage.getItem('djbooth_token');
+      const token = localStorage.getItem('djbooth_token');
       const res = await fetch(`/api/voiceovers/dancer/${encodeURIComponent(dancerName)}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
