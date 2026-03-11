@@ -16,7 +16,8 @@ import {
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
   blockTrack, unblockTrack, getBlockedTracks,
-  logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage
+  logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
+  exportDancers, importDancers, saveClientSettings, getClientSettings
 } from './db.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
@@ -290,6 +291,26 @@ app.get('/api/config/defaults', (req, res) => {
   if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
   if (process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
   if (process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
+  try {
+    const stored = getClientSettings();
+    const keyMap = {
+      djbooth_openai_key: 'openaiApiKey',
+      djbooth_elevenlabs_key: 'elevenLabsApiKey',
+      djbooth_elevenlabs_voice_id: 'elevenLabsVoiceId',
+      djbooth_script_model: 'scriptModel',
+      djbooth_club_name: 'clubName',
+      djbooth_club_open_hour: 'clubOpenHour',
+      djbooth_club_close_hour: 'clubCloseHour',
+      djbooth_energy_override: 'energyOverride',
+      djbooth_announcements_enabled: 'announcementsEnabled',
+      djbooth_club_specials: 'clubSpecials',
+    };
+    for (const [storageKey, configKey] of Object.entries(keyMap)) {
+      if (stored[storageKey] && !defaults[configKey]) {
+        defaults[configKey] = stored[storageKey];
+      }
+    }
+  } catch {}
   res.json(defaults);
 });
 
@@ -384,6 +405,39 @@ app.put('/api/playlist', authenticate, (req, res) => {
   const dancer = updateDancer(req.session.dancer_id, { playlist: cleanPlaylist });
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   res.json({ playlist: dancer.playlist });
+});
+
+app.get('/api/dancers/export', authenticate, requireDJ, (req, res) => {
+  try {
+    const dancers = exportDancers();
+    const settings = getClientSettings();
+    const filename = `dancers-export-${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify({ exported_at: new Date().toISOString(), dancers, settings }, null, 2));
+  } catch (err) {
+    res.status(500).json({ error: 'Export failed: ' + err.message });
+  }
+});
+
+app.post('/api/dancers/import', authenticate, requireDJ, (req, res) => {
+  try {
+    const { dancers, overwrite = false } = req.body;
+    if (!Array.isArray(dancers)) return res.status(400).json({ error: 'dancers array required' });
+    const result = importDancers(dancers, { overwrite });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: 'Import failed: ' + err.message });
+  }
+});
+
+app.post('/api/config/save-to-server', (req, res) => {
+  try {
+    saveClientSettings(req.body || {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save config' });
+  }
 });
 
 app.get('/api/songs', authenticate, (req, res) => {
@@ -1652,6 +1706,29 @@ if (isDirectRun) {
       console.error('☁️ R2 init error:', err.message);
       bootStatus.ready = true;
     });
+
+    (async () => {
+      try {
+        const existingDancers = listDancers();
+        if (existingDancers.length === 0) {
+          const { restoreDancersFromR2, isR2Configured: r2ok } = await import('./r2sync.js');
+          if (r2ok()) {
+            const deviceId = process.env.DEVICE_ID || hostname();
+            console.log(`🔄 Empty dancer table detected — checking R2 for backup (${deviceId})...`);
+            const backup = await restoreDancersFromR2(deviceId);
+            if (backup && Array.isArray(backup.dancers) && backup.dancers.length > 0) {
+              const result = importDancers(backup.dancers, { overwrite: false });
+              if (backup.settings) saveClientSettings(backup.settings);
+              console.log(`✅ Auto-restored ${result.imported} dancer(s) from R2 backup (backed up ${backup.backed_up_at})`);
+            } else {
+              console.log('ℹ️ No R2 dancer backup found for this device — starting fresh');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('⚠️ R2 dancer restore check failed:', err.message);
+      }
+    })();
   });
 
   const gracefulShutdown = () => {

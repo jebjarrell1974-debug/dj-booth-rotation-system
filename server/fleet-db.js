@@ -145,6 +145,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_voice_recordings_name ON voice_recordings(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_promo_requests_status ON promo_requests(status);
   CREATE INDEX IF NOT EXISTS idx_fleet_play_history_device ON fleet_play_history(device_id, played_at);
+
+  CREATE TABLE IF NOT EXISTS device_dancer_backups (
+    device_id TEXT NOT NULL,
+    dancers_json TEXT NOT NULL DEFAULT '[]',
+    settings_json TEXT NOT NULL DEFAULT '{}',
+    dancer_count INTEGER DEFAULT 0,
+    backed_up_at INTEGER NOT NULL,
+    PRIMARY KEY (device_id)
+  );
 `);
 
 try {
@@ -546,4 +555,20 @@ export function getFleetPlayHistoryDates(deviceId) {
      FROM fleet_play_history WHERE device_id = ?
      GROUP BY date(played_at) ORDER BY date DESC LIMIT 90`
   ).all(deviceId);
+}
+
+export function saveDancerBackup(deviceId, dancersJson, settingsJson = '{}') {
+  const dancers = JSON.parse(dancersJson || '[]');
+  db.prepare(`
+    INSERT OR REPLACE INTO device_dancer_backups (device_id, dancers_json, settings_json, dancer_count, backed_up_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(deviceId, dancersJson, settingsJson, Array.isArray(dancers) ? dancers.length : 0, Date.now());
+}
+
+export function getDancerBackup(deviceId) {
+  return db.prepare('SELECT * FROM device_dancer_backups WHERE device_id = ?').get(deviceId);
+}
+
+export function listDancerBackups() {
+  return db.prepare('SELECT device_id, dancer_count, backed_up_at FROM device_dancer_backups ORDER BY backed_up_at DESC').all();
 }

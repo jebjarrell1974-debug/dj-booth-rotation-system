@@ -173,6 +173,17 @@ async function getRecentPlayHistory() {
   }
 }
 
+async function getDancerBackupPayload() {
+  try {
+    const { exportDancers, getClientSettings } = await import('./db.js');
+    const dancers = exportDancers();
+    const settings = getClientSettings();
+    return { dancers, settings };
+  } catch {
+    return { dancers: [], settings: {} };
+  }
+}
+
 function getDeviceId() {
   return process.env.DEVICE_ID || hostname() || 'unknown';
 }
@@ -189,6 +200,7 @@ async function sendHeartbeat(extraData = {}) {
   const network = getNetworkLatency();
 
   const recentPlays = await getRecentPlayHistory();
+  const dancerBackup = await getDancerBackupPayload();
 
   const payload = {
     deviceId: getDeviceId(),
@@ -219,6 +231,10 @@ async function sendHeartbeat(extraData = {}) {
     network,
     recentLogs: getRecentServiceLogs(),
     recentPlays,
+    dancerBackup: {
+      dancers: dancerBackup.dancers,
+      settings: dancerBackup.settings,
+    },
   };
 
   try {
@@ -244,7 +260,23 @@ async function sendHeartbeat(extraData = {}) {
         if (body.commands && Array.isArray(body.commands)) {
           for (const cmd of body.commands) {
             console.log(`📡 Received command: ${cmd.command}`);
-            executeRemoteCommand(cmd.command);
+            if (cmd.command === 'restore_dancers' && cmd.data) {
+              try {
+                const { importDancers, saveClientSettings } = await import('./db.js');
+                if (cmd.data.dancers && Array.isArray(cmd.data.dancers)) {
+                  const result = importDancers(cmd.data.dancers, { overwrite: false });
+                  console.log(`📡 Dancer restore: imported ${result.imported}, skipped ${result.skipped}`);
+                }
+                if (cmd.data.settings && typeof cmd.data.settings === 'object') {
+                  saveClientSettings(cmd.data.settings);
+                  console.log('📡 Client settings restored from backup');
+                }
+              } catch (err) {
+                console.error('📡 restore_dancers failed:', err.message);
+              }
+            } else {
+              executeRemoteCommand(cmd.command);
+            }
           }
         }
       } catch {}
@@ -256,6 +288,24 @@ async function sendHeartbeat(extraData = {}) {
   }
 }
 
+let lastR2DancerBackup = 0;
+const R2_DANCER_BACKUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+async function maybeBackupDancersToR2() {
+  const now = Date.now();
+  if (now - lastR2DancerBackup < R2_DANCER_BACKUP_INTERVAL_MS) return;
+  try {
+    const { backupDancersToR2 } = await import('./r2sync.js');
+    const { exportDancers, getClientSettings } = await import('./db.js');
+    const deviceId = getDeviceId();
+    const dancers = exportDancers();
+    if (dancers.length === 0) return;
+    const settings = getClientSettings();
+    const ok = await backupDancersToR2(deviceId, dancers, settings);
+    if (ok) lastR2DancerBackup = now;
+  } catch {}
+}
+
 function startHeartbeat(getExtraData) {
   if (!FLEET_SERVER_URL) {
     console.log('ℹ️ FLEET_SERVER_URL not set — heartbeat disabled');
@@ -263,7 +313,10 @@ function startHeartbeat(getExtraData) {
   }
   console.log(`💓 Heartbeat client active — reporting to ${FLEET_SERVER_URL} every 5 min`);
 
-  const beat = () => sendHeartbeat(getExtraData ? getExtraData() : {});
+  const beat = async () => {
+    await sendHeartbeat(getExtraData ? getExtraData() : {});
+    maybeBackupDancersToR2().catch(() => {});
+  };
   beat();
   heartbeatTimer = setInterval(beat, HEARTBEAT_INTERVAL_MS);
 }

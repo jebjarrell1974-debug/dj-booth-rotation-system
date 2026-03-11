@@ -452,3 +452,43 @@ export async function getR2Stats() {
     return { configured: true, error: err.message };
   }
 }
+
+export async function backupDancersToR2(deviceId, dancers, settings = {}) {
+  const client = getClient();
+  if (!client || !deviceId) return false;
+  try {
+    const payload = JSON.stringify({ device_id: deviceId, backed_up_at: new Date().toISOString(), dancers, settings }, null, 2);
+    await client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `dancer-backups/${deviceId}/dancers.json`,
+      Body: payload,
+      ContentType: 'application/json',
+      Metadata: { deviceId, dancerCount: String(dancers.length) },
+    }));
+    console.log(`☁️ R2: Backed up ${dancers.length} dancer(s) for ${deviceId}`);
+    return true;
+  } catch (err) {
+    console.error(`☁️ R2: Dancer backup failed for ${deviceId}: ${err.message}`);
+    return false;
+  }
+}
+
+export async function restoreDancersFromR2(deviceId) {
+  const client = getClient();
+  if (!client || !deviceId) return null;
+  try {
+    const res = await client.send(new GetObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `dancer-backups/${deviceId}/dancers.json`,
+    }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    const text = Buffer.concat(chunks).toString('utf8');
+    const data = JSON.parse(text);
+    console.log(`☁️ R2: Found dancer backup for ${deviceId} — ${data.dancers?.length || 0} dancer(s)`);
+    return data;
+  } catch (err) {
+    if (err.name !== 'NoSuchKey') console.error(`☁️ R2: Dancer restore failed for ${deviceId}: ${err.message}`);
+    return null;
+  }
+}

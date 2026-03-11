@@ -13,7 +13,8 @@ import {
   saveRecording, getRecording, listRecordings, deleteRecording,
   getRecordingAudio, getRecordingRawAudio, getRecordingStats,
   upsertDancerRoster, listDancerRoster,
-  createPromoRequest, listPromoRequests, getPromoRequest, deletePromoRequest, completePromoRequest
+  createPromoRequest, listPromoRequests, getPromoRequest, deletePromoRequest, completePromoRequest,
+  getDancerBackup, listDancerBackups
 } from './fleet-db.js';
 import { getSession, saveVoiceover } from './db.js';
 import { getFleetStatus } from './fleet-monitor.js';
@@ -616,6 +617,49 @@ router.post('/promo-requests/:id/save-promo', authenticateFleetAdmin, express.js
     res.json({ ok: true, cacheKey: result.cacheKey });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save promo: ' + err.message });
+  }
+});
+
+router.get('/dancer-backups', authenticateFleetAdmin, (req, res) => {
+  try {
+    const backups = listDancerBackups();
+    res.json(backups);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list dancer backups' });
+  }
+});
+
+router.get('/dancer-backups/:deviceId', authenticateFleetAdmin, (req, res) => {
+  try {
+    const backup = getDancerBackup(req.params.deviceId);
+    if (!backup) return res.status(404).json({ error: 'No backup found for this device' });
+    res.json({
+      device_id: backup.device_id,
+      dancer_count: backup.dancer_count,
+      backed_up_at: backup.backed_up_at,
+      dancers: JSON.parse(backup.dancers_json || '[]'),
+      settings: JSON.parse(backup.settings_json || '{}'),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get dancer backup' });
+  }
+});
+
+router.get('/dancer-backups/:deviceId/download', authenticateFleetAdmin, (req, res) => {
+  try {
+    const backup = getDancerBackup(req.params.deviceId);
+    if (!backup) return res.status(404).json({ error: 'No backup found for this device' });
+    const filename = `dancers-${req.params.deviceId}-${new Date(backup.backed_up_at).toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify({
+      device_id: backup.device_id,
+      backed_up_at: backup.backed_up_at,
+      dancers: JSON.parse(backup.dancers_json || '[]'),
+      settings: JSON.parse(backup.settings_json || '{}'),
+    }, null, 2));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to download dancer backup' });
   }
 });
 

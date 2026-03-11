@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronRight, Copy, Check, History,
   Upload, Package, Search, Filter, XCircle, 
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
-  AlertCircle, Info, DollarSign, Monitor
+  AlertCircle, Info, DollarSign, Monitor, Users, Download, RotateCcw
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -396,6 +396,34 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
       )}
 
       <div className="px-4 pb-2 text-[11px] text-gray-600">Last seen: {formatTimeAgo(device.last_heartbeat)}</div>
+
+      {device.dancerBackup ? (
+        <div className="px-4 pb-2 border-t border-[#1a1a2e] pt-2">
+          <p className="text-[11px] text-gray-500 mb-1 flex items-center gap-1">
+            <Users className="w-3 h-3 text-pink-400" />
+            <span className="text-pink-300">{device.dancerBackup.dancer_count} entertainer{device.dancerBackup.dancer_count !== 1 ? 's' : ''} backed up</span>
+            <span className="text-gray-600 ml-1">{formatTimeAgo(device.dancerBackup.backed_up_at)}</span>
+          </p>
+          <div className="flex gap-2">
+            <a
+              href={`/api/fleet/dancer-backup/${devId}/download`}
+              onClick={e => e.stopPropagation()}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-[#1a1a2e] border border-blue-500/20 text-blue-400 text-xs font-medium hover:bg-blue-500/10 active:scale-95 transition-all">
+              <Download className="w-3 h-3" /> Download
+            </a>
+            <button
+              onClick={e => { e.stopPropagation(); onCommand(devId, 'restore_dancers', device.device_name); }}
+              disabled={pendingCommands?.has(`${devId}-restore_dancers`)}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-[#1a1a2e] border border-pink-500/20 text-pink-400 text-xs font-medium hover:bg-pink-500/10 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+              {pendingCommands?.has(`${devId}-restore_dancers`) ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />} Restore
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 pb-2 border-t border-[#1a1a2e] pt-2">
+          <p className="text-[11px] text-gray-600 flex items-center gap-1"><Users className="w-3 h-3" /> No entertainer backup yet</p>
+        </div>
+      )}
 
       {device.apiCosts && (
         <div className="px-4 pb-2 border-t border-[#1a1a2e] pt-2">

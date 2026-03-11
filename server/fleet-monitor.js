@@ -137,6 +137,19 @@ async function registerHeartbeat(deviceId, data) {
     }
   }
 
+  if (data.dancerBackup && Array.isArray(data.dancerBackup.dancers) && data.dancerBackup.dancers.length > 0) {
+    try {
+      const { saveDancerBackup } = await import('./fleet-db.js');
+      saveDancerBackup(
+        deviceId,
+        JSON.stringify(data.dancerBackup.dancers),
+        JSON.stringify(data.dancerBackup.settings || {})
+      );
+    } catch (err) {
+      console.error('Fleet dancer backup error:', err.message);
+    }
+  }
+
   ensureDeviceInDb(deviceId, data);
   recordHeartbeatInDb(deviceId, data);
 
@@ -171,9 +184,18 @@ function checkDevices() {
 
 function getFleetStatus() {
   const result = [];
+  let backupSummary = [];
+  try {
+    const { listDancerBackups } = db ? { listDancerBackups: () => db.prepare('SELECT device_id, dancer_count, backed_up_at FROM device_dancer_backups ORDER BY backed_up_at DESC').all() } : {};
+    if (listDancerBackups) backupSummary = listDancerBackups();
+  } catch {}
+  const backupByDevice = {};
+  for (const b of backupSummary) backupByDevice[b.device_id] = b;
+
   for (const [, dev] of devices) {
     const ago = Math.round((Date.now() - dev.lastHeartbeat) / 1000);
-    result.push({ ...dev, secondsAgo: ago });
+    const backup = backupByDevice[dev.deviceId] || null;
+    result.push({ ...dev, secondsAgo: ago, dancerBackup: backup });
   }
   return result;
 }
@@ -277,6 +299,31 @@ function setupFleetMonitorRoutes(app) {
     if (!pendingCommands.has(deviceId)) pendingCommands.set(deviceId, []);
     pendingCommands.get(deviceId).push({ command: action, timestamp: Date.now() });
     res.json({ ok: true, queued: action });
+  });
+
+  app.post('/api/monitor/restore-dancers/:deviceId', async (req, res) => {
+    const { deviceId } = req.params;
+    const { pin } = req.body || {};
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+    const masterPin = process.env.MASTER_PIN || '36669';
+    if (pin !== masterPin) return res.status(403).json({ error: 'Invalid PIN' });
+    try {
+      const { getDancerBackup } = await import('./fleet-db.js');
+      const backup = getDancerBackup(deviceId);
+      if (!backup) return res.status(404).json({ error: 'No backup found for this device' });
+      if (!pendingCommands.has(deviceId)) pendingCommands.set(deviceId, []);
+      pendingCommands.get(deviceId).push({
+        command: 'restore_dancers',
+        timestamp: Date.now(),
+        data: {
+          dancers: JSON.parse(backup.dancers_json || '[]'),
+          settings: JSON.parse(backup.settings_json || '{}'),
+        },
+      });
+      res.json({ ok: true, queued: 'restore_dancers', dancer_count: backup.dancer_count });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to queue restore: ' + err.message });
+    }
   });
 }
 

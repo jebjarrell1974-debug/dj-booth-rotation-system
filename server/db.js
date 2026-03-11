@@ -197,6 +197,75 @@ export function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
 }
 
+export function exportDancers() {
+  const dancers = db.prepare('SELECT * FROM dancers ORDER BY created_date ASC').all();
+  return dancers.map(d => ({
+    id: d.id,
+    name: d.name,
+    color: d.color,
+    playlist: JSON.parse(d.playlist || '[]'),
+    is_active: !!d.is_active,
+    phonetic_name: d.phonetic_name || '',
+    created_date: d.created_date,
+    pin_hash: d.pin_hash,
+  }));
+}
+
+export function importDancers(dancersArray, { overwrite = false } = {}) {
+  if (!Array.isArray(dancersArray) || dancersArray.length === 0) return { imported: 0, skipped: 0 };
+  const existing = db.prepare('SELECT id, name FROM dancers').all();
+  const existingIds = new Set(existing.map(d => d.id));
+  const existingNames = new Set(existing.map(d => d.name.toLowerCase()));
+
+  let imported = 0;
+  let skipped = 0;
+
+  const upsert = db.transaction((dancers) => {
+    for (const d of dancers) {
+      if (!d.name) continue;
+      if (overwrite && existingIds.has(d.id)) {
+        db.prepare(`UPDATE dancers SET name=?, color=?, pin_hash=?, playlist=?, is_active=?, phonetic_name=? WHERE id=?`)
+          .run(d.name, d.color || '#e040fb', d.pin_hash, JSON.stringify(d.playlist || []), d.is_active ? 1 : 0, d.phonetic_name || '', d.id);
+        imported++;
+      } else if (!existingIds.has(d.id) && !existingNames.has(d.name.toLowerCase())) {
+        db.prepare(`INSERT OR IGNORE INTO dancers (id, name, color, pin_hash, playlist, is_active, phonetic_name, created_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(d.id, d.name, d.color || '#e040fb', d.pin_hash, JSON.stringify(d.playlist || []), d.is_active ? 1 : 0, d.phonetic_name || '', d.created_date || new Date().toISOString());
+        imported++;
+      } else {
+        skipped++;
+      }
+    }
+  });
+  upsert(dancersArray);
+  return { imported, skipped };
+}
+
+export function saveClientSettings(settings) {
+  if (!settings || typeof settings !== 'object') return;
+  const allowed = [
+    'djbooth_openai_key', 'djbooth_elevenlabs_key', 'djbooth_elevenlabs_voice_id',
+    'djbooth_announcements_enabled', 'djbooth_club_name', 'djbooth_club_open_hour',
+    'djbooth_club_close_hour', 'djbooth_energy_override', 'djbooth_script_model',
+    'djbooth_club_specials', 'neonaidj_songs_per_set', 'neonaidj_commercial_freq',
+    'djbooth_adult_mode', 'neonaidj_music_mode', 'neonaidj_active_genres',
+  ];
+  for (const key of allowed) {
+    if (settings[key] !== undefined && settings[key] !== null) {
+      setSetting(`client_${key}`, String(settings[key]));
+    }
+  }
+}
+
+export function getClientSettings() {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'client_%'").all();
+  const result = {};
+  for (const row of rows) {
+    const k = row.key.replace(/^client_/, '');
+    result[k] = row.value;
+  }
+  return result;
+}
+
 export function hashPin(pin) {
   return bcrypt.hashSync(pin, 10);
 }
