@@ -162,7 +162,7 @@ async function getRecentPlayHistory() {
         if (saved) lastPlayHistorySyncTime = saved.value;
       } catch {}
     }
-    const since = lastPlayHistorySyncTime || new Date(Date.now() - HEARTBEAT_INTERVAL_MS - 30000).toISOString().replace('T', ' ').replace('Z', '');
+    const since = lastPlayHistorySyncTime || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
     const rows = db.prepare(
       `SELECT track_name, dancer_name, genre, played_at FROM play_history
        WHERE played_at > ? ORDER BY played_at ASC LIMIT 500`

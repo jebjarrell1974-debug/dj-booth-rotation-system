@@ -120,6 +120,11 @@ When `varNum === 1` and no cache hit found, checks old `{type}-{dancerName}-L4-V
 - neonaidj003 at `100.81.90.125` — on commit `4416038`, needs `~/djbooth-update.sh`
 - Homebase at `100.95.238.71` — needs `~/djbooth-update.sh`
 
+### TODO: Set CLUB_NAME on neonaidj003
+- Fleet dashboard shows "Unknown" club name for neonaidj003
+- SSH into neonaidj003 and add `CLUB_NAME=` to `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+- Confirm the correct club name with user first
+
 ### TODO: Investigate neonaidj003 Crash Logs
 - 4 crashes on March 10 afternoon: 1:59pm, 3:49pm, 4:32pm, 5:24pm (all EST)
 - `djbooth.service: Failed with result 'exit-code'` — Node.js process crashed, systemd auto-restarted each time
