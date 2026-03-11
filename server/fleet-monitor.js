@@ -2,7 +2,7 @@ import db from './db.js';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
+const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const devices = new Map();

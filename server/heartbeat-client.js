@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
 import { networkInterfaces, hostname, uptime, freemem, totalmem } from 'os';
 
-const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+const HEARTBEAT_INTERVAL_MS = 1 * 60 * 1000;
 const FLEET_SERVER_URL = process.env.FLEET_SERVER_URL || '';
 
 let heartbeatTimer = null;
