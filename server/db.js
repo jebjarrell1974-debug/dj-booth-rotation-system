@@ -563,24 +563,11 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
 }
 
 export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
-  const result = [];
-  const usedNames = new Set(excludeNames);
-  const selectedNames = new Set();
-
+  // When a dancer has a playlist, pick ONLY from that playlist — never random library songs
   if (dancerPlaylist.length > 0) {
-    for (const trackName of dancerPlaylist) {
-      if (result.length >= count) break;
-      if (usedNames.has(trackName)) continue;
-      const track = readDb.prepare('SELECT id, name, path, genre FROM music_tracks WHERE name = ? AND blocked = 0').get(trackName);
-      if (track) {
-        result.push(track);
-        usedNames.add(track.name);
-        selectedNames.add(track.name);
-      }
-    }
-  }
+    const excludeSet = new Set(excludeNames);
 
-  if (result.length < count && dancerPlaylist.length > 0) {
+    // Get all songs played in the last 4 hours (server is source of truth for cooldowns)
     const recentlyPlayed4h = new Set(
       readDb.prepare(
         `SELECT track_name FROM play_history
@@ -588,48 +575,49 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
          GROUP BY track_name`
       ).all().map(r => r.track_name)
     );
-    const playlistCandidates = [];
+
+    // Fetch playlist tracks from DB, split into fresh vs on-cooldown
+    const freshTracks = [];
+    const cooldownTracks = [];
     for (const trackName of dancerPlaylist) {
-      if (selectedNames.has(trackName)) continue;
-      if (recentlyPlayed4h.has(trackName)) continue;
+      if (excludeSet.has(trackName)) continue;
       const track = readDb.prepare(
-        `SELECT t.id, t.name, t.path, t.genre, COALESCE(h.last_played, '1970-01-01') as last_played
+        `SELECT t.id, t.name, t.path, t.genre,
+                COALESCE(h.last_played, '1970-01-01') as last_played
          FROM music_tracks t
          LEFT JOIN (SELECT track_name, MAX(played_at) AS last_played FROM play_history GROUP BY track_name) h
          ON t.name = h.track_name
          WHERE t.name = ? AND t.blocked = 0`
       ).get(trackName);
-      if (track) playlistCandidates.push(track);
-    }
-    playlistCandidates.sort((a, b) => (a.last_played || '').localeCompare(b.last_played || ''));
-    for (const { last_played, ...track } of playlistCandidates) {
-      if (result.length >= count) break;
-      if (selectedNames.has(track.name)) continue;
-      result.push(track);
-      usedNames.add(track.name);
-      selectedNames.add(track.name);
-    }
-  }
-
-  if (result.length < count) {
-    const needed = count - result.length;
-    const allExcluded = [...usedNames];
-    let filler = getRandomTracks(needed, allExcluded, genres);
-    if (filler.length < needed && genres.length > 0) {
-      const stillExcluded = [...usedNames, ...filler.map(t => t.name)];
-      const more = getRandomTracks(needed - filler.length, stillExcluded, []);
-      filler = [...filler, ...more];
-    }
-    for (const track of filler) {
-      if (result.length >= count) break;
-      if (!usedNames.has(track.name)) {
-        result.push(track);
-        usedNames.add(track.name);
+      if (!track) continue;
+      if (recentlyPlayed4h.has(trackName)) {
+        cooldownTracks.push(track);
+      } else {
+        freshTracks.push(track);
       }
     }
+
+    // Shuffle fresh songs randomly, then append cooldown songs oldest-played first
+    for (let i = freshTracks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
+    }
+    cooldownTracks.sort((a, b) => a.last_played.localeCompare(b.last_played));
+
+    return [...freshTracks, ...cooldownTracks]
+      .slice(0, count)
+      .map(({ last_played, ...t }) => t);
   }
 
-  return result;
+  // No dancer playlist (break songs, autoplay queue) — random from full library with genre filter
+  const usedNames = new Set(excludeNames);
+  let filler = getRandomTracks(count, [...usedNames], genres);
+  if (filler.length < count && genres.length > 0) {
+    const stillExcluded = [...usedNames, ...filler.map(t => t.name)];
+    const more = getRandomTracks(count - filler.length, stillExcluded, []);
+    filler = [...filler, ...more];
+  }
+  return filler.slice(0, count);
 }
 
 export function getMusicTrackCount() {
