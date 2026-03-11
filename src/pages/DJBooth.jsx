@@ -1710,6 +1710,12 @@ export default function DJBooth() {
       return;
     }
 
+    // Always clear stale pre-picks from localStorage/previous session so beginRotation
+    // always calls getDancerTracks fresh — regardless of whether we start immediately
+    // or queue to start after the current song ends.
+    rotationSongsRef.current = {};
+    setRotationSongs({});
+
     const isPlaying = audioEngineRef.current?.isPlaying;
     if (isPlaying) {
       console.log('🎵 StartRotation: Music playing — queuing rotation to start after current song ends');
