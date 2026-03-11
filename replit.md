@@ -5,6 +5,16 @@ NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent
 
 The system aims to provide an AI DJ that never sleeps, offering human-sounding voice announcements, built-in redundancy for continuous operation even offline, and a comprehensive fleet management dashboard for multi-location businesses. It includes an iPad remote control, a commercial playback system with auto-generated promos, and per-unit API cost tracking. The project envisions a reliable, autonomous entertainment system built for demanding nightclub environments.
 
+## Fleet Devices (3 active — scaling to 50+ within 6 months)
+
+| Unit | Tailscale IP | Role | Club | Status |
+|---|---|---|---|---|
+| Homebase | `100.95.238.71` | Fleet server + DJ booth | Homebase | Fleet server lives here |
+| neonaidj001 | `100.115.212.34` | DJ booth | Pony Nation | Music: `/home/neonaidj001/djbooth/music/` |
+| neonaidj003 | `100.81.90.125` | DJ booth | Unknown (needs `CLUB_NAME` set) | Stable since Mar 10 crashes |
+
+**All 3 units need `~/djbooth-update.sh`** to pull latest song selection fixes (commit `823af94`).
+
 ## User Preferences
 - Nightclub dark theme with neon cyan accent (#00d4ff) and blue secondary (#2563eb)
 - Deep navy-black backgrounds (#08081a, #0d0d1f) with blue-tinged borders (#1e293b)

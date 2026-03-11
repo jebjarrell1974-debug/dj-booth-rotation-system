@@ -12,17 +12,25 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Database path**: Production uses `/home/runner/data/djbooth.db` (outside project dir to survive republishing). Dev uses `./djbooth.db`. Configurable via `DB_PATH` env var.
 - **Default master PIN**: `36669`
 
-## Confirmed Fleet Devices
+## Confirmed Fleet Devices (3 active units — scaling to 50+ within 6 months)
 
-| Unit | Username | Hostname | Tailscale IP | Role | Club |
+| Unit | Username | Tailscale IP | Role | Club | Notes |
 |---|---|---|---|---|---|
-| Homebase | `homebase` | `raspberrypi` | `100.95.238.71` | Fleet server + DJ booth | Homebase |
-| neonaidj001 | `neonaidj001` | `raspberrypi` | `100.115.212.34` | DJ booth | Pony Nation |
-| neonaidj003 | unknown | unknown | `100.81.90.125` | DJ booth | Unknown venue |
+| Homebase | `homebase` | `100.95.238.71` | Fleet server + DJ booth | Homebase | Fleet server lives HERE |
+| neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Nation | Music path: `/home/neonaidj001/djbooth/music/` |
+| neonaidj003 | unknown | `100.81.90.125` | DJ booth | Unknown (needs CLUB_NAME set) | Had 4 crashes Mar 10 — stable since |
 
-- Homebase `.env` must have `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
-- All venue Pis must have `FLEET_SERVER_URL=http://100.95.238.71:3001`
-- Fleet dashboard accessible at `http://100.95.238.71:3001/fleet` from any Tailscale device
+**Fleet .env rules:**
+- Homebase: `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
+- All venue Pis: `FLEET_SERVER_URL=http://100.95.238.71:3001`
+- Fleet dashboard: `http://100.95.238.71:3001/fleet` (any Tailscale device)
+
+**PENDING on neonaidj003:**
+- SSH in and set `CLUB_NAME=<correct venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+- Run `~/djbooth-update.sh` to pull latest code
+
+**PENDING on all 3 units:**
+- Run `~/djbooth-update.sh` to pull commit `823af94` (song selection rewrite)
 
 ## Architecture Summary
 
@@ -61,6 +69,53 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Replit container takes 6+ seconds cold start, exceeding 5-second healthcheck timeout
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
+
+---
+
+## CURRENT STATUS (as of last session) — READ THIS FIRST
+
+### What is working
+- Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
+- Play history pipeline: `djbooth_token` stored in `localStorage` (not `sessionStorage`), survives reboots
+- Voiceover system: 8-variation round-robin, locked to energy L4, legacy L4 key migration, generic fallbacks
+- All 3 units report to homebase fleet server (`100.95.238.71:3001`)
+
+### What was just fixed (commit `823af94` — needs `~/djbooth-update.sh` on all 3 units)
+1. **Song selection — playlist strict** (`server/db.js` `selectTracksForSet`): Songs are ONLY picked from the dancer's assigned playlist. No random library fallback when a playlist exists. Fresh songs (not played in 4h) shuffled randomly, cooldown songs ordered oldest-first.
+2. **Client cooldown ownership** (`DJBooth.jsx` `getDancerTracks`): Server owns cooldown logic via `play_history` — client no longer sends `cooldownNames` in exclude list. Local fallback is playlist-strict too.
+3. **Manual assignment URL resolution** (`DJBooth.jsx` `updateSongAssignments`): When a drag-drop song assignment arrives without a URL (name-only), it async-resolves via `resolveTrackByName` so display always matches playback.
+4. **HandleSkip display/audio mismatch fix** (`DJBooth.jsx`): When a pre-assigned track URL is unresolvable mid-set, plays a fallback instead of silently switching to a different song (which caused the display to show one song while a completely different one played).
+
+### Outstanding TODOs
+- **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, `sudo systemctl restart djbooth`
+- **neonaidj003**: Investigate March 10 crash logs: `journalctl -u djbooth --since "2026-03-10 13:00:00" --until "2026-03-10 18:00:00" | tail -50`
+- **HDMI-2 display placement** (Pony Nation Pi): Rotation display window opens on HDMI-1 instead of HDMI-2 (see Session 35 below for full investigation state)
+- **Homebase-aware update script**: Skip Chrome kill/relaunch when `IS_HOMEBASE=true` in env
+- **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
+- **Business readiness**: System is nearly production-ready. Song selection, voiceovers, fleet management, and play history are all stable. Remaining issues are mostly Pi-side config.
+
+### Context Reset Prevention
+- **ALWAYS** keep this SKILL.md updated at the end of every session
+- **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
+- If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 11, 2026 — Sessions 37-39 (Play History Fix + OpenAI Rate Limit + Song Selection Rewrite — COMPLETE)
+
+### Session 37: Play History Fix (commit `9e4021f`)
+**Root cause**: `recordSongPlayed` silently skipped when `sessionStorage` (wiped on reboot) had no token.
+**Fix**: Changed `djbooth_token` from `sessionStorage` → `localStorage` across 13 files. Genre now passed to `recordSongPlayed`. Server `play_history` table now populates correctly after reboots.
+
+### Session 38: OpenAI Rate Limit Fix (commit `09b579a`)
+**Root cause**: 8-variation cold-start generated 8 variations × multiple dancers simultaneously, hitting 30k TPM limit.
+**Fix**: All pre-cache delays increased (1.5s/2s → 6s), `preCacheAll` serialized (batch size 3→1). Cold-start ~$1.17 GPT-4.1, one-time only.
+**Note**: Alert storm on neonaidj003 was caused by old 5-min heartbeat vs 3-min timeout. Fixed by running `~/djbooth-update.sh`.
+
+### Session 39: Song Selection Rewrite (commit `823af94`)
+Four root causes fixed — see CURRENT STATUS above for full details.
+
+---
 
 ## Mar 11, 2026 — Session 36 (8-Variation / L4-Lock Voiceover Refactor — COMPLETE)
 
