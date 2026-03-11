@@ -692,6 +692,11 @@ export default function DJBooth() {
             try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
           }
           break;
+        case 'setCommercialFreq':
+          if (cmd.payload.freq != null) {
+            try { localStorage.setItem('neonaidj_commercial_freq', String(cmd.payload.freq)); } catch {}
+          }
+          break;
         case 'setBreakSongsPerSet':
           if (cmd.payload.count != null) {
             const c = Math.max(0, Math.min(3, cmd.payload.count));

@@ -40,6 +40,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [promoForm, setPromoForm] = useState({ event_name: '', details: '', vibe: 'Hype', length: '30s' });
   const [promoSubmitting, setPromoSubmitting] = useState(false);
   const [promoStatus, setPromoStatus] = useState('');
+  const [optimisticBreak, setOptimisticBreak] = useState(null);
 
   const skippedFromBooth = liveBoothState?.skippedCommercials || [];
   const [localSkipped, setLocalSkipped] = useState(new Set());
@@ -58,7 +59,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const rotationSongs = liveBoothState?.rotationSongs || {};
   const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
   const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
-  const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
+  const breakSongsPerSet = optimisticBreak !== null ? optimisticBreak : (liveBoothState?.breakSongsPerSet || 0);
   const interstitialSongs = liveBoothState?.interstitialSongs || {};
   const commercialFreq = liveBoothState?.commercialFreq || 'off';
   const promoQueue = liveBoothState?.promoQueue || [];
@@ -72,6 +73,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const currentDancer = dancers?.find(d => d.id === rotationList[currentDancerIndex]);
   const rotationDancers = rotationList.map(id => dancers?.find(d => d.id === id)).filter(Boolean);
   const allActiveDancers = (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name));
+
+  useEffect(() => {
+    if (optimisticBreak !== null && liveBoothState?.breakSongsPerSet === optimisticBreak) {
+      setOptimisticBreak(null);
+    }
+  }, [liveBoothState?.breakSongsPerSet, optimisticBreak]);
 
   const countdownRef = useRef(null);
   const progressRef = useRef(null);
@@ -454,7 +461,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Break Songs Per Set</div>
                 <div className="flex gap-1.5">
                   {[0, 1, 2, 3].map(n => (
-                    <button key={n} onClick={() => boothApi.sendCommand('setBreakSongsPerSet', { count: n })}
+                    <button key={n} onClick={() => { setOptimisticBreak(n); boothApi.sendCommand('setBreakSongsPerSet', { count: n }); }}
                       className={`flex-1 h-10 rounded-xl font-bold text-lg ${n === breakSongsPerSet ? 'bg-violet-500 text-white' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
                       {n}
                     </button>
@@ -832,18 +839,6 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 </div>
               </div>
 
-              {/* Frequency */}
-              <div className="flex-shrink-0 bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-3">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Commercial Frequency</div>
-                <div className="flex gap-2">
-                  {[['off', 'Off'], ['1', 'Every Set'], ['2', 'Every 2nd'], ['3', 'Every 3rd']].map(([val, label]) => (
-                    <button key={val} onClick={() => onOptionsChange?.({ ...djOptions, commercialFreq: val })}
-                      className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-center border transition-colors ${commercialFreq === val ? 'bg-violet-500 border-violet-500 text-white' : 'bg-[#08081a] border-[#1e293b] text-gray-400 active:bg-[#1e293b]'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         )}
@@ -851,7 +846,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         {/* ─────────── OPTIONS TAB ─────────── */}
         {tab === 'options' && (
           <div className="h-full overflow-y-auto p-3">
-            <DJOptions djOptions={djOptions} onOptionsChange={onOptionsChange} />
+            <DJOptions
+              djOptions={djOptions}
+              onOptionsChange={onOptionsChange}
+              onCommercialFreqChange={(freq) => boothApi.sendCommand('setCommercialFreq', { freq })}
+              externalCommercialFreq={liveBoothState?.commercialFreq}
+            />
           </div>
         )}
       </div>

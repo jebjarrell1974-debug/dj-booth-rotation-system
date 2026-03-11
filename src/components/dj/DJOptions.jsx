@@ -4,7 +4,7 @@ import { Settings, FolderOpen, Check, ChevronDown, Music, MonitorOff, Radio } fr
 import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
-export default function DJOptions({ djOptions, onOptionsChange, energyOverride, onEnergyOverrideChange, audioEngineRef }) {
+export default function DJOptions({ djOptions, onOptionsChange, energyOverride, onEnergyOverrideChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq }) {
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -17,6 +17,14 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
   const [commercialDropdownOpen, setCommercialDropdownOpen] = useState(false);
   const commercialRef = useRef(null);
+  const commercialSyncedRef = useRef(false);
+
+  useEffect(() => {
+    if (!commercialSyncedRef.current && externalCommercialFreq != null) {
+      setCommercialFreq(externalCommercialFreq);
+      commercialSyncedRef.current = true;
+    }
+  }, [externalCommercialFreq]);
 
   const activeGenres = djOptions?.activeGenres || [];
   const musicMode = djOptions?.musicMode || 'dancer_first';
@@ -168,6 +176,7 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
                         setCommercialFreq(opt.value);
                         localStorage.setItem('neonaidj_commercial_freq', opt.value);
                         setCommercialDropdownOpen(false);
+                        onCommercialFreqChange?.(opt.value);
                       }}
                       className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-[#1e293b] last:border-b-0 ${
                         commercialFreq === opt.value ? 'bg-[#2563eb]/10 text-white' : 'text-gray-300 hover:bg-[#151528]'
