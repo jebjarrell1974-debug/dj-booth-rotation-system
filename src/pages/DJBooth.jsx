@@ -134,6 +134,8 @@ export default function DJBooth() {
   const interstitialIndexRef = useRef(0);
   const [activeBreakInfo, setActiveBreakInfo] = useState(null);
   const handleSkipRef = useRef(null);
+  const beginRotationRef = useRef(null);
+  const stopRotationRef = useRef(null);
   const saveRotationRef = useRef(null);
   const commercialCounterRef = useRef(0);
   const playingCommercialRef = useRef(false);
@@ -642,6 +644,12 @@ export default function DJBooth() {
       switch (cmd.action) {
         case 'skip':
           handleSkipRef.current?.();
+          break;
+        case 'startRotation':
+          beginRotationRef.current?.();
+          break;
+        case 'stopRotation':
+          stopRotationRef.current?.();
           break;
         case 'toggleAnnouncements':
           setAnnouncementsEnabled(prev => !prev);
@@ -1707,6 +1715,7 @@ export default function DJBooth() {
 
     await beginRotation();
   }, [rotation, tracks, beginRotation, announcementsEnabled]);
+  beginRotationRef.current = startRotation;
 
   const isCommercialDue = useCallback(() => {
     const freq = localStorage.getItem('neonaidj_commercial_freq') || 'off';
@@ -3039,6 +3048,7 @@ export default function DJBooth() {
     interstitialIndexRef.current = 0;
     setActiveBreakInfo(null);
   }, []);
+  stopRotationRef.current = stopRotation;
 
   const removeFromRotation = (dancerId) => {
     const dancer = dancers.find(d => d.id === dancerId);

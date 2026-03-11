@@ -8,6 +8,7 @@ import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Search, Shuffle, Zap,
   ChevronDown, ChevronUp, RefreshCw, Ban, Send, Loader2,
+  PlayCircle, StopCircle,
 } from 'lucide-react';
 
 const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
@@ -365,6 +366,19 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 SKIP
               </button>
 
+              {/* Start / Stop Rotation */}
+              <button
+                onClick={() => boothApi.sendCommand(isRotationActive ? 'stopRotation' : 'startRotation')}
+                className={`h-14 rounded-xl border-2 flex items-center justify-center gap-2 font-bold text-xl active:opacity-80 flex-shrink-0 ${
+                  isRotationActive
+                    ? 'bg-red-500/15 border-red-500/50 text-red-400'
+                    : 'bg-green-500/15 border-green-500/50 text-green-400'
+                }`}
+              >
+                {isRotationActive ? <StopCircle className="w-6 h-6" /> : <PlayCircle className="w-6 h-6" />}
+                {isRotationActive ? 'Stop Rotation' : 'Start Rotation'}
+              </button>
+
               {/* Announce toggle */}
               <button
                 onClick={() => boothApi.sendCommand('toggleAnnouncements')}
@@ -606,6 +620,26 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                       <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                     </button>
 
+                    {breakSongsPerSet > 0 && (
+                      <div className="px-3 pb-2 border-t border-violet-500/20">
+                        <div className="pt-2 space-y-1">
+                          {breakSlots.map((slot, i) => (
+                            <button
+                              key={i}
+                              onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
+                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-violet-500/25 bg-violet-900/10 active:bg-violet-500/20 active:border-violet-500/50"
+                            >
+                              <span className="text-xs font-bold text-violet-400 w-5 flex-shrink-0">B{i + 1}</span>
+                              <span className="text-base flex-1 text-left truncate">
+                                {slot ? <span className="text-gray-200">{stripExt(slot)}</span> : <span className="text-gray-600 italic">Tap to pick break song</span>}
+                              </span>
+                              <Music className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {isExpanded && (
                       <div className="px-3 pb-3 border-t border-[#1e293b]">
                         <div className="pt-2 space-y-1.5">
@@ -641,23 +675,6 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             <Plus className="w-3.5 h-3.5" />
                             Add Song from Library
                           </button>
-
-                          {breakSongsPerSet > 0 && (
-                            <div className="mt-2 pt-2 border-t border-[#1e293b]">
-                              <div className="text-xs text-violet-400 uppercase tracking-wider mb-1.5">Break Songs</div>
-                              {breakSlots.map((slot, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
-                                  className="w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg border border-violet-500/20 bg-violet-900/10 mb-1 active:bg-violet-500/20 active:border-violet-500/40"
-                                >
-                                  <span className="text-xs font-bold text-violet-400 w-5 flex-shrink-0">B{i + 1}</span>
-                                  <span className="text-base text-gray-300 flex-1 text-left truncate">{slot ? stripExt(slot) : <span className="text-gray-600">Tap to pick from library</span>}</span>
-                                  <Music className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-                                </button>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
