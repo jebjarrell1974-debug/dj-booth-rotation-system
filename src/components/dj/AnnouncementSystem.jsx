@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Mic, Download, Wifi, WifiOff, Loader2, Check, AlertCircle, HardDrive } from 'lucide-react';
 import { localIntegrations } from '@/api/localEntities';
 import { getApiConfig } from '@/components/apiConfig';
-import { getCurrentEnergyLevel, VOICE_SETTINGS, ENERGY_LEVELS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+import { VOICE_SETTINGS, ENERGY_LEVELS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
@@ -136,6 +136,8 @@ const ANNOUNCEMENT_TYPES = {
 };
 
 const GENERIC_DANCER_NAME = '_GENERIC_';
+const NUM_VARIATIONS = 8;
+const LOCKED_LEVEL = 4;
 
 const AnnouncementSystem = React.forwardRef((props, ref) => {
   const {
@@ -160,6 +162,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const specialsAnnouncementCountRef = useRef(0);
   const specialsRotationIndexRef = useRef(0);
   const specialsNextTriggerRef = useRef(Math.floor(Math.random() * 2) + 2);
+  const variationCounterRef = useRef({});
+
+  const getNextVariationNum = useCallback((type, dancerName, nextDancerName = null) => {
+    const k = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
+    const current = variationCounterRef.current[k] || 0;
+    const next = (current % NUM_VARIATIONS) + 1;
+    variationCounterRef.current[k] = next;
+    return next;
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -233,11 +244,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return [allSpecials[idx]];
   }, []);
 
-  const generateScript = useCallback(async (type, dancerName, nextDancerName = null, energyLevel = 3, roundNumber = 1) => {
+  const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1) => {
     const config = getApiConfig();
     const clubName = config.clubName || '';
     const specials = getStaggeredSpecial(type);
-    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, energyLevel, roundNumber, clubName, specials);
+    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, LOCKED_LEVEL, roundNumber, clubName, specials);
 
     const openaiKey = config.openaiApiKey || '';
     const scriptModel = config.scriptModel || 'auto';
@@ -288,7 +299,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return parseResponse(response);
   }, []);
 
-  const generateAudio = useCallback(async (script, energyLevel = 3) => {
+  const generateAudio = useCallback(async (script) => {
     const config = getApiConfig();
     const apiKey = config.elevenLabsApiKey || elevenLabsApiKey;
     if (!apiKey) {
@@ -296,7 +307,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
 
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
-    const voiceSettings = VOICE_SETTINGS[energyLevel] || VOICE_SETTINGS[3];
+    const voiceSettings = VOICE_SETTINGS[LOCKED_LEVEL];
 
     const pronunciationMap = {};
     if (dancers && dancers.length > 0) {
@@ -385,8 +396,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     });
   }, [elevenLabsApiKey]);
 
-  const getAnnouncementKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L${energyLevel}-V10`;
+  const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1) => {
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-V10`;
+  };
+
+  const getLegacyL4Key = (type, dancerName, nextDancerName = null) => {
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-V10`;
   };
 
   const getSpecialsHash = () => {
@@ -407,8 +422,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return `-C${clubName.replace(/[^a-zA-Z0-9]/g, '')}`;
   };
 
-  const getCacheKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {
-    return getAnnouncementKey(type, dancerName, nextDancerName, energyLevel) + getSpecialsHash() + getClubSuffix();
+  const getCacheKey = (type, dancerName, nextDancerName = null, varNum = 1) => {
+    return getAnnouncementKey(type, dancerName, nextDancerName, varNum) + getSpecialsHash() + getClubSuffix();
   };
 
   const saveToServer = useCallback(async (cacheKey, audioBlob, script, type, dancerName, energyLevel) => {
@@ -488,20 +503,22 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
   }, []);
 
-  const findCachedAtAnyLevel = useCallback(async (type, dancerName, nextDancerName) => {
+  const findCachedAtAnyVariation = useCallback(async (type, dancerName, nextDancerName) => {
     const clubSuffix = getClubSuffix();
     const todayDow = new Date().getDay();
-    for (let l = 1; l <= 5; l++) {
-      const altKey = getAnnouncementKey(type, dancerName, nextDancerName, l) + clubSuffix;
+    const keysToCheck = [
+      ...Array.from({ length: NUM_VARIATIONS }, (_, i) => getAnnouncementKey(type, dancerName, nextDancerName, i + 1) + clubSuffix),
+      getLegacyL4Key(type, dancerName, nextDancerName) + clubSuffix,
+    ];
+    for (const altKey of keysToCheck) {
       const meta = await checkServerCacheMeta(altKey);
       if (meta.exists) {
         if (meta.day_of_week !== null && meta.day_of_week !== undefined && meta.day_of_week !== todayDow) {
-          console.log(`⏭️ Skipping cached ${type} for ${dancerName} L${l} — tagged day ${meta.day_of_week}, today ${todayDow}`);
           continue;
         }
         const idb = await getCachedFromIndexedDB(altKey);
         if (idb) {
-          console.log(`✅ Found cached ${type} for ${dancerName} at L${l} (IndexedDB)`);
+          console.log(`✅ Found cached ${type} for ${dancerName} at ${altKey} (IndexedDB)`);
           return { url: URL.createObjectURL(idb), fromCache: true };
         }
         const serverBlob = await loadFromServer(altKey);
@@ -512,7 +529,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       } else {
         const idb = await getCachedFromIndexedDB(altKey);
         if (idb) {
-          console.log(`✅ Found cached ${type} for ${dancerName} at L${l} (IndexedDB only)`);
+          console.log(`✅ Found cached ${type} for ${dancerName} at ${altKey} (IndexedDB only)`);
           return { url: URL.createObjectURL(idb), fromCache: true };
         }
       }
@@ -579,14 +596,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
   }, []);
 
-  const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, energyLevel = null, roundNumber = 1) => {
-    const config = getApiConfig();
-    const level = energyLevel ?? getCurrentEnergyLevel(config);
+  const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, varNum = 1, roundNumber = 1) => {
     const specialsSuffix = getSpecialsHash();
     const clubSuffix = getClubSuffix();
     const hasSpecials = specialsSuffix.length > 0;
     const isSpecialsEligible = hasSpecials && (type === 'outro' || type === 'transition');
-    const key = getAnnouncementKey(type, dancerName, nextDancerName, level) + specialsSuffix + clubSuffix;
+    const key = getAnnouncementKey(type, dancerName, nextDancerName, varNum) + specialsSuffix + clubSuffix;
 
     const customBlob = await checkCustomRecording(dancerName, type);
     if (customBlob) {
@@ -604,7 +619,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     if (!wrongDay && !isSpecialsEligible) {
       const idbCached = await getCachedFromIndexedDB(key);
       if (idbCached) {
-        console.log(`✅ Loaded from IndexedDB (session cache): ${key}`);
+        console.log(`✅ Loaded from IndexedDB: ${key}`);
         setCacheStatus(prev => ({ ...prev, [key]: true }));
         return { url: URL.createObjectURL(idbCached), fromCache: true };
       }
@@ -619,18 +634,36 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     }
 
+    if (varNum === 1 && !hasSpecials) {
+      const legacyKey = getLegacyL4Key(type, dancerName, nextDancerName) + clubSuffix;
+      const legacyIdb = await getCachedFromIndexedDB(legacyKey);
+      if (legacyIdb) {
+        console.log(`✅ Migrating legacy L4 voiceover → var1 for ${dancerName}/${type}`);
+        await cacheToIndexedDB(key, legacyIdb);
+        setCacheStatus(prev => ({ ...prev, [key]: true }));
+        return { url: URL.createObjectURL(legacyIdb), fromCache: true };
+      }
+      const legacyBlob = await loadFromServer(legacyKey);
+      if (legacyBlob) {
+        console.log(`✅ Migrating legacy L4 voiceover → var1 for ${dancerName}/${type} (server)`);
+        await cacheToIndexedDB(key, legacyBlob);
+        setCacheStatus(prev => ({ ...prev, [key]: true }));
+        return { url: URL.createObjectURL(legacyBlob), fromCache: true };
+      }
+    }
+
     try {
-      console.log(`🎙️ Generating new announcement: ${key} (Energy L${level})${isSpecialsEligible ? ' [specials staggered]' : hasSpecials ? ' [with specials]' : ''}`);
+      console.log(`🎙️ Generating announcement: ${key} (var${varNum})${isSpecialsEligible ? ' [specials staggered]' : hasSpecials ? ' [with specials]' : ''}`);
       setGeneratingType(type);
-      const script = await generateScript(type, dancerName, nextDancerName, level, roundNumber);
-      const audioBlob = await generateAudio(script, level);
+      const script = await generateScript(type, dancerName, nextDancerName, roundNumber);
+      const audioBlob = await generateAudio(script);
 
       if (!isSpecialsEligible) {
         await cacheToIndexedDB(key, audioBlob);
       }
 
       if (!hasSpecials) {
-        await saveToServer(key, audioBlob, script, type, dancerName, level);
+        await saveToServer(key, audioBlob, script, type, dancerName, LOCKED_LEVEL);
       } else {
         console.log(`📢 Specials active — voiceover not cached (staggered specials vary each time)`);
       }
@@ -639,27 +672,27 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       if (!hasSpecials) setServerCacheCount(prev => prev + 1);
       setGeneratingType(null);
 
-      console.log(`✅ Generated announcement: ${key} (L${level})${isSpecialsEligible ? ' [fresh, staggered]' : !hasSpecials ? ' — saved to server' : ''}`);
+      console.log(`✅ Generated announcement: ${key} (var${varNum})${isSpecialsEligible ? ' [fresh, staggered]' : !hasSpecials ? ' — saved to server' : ''}`);
       return { url: URL.createObjectURL(audioBlob), fromCache: false };
     } catch (genError) {
       setGeneratingType(null);
       console.warn(`⚠️ Could not generate ${type} for ${dancerName}: ${genError.message}, trying fallbacks...`);
       if (dancerName !== GENERIC_DANCER_NAME) {
-        const anyLevel = await findCachedAtAnyLevel(type, dancerName, nextDancerName);
-        if (anyLevel) {
-          console.log(`✅ Using ${dancerName} cached ${type} from different energy level (fallback)`);
-          return anyLevel;
+        const anyVariation = await findCachedAtAnyVariation(type, dancerName, nextDancerName);
+        if (anyVariation) {
+          console.log(`✅ Using ${dancerName} cached ${type} from another variation (fallback)`);
+          return anyVariation;
         }
-        const anyGeneric = await findCachedAtAnyLevel(type, GENERIC_DANCER_NAME, null);
+        const anyGeneric = await findCachedAtAnyVariation(type, GENERIC_DANCER_NAME, null);
         if (anyGeneric) {
-          console.log(`✅ Using generic fallback from any energy level for ${type}`);
+          console.log(`✅ Using generic fallback from any variation for ${type}`);
           return anyGeneric;
         }
       } else {
-        const anyGenericLevel = await findCachedAtAnyLevel(type, GENERIC_DANCER_NAME, null);
-        if (anyGenericLevel) {
-          console.log(`✅ Using generic fallback from any energy level for ${type}`);
-          return anyGenericLevel;
+        const anyGenericVariation = await findCachedAtAnyVariation(type, GENERIC_DANCER_NAME, null);
+        if (anyGenericVariation) {
+          console.log(`✅ Using generic fallback from any variation for ${type}`);
+          return anyGenericVariation;
         }
       }
       const genericRecording = await checkGenericRecording(type);
@@ -670,14 +703,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.error(`❌ No announcement available for ${type}: ${genError.message}`);
       throw genError;
     }
-  }, [generateScript, generateAudio, findCachedAtAnyLevel, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording, checkServerCacheMeta]);
+  }, [generateScript, generateAudio, findCachedAtAnyVariation, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording, checkServerCacheMeta]);
 
   const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
     try {
-      const config = getApiConfig();
-      const level = getCurrentEnergyLevel(config);
-      console.log(`📢 AnnouncementSystem: Generating ${type} for ${dancerName} (Energy L${level}, Round ${roundNumber})`);
-      const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, level, roundNumber);
+      const varNum = getNextVariationNum(type, dancerName, nextDancerName);
+      console.log(`📢 AnnouncementSystem: Playing ${type} for ${dancerName} (var${varNum}, Round ${roundNumber})`);
+      const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
       console.log(`📢 AnnouncementSystem: Got audio URL (cached=${result.fromCache}), playing...`);
       await onPlay?.(result.url, audioOptions);
       console.log(`📢 AnnouncementSystem: Playback complete`);
@@ -685,7 +717,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.error(`❌ AnnouncementSystem Error (silent fallback):`, error.message);
       console.warn(`Announcement skipped: ${error.message} — music continues uninterrupted`);
     }
-  }, [getOrGenerateAnnouncement, onPlay]);
+  }, [getOrGenerateAnnouncement, getNextVariationNum, onPlay]);
 
   const preCacheDancer = useCallback(async (dancerName) => {
     const config = getApiConfig();
@@ -693,22 +725,22 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.warn('⚠️ No ElevenLabs API key configured - skipping pre-cache');
       return;
     }
-    const level = getCurrentEnergyLevel(config);
-    console.log(`🔄 Auto pre-caching announcements for: ${dancerName} (Energy L${level})`);
+    console.log(`🔄 Pre-caching ${NUM_VARIATIONS} variations for: ${dancerName}`);
     const types = [ANNOUNCEMENT_TYPES.INTRO, ANNOUNCEMENT_TYPES.ROUND2, ANNOUNCEMENT_TYPES.OUTRO];
     for (const type of types) {
-      try {
-        const result = await getOrGenerateAnnouncement(type, dancerName, null, level, type === ANNOUNCEMENT_TYPES.ROUND2 ? 2 : 1);
-        if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
-        if (!result.fromCache) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
+      for (let v = 1; v <= NUM_VARIATIONS; v++) {
+        try {
+          const result = await getOrGenerateAnnouncement(type, dancerName, null, v, type === ANNOUNCEMENT_TYPES.ROUND2 ? 2 : 1);
+          if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
+          if (!result.fromCache) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
+        } catch (err) {
+          console.error(`Pre-cache failed for ${type}-${dancerName} var${v}:`, err.message);
         }
-      } catch (err) {
-        console.error(`Pre-cache failed for ${type}-${dancerName}:`, err.message);
-        break;
       }
     }
-    console.log(`✅ Pre-cache complete for: ${dancerName}`);
+    console.log(`✅ Pre-cache complete for: ${dancerName} (${NUM_VARIATIONS} variations per type)`);
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
   const preCacheCancelRef = useRef(false);
@@ -722,33 +754,34 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     await new Promise(r => setTimeout(r, 100));
     preCacheCancelRef.current = false;
 
-    const level = getCurrentEnergyLevel(config);
     const jobs = [];
     for (let i = 0; i < upcomingDancers.length; i++) {
       const d = upcomingDancers[i];
-      jobs.push([ANNOUNCEMENT_TYPES.INTRO, d.name, null, 1]);
-      jobs.push([ANNOUNCEMENT_TYPES.ROUND2, d.name, null, 2]);
-      jobs.push([ANNOUNCEMENT_TYPES.OUTRO, d.name, null, 1]);
-      if (d.nextName) {
-        jobs.push([ANNOUNCEMENT_TYPES.TRANSITION, d.name, d.nextName, 1]);
+      for (let v = 1; v <= NUM_VARIATIONS; v++) {
+        jobs.push([ANNOUNCEMENT_TYPES.INTRO, d.name, null, v, 1]);
+        jobs.push([ANNOUNCEMENT_TYPES.ROUND2, d.name, null, v, 2]);
+        jobs.push([ANNOUNCEMENT_TYPES.OUTRO, d.name, null, v, 1]);
+        if (d.nextName) {
+          jobs.push([ANNOUNCEMENT_TYPES.TRANSITION, d.name, d.nextName, v, 1]);
+        }
       }
     }
 
-    console.log(`🔄 Pre-cache upcoming: ${upcomingDancers.map(d => d.name).join(', ')} (${jobs.length} announcements, L${level})`);
+    console.log(`🔄 Pre-cache upcoming: ${upcomingDancers.map(d => d.name).join(', ')} (${jobs.length} total, ${NUM_VARIATIONS} variations each)`);
 
-    for (const [type, name, nextName, round] of jobs) {
+    for (const [type, name, nextName, varNum, round] of jobs) {
       if (preCacheCancelRef.current) {
         console.log('🔄 Pre-cache cancelled (rotation changed)');
         return;
       }
       try {
-        const result = await getOrGenerateAnnouncement(type, name, nextName, level, round);
+        const result = await getOrGenerateAnnouncement(type, name, nextName, varNum, round);
         if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
         if (!result.fromCache) {
           await new Promise(r => setTimeout(r, 2000));
         }
       } catch (err) {
-        console.error(`Pre-cache failed for ${type}-${name}:`, err.message);
+        console.error(`Pre-cache failed for ${type}-${name} var${varNum}:`, err.message);
       }
     }
     if (!preCacheCancelRef.current) {
@@ -764,21 +797,22 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
     preCacheCancelRef.current = false;
 
-    const level = getCurrentEnergyLevel(config);
     const total = rotationDancers.length;
     if (total === 0) return true;
 
-    const jobsPerDancer = total > 1 ? 4 : 3;
+    const typesPerDancer = total > 1 ? 4 : 3;
+    const jobsPerDancer = typesPerDancer * NUM_VARIATIONS;
     const makeJobs = (dancerIdx) => {
       const d = rotationDancers[dancerIdx];
       const nextD = rotationDancers[(dancerIdx + 1) % total];
-      const jobs = [
-        { type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1 },
-        { type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2 },
-        { type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1 },
-      ];
-      if (total > 1) {
-        jobs.push({ type: ANNOUNCEMENT_TYPES.TRANSITION, name: d.name, nextName: nextD.name, round: 1 });
+      const jobs = [];
+      for (let v = 1; v <= NUM_VARIATIONS; v++) {
+        jobs.push({ type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1, varNum: v });
+        jobs.push({ type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2, varNum: v });
+        jobs.push({ type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1, varNum: v });
+        if (total > 1) {
+          jobs.push({ type: ANNOUNCEMENT_TYPES.TRANSITION, name: d.name, nextName: nextD.name, round: 1, varNum: v });
+        }
       }
       return jobs;
     };
@@ -786,7 +820,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const bufferDancerCount = Math.min(bufferCount, total);
     const totalJobs = total * jobsPerDancer;
 
-    console.log(`🔄 Rotation pre-cache: ${bufferDancerCount} entertainers to buffer, ${total - bufferDancerCount} background`);
+    console.log(`🔄 Rotation pre-cache: ${bufferDancerCount} entertainers to buffer, ${total - bufferDancerCount} background (${NUM_VARIATIONS} variations each)`);
 
     let bufferCompleted = 0;
     for (let di = 0; di < bufferDancerCount; di++) {
@@ -795,11 +829,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       for (const job of jobs) {
         if (preCacheCancelRef.current) return false;
         try {
-          const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, level, job.round);
+          const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, job.varNum, job.round);
           if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
           if (!result.fromCache) await new Promise(r => setTimeout(r, 1500));
         } catch (err) {
-          console.error(`Pre-cache failed for ${job.type}-${job.name}:`, err.message);
+          console.error(`Pre-cache failed for ${job.type}-${job.name} var${job.varNum}:`, err.message);
         }
         bufferCompleted++;
       }
@@ -815,11 +849,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           for (const job of jobs) {
             if (preCacheCancelRef.current) return;
             try {
-              const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, level, job.round);
+              const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, job.varNum, job.round);
               if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
               if (!result.fromCache) await new Promise(r => setTimeout(r, 1500));
             } catch (err) {
-              console.error(`Background pre-cache failed for ${job.type}-${job.name}:`, err.message);
+              console.error(`Background pre-cache failed for ${job.type}-${job.name} var${job.varNum}:`, err.message);
             }
             bgCompleted++;
           }
@@ -838,10 +872,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     },
     getAnnouncementUrl: async (type, dancerName, nextDancerName = null, roundNumber = 1) => {
       try {
-        const config = getApiConfig();
-        const level = getCurrentEnergyLevel(config);
-        console.log(`🔄 Pre-fetching ${type} announcement for ${dancerName} (L${level})`);
-        const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, level, roundNumber);
+        const varNum = getNextVariationNum(type, dancerName, nextDancerName);
+        console.log(`🔄 Pre-fetching ${type} announcement for ${dancerName} (var${varNum})`);
+        const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
         return result?.url || null;
       } catch (error) {
         console.error(`❌ Pre-fetch announcement failed:`, error.message);
@@ -860,26 +893,26 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     setPreCacheError(null);
     preCacheStartTimeRef.current = Date.now();
 
-    const config = getApiConfig();
-    const level = getCurrentEnergyLevel(config);
     const rotationDancers = rotation.map(id => dancers.find(d => d.id === id)).filter(Boolean);
 
     const genericTypes = [
-      [ANNOUNCEMENT_TYPES.INTRO, GENERIC_DANCER_NAME, null, 1],
-      [ANNOUNCEMENT_TYPES.ROUND2, GENERIC_DANCER_NAME, null, 2],
-      [ANNOUNCEMENT_TYPES.OUTRO, GENERIC_DANCER_NAME, null, 1],
-      [ANNOUNCEMENT_TYPES.TRANSITION, GENERIC_DANCER_NAME, null, 1],
+      [ANNOUNCEMENT_TYPES.INTRO, GENERIC_DANCER_NAME, null, 1, 1],
+      [ANNOUNCEMENT_TYPES.ROUND2, GENERIC_DANCER_NAME, null, 1, 2],
+      [ANNOUNCEMENT_TYPES.OUTRO, GENERIC_DANCER_NAME, null, 1, 1],
+      [ANNOUNCEMENT_TYPES.TRANSITION, GENERIC_DANCER_NAME, null, 1, 1],
     ];
 
     const dancerTypes = [];
     for (let i = 0; i < rotationDancers.length; i++) {
       const dancer = rotationDancers[i];
       const nextDancer = rotationDancers[(i + 1) % rotationDancers.length];
-      dancerTypes.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, 1]);
-      dancerTypes.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, 2]);
-      dancerTypes.push([ANNOUNCEMENT_TYPES.OUTRO, dancer.name, null, 1]);
-      if (rotationDancers.length > 1) {
-        dancerTypes.push([ANNOUNCEMENT_TYPES.TRANSITION, dancer.name, nextDancer.name, 1]);
+      for (let v = 1; v <= NUM_VARIATIONS; v++) {
+        dancerTypes.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
+        dancerTypes.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, v, 2]);
+        dancerTypes.push([ANNOUNCEMENT_TYPES.OUTRO, dancer.name, null, v, 1]);
+        if (rotationDancers.length > 1) {
+          dancerTypes.push([ANNOUNCEMENT_TYPES.TRANSITION, dancer.name, nextDancer.name, v, 1]);
+        }
       }
     }
 
@@ -906,8 +939,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       for (let i = 0; i < allTypes.length; i += BATCH_SIZE) {
         const batch = allTypes.slice(i, i + BATCH_SIZE);
         const results = await Promise.allSettled(
-          batch.map(([type, name, next, roundNum]) =>
-            getOrGenerateAnnouncement(type, name, next, level, roundNum)
+          batch.map(([type, name, next, varNum, roundNum]) =>
+            getOrGenerateAnnouncement(type, name, next, varNum, roundNum)
           )
         );
         for (const result of results) {
@@ -943,10 +976,6 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     ? dancers.find(d => d.id === rotation[(currentDancerIndex + 1) % rotation.length])
     : null;
 
-  const config = getApiConfig();
-  const currentLevel = getCurrentEnergyLevel(config);
-  const levelInfo = ENERGY_LEVELS[currentLevel];
-
   if (hideUI) {
     return null;
   }
@@ -964,9 +993,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           <Badge
             variant="outline"
             className="text-xs px-1.5 py-0"
-            style={{ borderColor: levelInfo.color + '80', color: levelInfo.color }}
+            style={{ borderColor: ENERGY_LEVELS[LOCKED_LEVEL].color + '80', color: ENERGY_LEVELS[LOCKED_LEVEL].color }}
           >
-            L{currentLevel}
+            L{LOCKED_LEVEL}
           </Badge>
           <Badge
             variant="outline"
@@ -1031,7 +1060,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
               { type: ANNOUNCEMENT_TYPES.OUTRO, label: 'Outro', dancer: currentDancer.name },
               ...(nextDancer ? [{ type: ANNOUNCEMENT_TYPES.TRANSITION, label: 'Transition', dancer: currentDancer.name, nextDancer: nextDancer.name }] : [])
             ].map(({ type, label, dancer, nextDancer: nd }) => {
-              const ck = getCacheKey(type, dancer, nd, currentLevel);
+              const ck = getCacheKey(type, dancer, nd, 1);
               const isCached = cacheStatus[ck];
               return (
                 <Button
