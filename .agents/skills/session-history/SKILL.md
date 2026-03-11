@@ -120,6 +120,17 @@ When `varNum === 1` and no cache hit found, checks old `{type}-{dancerName}-L4-V
 - neonaidj003 at `100.81.90.125` — on commit `4416038`, needs `~/djbooth-update.sh`
 - Homebase at `100.95.238.71` — needs `~/djbooth-update.sh`
 
+### TODO: Investigate neonaidj003 Crash Logs
+- 4 crashes on March 10 afternoon: 1:59pm, 3:49pm, 4:32pm, 5:24pm (all EST)
+- `djbooth.service: Failed with result 'exit-code'` — Node.js process crashed, systemd auto-restarted each time
+- Device has been stable since (9h+ uptime, 0 errors as of March 11)
+- Likely cause: memory spike or unhandled error during voiceover generation under real gig load
+- **Diagnosis command** (run on neonaidj003 next SSH session):
+  ```bash
+  journalctl -u djbooth --since "2026-03-10 13:00:00" --until "2026-03-10 18:00:00" | tail -50
+  ```
+- The `withRetry` wrapper added in commit `4416038` should help prevent recurrence
+
 ---
 
 ## Mar 10, 2026 — Session 35 (HDMI-2 Display Placement — IN PROGRESS)
