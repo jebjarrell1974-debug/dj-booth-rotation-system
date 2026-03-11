@@ -549,15 +549,15 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             <div className="mt-2 pt-2 border-t border-[#1e293b]">
                               <div className="text-[10px] text-violet-400 uppercase tracking-wider mb-1.5">Break Songs</div>
                               {breakSlots.map((slot, i) => (
-                                <div key={i} className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-violet-500/20 bg-violet-900/10 mb-1">
-                                  <span className="text-[10px] text-violet-400 w-5 flex-shrink-0">B{i + 1}</span>
-                                  <span className="text-xs text-gray-400 flex-1 truncate">{slot ? stripExt(slot) : 'Auto-pick'}</span>
-                                  <button
-                                    onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
-                                    className="w-8 h-8 rounded-lg bg-violet-500/15 flex items-center justify-center text-violet-400 active:bg-violet-500/25 flex-shrink-0">
-                                    <Music className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+                                <button
+                                  key={i}
+                                  onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
+                                  className="w-full flex items-center gap-2 px-2.5 py-2.5 rounded-lg border border-violet-500/20 bg-violet-900/10 mb-1 active:bg-violet-500/20 active:border-violet-500/40"
+                                >
+                                  <span className="text-[10px] font-bold text-violet-400 w-5 flex-shrink-0">B{i + 1}</span>
+                                  <span className="text-xs text-gray-300 flex-1 text-left truncate">{slot ? stripExt(slot) : <span className="text-gray-600">Tap to pick from library</span>}</span>
+                                  <Music className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                                </button>
                               ))}
                             </div>
                           )}
@@ -706,7 +706,6 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         {[
           { id: 'live', icon: Zap, label: 'Live' },
           { id: 'rotation', icon: Users, label: 'Rotation' },
-          { id: 'library', icon: Music, label: 'Library' },
           { id: 'promos', icon: Radio, label: 'Promos' },
           { id: 'options', icon: SlidersHorizontal, label: 'Options' },
         ].map(({ id, icon: Icon, label }) => (
