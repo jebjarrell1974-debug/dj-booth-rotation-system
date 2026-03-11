@@ -87,6 +87,25 @@ const blobToBase64 = (blob) => {
   });
 };
 
+const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const msg = err?.message || '';
+      const isTerminal = msg.includes('401') || msg.includes('403') || msg.includes('API key');
+      if (isTerminal || attempt === maxAttempts) break;
+      const is429 = msg.includes('429') || msg.includes('Rate limit');
+      const delay = is429 ? 6000 : baseDelayMs;
+      console.warn(`⚠️ Attempt ${attempt}/${maxAttempts} failed (${msg.substring(0, 80)}). Retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+};
+
 const CURRENT_VOICE_VERSION = 'V10';
 
 const cleanupStaleIDBEntries = async () => {
@@ -224,38 +243,45 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const scriptModel = config.scriptModel || 'auto';
 
     if (openaiKey && scriptModel !== 'auto') {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: scriptModel,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.9,
-          frequency_penalty: 0.6,
-          presence_penalty: 0.4,
-          max_tokens: 300,
-        }),
-        signal: controller.signal,
+      return await withRetry(async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        try {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${openaiKey}`,
+            },
+            body: JSON.stringify({
+              model: scriptModel,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.9,
+              frequency_penalty: 0.6,
+              presence_penalty: 0.4,
+              max_tokens: 300,
+            }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`OpenAI ${res.status}: ${errText}`);
+          }
+          const data = await res.json();
+          const usage = data.usage;
+          trackOpenAICall({
+            model: scriptModel,
+            promptTokens: usage?.prompt_tokens || estimateTokens(prompt),
+            completionTokens: usage?.completion_tokens || estimateTokens(data.choices?.[0]?.message?.content || ''),
+            context: `announcement-${type}-${dancerName}`,
+          });
+          return parseResponse(data);
+        } catch (err) {
+          clearTimeout(timeout);
+          throw err;
+        }
       });
-      clearTimeout(timeout);
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(`OpenAI ${res.status}: ${errText}`);
-      }
-      const data = await res.json();
-      const usage = data.usage;
-      trackOpenAICall({
-        model: scriptModel,
-        promptTokens: usage?.prompt_tokens || estimateTokens(prompt),
-        completionTokens: usage?.completion_tokens || estimateTokens(data.choices?.[0]?.message?.content || ''),
-        context: `announcement-${type}-${dancerName}`,
-      });
-      return parseResponse(data);
     }
 
     const response = await localIntegrations.Core.InvokeLLM({ prompt });
@@ -309,47 +335,54 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'gi'), phonetic);
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'audio/mpeg',
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey
-      },
-      body: JSON.stringify({
-        text: ttsText,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: voiceSettings.stability,
-          similarity_boost: voiceSettings.similarity_boost,
-          style: voiceSettings.style,
-          speed: voiceSettings.speed,
-          use_speaker_boost: voiceSettings.use_speaker_boost !== false,
-        }
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const status = response.status;
-      let detail = '';
+    return await withRetry(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
       try {
-        const errBody = await response.json();
-        detail = errBody?.detail?.message || errBody?.detail || JSON.stringify(errBody);
-      } catch (e) {}
-      if (status === 401) {
-        throw new Error(`Invalid ElevenLabs API key - check settings. ${detail}`);
-      } else if (status === 429) {
-        throw new Error('Rate limit exceeded. Wait a moment and try again.');
-      }
-      throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
-    }
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': apiKey
+          },
+          body: JSON.stringify({
+            text: ttsText,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: {
+              stability: voiceSettings.stability,
+              similarity_boost: voiceSettings.similarity_boost,
+              style: voiceSettings.style,
+              speed: voiceSettings.speed,
+              use_speaker_boost: voiceSettings.use_speaker_boost !== false,
+            }
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
 
-    trackElevenLabsCall({ text: ttsText, model: 'eleven_multilingual_v2', context: 'announcement-tts' });
-    return await response.blob();
+        if (!response.ok) {
+          const status = response.status;
+          let detail = '';
+          try {
+            const errBody = await response.json();
+            detail = errBody?.detail?.message || errBody?.detail || JSON.stringify(errBody);
+          } catch (e) {}
+          if (status === 401) {
+            throw new Error(`Invalid ElevenLabs API key - check settings. ${detail}`);
+          } else if (status === 429) {
+            throw new Error('Rate limit exceeded. Wait a moment and try again.');
+          }
+          throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
+        }
+
+        trackElevenLabsCall({ text: ttsText, model: 'eleven_multilingual_v2', context: 'announcement-tts' });
+        return await response.blob();
+      } catch (err) {
+        clearTimeout(timeout);
+        throw err;
+      }
+    });
   }, [elevenLabsApiKey]);
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, energyLevel = 3) => {

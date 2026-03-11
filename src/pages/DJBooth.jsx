@@ -3018,6 +3018,11 @@ export default function DJBooth() {
       setRotation(newRotation);
 
       const dancer = dancers.find(d => d.id === dancerId);
+      if (dancer && announcementRef.current?.preCacheDancer) {
+        setTimeout(() => {
+          announcementRef.current.preCacheDancer(dancer.name);
+        }, 500);
+      }
       if (dancer && isRotationActive) {
         getDancerTracks(dancer).then(prePicked => {
           if (!isRotationActiveRef.current) return;
