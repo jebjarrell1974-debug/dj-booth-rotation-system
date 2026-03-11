@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { boothApi } from '@/api/serverApi';
 import DJOptions from '@/components/dj/DJOptions';
-import { ENERGY_LEVELS } from '@/utils/energyLevels';
+import { ENERGY_LEVELS, VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
+import { getApiConfig } from '@/components/apiConfig';
+import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Search, Shuffle, Zap,
-  ChevronDown, ChevronUp, RefreshCw, Ban,
+  ChevronDown, ChevronUp, RefreshCw, Ban, Send, Loader2,
 } from 'lucide-react';
+
+const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
+const LENGTH_OPTIONS = ['15s', '30s', '45s', '60s'];
 
 const stripExt = (name) => name?.replace(/\.[^.]+$/, '') || '';
 
@@ -31,6 +36,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [deactivatePin, setDeactivatePin] = useState('');
 
   const [rerolling, setRerolling] = useState({});
+
+  const [promoForm, setPromoForm] = useState({ event_name: '', details: '', vibe: 'Hype', length: '30s' });
+  const [promoSubmitting, setPromoSubmitting] = useState(false);
+  const [promoStatus, setPromoStatus] = useState('');
 
   const skippedFromBooth = liveBoothState?.skippedCommercials || [];
   const [localSkipped, setLocalSkipped] = useState(new Set());
@@ -192,6 +201,87 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       addSong(assigningTo, trackName);
       setAssigningTo(null);
       setTab('rotation');
+    }
+  };
+
+  const handlePromoSubmit = async () => {
+    if (!promoForm.event_name.trim()) return;
+    setPromoSubmitting(true);
+    setPromoStatus('Generating script...');
+    try {
+      const token = sessionStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      await fetch('/api/promo-requests', { method: 'POST', headers, body: JSON.stringify(promoForm) });
+
+      const config = getApiConfig();
+      const prompt = [
+        `You are a professional strip club DJ creating a promo voiceover script.`,
+        `Write a ${promoForm.length} promo with a ${promoForm.vibe.toLowerCase()} vibe.`,
+        `Event/Promo: ${promoForm.event_name}`,
+        promoForm.details ? `Details: ${promoForm.details}` : '',
+        `Write the script as flowing spoken text — exactly what would be read over the mic.`,
+        `No labels, brackets, or stage directions. Just the spoken words.`,
+        `Use commas for breath pauses. Keep it punchy and club-appropriate.`,
+      ].filter(Boolean).join('\n');
+
+      let script = '';
+      const openaiKey = config.openaiApiKey || '';
+      const scriptModel = config.scriptModel || 'gpt-4.1';
+      if (openaiKey && scriptModel !== 'auto') {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+          body: JSON.stringify({ model: scriptModel, messages: [{ role: 'user', content: prompt }], temperature: 0.9, max_tokens: 300 }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!res.ok) throw new Error(`OpenAI ${res.status}`);
+        const data = await res.json();
+        const usage = data.usage;
+        trackOpenAICall({ model: scriptModel, promptTokens: usage?.prompt_tokens || estimateTokens(prompt), completionTokens: usage?.completion_tokens || 0, context: `remote-promo-${promoForm.event_name}` });
+        script = (data.choices?.[0]?.message?.content || '').replace(/^\d+[\.\)]\s*/gm, '').replace(/\n+/g, ' ').trim();
+      }
+      if (!script) script = `Ladies and gentlemen — ${promoForm.event_name}. Don't miss it.`;
+
+      setPromoStatus('Recording voice...');
+      const apiKey = config.elevenLabsApiKey || '';
+      if (!apiKey) throw new Error('ElevenLabs key not configured');
+      const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
+      const energyLvl = getCurrentEnergyLevel(config);
+      const vs = VOICE_SETTINGS[energyLvl] || VOICE_SETTINGS[3];
+      const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: 'POST',
+        headers: { Accept: 'audio/mpeg', 'Content-Type': 'application/json', 'xi-api-key': apiKey },
+        body: JSON.stringify({ text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: vs.stability, similarity_boost: vs.similarity_boost, style: vs.style, speed: vs.speed, use_speaker_boost: vs.use_speaker_boost !== false } }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!ttsRes.ok) throw new Error(`ElevenLabs ${ttsRes.status}`);
+      trackElevenLabsCall({ text: script, model: 'eleven_multilingual_v2', context: 'remote-promo-tts' });
+
+      setPromoStatus('Saving...');
+      const audioBlob = await ttsRes.blob();
+      const audio_base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onloadend = () => res(reader.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(audioBlob);
+      });
+      const cacheKey = `promo-auto-${Date.now()}-${promoForm.event_name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const saveRes = await fetch('/api/voiceovers', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cache_key: cacheKey, audio_base64, script, type: 'promo', dancer_name: promoForm.event_name, energy_level: energyLvl }),
+      });
+      if (!saveRes.ok) throw new Error('Failed to save');
+
+      setPromoStatus('Done!');
+      setPromoForm({ event_name: '', details: '', vibe: 'Hype', length: '30s' });
+      setTimeout(() => setPromoStatus(''), 3000);
+    } catch (err) {
+      setPromoStatus(`Error: ${err.message}`);
+      setTimeout(() => setPromoStatus(''), 5000);
+    } finally {
+      setPromoSubmitting(false);
     }
   };
 
@@ -632,61 +722,126 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         {/* ─────────── PROMOS TAB ─────────── */}
         {tab === 'promos' && (
           <div className="h-full flex gap-3 p-3 overflow-hidden">
-            <div className="flex-1 flex flex-col bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
-              <div className="px-3 pt-3 pb-2 flex-shrink-0 border-b border-[#1e293b]">
-                <div className="text-base font-semibold text-gray-300 uppercase tracking-wider">Promo Queue</div>
-                <div className="text-xs text-gray-600 mt-0.5">Plays between entertainer sets</div>
+
+            {/* LEFT: Commercial Request */}
+            <div className="flex-1 flex flex-col bg-[#0d0d1f] rounded-xl border border-violet-500/30 overflow-hidden">
+              <div className="px-4 pt-3 pb-2 flex-shrink-0 border-b border-[#1e293b]">
+                <div className="text-base font-bold text-violet-300 uppercase tracking-wider">Make a Commercial</div>
+                <div className="text-xs text-gray-600 mt-0.5">AI writes the script and records the voice</div>
               </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {promoQueue.length === 0 ? (
-                  <div className="text-center py-8 text-lg text-gray-600">No promos queued</div>
-                ) : promoQueue.map((promo, idx) => {
-                  const promoId = promo?.cache_key || promo?.id || String(idx);
-                  const promoName = promo?.dancer_name || promo?.cache_key?.replace(/^promo_/, '').replace(/_/g, ' ') || 'Promo';
-                  const isSkipped = skippedCommercials.has(promoId);
-                  return (
-                    <div key={promoId} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-[#1e293b] bg-[#08081a] ${isSkipped ? 'opacity-40' : ''}`}>
-                      <Radio className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                      <span className="text-lg text-white flex-1 truncate capitalize">{promoName}</span>
-                      <button onClick={() => boothApi.sendCommand('swapPromo', { slotIndex: idx })}
-                        className="px-2.5 py-1 rounded-lg text-base bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]">Swap</button>
-                      <button
-                        onClick={() => { boothApi.sendCommand('skipCommercial', { commercialId: promoId }); setLocalSkipped(prev => new Set([...prev, promoId])); }}
-                        disabled={isSkipped}
-                        className="px-2.5 py-1 rounded-lg text-base bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25 disabled:opacity-30">Skip</button>
-                    </div>
-                  );
-                })}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+                {/* Event / Promo Name */}
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">What's the commercial for? *</label>
+                  <input
+                    value={promoForm.event_name}
+                    onChange={e => setPromoForm(f => ({ ...f, event_name: e.target.value }))}
+                    placeholder="e.g. Ladies Night, VIP Table Special, Saturday Night..."
+                    className="w-full bg-[#08081a] border border-[#1e293b] rounded-xl px-4 py-3 text-base text-white placeholder-gray-700 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+
+                {/* Details */}
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">Details (optional)</label>
+                  <textarea
+                    value={promoForm.details}
+                    onChange={e => setPromoForm(f => ({ ...f, details: e.target.value }))}
+                    placeholder="Any specifics — time, price, offer, who it's for..."
+                    rows={3}
+                    className="w-full bg-[#08081a] border border-[#1e293b] rounded-xl px-4 py-3 text-base text-white placeholder-gray-700 focus:outline-none focus:border-violet-500 resize-none"
+                  />
+                </div>
+
+                {/* Vibe */}
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">Vibe</label>
+                  <div className="flex flex-wrap gap-2">
+                    {VIBE_OPTIONS.map(v => (
+                      <button key={v} onClick={() => setPromoForm(f => ({ ...f, vibe: v }))}
+                        className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${promoForm.vibe === v ? 'bg-violet-500 border-violet-500 text-white' : 'bg-[#08081a] border-[#1e293b] text-gray-400 active:border-violet-500/50'}`}>
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Length */}
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">Length</label>
+                  <div className="flex gap-2">
+                    {LENGTH_OPTIONS.map(l => (
+                      <button key={l} onClick={() => setPromoForm(f => ({ ...f, length: l }))}
+                        className={`flex-1 py-2.5 rounded-xl text-base font-bold border transition-colors ${promoForm.length === l ? 'bg-violet-500 border-violet-500 text-white' : 'bg-[#08081a] border-[#1e293b] text-gray-400 active:border-violet-500/50'}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Status */}
+                {promoStatus && (
+                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-base font-semibold ${promoStatus.startsWith('Error') ? 'bg-red-500/15 text-red-400 border border-red-500/30' : promoStatus === 'Done!' ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-violet-500/15 text-violet-300 border border-violet-500/30'}`}>
+                    {promoSubmitting && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />}
+                    {promoStatus}
+                  </div>
+                )}
+
+                {/* Submit */}
+                <button
+                  onClick={handlePromoSubmit}
+                  disabled={promoSubmitting || !promoForm.event_name.trim()}
+                  className="w-full h-14 rounded-xl bg-violet-500 text-white font-bold text-lg flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-40"
+                >
+                  {promoSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                  {promoSubmitting ? promoStatus || 'Working...' : 'Generate Commercial'}
+                </button>
               </div>
             </div>
 
-            <div className="w-[220px] flex flex-col gap-3">
-              <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-3">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Commercial Frequency</div>
-                <div className="space-y-1">
-                  {[['off', 'Off'], ['1', 'Every Set'], ['2', 'Every 2nd Set'], ['3', 'Every 3rd Set']].map(([val, label]) => (
-                    <button key={val} onClick={() => onOptionsChange?.({ ...djOptions, commercialFreq: val })}
-                      className={`w-full flex items-center px-3 py-2 rounded-lg text-lg text-left ${commercialFreq === val ? 'bg-violet-500 text-white font-semibold' : 'text-gray-400 active:bg-[#1e293b]'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* RIGHT: Queue + Settings */}
+            <div className="flex-1 flex flex-col gap-3 overflow-hidden">
 
-              <div className="flex-1 bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
-                <div className="px-3 pt-3 pb-2 text-xs text-gray-500 uppercase tracking-wider border-b border-[#1e293b]">Available Promos</div>
-                <div className="overflow-y-auto p-2 space-y-1">
-                  {availablePromos.length === 0 ? (
-                    <div className="text-center py-4 text-base text-gray-600">None available</div>
-                  ) : availablePromos.map((promo, idx) => {
+              {/* Promo Queue */}
+              <div className="flex-1 flex flex-col bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
+                <div className="px-3 pt-3 pb-2 flex-shrink-0 border-b border-[#1e293b]">
+                  <div className="text-base font-semibold text-gray-300 uppercase tracking-wider">Promo Queue</div>
+                  <div className="text-xs text-gray-600 mt-0.5">Plays between entertainer sets</div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {promoQueue.length === 0 ? (
+                    <div className="text-center py-8 text-lg text-gray-600">No promos queued</div>
+                  ) : promoQueue.map((promo, idx) => {
+                    const promoId = promo?.cache_key || promo?.id || String(idx);
                     const promoName = promo?.dancer_name || promo?.cache_key?.replace(/^promo_/, '').replace(/_/g, ' ') || 'Promo';
+                    const isSkipped = skippedCommercials.has(promoId);
                     return (
-                      <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
-                        <Radio className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                        <span className="text-base text-gray-400 truncate capitalize">{promoName}</span>
+                      <div key={promoId} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-[#1e293b] bg-[#08081a] ${isSkipped ? 'opacity-40' : ''}`}>
+                        <Radio className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                        <span className="text-base text-white flex-1 truncate capitalize">{promoName}</span>
+                        <button onClick={() => boothApi.sendCommand('swapPromo', { slotIndex: idx })}
+                          className="px-2.5 py-1.5 rounded-lg text-sm bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]">Swap</button>
+                        <button
+                          onClick={() => { boothApi.sendCommand('skipCommercial', { commercialId: promoId }); setLocalSkipped(prev => new Set([...prev, promoId])); }}
+                          disabled={isSkipped}
+                          className="px-2.5 py-1.5 rounded-lg text-sm bg-red-500/15 text-red-400 border border-red-500/30 active:bg-red-500/25 disabled:opacity-30">Skip</button>
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Frequency */}
+              <div className="flex-shrink-0 bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-3">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Commercial Frequency</div>
+                <div className="flex gap-2">
+                  {[['off', 'Off'], ['1', 'Every Set'], ['2', 'Every 2nd'], ['3', 'Every 3rd']].map(([val, label]) => (
+                    <button key={val} onClick={() => onOptionsChange?.({ ...djOptions, commercialFreq: val })}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-center border transition-colors ${commercialFreq === val ? 'bg-violet-500 border-violet-500 text-white' : 'bg-[#08081a] border-[#1e293b] text-gray-400 active:bg-[#1e293b]'}`}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
