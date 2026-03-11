@@ -733,7 +733,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           const result = await getOrGenerateAnnouncement(type, dancerName, null, v, type === ANNOUNCEMENT_TYPES.ROUND2 ? 2 : 1);
           if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
           if (!result.fromCache) {
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 6000));
           }
         } catch (err) {
           console.error(`Pre-cache failed for ${type}-${dancerName} var${v}:`, err.message);
@@ -778,7 +778,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         const result = await getOrGenerateAnnouncement(type, name, nextName, varNum, round);
         if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
         if (!result.fromCache) {
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise(r => setTimeout(r, 6000));
         }
       } catch (err) {
         console.error(`Pre-cache failed for ${type}-${name} var${varNum}:`, err.message);
@@ -831,7 +831,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         try {
           const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, job.varNum, job.round);
           if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
-          if (!result.fromCache) await new Promise(r => setTimeout(r, 1500));
+          if (!result.fromCache) await new Promise(r => setTimeout(r, 6000));
         } catch (err) {
           console.error(`Pre-cache failed for ${job.type}-${job.name} var${job.varNum}:`, err.message);
         }
@@ -851,7 +851,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
             try {
               const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, job.varNum, job.round);
               if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
-              if (!result.fromCache) await new Promise(r => setTimeout(r, 1500));
+              if (!result.fromCache) await new Promise(r => setTimeout(r, 6000));
             } catch (err) {
               console.error(`Background pre-cache failed for ${job.type}-${job.name} var${job.varNum}:`, err.message);
             }
@@ -935,28 +935,21 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     };
 
     try {
-      const BATCH_SIZE = 3;
-      for (let i = 0; i < allTypes.length; i += BATCH_SIZE) {
-        const batch = allTypes.slice(i, i + BATCH_SIZE);
-        const results = await Promise.allSettled(
-          batch.map(([type, name, next, varNum, roundNum]) =>
-            getOrGenerateAnnouncement(type, name, next, varNum, roundNum)
-          )
-        );
-        for (const result of results) {
-          completed++;
-          if (result.status === 'fulfilled') {
-            if (!result.value.fromCache) generatedCount++;
-            if (result.value.fromCache && result.value.url?.startsWith('blob:')) {
-              URL.revokeObjectURL(result.value.url);
-            }
+      for (const [type, name, next, varNum, roundNum] of allTypes) {
+        let fromCache = true;
+        try {
+          const result = await getOrGenerateAnnouncement(type, name, next, varNum, roundNum);
+          fromCache = result.fromCache;
+          if (!fromCache) generatedCount++;
+          if (fromCache && result.url?.startsWith('blob:')) {
+            URL.revokeObjectURL(result.url);
           }
-          setPreCacheProgress((completed / totalAnnouncements) * 100);
-          updateETA();
-        }
-        const hasNewGenerations = results.some(r => r.status === 'fulfilled' && !r.value.fromCache);
-        if (hasNewGenerations) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch {}
+        completed++;
+        setPreCacheProgress((completed / totalAnnouncements) * 100);
+        updateETA();
+        if (!fromCache) {
+          await new Promise(resolve => setTimeout(resolve, 6000));
         }
       }
     } catch (error) {
