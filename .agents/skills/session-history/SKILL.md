@@ -62,6 +62,66 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Workaround**: Using GitHub as distribution channel instead of Replit deployment
 - **Fix**: Create a fresh Repl (clean deployment state) or contact Replit Support
 
+## Mar 11, 2026 — Session 36 (8-Variation / L4-Lock Voiceover Refactor — COMPLETE)
+
+### What Changed
+Rewrote the voiceover caching system in `AnnouncementSystem.jsx` to replace the 5-level energy system with a flat 8-variation round-robin system, all locked to energy level 4.
+
+### Constants Added (top of file)
+```js
+const NUM_VARIATIONS = 8;
+const LOCKED_LEVEL = 4;
+```
+
+### New Key Format
+- **New**: `{type}-{dancerName}-var{N}-V10-C{clubSuffix}` where N = 1–8
+- **Legacy (backward-compat)**: `{type}-{dancerName}-L4-V10-C{clubSuffix}` — checked as fallback when var1 has no cache hit
+
+### New Functions Added
+- **`variationCounterRef`** — `useRef({})` keyed by `"type-dancerName[-nextDancerName]"`, values 1–8 cycling
+- **`getNextVariationNum(type, dancerName, nextDancerName)`** — increments counter and returns next slot, resets on app restart
+
+### Renamed / Rewritten Functions
+| Old | New | Change |
+|---|---|---|
+| `findCachedAtAnyLevel` | `findCachedAtAnyVariation` | Loops var1–var8 + legacy L4 key instead of L1–L5 |
+| `getOrGenerateAnnouncement(type, name, next, energyLevel, round)` | `getOrGenerateAnnouncement(type, name, next, varNum, round)` | Takes varNum, locked to LOCKED_LEVEL, legacy migration on var1 |
+
+### Updated Functions
+- **`playAnnouncement`** — calls `getNextVariationNum` before fetch/generate
+- **`getAnnouncementUrl`** (in useImperativeHandle) — same, uses `getNextVariationNum`
+- **`preCacheDancer`** — loops all 8 variations × 3 types = 24 jobs per dancer
+- **`preCacheUpcoming`** — loops all 8 variations × 4 types per dancer
+- **`preCacheForRotationStart`** — `makeJobs` builds 8 variations per type per dancer
+- **`preCacheAll`** — full 8-variation job list for all rotation dancers
+- **UI badge** — shows fixed "L4" using `ENERGY_LEVELS[LOCKED_LEVEL]` color (removed `currentLevel`/`levelInfo` from render)
+- **`isCached` check in Quick Announce buttons** — uses var1 as indicator
+- **Import** — removed unused `getCurrentEnergyLevel` from energyLevels import
+
+### Legacy Migration
+When `varNum === 1` and no cache hit found, checks old `{type}-{dancerName}-L4-V10-C{clubSuffix}` key in both IndexedDB and server. If found, saves it as var1 (migrates seamlessly, no regeneration needed).
+
+### Fallback Chain (unchanged in order, updated naming)
+1. Custom recording (Voice Studio) — always wins
+2. IndexedDB session cache for this varNum
+3. Server disk cache for this varNum
+4. **NEW**: Legacy L4 key (var1 only) — migrates old cached files
+5. Fresh AI generation (OpenAI script → ElevenLabs TTS), locked to L4 prompts
+6. Any cached variation for same dancer (`findCachedAtAnyVariation`)
+7. Any cached variation for `_GENERIC_` dancer
+8. Pre-recorded generic voiceover from fleet.db
+
+### GitHub
+- Committed: `1683d25` — "8-variation/L4-lock voiceover refactor: round-robin var1-8, legacy L4 migration, fixed energy badge"
+- 138 files pushed, `.replit`/`sed3CnVAv`/`zipFile.zip`/`music/` excluded
+
+### Fleet Status at End of Session
+- neonaidj001 at `100.115.212.34` — on commit `4416038`, needs `~/djbooth-update.sh`
+- neonaidj003 at `100.81.90.125` — on commit `4416038`, needs `~/djbooth-update.sh`
+- Homebase at `100.95.238.71` — needs `~/djbooth-update.sh`
+
+---
+
 ## Mar 10, 2026 — Session 35 (HDMI-2 Display Placement — IN PROGRESS)
 
 ### Problem: Rotation display window opens on HDMI-1 instead of HDMI-2
