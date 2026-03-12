@@ -163,6 +163,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const specialsRotationIndexRef = useRef(0);
   const specialsNextTriggerRef = useRef(Math.floor(Math.random() * 2) + 2);
   const variationCounterRef = useRef({});
+  const failedGenerationsRef = useRef(new Set());
 
   const getNextVariationNum = useCallback((type, dancerName, nextDancerName = null) => {
     const k = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
@@ -652,6 +653,18 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     }
 
+    const failKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
+    if (failedGenerationsRef.current.has(failKey)) {
+      console.log(`⏭️ Skipping generation for ${failKey} — failed earlier this session, using fallback`);
+      const anyVariation = dancerName !== GENERIC_DANCER_NAME ? await findCachedAtAnyVariation(type, dancerName, nextDancerName) : null;
+      if (anyVariation) return anyVariation;
+      const anyGeneric = await findCachedAtAnyVariation(type, GENERIC_DANCER_NAME, null);
+      if (anyGeneric) return anyGeneric;
+      const genericRecording = await checkGenericRecording(type);
+      if (genericRecording) return { url: URL.createObjectURL(genericRecording), fromCache: true };
+      throw new Error(`Generation skipped (failed earlier this session): ${failKey}`);
+    }
+
     try {
       console.log(`🎙️ Generating announcement: ${key} (var${varNum})${isSpecialsEligible ? ' [specials staggered]' : hasSpecials ? ' [with specials]' : ''}`);
       setGeneratingType(type);
@@ -676,7 +689,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       return { url: URL.createObjectURL(audioBlob), fromCache: false };
     } catch (genError) {
       setGeneratingType(null);
-      console.warn(`⚠️ Could not generate ${type} for ${dancerName}: ${genError.message}, trying fallbacks...`);
+      failedGenerationsRef.current.add(failKey);
+      console.warn(`⚠️ Could not generate ${type} for ${dancerName}: ${genError.message}, trying fallbacks... (will skip retries this session)`);
       if (dancerName !== GENERIC_DANCER_NAME) {
         const anyVariation = await findCachedAtAnyVariation(type, dancerName, nextDancerName);
         if (anyVariation) {

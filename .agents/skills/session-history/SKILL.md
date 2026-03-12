@@ -72,6 +72,28 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 
 ---
 
+## Mar 11, 2026 — Session 40 (Stale Pre-Pick Bug Fix — commit `8b28779`)
+
+### Root Cause Discovered: rotationSongs persisted in localStorage
+**Bug**: `rotationSongs` (pre-picked songs for each dancer) was saved to and loaded from `localStorage`. On every fresh rotation start, `beginRotation` checked `rotationSongsRef.current` and if it found songs there (from a previous session), it used them directly — no playlist check, no cooldown check, no server call. This caused dancers to play random library songs from the previous session instead of their current playlist songs.
+
+**Evidence from logs**: LILY's first set played `05-Twista So Sexy` and `07-Jagged Edge Let's Get Married` — neither of which are in her 7-song playlist. After that set, `getDancerTracks` was called fresh (stale songs consumed) and correctly returned playlist songs.
+
+**Fix**: In `startRotation` (before the `isPlaying` check so it covers both immediate-start and pending-start paths):
+```javascript
+rotationSongsRef.current = {};
+setRotationSongs({});
+```
+This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fresh for every dancer at rotation start.
+
+**File**: `src/pages/DJBooth.jsx` — `startRotation` function (lines ~1716-1720)
+
+**Commit**: `8b28779` — "Fix: clear stale localStorage pre-picks on rotation start"
+
+**All 3 units need `~/djbooth-update.sh`** to pull this fix.
+
+---
+
 ## CURRENT STATUS (as of last session) — READ THIS FIRST
 
 ### What is working
