@@ -50,10 +50,6 @@ export const getAutoEnergyLevel = (openHour, closeHour) => {
 };
 
 export const getCurrentEnergyLevel = (config) => {
-  const override = config?.energyOverride;
-  if (override && override !== 'auto') {
-    return parseInt(override, 10);
-  }
   const openHour = config?.clubOpenHour ?? 11;
   const closeHour = config?.clubCloseHour ?? 2;
   return getAutoEnergyLevel(openHour, closeHour);
@@ -120,8 +116,6 @@ const SHIFT_TYPES = {
   },
 };
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
 const SYSTEM_PROMPT = `You are a veteran strip club DJ with twenty years on the mic. You run this room every night. You're not an announcer, not a radio host — you're the guy who keeps the money flowing and the energy right. Smooth, confident, a little funny, always in control.
 
 HOW YOU SOUND:
@@ -167,21 +161,16 @@ TTS FORMATTING (this text is read aloud by a speech engine):
 - Sentences between five and fourteen words
 - End on a smooth note, no exclamation mark on the last sentence`;
 
-export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, clubName, clubSpecials = []) => {
+export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber) => {
   const level = Math.max(1, Math.min(5, energyLevel || 3));
   const levelInfo = ENERGY_LEVELS[level];
   const shiftType = levelInfo.shiftType;
   const shift = SHIFT_TYPES[shiftType];
   const closingWindow = level >= 5;
-  const clubLine = clubName ? `CLUB NAME: "${clubName}"
-CLUB NAME USAGE RULE: "${clubName}" is a proper noun. NEVER put "the" before it in general references. Say "here at ${clubName}", "${clubName} Nation", "${clubName} family", "welcome to ${clubName}" — NOT "the ${clubName}". The ONLY exception is "welcome to the ${clubName}" which is acceptable but "welcome to ${clubName}" is preferred. You can create compound phrases like "${clubName} Nation", "${clubName} fans", "${clubName} family" freely.` : '';
 
   const isGeneric = dancerName === '_GENERIC_';
   const displayName = isGeneric ? 'your next entertainer' : dancerName;
   const genericNote = isGeneric ? '\nIMPORTANT: Do NOT use a specific name. Refer to her as "your next entertainer", "this beauty", "she", or similar generic references.' : '';
-  const now = new Date();
-  const clubDay = now.getHours() < 6 ? new Date(now.getTime() - 6 * 60 * 60 * 1000) : now;
-  const dayOfWeek = DAY_NAMES[clubDay.getDay()];
 
   const STYLE_VIBES = [
     'Go smooth and seductive — slow cadence, low-key charm',
@@ -203,24 +192,21 @@ CLUB NAME USAGE RULE: "${clubName}" is a proper noun. NEVER put "the" before it 
 
   if (type === 'intro') {
     eventInstructions = `EVENT: STAGE INTRODUCTION
-Today is ${dayOfWeek}.
 
 ${displayName} is about to take the main stage.${genericNote}
 
-Build it up naturally: get the crowd's attention, work in the money angle, then bring her out. No V I P mentions, no drink plugs — just the stage intro.
+Build it up naturally: get the crowd's attention, work in the money angle, then bring her out. No V I P mentions, no drink plugs — just the stage intro. Do NOT mention any day of the week, club name, or time-specific references — this announcement must work any night at any venue.
 
 ${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" two or three times, spaced out. Drop the name early, weave it in the middle, land it smooth at the end. The last time you say her name should be cool and confident — not shouted.`}
 
 EXAMPLES (use these for inspiration, but write something COMPLETELY ORIGINAL every time — never copy these word for word, never reuse the same structure):
 "Main stage, gentlemen. ${displayName} is heading your way — and fellas, this is pay-per-view. Get up to that rail with some cash. She don't dance for free. The one and only... ${displayName}."
-"Gentlemen, ${displayName} is coming to the main stage. If you're watching and not tipping... you're definitely tripping. Get those ones ready — she's about to make your ${dayOfWeek} night worth every dollar. Here she comes... ${displayName}."
+"Gentlemen, ${displayName} is coming to the main stage. If you're watching and not tipping... you're definitely tripping. Get those ones ready — she's about to make your night worth every dollar. Here she comes... ${displayName}."
 "All right, all right... main stage. ${displayName} is about to do her thing, and she's the total package — top to bottom. Get those dollars out, fellas. Coming to the stage... ${displayName}."
 "Right about now... I need all eyes up front. ${displayName} is heading your way. Fellas, grab some cash — you're gonna need it. Here she comes... ${displayName}."
-"We're doing it right on a ${dayOfWeek} night. ${displayName} is coming up, so get those ones ready. You wanna see skin, they gotta see green. Here she comes, gentlemen... ${displayName}."
 "Hold on, hold on... y'all ain't ready for this one. ${displayName} is about to shut this stage down. Paper up, boys. This is not a drill. Here she comes... ${displayName}."
 "Listen up, my guys. You came here for the best, and the best is about to deliver. ${displayName}, coming to the main stage. Open those wallets wide. The beautiful ${displayName}."
 "Who's got cash? I hope it's you, because ${displayName} is about to earn every single dollar. Main stage, right now. Get comfortable — and get generous. ${displayName}."
-"You hear that music? That means one thing. ${displayName} is on deck. She's about to light this ${dayOfWeek} up. Get those ones ready, kings. Here she comes."
 "Gentlemen... I need you to do me a favor. Put that phone down, pick that cash up. ${displayName} is about to take the stage and she deserves your full attention. The lovely ${displayName}."
 "All eyes front, boys. No distractions. ${displayName} is heading to the main stage and she came to work tonight. Show her that paper. Coming up... ${displayName}."
 "This next one's a problem, fellas — in the best way. ${displayName} about to hit the main stage. These ladies make their living off of what you're giving. Let's go... ${displayName}."
@@ -241,7 +227,7 @@ Three to five sentences.`;
 
 ${displayName} is still on stage — this is ${roundLabel}.${genericNote}
 
-She never left. Do not say "coming back", "returning", or "welcome back" — she's been up there the whole time. Keep it short and casual. No V I P mentions.
+She never left. Do not say "coming back", "returning", or "welcome back" — she's been up there the whole time. Keep it short and casual. No V I P mentions. Do NOT mention any day of the week, club name, or time-specific references.
 
 EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never reuse the same structure):
 "${roundLabel}, gentlemen. Keep it going for ${displayName}."
@@ -267,7 +253,7 @@ One to two sentences. Cool and conversational, not a big entrance. ${isGeneric ?
 
 ${displayName} just finished her set on the main stage.${genericNote}
 
-Wrap it up, acknowledge her set, then push the V I P and private dances — this is the upsell moment. Be creative with the private dance sell. Do not ask for applause or cheering.
+Wrap it up, acknowledge her set, then push the V I P and private dances — this is the upsell moment. Be creative with the private dance sell. Do not ask for applause or cheering. Do NOT mention any day of the week, club name, or time-specific references.
 
 EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never reuse the same structure):
 "All right fellas, that was ${displayName} tearing it up on the main stage. She's available for private dances now — one on one, get her body on your body, make that connection. Don't let somebody else grab her first."
@@ -287,37 +273,6 @@ EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never reu
 "${displayName}, everyone. Absolutely incredible. She's done on the main stage, but she's available for private dances. Don't think about it too long... she stays busy."
 
 Two to four sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName}.`}`;
-
-  } else if (type === 'transition') {
-    const nextName = isGeneric ? 'the next entertainer' : (nextDancerName || 'the next performer');
-    const outgoingRef = isGeneric ? 'She' : dancerName;
-    eventInstructions = `EVENT: STAGE TRANSITION
-Today is ${dayOfWeek}.
-
-${displayName} is done. ${nextName} is coming up next.${genericNote}
-
-Acknowledge the outgoing girl briefly, then shift focus to who's coming. No V I P mentions here — save that for the outro. Work in the money angle for the incoming girl. Do not ask for applause or cheering.
-
-${isGeneric ? 'Use generic references throughout.' : `Say "${nextName}" two or three times, spaced naturally. "${outgoingRef}" just needs one mention.`}
-
-EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never reuse the same structure):
-"Show some love for ${outgoingRef}. Now... we're keeping it back to back tonight. ${nextName} is heading to the main stage — get up close with some of that hard-earned cash. Here comes ${nextName}."
-"That was ${outgoingRef}. Right about now... ${nextName} is coming to the stage, fellas. These ladies don't dance for free — so get those dollars ready. Here comes ${nextName}."
-"That was ${outgoingRef}, gentlemen. Main stage, get ready... ${nextName} is up next. We're doing it right on a ${dayOfWeek} night. You wanna see skin, they gotta see green — here comes ${nextName}."
-"That's ${outgoingRef}, gentlemen. Now... ${nextName} is heading your way. Get those ones out, fellas — she's about to make it worth your while. The lovely ${nextName}."
-"Big ups to ${outgoingRef}. All right, fellas... no rest for y'all tonight. ${nextName} is up next and she's about to go crazy on that stage. Cash out, boys. Here comes ${nextName}."
-"${outgoingRef}, everybody. We keep it moving, gentlemen. ${nextName} is next on the main stage. Keep that paper flowing — she's earned it already and she hasn't even started. ${nextName}."
-"${outgoingRef}, everybody. Now check this out... ${nextName} is about to take over. If you thought that was something... wait till you see this. Get those ones ready. The beautiful ${nextName}."
-"That was ${outgoingRef}, fellas. Now I got somebody real special for you. ${nextName} is heading to the stage right now. Don't go anywhere — and don't put that cash away. Here she comes... ${nextName}."
-"${outgoingRef}, everybody. We're not slowing down, gentlemen. ${nextName} is coming your way. She came to get paid tonight — help her out. Let's go, ${nextName}."
-"${outgoingRef}, that was beautiful. Now... ${nextName}. She's about to show you why this ${dayOfWeek} is the best night of the week. Money talks, boys. Coming to the stage... ${nextName}."
-"Love for ${outgoingRef}, gentlemen. And we keep the heat coming. ${nextName} is up next. Trust me, you want to be at that rail. Cash in hand. The gorgeous ${nextName}."
-"One time for ${outgoingRef}. Next up, we got ${nextName} heading your way. Fellas, every time you tip, an angel gets her wings. Make it rain for ${nextName}."
-"Show ${outgoingRef} some love. All right... new girl, new vibe. ${nextName} is about to hit the stage. She's coming correct tonight, boys. Tip her right. ${nextName}."
-"That was fire from ${outgoingRef}. Up next, keeping the energy going... ${nextName} to the main stage. She's been waiting all night for this. Show her what's up, fellas. ${nextName}."
-"${outgoingRef}, fellas. We're rolling, boys. ${nextName} is next to the stage and she's bringing all of it. These ladies work hard — show them that bread. The lovely ${nextName}."
-
-Three to five sentences. Rhyming is cool if it's natural — like "doing it right on a ${dayOfWeek} night."`;
   }
 
   const shiftBlock = `TONE (do not reference these labels in the spoken text — just let them guide your delivery):
@@ -342,8 +297,6 @@ ${shift.excitement}`;
     SYSTEM_PROMPT,
   ];
 
-  if (clubLine) parts.push(clubLine);
-
   parts.push(
     eventInstructions,
     shiftBlock,
@@ -351,11 +304,6 @@ ${shift.excitement}`;
     `BEHAVIOR: ${behaviorRule}`,
     `STYLE DIRECTION FOR THIS ONE: ${styleVibe}`,
   );
-
-  if (clubSpecials && clubSpecials.length > 0 && (type === 'outro' || type === 'transition')) {
-    parts.push(`CLUB SPECIAL (work this into the announcement naturally, like a casual mention — not a forced read):
-${clubSpecials[0]}`);
-  }
 
   parts.push(`OUTPUT FORMAT:
 Write the announcement as flowing spoken text — exactly what the DJ would say over the mic.

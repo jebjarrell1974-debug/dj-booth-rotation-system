@@ -244,7 +244,6 @@ export default function Configuration() {
           { type: 'intro', next: null, round: 1 },
           { type: 'round2', next: null, round: 2 },
           { type: 'outro', next: null, round: 1 },
-          { type: 'transition', next: nextDancer.name, round: 1 },
         ];
 
         for (const { type, next, round } of types) {
@@ -261,8 +260,7 @@ export default function Configuration() {
             }
           } catch {}
 
-          const specials = (cfg.clubSpecials || '').split('\n').map(s => s.trim()).filter(Boolean);
-          const prompt = buildAnnouncementPrompt(type, dancer.name, next, level, round, cfg.clubName, specials);
+          const prompt = buildAnnouncementPrompt(type, dancer.name, next, level, round);
 
           let rawResponse;
           if (cfg.scriptModel && cfg.scriptModel !== 'auto' && cfg.openaiApiKey) {
@@ -580,7 +578,7 @@ export default function Configuration() {
                   placeholder="Enter your club name"
                   className="bg-[#08081a] border-[#1e293b]"
                 />
-                <p className="text-xs text-gray-500">Used in DJ announcements — leave blank to omit</p>
+                <p className="text-xs text-gray-500">Used for fleet identification — leave blank to omit</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

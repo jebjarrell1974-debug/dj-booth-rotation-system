@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
 import { Settings, FolderOpen, Check, ChevronDown, Music, MonitorOff, Radio } from 'lucide-react';
-import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
-export default function DJOptions({ djOptions, onOptionsChange, energyOverride, onEnergyOverrideChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq }) {
+export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq }) {
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
-  const [clubSpecials, setClubSpecials] = useState('');
   const dropdownRef = useRef(null);
   const [musicEq, setMusicEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}'));
   const [voiceEq, setVoiceEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}'));
@@ -34,8 +32,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
       .then(data => setGenres(data.genres || []))
       .catch(() => {})
       .finally(() => setLoading(false));
-    const cfg = getApiConfig();
-    setClubSpecials(cfg.clubSpecials || '');
   }, []);
 
   const saveOptions = useCallback(async (updates) => {
@@ -97,48 +93,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
   return (
     <div className="h-full overflow-auto">
       <div className="max-w-2xl mx-auto space-y-6">
-        {energyOverride !== undefined && onEnergyOverrideChange && (() => {
-          const config = getApiConfig();
-          const level = getCurrentEnergyLevel({ ...config, energyOverride });
-          const info = ENERGY_LEVELS[level];
-          return (
-            <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Energy Level</h3>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  {['auto', '1', '2', '3', '4', '5'].map(val => {
-                    const isActive = energyOverride === val;
-                    const label = val === 'auto' ? 'Auto' : `L${val}`;
-                    const levelInfo = val === 'auto' ? info : ENERGY_LEVELS[parseInt(val)];
-                    const btnColor = isActive ? levelInfo.color : undefined;
-                    return (
-                      <button
-                        key={val}
-                        onClick={() => {
-                          onEnergyOverrideChange(val);
-                          saveApiConfig({ energyOverride: val });
-                        }}
-                        className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                          isActive
-                            ? 'text-black'
-                            : 'bg-[#151528] text-gray-400 hover:text-white border border-[#1e293b]'
-                        }`}
-                        style={isActive ? { backgroundColor: btnColor } : undefined}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border ml-auto" style={{ borderColor: info.color + '50', backgroundColor: info.color + '10' }}>
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: info.color }} />
-                  <span className="text-xs font-medium" style={{ color: info.color }}>{info.name}</span>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -344,20 +298,6 @@ export default function DJOptions({ djOptions, onOptionsChange, energyOverride, 
         </div>
       </div>
 
-      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-        <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">Club Specials</h3>
-        <textarea
-          value={clubSpecials}
-          onChange={(e) => {
-            setClubSpecials(e.target.value);
-            saveApiConfig({ clubSpecials: e.target.value });
-          }}
-          placeholder={"2-for-1 drinks until midnight\nVIP bottle service special\nHalf-price private dances"}
-          rows={3}
-          className="w-full bg-[#151528] border border-[#1e293b] text-white text-sm rounded-md px-3 py-2 resize-none"
-        />
-        <p className="text-xs text-gray-500 mt-1">One per line — the DJ will weave these into announcements naturally</p>
-      </div>
 
       <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
         <div className="flex items-center justify-between">

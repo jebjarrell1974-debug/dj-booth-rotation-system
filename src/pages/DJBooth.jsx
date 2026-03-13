@@ -101,7 +101,6 @@ export default function DJBooth() {
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
   const [breakSongsPerSet, setBreakSongsPerSet] = useState(0);
   const breakSongsPerSetRef = useRef(0);
-  const [energyOverride, setEnergyOverride] = useState(() => getApiConfig().energyOverride || 'auto');
   const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
   const djOptionsRef = useRef({ activeGenres: [], musicMode: 'dancer_first' });
   useEffect(() => {
@@ -372,8 +371,6 @@ export default function DJBooth() {
   const [openaiKey, setOpenaiKey] = useState('');
   const [announcementsEnabled, setAnnouncementsEnabled] = useState(true);
   const [scriptModel, setScriptModel] = useState('auto');
-  const [clubSpecials, setClubSpecials] = useState('');
-
   const announcementRef = useRef(null);
   const announcementsEnabledRef = useRef(true);
 
@@ -386,7 +383,6 @@ export default function DJBooth() {
       setAnnouncementsEnabled(config.announcementsEnabled);
       setVoiceId(config.elevenLabsVoiceId);
       setScriptModel(config.scriptModel || 'auto');
-      setClubSpecials(config.clubSpecials || '');
       setConfigLoaded(true);
     });
   }, []);
@@ -403,9 +399,8 @@ export default function DJBooth() {
       elevenLabsVoiceId: voiceId,
       announcementsEnabled,
       scriptModel,
-      clubSpecials,
     });
-  }, [openaiKey, elevenLabsKey, voiceId, announcementsEnabled, scriptModel, clubSpecials, configLoaded]);
+  }, [openaiKey, elevenLabsKey, voiceId, announcementsEnabled, scriptModel, configLoaded]);
 
 
   useEffect(() => {
@@ -2314,7 +2309,7 @@ export default function DJBooth() {
               lastAudioActivityRef.current = Date.now();
             }
           } else {
-            const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
+            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
             lastAudioActivityRef.current = Date.now();
@@ -2883,7 +2878,7 @@ export default function DJBooth() {
               lastAudioActivityRef.current = Date.now();
             }
           } else {
-            const introPromise = prefetchAnnouncement('transition', dancer.name, nextDancer.name, 1);
+            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
             lastAudioActivityRef.current = Date.now();
@@ -3240,7 +3235,7 @@ export default function DJBooth() {
 
             {!remoteMode && (() => {
               const config = getApiConfig();
-              const level = getCurrentEnergyLevel({ ...config, energyOverride });
+              const level = getCurrentEnergyLevel(config);
               const info = ENERGY_LEVELS[level];
               return (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border" style={{ borderColor: info.color + '40', backgroundColor: info.color + '10' }}>
@@ -3566,8 +3561,6 @@ export default function DJBooth() {
                     setDjOptions(opts);
                     djOptionsRef.current = opts;
                   }}
-                  energyOverride={energyOverride}
-                  onEnergyOverrideChange={setEnergyOverride}
                   audioEngineRef={audioEngineRef}
                 />
               </div>

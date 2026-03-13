@@ -15,22 +15,6 @@ const getAuthHeaders = () => {
   return headers;
 };
 
-const detectDayOfWeek = (script) => {
-  if (!script) return null;
-  const patterns = [
-    { re: /\b(sunday|sun)\b/i, dow: 0 },
-    { re: /\b(monday|mon)\b/i, dow: 1 },
-    { re: /\b(tuesday|tue|tues)\b/i, dow: 2 },
-    { re: /\b(wednesday|wed)\b/i, dow: 3 },
-    { re: /\b(thursday|thu|thur|thurs)\b/i, dow: 4 },
-    { re: /\b(friday|fri)\b/i, dow: 5 },
-    { re: /\b(saturday|sat)\b/i, dow: 6 },
-  ];
-  for (const { re, dow } of patterns) {
-    if (re.test(script)) return dow;
-  }
-  return null;
-};
 
 const DB_NAME = 'djAnnouncementsDB';
 const STORE_NAME = 'announcements';
@@ -132,11 +116,10 @@ const ANNOUNCEMENT_TYPES = {
   INTRO: 'intro',
   ROUND2: 'round2',
   OUTRO: 'outro',
-  TRANSITION: 'transition'
 };
 
 const GENERIC_DANCER_NAME = '_GENERIC_';
-const NUM_VARIATIONS = 8;
+const NUM_VARIATIONS = 5;
 const LOCKED_LEVEL = 4;
 
 const AnnouncementSystem = React.forwardRef((props, ref) => {
@@ -159,9 +142,6 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const [generatingType, setGeneratingType] = useState(null);
   const [preCacheError, setPreCacheError] = useState(null);
   const preCacheStartTimeRef = useRef(0);
-  const specialsAnnouncementCountRef = useRef(0);
-  const specialsRotationIndexRef = useRef(0);
-  const specialsNextTriggerRef = useRef(Math.floor(Math.random() * 2) + 2);
   const variationCounterRef = useRef({});
   const failedGenerationsRef = useRef(new Set());
 
@@ -227,29 +207,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return text || 'Welcome to the stage.';
   };
 
-  const getStaggeredSpecial = useCallback((type) => {
-    if (type !== 'outro' && type !== 'transition') return [];
-    const config = getApiConfig();
-    const allSpecials = (config.clubSpecials || '').split('\n').map(s => s.trim()).filter(Boolean);
-    if (allSpecials.length === 0) return [];
-
-    specialsAnnouncementCountRef.current++;
-    if (specialsAnnouncementCountRef.current < specialsNextTriggerRef.current) return [];
-
-    specialsAnnouncementCountRef.current = 0;
-    specialsNextTriggerRef.current = Math.floor(Math.random() * 2) + 2;
-
-    const idx = specialsRotationIndexRef.current % allSpecials.length;
-    specialsRotationIndexRef.current = idx + 1;
-    console.log(`🎤 Club special #${idx + 1}/${allSpecials.length}: "${allSpecials[idx]}" (next in ${specialsNextTriggerRef.current} announcements)`);
-    return [allSpecials[idx]];
-  }, []);
 
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1) => {
     const config = getApiConfig();
-    const clubName = config.clubName || '';
-    const specials = getStaggeredSpecial(type);
-    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, LOCKED_LEVEL, roundNumber, clubName, specials);
+    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, LOCKED_LEVEL, roundNumber);
 
     const openaiKey = config.openaiApiKey || '';
     const scriptModel = config.scriptModel || 'auto';
@@ -405,32 +366,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-V10`;
   };
 
-  const getSpecialsHash = () => {
-    const config = getApiConfig();
-    const specials = (config.clubSpecials || '').trim();
-    if (!specials) return '';
-    let h = 0;
-    for (let i = 0; i < specials.length; i++) {
-      h = ((h << 5) - h + specials.charCodeAt(i)) | 0;
-    }
-    return `-S${Math.abs(h).toString(36)}`;
-  };
-
-  const getClubSuffix = () => {
-    const config = getApiConfig();
-    const clubName = (config.clubName || '').trim();
-    if (!clubName) return '';
-    return `-C${clubName.replace(/[^a-zA-Z0-9]/g, '')}`;
-  };
-
   const getCacheKey = (type, dancerName, nextDancerName = null, varNum = 1) => {
-    return getAnnouncementKey(type, dancerName, nextDancerName, varNum) + getSpecialsHash() + getClubSuffix();
+    return getAnnouncementKey(type, dancerName, nextDancerName, varNum);
   };
 
   const saveToServer = useCallback(async (cacheKey, audioBlob, script, type, dancerName, energyLevel) => {
     try {
-      const config = getApiConfig();
-      const clubName = (config.clubName || '').trim() || null;
       const audio_base64 = await blobToBase64(audioBlob);
       const res = await fetch('/api/voiceovers', {
         method: 'POST',
@@ -445,12 +386,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           type,
           dancer_name: dancerName,
           energy_level: energyLevel,
-          club_name: clubName,
-          day_of_week: detectDayOfWeek(script)
         })
       });
       if (res.ok) {
-        console.log(`💾 Saved voiceover to server: ${cacheKey}${clubName ? ` (club: ${clubName})` : ''}`);
+        console.log(`💾 Saved voiceover to server: ${cacheKey}`);
         return true;
       }
       console.error('Server save failed:', res.status);
@@ -505,18 +444,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, []);
 
   const findCachedAtAnyVariation = useCallback(async (type, dancerName, nextDancerName) => {
-    const clubSuffix = getClubSuffix();
-    const todayDow = new Date().getDay();
     const keysToCheck = [
-      ...Array.from({ length: NUM_VARIATIONS }, (_, i) => getAnnouncementKey(type, dancerName, nextDancerName, i + 1) + clubSuffix),
-      getLegacyL4Key(type, dancerName, nextDancerName) + clubSuffix,
+      ...Array.from({ length: NUM_VARIATIONS }, (_, i) => getAnnouncementKey(type, dancerName, nextDancerName, i + 1)),
+      getLegacyL4Key(type, dancerName, nextDancerName),
     ];
     for (const altKey of keysToCheck) {
       const meta = await checkServerCacheMeta(altKey);
       if (meta.exists) {
-        if (meta.day_of_week !== null && meta.day_of_week !== undefined && meta.day_of_week !== todayDow) {
-          continue;
-        }
         const idb = await getCachedFromIndexedDB(altKey);
         if (idb) {
           console.log(`✅ Found cached ${type} for ${dancerName} at ${altKey} (IndexedDB)`);
@@ -538,7 +472,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return null;
   }, [loadFromServer, checkServerCacheMeta]);
 
-  const genericIndexRef = useRef({ intro: 0, round2: 0, outro: 0, transition: 0 });
+  const genericIndexRef = useRef({ intro: 0, round2: 0, outro: 0 });
 
   const checkGenericRecording = useCallback(async (type) => {
     const typeKey = type === ANNOUNCEMENT_TYPES.ROUND2 ? 'round2' : type;
@@ -598,11 +532,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, []);
 
   const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, varNum = 1, roundNumber = 1) => {
-    const specialsSuffix = getSpecialsHash();
-    const clubSuffix = getClubSuffix();
-    const hasSpecials = specialsSuffix.length > 0;
-    const isSpecialsEligible = hasSpecials && (type === 'outro' || type === 'transition');
-    const key = getAnnouncementKey(type, dancerName, nextDancerName, varNum) + specialsSuffix + clubSuffix;
+    const key = getAnnouncementKey(type, dancerName, nextDancerName, varNum);
 
     const customBlob = await checkCustomRecording(dancerName, type);
     if (customBlob) {
@@ -610,33 +540,22 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       return { url: URL.createObjectURL(customBlob), fromCache: true };
     }
 
-    const todayDow = new Date().getDay();
-    const meta = await checkServerCacheMeta(key);
-    const wrongDay = meta.exists && meta.day_of_week !== null && meta.day_of_week !== undefined && meta.day_of_week !== todayDow;
-    if (wrongDay) {
-      console.log(`⏭️ Skipping cached voiceover ${key} — tagged day ${meta.day_of_week}, today ${todayDow}`);
+    const idbCached = await getCachedFromIndexedDB(key);
+    if (idbCached) {
+      console.log(`✅ Loaded from IndexedDB: ${key}`);
+      setCacheStatus(prev => ({ ...prev, [key]: true }));
+      return { url: URL.createObjectURL(idbCached), fromCache: true };
     }
 
-    if (!wrongDay && !isSpecialsEligible) {
-      const idbCached = await getCachedFromIndexedDB(key);
-      if (idbCached) {
-        console.log(`✅ Loaded from IndexedDB: ${key}`);
-        setCacheStatus(prev => ({ ...prev, [key]: true }));
-        return { url: URL.createObjectURL(idbCached), fromCache: true };
-      }
+    const serverBlob = await loadFromServer(key);
+    if (serverBlob) {
+      await cacheToIndexedDB(key, serverBlob);
+      setCacheStatus(prev => ({ ...prev, [key]: true }));
+      return { url: URL.createObjectURL(serverBlob), fromCache: true };
     }
 
-    if (!wrongDay && !hasSpecials) {
-      const serverBlob = await loadFromServer(key);
-      if (serverBlob) {
-        await cacheToIndexedDB(key, serverBlob);
-        setCacheStatus(prev => ({ ...prev, [key]: true }));
-        return { url: URL.createObjectURL(serverBlob), fromCache: true };
-      }
-    }
-
-    if (varNum === 1 && !hasSpecials) {
-      const legacyKey = getLegacyL4Key(type, dancerName, nextDancerName) + clubSuffix;
+    if (varNum === 1) {
+      const legacyKey = getLegacyL4Key(type, dancerName, nextDancerName);
       const legacyIdb = await getCachedFromIndexedDB(legacyKey);
       if (legacyIdb) {
         console.log(`✅ Migrating legacy L4 voiceover → var1 for ${dancerName}/${type}`);
@@ -666,26 +585,19 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
 
     try {
-      console.log(`🎙️ Generating announcement: ${key} (var${varNum})${isSpecialsEligible ? ' [specials staggered]' : hasSpecials ? ' [with specials]' : ''}`);
+      console.log(`🎙️ Generating announcement: ${key} (var${varNum})`);
       setGeneratingType(type);
       const script = await generateScript(type, dancerName, nextDancerName, roundNumber);
       const audioBlob = await generateAudio(script);
 
-      if (!isSpecialsEligible) {
-        await cacheToIndexedDB(key, audioBlob);
-      }
-
-      if (!hasSpecials) {
-        await saveToServer(key, audioBlob, script, type, dancerName, LOCKED_LEVEL);
-      } else {
-        console.log(`📢 Specials active — voiceover not cached (staggered specials vary each time)`);
-      }
+      await cacheToIndexedDB(key, audioBlob);
+      await saveToServer(key, audioBlob, script, type, dancerName, LOCKED_LEVEL);
 
       setCacheStatus(prev => ({ ...prev, [key]: true }));
-      if (!hasSpecials) setServerCacheCount(prev => prev + 1);
+      setServerCacheCount(prev => prev + 1);
       setGeneratingType(null);
 
-      console.log(`✅ Generated announcement: ${key} (var${varNum})${isSpecialsEligible ? ' [fresh, staggered]' : !hasSpecials ? ' — saved to server' : ''}`);
+      console.log(`✅ Generated announcement: ${key} (var${varNum}) — saved to server`);
       return { url: URL.createObjectURL(audioBlob), fromCache: false };
     } catch (genError) {
       setGeneratingType(null);
@@ -775,9 +687,6 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         jobs.push([ANNOUNCEMENT_TYPES.INTRO, d.name, null, v, 1]);
         jobs.push([ANNOUNCEMENT_TYPES.ROUND2, d.name, null, v, 2]);
         jobs.push([ANNOUNCEMENT_TYPES.OUTRO, d.name, null, v, 1]);
-        if (d.nextName) {
-          jobs.push([ANNOUNCEMENT_TYPES.TRANSITION, d.name, d.nextName, v, 1]);
-        }
       }
     }
 
@@ -814,19 +723,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const total = rotationDancers.length;
     if (total === 0) return true;
 
-    const typesPerDancer = total > 1 ? 4 : 3;
+    const typesPerDancer = 3;
     const jobsPerDancer = typesPerDancer * NUM_VARIATIONS;
     const makeJobs = (dancerIdx) => {
       const d = rotationDancers[dancerIdx];
-      const nextD = rotationDancers[(dancerIdx + 1) % total];
       const jobs = [];
       for (let v = 1; v <= NUM_VARIATIONS; v++) {
         jobs.push({ type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1, varNum: v });
         jobs.push({ type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2, varNum: v });
         jobs.push({ type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1, varNum: v });
-        if (total > 1) {
-          jobs.push({ type: ANNOUNCEMENT_TYPES.TRANSITION, name: d.name, nextName: nextD.name, round: 1, varNum: v });
-        }
       }
       return jobs;
     };
@@ -913,20 +818,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       [ANNOUNCEMENT_TYPES.INTRO, GENERIC_DANCER_NAME, null, 1, 1],
       [ANNOUNCEMENT_TYPES.ROUND2, GENERIC_DANCER_NAME, null, 1, 2],
       [ANNOUNCEMENT_TYPES.OUTRO, GENERIC_DANCER_NAME, null, 1, 1],
-      [ANNOUNCEMENT_TYPES.TRANSITION, GENERIC_DANCER_NAME, null, 1, 1],
     ];
 
     const dancerTypes = [];
     for (let i = 0; i < rotationDancers.length; i++) {
       const dancer = rotationDancers[i];
-      const nextDancer = rotationDancers[(i + 1) % rotationDancers.length];
       for (let v = 1; v <= NUM_VARIATIONS; v++) {
         dancerTypes.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
         dancerTypes.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, v, 2]);
         dancerTypes.push([ANNOUNCEMENT_TYPES.OUTRO, dancer.name, null, v, 1]);
-        if (rotationDancers.length > 1) {
-          dancerTypes.push([ANNOUNCEMENT_TYPES.TRANSITION, dancer.name, nextDancer.name, v, 1]);
-        }
       }
     }
 
@@ -1065,7 +965,6 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
               { type: ANNOUNCEMENT_TYPES.INTRO, label: 'Intro', dancer: currentDancer.name },
               { type: ANNOUNCEMENT_TYPES.ROUND2, label: 'Round 2', dancer: currentDancer.name },
               { type: ANNOUNCEMENT_TYPES.OUTRO, label: 'Outro', dancer: currentDancer.name },
-              ...(nextDancer ? [{ type: ANNOUNCEMENT_TYPES.TRANSITION, label: 'Transition', dancer: currentDancer.name, nextDancer: nextDancer.name }] : [])
             ].map(({ type, label, dancer, nextDancer: nd }) => {
               const ck = getCacheKey(type, dancer, nd, 1);
               const isCached = cacheStatus[ck];
