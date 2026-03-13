@@ -2273,8 +2273,8 @@ export default function DJBooth() {
         }
 
         const commercialDue = isCommercialDue();
-        
-        if (announcementsEnabled && commercialDue) {
+
+        if (announcementsEnabled) {
           const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
           audioEngineRef.current?.duck();
           const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
@@ -2843,7 +2843,7 @@ export default function DJBooth() {
 
         const commercialDue2 = isCommercialDue();
 
-        if (announcementsEnabled && commercialDue2) {
+        if (announcementsEnabled) {
           const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
           audioEngineRef.current?.duck();
           const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);

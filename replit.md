@@ -39,11 +39,28 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 ## System Architecture
 The application uses React 18, Vite, and TailwindCSS for the frontend, with Radix UI primitives and shadcn/ui styling. UI/UX is designed with a dark nightclub theme featuring neon cyan and blue accents, prioritizing low-power device performance. `localStorage` manages entities, while `IndexedDB` provides fast session caching for voiceover audio. State management uses React Query, and routing is handled by React Router v6. Configuration settings are stored in the browser's `localStorage` on each Pi.
 
-Music tracks are indexed server-side in a SQLite `music_tracks` table, supporting various audio formats and genre extraction. A custom dual-deck audio engine manages seamless music playback with equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Beat-matched crossfading adjusts incoming track tempo, and a 3-band EQ is available for music and voice. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours, featuring unique personalities and optional adult innuendo. Announcements are club-locked based on configurable club names.
+Music tracks are indexed server-side in a SQLite `music_tracks` table, supporting various audio formats and genre extraction. A custom dual-deck audio engine manages seamless music playback with equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Beat-matched crossfading adjusts incoming track tempo, and a 3-band EQ is available for music and voice. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours.
 
 An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, optimized for low-power devices. Critical state persists to `localStorage` for crash recovery. Features include a 4-hour song cooldown, configurable songs-per-set, interstitial break songs, genre filtering, and a Playback Watchdog for audio recovery. The `DJBooth` component remains mounted persistently to preserve audio engine state. An Autoplay Queue feature manages music when no entertainers are present.
 
 A fleet management system enables centralized control of multiple Pi units, providing device registration, heartbeat monitoring (including hardware health metrics like CPU temp and RAM), error log collection, voiceover sharing, music manifest tracking, app update distribution, and sync coordination via Cloudflare R2. An admin dashboard offers an overview of device health, API cost tracking per unit, a master voiceover library, and sync history. A Pi-side sync client handles scheduled closed-hours synchronization. Voice recording functionality is available via the Voice Studio, featuring a record-preview-save workflow and Auphonic API integration for professional post-processing. System updates are managed via `djbooth-update.sh` with optimized backup procedures.
+
+## Announcement System (Current State — March 2025 Refactor)
+- **3 announcement types**: intro, round2, outro (transition type removed)
+- **5 variations per type per dancer** (reduced from 8 to save ElevenLabs credits and pre-cache time)
+- **Energy level is always auto** (time-based, 5-tier system) — manual energy override UI removed
+- **No club name or day-of-week** in voiceover prompts or cache keys — prompts explicitly instruct "do not mention day/club/time"
+- **No club specials** in voiceover prompts — specials are moving to the commercial playback system instead
+- **Cache keys are simplified**: `{type}-{dancerName}-L{level}-V{varNum}` (no club suffix, no specials hash)
+- **Dancer changeover flow**: outro (outgoing) → commercial (if due) → track starts → intro (incoming) — no overlap
+- **Failed generation skip**: `failedGenerationsRef` Set prevents retry storms for the session
+- **Pre-cache**: buffers upcoming dancers with all 3 types × 5 variations each (15 voiceovers per dancer)
+- **ElevenLabs credits**: ~180K remaining this billing cycle; key `6e6ca8...71342`, voice ID `8RV9Jl85RVagCJGw9qhY`
+- **Stale pre-pick localStorage bug**: fixed (commit `8b28779`)
+
+## Commercial System (Planned)
+- Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks
+- The specials textarea will live in the Commercials section of DJ Options (not yet implemented)
 
 ## External Dependencies
 - **React**: Frontend UI development
