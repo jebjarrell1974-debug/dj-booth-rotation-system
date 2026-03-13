@@ -1983,10 +1983,19 @@ export default function DJBooth() {
       }
       lastAudioActivityRef.current = Date.now();
       try {
-        const ok = await playFallbackTrack(true);
-        if (!ok) {
-          console.error('🚨 HandleSkip (no rotation): All recovery failed — resuming active deck');
-          audioEngineRef.current?.resume();
+        if (autoplayQueueRef.current.length > 0) {
+          console.log('⏭️ HandleSkip (no rotation): Playing from autoplay queue');
+          const ok = await playFromAutoplayQueue(true);
+          if (ok === false) {
+            const fallbackOk = await playFallbackTrack(true);
+            if (!fallbackOk) audioEngineRef.current?.resume();
+          }
+        } else {
+          const ok = await playFallbackTrack(true);
+          if (!ok) {
+            console.error('🚨 HandleSkip (no rotation): All recovery failed — resuming active deck');
+            audioEngineRef.current?.resume();
+          }
         }
       } catch (err) {
         console.error('🚨 HandleSkip (no rotation): Unexpected error:', err);
@@ -2339,7 +2348,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
 
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
