@@ -165,6 +165,7 @@ export default function DJBooth() {
 
   const COOLDOWN_MS = 4 * 60 * 60 * 1000;
   const songCooldownRef = useRef(null);
+  const [playedSongsMap, setPlayedSongsMap] = useState({});
 
   useEffect(() => {
     if (songCooldownRef.current !== null) return;
@@ -202,6 +203,7 @@ export default function DJBooth() {
         console.warn('⚠️ Failed to load server cooldowns:', err.message);
       }
       songCooldownRef.current = cooldowns;
+      setPlayedSongsMap({ ...cooldowns });
       try {
         localStorage.setItem('djbooth_song_cooldowns', JSON.stringify(cooldowns));
       } catch {}
@@ -213,6 +215,7 @@ export default function DJBooth() {
     if (!trackName || !songCooldownRef.current) return;
     if (playingCommercialRef.current) return;
     songCooldownRef.current[trackName] = Date.now();
+    setPlayedSongsMap(prev => ({ ...prev, [trackName]: Date.now() }));
     try {
       localStorage.setItem('djbooth_song_cooldowns', JSON.stringify(songCooldownRef.current));
     } catch {}
@@ -2261,25 +2264,25 @@ export default function DJBooth() {
         }
 
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
-        let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
+        const finishedDancer = dnc.find(d => d.id === finishedDancerId);
+        const [freshTracks, prePicked] = await Promise.all([
+          (existingTracks && existingTracks.length > 0) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
+          finishedDancer ? getDancerTracks(finishedDancer).catch(e => {
+            console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+            return [];
+          }) : Promise.resolve([])
+        ]);
         let nextTrack = freshTracks?.[0];
-        
+
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
-        delete updatedSongs[finishedDancerId];
+        if (prePicked && prePicked.length > 0) {
+          updatedSongs[finishedDancerId] = prePicked;
+          console.log(`🎵 Pre-picked for ${finishedDancer?.name} (bottom): [${prePicked.map(t => t.name).join(', ')}]`);
+        } else {
+          delete updatedSongs[finishedDancerId];
+        }
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
-
-        const finishedDancer = dnc.find(d => d.id === finishedDancerId);
-        if (finishedDancer) {
-          getDancerTracks(finishedDancer).then(prePicked => {
-            if (!isRotationActiveRef.current) return;
-            if (!rotationRef.current.includes(finishedDancerId)) return;
-            const latest = { ...rotationSongsRef.current, [finishedDancerId]: prePicked };
-            setRotationSongs(latest);
-            rotationSongsRef.current = latest;
-            console.log(`🎵 Pre-picked for ${finishedDancer.name} (bottom): [${prePicked.map(t => t.name).join(', ')}]`);
-          }).catch(e => console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message));
-        }
 
         const commercialDue = isCommercialDue();
 
@@ -2830,25 +2833,25 @@ export default function DJBooth() {
         }
 
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
-        let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
+        const finishedDancer = dnc.find(d => d.id === finishedDancerId);
+        const [freshTracks, prePicked] = await Promise.all([
+          (existingTracks && existingTracks.length > 0) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
+          finishedDancer ? getDancerTracks(finishedDancer).catch(e => {
+            console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+            return [];
+          }) : Promise.resolve([])
+        ]);
         let nextTrack = freshTracks?.[0];
-        
+
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
-        delete updatedSongs[finishedDancerId];
+        if (prePicked && prePicked.length > 0) {
+          updatedSongs[finishedDancerId] = prePicked;
+          console.log(`🎵 Pre-picked for ${finishedDancer?.name} (bottom): [${prePicked.map(t => t.name).join(', ')}]`);
+        } else {
+          delete updatedSongs[finishedDancerId];
+        }
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
-
-        const finishedDancer = dnc.find(d => d.id === finishedDancerId);
-        if (finishedDancer) {
-          getDancerTracks(finishedDancer).then(prePicked => {
-            if (!isRotationActiveRef.current) return;
-            if (!rotationRef.current.includes(finishedDancerId)) return;
-            const latest = { ...rotationSongsRef.current, [finishedDancerId]: prePicked };
-            setRotationSongs(latest);
-            rotationSongsRef.current = latest;
-            console.log(`🎵 Pre-picked for ${finishedDancer.name} (bottom): [${prePicked.map(t => t.name).join(', ')}]`);
-          }).catch(e => console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message));
-        }
 
         const commercialDue2 = isCommercialDue();
 
@@ -3182,6 +3185,7 @@ export default function DJBooth() {
         dancers={dancers}
         liveBoothState={liveBoothState}
         djOptions={djOptions}
+        songCooldowns={playedSongsMap}
         onOptionsChange={(opts) => {
           setDjOptions(opts);
           djOptionsRef.current = opts;
@@ -3661,6 +3665,7 @@ export default function DJBooth() {
                 rotation={rotation}
                 tracks={tracks}
                 djOptions={djOptions}
+                songCooldowns={playedSongsMap}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
                 savedInterstitials={interstitialSongsState}
                 interstitialRemoteVersion={interstitialRemoteVersion}

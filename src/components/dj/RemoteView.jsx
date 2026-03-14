@@ -16,7 +16,12 @@ const LENGTH_OPTIONS = ['15s', '30s', '45s', '60s'];
 
 const stripExt = (name) => name?.replace(/\.[^.]+$/, '') || '';
 
-export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange }) {
+export default function RemoteView({ dancers, liveBoothState, onLogout, djOptions, onOptionsChange, songCooldowns = {} }) {
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+  const isOnCooldown = (name) => {
+    const ts = songCooldowns[name];
+    return !!(ts && (Date.now() - ts) < FOUR_HOURS_MS);
+  };
   const [tab, setTab] = useState('live');
   const [songEdits, setSongEdits] = useState({});
   const [hasUnsaved, setHasUnsaved] = useState(false);
@@ -653,7 +658,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             return (
                               <div key={songIdx} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border ${isNowPlaying ? 'bg-[#00d4ff]/10 border-[#00d4ff]/30' : 'bg-[#08081a] border-[#1e293b]'}`}>
                                 <span className={`text-base font-bold w-4 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isNowPlaying ? '▶' : songIdx + 1}</span>
-                                <span className="text-base text-gray-300 flex-1 truncate">{stripExt(song)}</span>
+                                <span className={`text-base flex-1 truncate ${isOnCooldown(song) ? 'text-orange-300' : 'text-gray-300'}`}>{stripExt(song)}</span>
                                 {!isNowPlaying && (
                                   <>
                                     <button onClick={() => rerollSong(dancer.id, songIdx)} disabled={isRerolling}

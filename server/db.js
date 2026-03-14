@@ -285,9 +285,12 @@ export function createDancer(name, color, pin) {
   }
   const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const pinHash = hashPin(pin);
+  try {
+    db.exec('ALTER TABLE dancers ADD COLUMN pin_plain TEXT DEFAULT NULL');
+  } catch {}
   db.prepare(
-    'INSERT INTO dancers (id, name, color, pin_hash) VALUES (?, ?, ?, ?)'
-  ).run(id, name, color || '#e040fb', pinHash);
+    'INSERT INTO dancers (id, name, color, pin_hash, pin_plain) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, name, color || '#e040fb', pinHash, pin);
   return getDancer(id);
 }
 
@@ -330,11 +333,19 @@ export function updateDancer(id, data) {
   }
   if (data.pin !== undefined) {
     db.prepare('UPDATE dancers SET pin_hash = ? WHERE id = ?').run(hashPin(data.pin), id);
+    try {
+      db.exec('ALTER TABLE dancers ADD COLUMN pin_plain TEXT DEFAULT NULL');
+    } catch {}
+    db.prepare('UPDATE dancers SET pin_plain = ? WHERE id = ?').run(data.pin, id);
   }
   if (data.phonetic_name !== undefined) {
     db.prepare('UPDATE dancers SET phonetic_name = ? WHERE id = ?').run(data.phonetic_name, id);
   }
   return getDancer(id);
+}
+
+export function invalidateDancerSessions(dancerId) {
+  db.prepare('DELETE FROM sessions WHERE dancer_id = ?').run(dancerId);
 }
 
 export function deleteDancer(id) {
@@ -551,6 +562,19 @@ export function getMusicTrackById(id) {
 
 export function getMusicTrackByName(name) {
   return readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
+}
+
+export function deleteMusicTrackFromDB(trackName) {
+  db.prepare('DELETE FROM music_tracks WHERE name = ?').run(trackName);
+  const dancers = db.prepare('SELECT id, playlist FROM dancers').all();
+  for (const dancer of dancers) {
+    let playlist = [];
+    try { playlist = JSON.parse(dancer.playlist || '[]'); } catch {}
+    if (playlist.includes(trackName)) {
+      const updated = playlist.filter(n => n !== trackName);
+      db.prepare('UPDATE dancers SET playlist = ? WHERE id = ?').run(JSON.stringify(updated), dancer.id);
+    }
+  }
 }
 
 export function getRecentCooldowns(hours = 4) {

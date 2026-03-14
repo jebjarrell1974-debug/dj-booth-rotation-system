@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, createWriteStream } from 'fs';
 import { join, basename, extname } from 'path';
 import { pipeline } from 'stream/promises';
@@ -29,6 +29,22 @@ function getClient() {
 
 export function isR2Configured() {
   return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+}
+
+export async function deleteFromR2Music(relativePath) {
+  const client = getClient();
+  if (!client) return false;
+  try {
+    await client.send(new DeleteObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `music/${relativePath}`,
+    }));
+    console.log(`☁️ R2: Deleted music/${relativePath}`);
+    return true;
+  } catch (err) {
+    console.error(`☁️ R2: Failed to delete music/${relativePath}: ${err.message}`);
+    return false;
+  }
 }
 
 export async function uploadVoiceover(cacheKey, filePath, clubName = null) {

@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Shuffle } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Shuffle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -57,12 +57,17 @@ export default function RotationPlaylistManager({
   onSongAssignmentsChange,
   autoplayQueue = [],
   onAutoplayQueueChange,
-  onAutoplayQueueRemove
+  onAutoplayQueueRemove,
+  songCooldowns = {}
 }) {
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeGenre, setActiveGenre] = useState(null);
   const [musicSource, setMusicSource] = useState('genres');
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [isDeletingTrack, setIsDeletingTrack] = useState(false);
 
   const activeDancers = useMemo(() =>
     (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name)),
@@ -653,6 +658,34 @@ export default function RotationPlaylistManager({
     toast.success('Rotation & playlists saved');
   };
 
+  const handleDeleteTrack = async (trackName) => {
+    if (isDeletingTrack) return;
+    setIsDeletingTrack(true);
+    try {
+      const token = localStorage.getItem('djbooth_token');
+      const res = await fetch('/api/music/track', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ trackName })
+      });
+      if (res.ok) {
+        setServerTracks(prev => prev.filter(t => t.name !== trackName));
+        toast.success(`Deleted: ${trackName}`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(`Delete failed: ${err.error || res.statusText}`);
+      }
+    } catch (e) {
+      toast.error(`Delete failed: ${e.message}`);
+    } finally {
+      setIsDeletingTrack(false);
+      setPendingDelete(null);
+    }
+  };
+
   return (
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
       <DragDropContext onDragEnd={handleDragEnd}>
@@ -662,12 +695,21 @@ export default function RotationPlaylistManager({
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
                 Music Library
               </h3>
-              <span className="text-xs text-gray-500">
-                {musicSource === 'genres'
-                  ? `${serverTracks.length} of ${serverTotalTracks} tracks`
-                  : `${playlistSongs.length} songs`
-                }
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">
+                  {musicSource === 'genres'
+                    ? `${serverTracks.length} of ${serverTotalTracks} tracks`
+                    : `${playlistSongs.length} songs`
+                  }
+                </span>
+                <button
+                  onClick={() => { setIsDeleteMode(v => !v); setPendingDelete(null); }}
+                  title={isDeleteMode ? 'Exit delete mode' : 'Delete tracks from system'}
+                  className={`p-1 rounded transition-colors ${isDeleteMode ? 'text-red-400 bg-red-900/30' : 'text-gray-600 hover:text-red-400 hover:bg-red-900/20'}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
             <select
               value={musicSource}
@@ -784,20 +826,52 @@ export default function RotationPlaylistManager({
                           ref={provided.innerRef}
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
-                          className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
-                            snapshot.isDragging
+                          className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors ${
+                            isDeleteMode && pendingDelete === track.name
+                              ? 'bg-red-900/30 ring-2 ring-red-500/60'
+                              : snapshot.isDragging
                               ? 'bg-[#00d4ff]/20 ring-2 ring-[#00d4ff]'
                               : 'bg-[#151528] hover:bg-[#1e293b]'
-                          } cursor-pointer`}
-                          onClick={() => handleLibraryTrackClick(track.name)}
+                          } ${isDeleteMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing cursor-pointer'}`}
+                          onClick={() => !isDeleteMode && handleLibraryTrackClick(track.name)}
                         >
-                          <Music2 className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                          {(() => { const onCool = !!(songCooldowns[track.name] && (Date.now() - songCooldowns[track.name]) < FOUR_HOURS_MS); return (
+                          <Music2 className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-gray-500'}`} />
+                          ); })()}
                           <div className="flex-1 min-w-0">
-                            <span className="text-sm text-white truncate block">{track.name}</span>
+                            {(() => { const onCool = !!(songCooldowns[track.name] && (Date.now() - songCooldowns[track.name]) < FOUR_HOURS_MS); return (
+                            <span className={`text-sm truncate block ${isDeleteMode && pendingDelete === track.name ? 'text-red-300' : onCool ? 'text-orange-300' : 'text-white'}`}>{track.name}</span>
+                            ); })()}
                             {!activeGenre && (track.genre || (track.path && track.path.includes('/'))) && (
                               <span className="text-xs text-gray-500 truncate block">{track.genre || track.path.split('/')[0]}</span>
                             )}
                           </div>
+                          {isDeleteMode && (
+                            pendingDelete === track.name ? (
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteTrack(track.name); }}
+                                  disabled={isDeletingTrack}
+                                  className="px-2 py-0.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded font-medium disabled:opacity-50"
+                                >
+                                  {isDeletingTrack ? '...' : 'Delete'}
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setPendingDelete(null); }}
+                                  className="px-2 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setPendingDelete(track.name); }}
+                                className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )
+                          )}
                         </div>
                       )}
                     </Draggable>
@@ -1068,9 +1142,9 @@ export default function RotationPlaylistManager({
                                                 {canReroll ? (
                                                   <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
                                                 ) : (
-                                                  <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-500'}`} />
+                                                  <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-400' : 'text-gray-500'}`} />
                                                 )}
-                                                <span className={`text-xs truncate flex-1 ${isNowPlaying ? 'text-white font-medium' : 'text-gray-300'}`}>{songName}</span>
+                                                <span className={`text-xs truncate flex-1 ${isNowPlaying ? 'text-white font-medium' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-gray-300'}`}>{songName}</span>
                                                 <button
                                                   onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
                                                   className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"

@@ -33,6 +33,7 @@ export default function DancerRoster({
   const [newDancerPhonetic, setNewDancerPhonetic] = useState('');
   const [addError, setAddError] = useState('');
   const [editingDancer, setEditingDancer] = useState(null);
+  const [editingPin, setEditingPin] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletePin, setDeletePin] = useState('');
@@ -128,7 +129,10 @@ export default function DancerRoster({
       const nameChanged = original.name !== editingDancer.name;
       const oldName = original.name;
 
-      onEditDancer(editingDancer.id, { name: editingDancer.name, phonetic_name: editingDancer.phonetic_name || '' });
+      const updatePayload = { name: editingDancer.name, phonetic_name: editingDancer.phonetic_name || '' };
+      if (editingPin.length === 5) updatePayload.pin = editingPin;
+
+      onEditDancer(editingDancer.id, updatePayload);
 
       if (phoneticChanged || nameChanged) {
         await resetVoiceoversForDancer(oldName);
@@ -138,6 +142,7 @@ export default function DancerRoster({
       }
 
       setEditingDancer(null);
+      setEditingPin('');
     }
   };
 
@@ -285,6 +290,7 @@ export default function DancerRoster({
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingDancer({ ...dancer });
+                        setEditingPin('');
                       }}
                     >
                       <Edit2 className="w-3 h-3" />
@@ -310,7 +316,25 @@ export default function DancerRoster({
                         />
                         <p className="text-xs text-gray-500 mt-1">How the DJ voice should say the name — leave blank if it sounds fine</p>
                       </div>
-                      <Button onClick={handleEdit} className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
+                      <div>
+                        {editingDancer?.pin_plain && (
+                          <p className="text-xs text-gray-400 mb-1">Current PIN: <span className="font-mono text-gray-200">{editingDancer.pin_plain}</span></p>
+                        )}
+                        <input
+                          type="tel"
+                          value={editingPin}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                            setEditingPin(val);
+                          }}
+                          placeholder="New PIN (leave blank to keep current)"
+                          className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]"
+                          inputMode="numeric"
+                          maxLength={5}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Enter a new 5-digit PIN to change it, or leave blank</p>
+                      </div>
+                      <Button onClick={handleEdit} disabled={editingPin.length > 0 && editingPin.length !== 5} className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black disabled:opacity-50">
                         Save Changes
                       </Button>
                       <Button

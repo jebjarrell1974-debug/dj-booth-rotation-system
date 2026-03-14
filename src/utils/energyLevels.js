@@ -161,7 +161,7 @@ TTS FORMATTING (this text is read aloud by a speech engine):
 - Sentences between five and fourteen words
 - End on a smooth note, no exclamation mark on the last sentence`;
 
-export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber) => {
+export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, varNum = 1) => {
   const level = Math.max(1, Math.min(5, energyLevel || 3));
   const levelInfo = ENERGY_LEVELS[level];
   const shiftType = levelInfo.shiftType;
@@ -187,11 +187,19 @@ export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energy
     'Bring old-school club energy — classic strip club MC vibes',
   ];
   const styleVibe = STYLE_VIBES[Math.floor(Math.random() * STYLE_VIBES.length)];
+  const finalStyleVibe = (type === 'intro' && varNum === 3)
+    ? 'Be conversational and playful — like you\'re talking to your boys at the bar'
+    : (type === 'intro' && varNum === 4)
+    ? 'Bring the hype — fast, punchy, high energy'
+    : (type === 'intro' && varNum === 5)
+    ? 'Go smooth and seductive — slow cadence, low-key charm'
+    : styleVibe;
 
   let eventInstructions = '';
 
   if (type === 'intro') {
-    eventInstructions = `EVENT: STAGE INTRODUCTION
+    if (varNum <= 2) {
+      eventInstructions = `EVENT: STAGE INTRODUCTION — MONEY AND TIPS
 
 ${displayName} is about to take the main stage.${genericNote}
 
@@ -220,6 +228,88 @@ EXAMPLES (use these for inspiration, but write something COMPLETELY ORIGINAL eve
 "Now this... this is what you came for. ${displayName}, heading to the main stage. She's the whole package and then some. Paper up, gentlemen. The gorgeous ${displayName}."
 
 Three to five sentences.`;
+    } else if (varNum === 3) {
+      eventInstructions = `EVENT: STAGE INTRODUCTION — CROWD MOMENT
+
+${displayName} is about to take the main stage.${genericNote}
+
+Your job is to work the ROOM first, then bring her out. Read the crowd, make the room feel alive, call out the energy — then land her name. No tipping push, no money talk. This is about atmosphere and connection. Do NOT mention any day of the week, club name, or time-specific references.
+
+Occasionally — about one in five times — you can lightly roast the crowd: call out the shy guys, the ones in the back, the ones pretending not to look. Keep it playful, never mean.
+
+${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" two or three times. Land the name at a natural peak — it's the payoff for everything you just built up.`}
+
+EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never copy these):
+"All right, I see y'all in here. Some of you been sitting on those hands all night — that changes right now. ${displayName} is heading to the stage and she's about to give you something to pay attention to. Eyes up, boys. Here comes ${displayName}."
+"Look around this room... everybody's got a reason they came out tonight. Right now, that reason has a name. ${displayName} is heading to the main stage. Get comfortable, gentlemen. ${displayName}."
+"I know some of you came in here tonight acting like you don't care. That's all right... ${displayName} is about to fix that. She's got a way of changing minds. Main stage — the beautiful ${displayName}."
+"Real talk, gentlemen — some of y'all been quiet all night. That's about to end. ${displayName} is coming to the main stage and she does not do quiet nights. Here she comes... ${displayName}."
+"The room's been good tonight... but it's about to get better. ${displayName} is on her way to the stage and she brought everything she's got. Watch this one, fellas. ${displayName}."
+"Okay, I see you. I see all of y'all. And I got something for you right now. ${displayName} is coming to the main stage — and if you're not paying attention, that's on you. The lovely ${displayName}."
+"All eyes front — and I mean all of them. ${displayName} is heading your way. I don't care what you were doing, what you were thinking — none of that matters in about three seconds. ${displayName}."
+"Gentlemen, the energy in this room is about to level up. And the reason? ${displayName} on the main stage. Get up close and stay there. ${displayName}."
+"I've been watching this room all night... and I know exactly what y'all need. ${displayName} is on her way out, and she's bringing exactly that. Main stage — ${displayName}."
+"Some of y'all in the back been acting like you're not here for this. I see you. And guess what — ${displayName} sees you too. She's heading to the main stage. Come on up front. The beautiful ${displayName}."
+"This next one... she's about to make every head turn in this place. ${displayName} is coming to the main stage. Trust me, you don't want to be looking at your phone right now. ${displayName}."
+"Y'all have been warming up all night. Now let's turn it all the way up. ${displayName} is heading to the main stage and she's got that thing — you know what I'm talking about. Watch her work. ${displayName}."
+"I need everybody's attention. Not some of it — all of it. ${displayName} is heading to the stage and she commands a full room. Eyes up, boys. Here she comes... ${displayName}."
+"Fellas, I'm gonna let you in on something. Whatever you thought tonight was gonna be — it just changed. ${displayName} is coming to the main stage. The gorgeous ${displayName}."
+"Some nights the room gets it. Tonight y'all get it. And right now, what y'all get is ${displayName} on the main stage. Get ready — here she comes. ${displayName}."
+
+Three to five sentences.`;
+    } else if (varNum === 4) {
+      eventInstructions = `EVENT: STAGE INTRODUCTION — HYPE AND ADMIRATION
+
+${displayName} is about to take the main stage.${genericNote}
+
+This one is ALL ABOUT HER. Build her up like a headline performer. Her presence, her energy, what she brings every single time she walks out — make her sound like the biggest name in the room. No money talk, no tipping push — pure hype and admiration. High energy, celebratory. Tastefully adult-suggestive — you can hint at what she brings physically and energetically. Do NOT mention any day of the week, club name, or time-specific references.
+
+${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" two or three times. Her name is the headline — treat it that way.`}
+
+EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never copy these):
+"This next one... she's different. ${displayName} is one of those where when she walks out, the whole room locks in. Watch what she does with that stage. The one and only... ${displayName}."
+"Some girls walk out and you're impressed. Then there's ${displayName}. She walks out and you forget where you are. Main stage — ${displayName}."
+"There are entertainers, and then there's ${displayName}. She brings something to this stage that you can't teach and you can't fake. Watch her work, gentlemen. ${displayName}."
+"The main stage is about to get a whole lot more interesting. ${displayName} is coming your way, and she shows up every single time. This is that one — ${displayName}."
+"I'm not gonna oversell this... actually, I am. ${displayName} is heading to the main stage and she deserves every word I could say about her. Beautiful, talented, and she knows exactly what she's doing. ${displayName}."
+"Not everyone commands a stage the way ${displayName} does. She walks out here and she owns it — every inch, every second. Main stage — ${displayName}."
+"Gentlemen, pay attention. You're about to see something special. ${displayName} is heading to the main stage and she never, ever disappoints. The stunning ${displayName}."
+"Some nights you get good. Some nights you get great. Right now, you get ${displayName}. She's a whole different level, gentlemen. Here she comes... ${displayName}."
+"There's a reason ${displayName} is on this stage. She's the best at what she does and she knows it — and tonight, she's about to prove it. Main stage — the beautiful ${displayName}."
+"${displayName} is about to walk out here and remind every single one of you why you came. She's that kind of performer. Watch this... ${displayName}."
+"Every time she steps on this stage she does it better than before. ${displayName} is heading your way, and gentlemen — she is in a league of her own. ${displayName}."
+"Right about now... main stage. ${displayName}. She's got it — all of it. The look, the moves, the energy. Everything. Here she comes."
+"${displayName} doesn't need an introduction. But she's earned one, so here it is — main stage, the one and only ${displayName}."
+"This is the one you'll be talking about later. ${displayName} is heading to the main stage. She's everything — and then some. ${displayName}."
+
+Three to five sentences.`;
+    } else {
+      eventInstructions = `EVENT: STAGE INTRODUCTION — PURE COMPLIMENTS
+
+${displayName} is about to take the main stage.${genericNote}
+
+This one is smooth, appreciative, and tastefully suggestive. Focus on how she looks, how she carries herself, what she's about to bring to that stage. You can be adult-suggestive — hint at her physical presence and what she's offering — but keep it tasteful, never crude. Seductive delivery. No money talk. Do NOT mention any day of the week, club name, or time-specific references.
+
+${isGeneric ? 'Use generic references throughout.' : `Say "${displayName}" two or three times. Let the name land like a finishing touch — save the best for last.`}
+
+EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never copy these):
+"Gentlemen... she is the kind of woman you don't forget. ${displayName} is heading to the main stage, and everything about her — the way she looks, the way she moves — is worth your full attention. The stunning ${displayName}."
+"${displayName} is coming to the main stage. Let me tell you something — beautiful doesn't cover it. She's got presence, she's got that thing... and you're about to see it up close. ${displayName}."
+"Right about now... the main stage belongs to ${displayName}. She walks out here and everything in this room makes sense. You'll see what I mean. Here she comes."
+"Fellas... some things in life you just appreciate. ${displayName} is one of those things. She's heading to the main stage, and she is every bit worth it. The lovely ${displayName}."
+"${displayName} is heading your way. She moves like the music was written for her. She looks like somebody's best dream. Main stage — ${displayName}."
+"The main stage is about to look a whole lot better. ${displayName} is on her way out, and she is... well... you'll see. The beautiful ${displayName}."
+"Here's the thing about ${displayName} — she walks into a room and people notice. Not because she tries... because she can't help it. Main stage, gentlemen. ${displayName}."
+"${displayName} is about to step onto that stage and remind this room what it came here for. She's all of it — the look, the moves, the energy. The gorgeous ${displayName}."
+"Smooth, confident, and absolutely worth your full attention... that's ${displayName}, heading to the main stage right now. She never disappoints. ${displayName}."
+"When ${displayName} takes the stage, the temperature in this room changes. You'll feel it in about three seconds. She's heading your way right now... the stunning ${displayName}."
+"This next beauty is one of those women who makes time slow down. ${displayName} is heading to the main stage. Take it all in, gentlemen. ${displayName}."
+"${displayName} has a way of making every man in the room feel like she's performing just for him. And tonight... she is. Main stage — ${displayName}."
+"The kind of woman that makes you rethink everything you thought you knew about beautiful... ${displayName} is heading to the main stage. The one and only ${displayName}."
+"Right now... the main stage. And on it... ${displayName}. That's all I need to say, gentlemen. See for yourself. ${displayName}."
+
+Three to five sentences.`;
+    }
 
   } else if (type === 'round2') {
     const roundLabel = roundNumber >= 3 ? 'round three' : 'round two';
@@ -302,7 +392,7 @@ ${shift.excitement}`;
     shiftBlock,
     closingBlock,
     `BEHAVIOR: ${behaviorRule}`,
-    `STYLE DIRECTION FOR THIS ONE: ${styleVibe}`,
+    `STYLE DIRECTION FOR THIS ONE: ${finalStyleVibe}`,
   );
 
   parts.push(`OUTPUT FORMAT:

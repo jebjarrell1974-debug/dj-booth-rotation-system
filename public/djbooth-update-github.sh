@@ -27,7 +27,17 @@ if [ ! -d "$APP_DIR" ]; then
   exit 1
 fi
 
-echo "[1/7] Downloading latest code from GitHub..."
+echo "[1/8] Checking for OS package updates..."
+set +e
+sudo apt-get update -q 2>&1 | tail -3
+sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q 2>&1 | tail -5
+if [ -f /var/run/reboot-required ]; then
+  echo "  System reboot required after package updates. Scheduling reboot for 08:30..."
+  sudo shutdown -r 08:30 "Scheduled reboot after system update" 2>/dev/null || true
+fi
+set -e
+
+echo "[2/8] Downloading latest code from GitHub..."
 TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
 HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMPFILE" "https://github.com/${GITHUB_REPO}/archive/refs/heads/${BRANCH}.tar.gz" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" != "200" ]; then
@@ -39,7 +49,7 @@ fi
 FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
 echo "Downloaded: ${FILESIZE} bytes"
 
-echo "[2/7] Backing up current installation..."
+echo "[3/8] Backing up current installation..."
 if [ -f "$APP_DIR/package.json" ]; then
   mkdir -p "$BACKUP_DIR"
   rsync -a --exclude='music' --exclude='voiceovers' --exclude='node_modules' "$APP_DIR/" "$BACKUP_DIR/"
@@ -48,7 +58,7 @@ else
   echo "No existing installation found, skipping backup"
 fi
 
-echo "[3/7] Extracting update..."
+echo "[4/8] Extracting update..."
 TMPDIR=$(mktemp -d /tmp/djbooth-extract-XXXXXX)
 tar xzf "$TMPFILE" -C "$TMPDIR"
 rm -f "$TMPFILE"
@@ -60,7 +70,7 @@ if [ -z "$EXTRACTED_DIR" ]; then
   exit 1
 fi
 
-echo "[4/7] Copying server and config files..."
+echo "[5/8] Copying server and config files..."
 cp -r "${EXTRACTED_DIR}server" "$APP_DIR/"
 cp -r "${EXTRACTED_DIR}public" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}package.json" "$APP_DIR/"
@@ -106,7 +116,7 @@ else
   grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.95.238.71:3001" >> "$ENV_FILE"
 fi
 
-echo "[5/7] Building frontend..."
+echo "[6/8] Building frontend..."
 if [ -d "${EXTRACTED_DIR}src" ]; then
   cp -r "${EXTRACTED_DIR}src" "$APP_DIR/"
 fi
@@ -188,7 +198,7 @@ if [ ! -f /swapfile ] && [ "$(free -m | awk '/^Mem:/{print $2}')" -lt 2048 ]; th
   echo "Swap file created and activated"
 fi
 
-echo "[6/7] Restarting service..."
+echo "[7/8] Restarting service..."
 if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
   echo "Running as boot service — skipping restart (systemd will start djbooth next)"
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
@@ -260,7 +270,7 @@ if [ -n "$WIFI_CONN" ]; then
 fi
 
 echo ""
-echo "[7/7] Cleaning up..."
+echo "[8/8] Cleaning up..."
 rm -rf "$TMPDIR" 2>/dev/null
 
 echo "================================================"

@@ -2,18 +2,18 @@ import express from 'express';
 import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, statSync, createReadStream, readdirSync } from 'fs';
+import { existsSync, statSync, createReadStream, readdirSync, unlinkSync } from 'fs';
 import { networkInterfaces, hostname } from 'os';
 import {
   getSetting, setSetting, hashPin, verifyPin,
-  createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer,
+  createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer, invalidateDancerSessions,
   createSession, getSession, touchSession, deleteSession, cleanExpiredSessions,
   syncSongs, listSongs,
   saveVoiceover, getVoiceover, getVoiceoverFilePath, listVoiceovers, deleteVoiceover, deleteVoiceoversByDancer,
   clearAllVoiceovers, cleanupOrphanedVoiceovers,
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
-  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime,
+  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
@@ -22,7 +22,7 @@ import {
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
-import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats } from './r2sync.js';
+import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music } from './r2sync.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 
@@ -379,6 +379,9 @@ app.post('/api/dancers', authenticate, requireDJ, (req, res) => {
 app.put('/api/dancers/:id', authenticate, requireDJ, (req, res) => {
   const dancer = updateDancer(req.params.id, req.body);
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
+  if (req.body.pin !== undefined) {
+    invalidateDancerSessions(req.params.id);
+  }
   const { pin_hash, ...safe } = dancer;
   res.json(safe);
 });
@@ -1238,6 +1241,42 @@ app.get('/api/music/blocked', authenticate, (req, res) => {
     const tracks = getBlockedTracks();
     res.json({ tracks });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/music/track', authenticate, requireDJ, async (req, res) => {
+  const { trackName } = req.body;
+  if (!trackName) return res.status(400).json({ error: 'trackName required' });
+  try {
+    const track = getMusicTrackByName(trackName);
+    if (!track) return res.status(404).json({ error: 'Track not found in database' });
+
+    const results = { db: false, local: false, r2: false };
+
+    deleteMusicTrackFromDB(trackName);
+    results.db = true;
+
+    if (track.path && existsSync(track.path)) {
+      try { unlinkSync(track.path); results.local = true; } catch (e) {
+        console.warn(`⚠️ Could not delete local file ${track.path}: ${e.message}`);
+      }
+    }
+
+    if (isR2Configured()) {
+      const MUSIC_PATH = getSetting('music_path');
+      let relativePath = track.path;
+      if (MUSIC_PATH && relativePath.startsWith(MUSIC_PATH)) {
+        relativePath = relativePath.slice(MUSIC_PATH.length).replace(/^\/+/, '');
+      } else {
+        relativePath = track.path.split('/').pop();
+      }
+      results.r2 = await deleteFromR2Music(relativePath);
+    }
+
+    res.json({ ok: true, trackName, results });
+  } catch (err) {
+    console.error('❌ Music track delete error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -24,6 +24,8 @@ export default function DancerView() {
   const [totalTracks, setTotalTracks] = useState(0);
   const lastActivityRef = useRef(Date.now());
   const [dragIdx, setDragIdx] = useState(null);
+  const [playedSongs, setPlayedSongs] = useState({});
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const searchTimerRef = useRef(null);
   const [isPhone, setIsPhone] = useState(() => window.innerWidth < PHONE_BREAKPOINT);
 
@@ -31,6 +33,13 @@ export default function DancerView() {
     const check = () => setIsPhone(window.innerWidth < PHONE_BREAKPOINT);
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('djbooth_song_cooldowns');
+      if (raw) setPlayedSongs(JSON.parse(raw));
+    } catch {}
   }, []);
 
   const touchState = useRef({ active: false, idx: null, startY: 0, currentY: 0, timer: null });
@@ -344,7 +353,7 @@ export default function DancerView() {
                     }`}
                   >
                     <GripVertical className="w-3.5 h-3.5 text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
-                    <span className="text-[11px] text-gray-200 flex-1 truncate leading-tight">{song}</span>
+                    <span className={`text-[11px] flex-1 truncate leading-tight ${(playedSongs[song] && (Date.now() - playedSongs[song]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-gray-200'}`}>{song}</span>
                     <button
                       onClick={() => removeSong(idx)}
                       className="p-1 text-red-400/60 active:text-red-400 transition-colors flex-shrink-0"

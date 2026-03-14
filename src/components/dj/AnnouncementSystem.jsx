@@ -208,9 +208,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   };
 
 
-  const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1) => {
+  const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1) => {
     const config = getApiConfig();
-    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, LOCKED_LEVEL, roundNumber);
+    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, LOCKED_LEVEL, roundNumber, varNum);
 
     const openaiKey = config.openaiApiKey || '';
     const scriptModel = config.scriptModel || 'auto';
@@ -587,7 +587,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     try {
       console.log(`🎙️ Generating announcement: ${key} (var${varNum})`);
       setGeneratingType(type);
-      const script = await generateScript(type, dancerName, nextDancerName, roundNumber);
+      const script = await generateScript(type, dancerName, nextDancerName, roundNumber, varNum);
       const audioBlob = await generateAudio(script);
 
       await cacheToIndexedDB(key, audioBlob);
