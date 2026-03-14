@@ -90,7 +90,7 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-const CURRENT_VOICE_VERSION = 'V10';
+const CURRENT_VOICE_VERSION = 'V11';
 
 const cleanupStaleIDBEntries = async () => {
   try {
@@ -359,11 +359,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, [elevenLabsApiKey]);
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-V10`;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${CURRENT_VOICE_VERSION}`;
   };
 
   const getLegacyL4Key = (type, dancerName, nextDancerName = null) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-V10`;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-${CURRENT_VOICE_VERSION}`;
   };
 
   const getCacheKey = (type, dancerName, nextDancerName = null, varNum = 1) => {

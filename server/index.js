@@ -745,6 +745,36 @@ app.get('/api/config/capabilities', (req, res) => {
   });
 });
 
+app.post('/api/playback-errors', authenticate, requireDJ, (req, res) => {
+  try {
+    const { trackName, dancerName, reason } = req.body;
+    db.prepare('INSERT INTO playback_errors (track_name, dancer_name, reason) VALUES (?, ?, ?)').run(
+      trackName || null, dancerName || null, reason || 'watchdog_silence'
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/playback-errors', (req, res) => {
+  try {
+    const errors = db.prepare('SELECT * FROM playback_errors ORDER BY id DESC LIMIT 100').all();
+    res.json({ errors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/playback-errors', authenticate, requireDJ, (req, res) => {
+  try {
+    db.prepare('DELETE FROM playback_errors').run();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use('/api/fleet', fleetRoutes);
 setupFleetMonitorRoutes(app);
 

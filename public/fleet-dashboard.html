@@ -443,6 +443,14 @@
       </button>
     </div>
     <div id="deviceGrid" class="device-grid"></div>
+
+    <div style="margin-top:24px; background:#0d0d1f; border:1px solid #1e293b; border-radius:12px; padding:16px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:700; color:#f87171; text-transform:uppercase; letter-spacing:1px;">⚠ Playback Errors</div>
+        <button onclick="clearPlaybackErrors()" style="font-size:11px; padding:4px 10px; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#94a3b8; cursor:pointer;">Clear All</button>
+      </div>
+      <div id="playbackErrorsList" style="font-size:12px; color:#94a3b8;">Loading...</div>
+    </div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
@@ -819,7 +827,41 @@
       document.getElementById('refreshTimer').textContent = `${refreshCountdown}s`;
     }
 
+    async function fetchPlaybackErrors() {
+      try {
+        const res = await fetch('/api/playback-errors');
+        if (!res.ok) return;
+        const data = await res.json();
+        const el = document.getElementById('playbackErrorsList');
+        if (!data.errors || data.errors.length === 0) {
+          el.innerHTML = '<span style="color:#475569; font-style:italic;">No playback errors recorded.</span>';
+          return;
+        }
+        el.innerHTML = data.errors.map(e => `
+          <div style="display:flex; gap:10px; align-items:baseline; padding:6px 0; border-bottom:1px solid #1e293b;">
+            <span style="color:#ef4444; flex-shrink:0;">✕</span>
+            <span style="color:#fca5a5; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${e.track_name || '?'}">${e.track_name || 'Unknown track'}</span>
+            <span style="color:#64748b; flex-shrink:0;">${e.dancer_name || '—'}</span>
+            <span style="color:#475569; flex-shrink:0; font-size:11px;">${e.occurred_at || ''}</span>
+          </div>`).join('');
+      } catch {}
+    }
+
+    async function clearPlaybackErrors() {
+      const pin = getPin();
+      if (!pin) { showToast('Enter PIN first', 'error'); return; }
+      try {
+        const res = await fetch('/api/playback-errors', {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + pin }
+        });
+        if (res.ok) { showToast('Playback errors cleared', 'success'); fetchPlaybackErrors(); }
+        else showToast('Clear failed — check PIN', 'error');
+      } catch (e) { showToast('Error: ' + e.message, 'error'); }
+    }
+
     fetchStatus();
+    fetchPlaybackErrors();
     setInterval(updateRefreshTimer, 1000);
   </script>
 </body>

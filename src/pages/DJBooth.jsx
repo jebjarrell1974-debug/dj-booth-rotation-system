@@ -64,6 +64,7 @@ export default function DJBooth() {
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
+  const currentTrackRef = useRef(null);
   const currentTimeRef = useRef(0);
   const durationRef = useRef(0);
   const lastTimeStampRef = useRef(performance.now());
@@ -2966,44 +2967,86 @@ export default function DJBooth() {
         }
         await new Promise(r => setTimeout(r, 200));
 
-        let recovered = false;
+        // Capture what failed and who was on stage
+        const failedSong = currentTrackRef.current;
+        const wdDancerId = rotationRef.current[currentDancerIndexRef.current];
+        const wdDancer = dancersRef.current?.find(d => String(d.id) === String(wdDancerId));
+        const wdDancerName = wdDancer?.name || null;
 
+        // Log the playback error
         try {
           const token = localStorage.getItem('djbooth_token');
-          const wdCooldowns = songCooldownRef.current || {};
-          const wdNow = Date.now();
-          const wdRecent = Object.entries(wdCooldowns)
-            .filter(([, ts]) => ts && (wdNow - ts) < COOLDOWN_MS)
-            .map(([name]) => name);
-          const wdExclude = wdRecent.length > 0 ? `&exclude=${encodeURIComponent(wdRecent.join(','))}` : '';
-          const res = await fetch(`/api/music/random?count=5${wdExclude}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-            signal: AbortSignal.timeout(5000)
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const serverTracks = (data.tracks || []).map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
-            for (let i = 0; i < serverTracks.length; i++) {
-              try {
-                const track = serverTracks[i];
-                const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-                if (success !== false) {
-                  console.log('🐕 WATCHDOG: Server recovery succeeded with "' + track.name + '"');
-                  lastAudioActivityRef.current = Date.now();
-                  setIsPlaying(true);
-                  recordSongPlayed(track.name);
-                  recovered = true;
-                  break;
-                }
-              } catch (e) {
-                console.error('🐕 WATCHDOG: Server recovery attempt', i+1, 'failed:', e.message);
+          fetch('/api/playback-errors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ trackName: failedSong, dancerName: wdDancerName, reason: 'watchdog_silence' })
+          }).catch(() => {});
+        } catch {}
+
+        let recovered = false;
+
+        // First: try songs from the current dancer's playlist
+        if (wdDancerId && !recovered) {
+          const playlist = (rotationSongsRef.current[wdDancerId] || []).filter(t => t && t.url);
+          const cooldowns = songCooldownRef.current || {};
+          const sorted = [...playlist].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
+          for (const track of sorted.slice(0, 8)) {
+            try {
+              const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
+              if (success !== false) {
+                console.log('🐕 WATCHDOG: Dancer playlist recovery succeeded with "' + track.name + '"');
+                lastAudioActivityRef.current = Date.now();
+                setIsPlaying(true);
+                recordSongPlayed(track.name);
+                recovered = true;
+                break;
               }
+            } catch (e) {
+              console.error('🐕 WATCHDOG: Dancer playlist attempt failed:', e.message);
             }
           }
-        } catch (e) {
-          console.warn('🐕 WATCHDOG: Server random fetch failed, trying local pool:', e.message);
         }
 
+        // Second: try server random tracks
+        if (!recovered) {
+          try {
+            const token = localStorage.getItem('djbooth_token');
+            const wdCooldowns = songCooldownRef.current || {};
+            const wdNow = Date.now();
+            const wdRecent = Object.entries(wdCooldowns)
+              .filter(([, ts]) => ts && (wdNow - ts) < COOLDOWN_MS)
+              .map(([name]) => name);
+            const wdExclude = wdRecent.length > 0 ? `&exclude=${encodeURIComponent(wdRecent.join(','))}` : '';
+            const res = await fetch(`/api/music/random?count=5${wdExclude}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              signal: AbortSignal.timeout(5000)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const serverTracks = (data.tracks || []).map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
+              for (let i = 0; i < serverTracks.length; i++) {
+                try {
+                  const track = serverTracks[i];
+                  const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
+                  if (success !== false) {
+                    console.log('🐕 WATCHDOG: Server recovery succeeded with "' + track.name + '"');
+                    lastAudioActivityRef.current = Date.now();
+                    setIsPlaying(true);
+                    recordSongPlayed(track.name);
+                    recovered = true;
+                    break;
+                  }
+                } catch (e) {
+                  console.error('🐕 WATCHDOG: Server recovery attempt', i+1, 'failed:', e.message);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('🐕 WATCHDOG: Server random fetch failed, trying local pool:', e.message);
+          }
+        }
+
+        // Third: local pool fallback
         if (!recovered) {
           const validTracks = tracks.filter(t => t && t.url);
           const cooldowns = songCooldownRef.current || {};
@@ -3213,6 +3256,7 @@ export default function DJBooth() {
             }}
             onTrackChange={(name) => {
               setCurrentTrack(name);
+              currentTrackRef.current = name;
               currentTimeRef.current = 0;
               durationRef.current = 0;
               lastTimeStampRef.current = performance.now();

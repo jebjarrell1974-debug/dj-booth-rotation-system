@@ -132,6 +132,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at);
   CREATE INDEX IF NOT EXISTS idx_play_history_dancer ON play_history(dancer_name);
   CREATE INDEX IF NOT EXISTS idx_play_history_track_name ON play_history(track_name);
+
+  CREATE TABLE IF NOT EXISTS playback_errors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_name TEXT,
+    dancer_name TEXT,
+    reason TEXT,
+    occurred_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
 `);
 
 try {
