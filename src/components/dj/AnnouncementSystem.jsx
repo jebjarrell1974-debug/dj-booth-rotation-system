@@ -147,8 +147,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
   const getNextVariationNum = useCallback((type, dancerName, nextDancerName = null) => {
     const k = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
-    const current = variationCounterRef.current[k] || 0;
-    const next = (current % NUM_VARIATIONS) + 1;
+    const last = variationCounterRef.current[k] || 0;
+    let next;
+    do {
+      next = Math.floor(Math.random() * NUM_VARIATIONS) + 1;
+    } while (next === last && NUM_VARIATIONS > 1);
     variationCounterRef.current[k] = next;
     return next;
   }, []);
