@@ -13,7 +13,7 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 | neonaidj001 | `100.115.212.34` | DJ booth | Pony Nation | Music: `/home/neonaidj001/djbooth/music/` |
 | neonaidj003 | `100.81.90.125` | DJ booth | Unknown (needs `CLUB_NAME` set) | Stable since Mar 10 crashes |
 
-**All 3 units need `~/djbooth-update.sh`** to pull latest song selection fixes (commit `823af94`).
+**All 3 units need `~/djbooth-update.sh`** to pull latest fixes (Sessions 41+42). Venue Pis also need `FLEET_DEVICE_KEY=<api key>` in `~/djbooth/.env` for fleet error forwarding.
 
 ## User Preferences
 - Nightclub dark theme with neon cyan accent (#00d4ff) and blue secondary (#2563eb)

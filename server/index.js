@@ -753,6 +753,19 @@ app.post('/api/playback-errors', authenticate, requireDJ, (req, res) => {
     db.prepare('INSERT INTO playback_errors (track_name, dancer_name, reason) VALUES (?, ?, ?)').run(
       trackName || null, dancerName || null, reason || 'watchdog_silence'
     );
+
+    // Forward to fleet homebase if this is a venue Pi
+    const fleetKey = process.env.FLEET_DEVICE_KEY;
+    const fleetUrl = process.env.FLEET_SERVER_URL;
+    if (fleetKey && fleetUrl && process.env.IS_HOMEBASE !== 'true') {
+      const logMsg = `Playback error: ${trackName || 'unknown'} — ${reason || 'watchdog_silence'}${dancerName ? ` (dancer: ${dancerName})` : ''}`;
+      fetch(`${fleetUrl}/fleet/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-device-key': fleetKey },
+        body: JSON.stringify({ logs: [{ level: 'error', message: logMsg, timestamp: new Date().toISOString() }] })
+      }).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

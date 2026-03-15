@@ -2983,6 +2983,22 @@ export default function DJBooth() {
           }).catch(() => {});
         } catch {}
 
+        // Update rotation display to show the track the watchdog actually plays
+        const updateWatchdogRotationUI = (recoveredTrack) => {
+          if (isRotationActiveRef.current && rotationRef.current.length > 0) {
+            const wdUpdateId = rotationRef.current[currentDancerIndexRef.current];
+            if (wdUpdateId) {
+              const songs = rotationSongsRef.current[wdUpdateId] || [];
+              const idx = currentSongNumberRef.current - 1;
+              const updated = [...songs];
+              updated[idx] = recoveredTrack;
+              const newSongs = { ...rotationSongsRef.current, [wdUpdateId]: updated };
+              setRotationSongs(newSongs);
+              rotationSongsRef.current = newSongs;
+            }
+          }
+        };
+
         let recovered = false;
 
         // First: try songs from the current dancer's playlist
@@ -2998,6 +3014,7 @@ export default function DJBooth() {
                 lastAudioActivityRef.current = Date.now();
                 setIsPlaying(true);
                 recordSongPlayed(track.name);
+                updateWatchdogRotationUI(track);
                 recovered = true;
                 break;
               }
@@ -3033,6 +3050,7 @@ export default function DJBooth() {
                     lastAudioActivityRef.current = Date.now();
                     setIsPlaying(true);
                     recordSongPlayed(track.name);
+                    updateWatchdogRotationUI(track);
                     recovered = true;
                     break;
                   }
@@ -3061,6 +3079,7 @@ export default function DJBooth() {
                 lastAudioActivityRef.current = Date.now();
                 setIsPlaying(true);
                 recordSongPlayed(track.name);
+                updateWatchdogRotationUI(track);
                 recovered = true;
                 break;
               }

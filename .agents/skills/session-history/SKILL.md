@@ -128,7 +128,9 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **HDMI-2 display placement** (Pony Nation Pi): Rotation display window opens on HDMI-1 instead of HDMI-2 (see Session 35 below for full investigation state)
 - **Homebase-aware update script**: Skip Chrome kill/relaunch when `IS_HOMEBASE=true` in env
 - **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
-- **All 3 units need `~/djbooth-update.sh`** to pull all changes from this session
+- **Homebase music scan**: Make homebase scan ALL music (not just its local library) so the fleet manifest is complete — possibly pointing `MUSIC_PATH` at a merged/mounted path or scanning multiple directories
+- **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<its api key from registration>` in `~/djbooth/.env` for playback errors to forward to fleet command
+- **All 3 units need `~/djbooth-update.sh`** to pull all changes from Sessions 41+42
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
@@ -168,6 +170,54 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - Icon: `text-[#a855f7]` → `text-orange-400` when `onCool`
 - Text: `text-white` → `text-orange-300` when `onCool`
 - **File**: `src/components/dj/RotationPlaylistManager.jsx`
+
+### GitHub
+- Commit: `29f3332` — "LUFS normalization + playlist cooldown orange + session notes (V11, true-random varNum, watchdog errors)"
+- 142 files pushed
+
+---
+
+## Mar 15, 2026 — Session 42 (Rotation Display / Audio Mismatch Fix + Fleet Error Forwarding — COMPLETE)
+
+### Bug: Song Playing Did Not Match Rotation Display
+**Symptom**: Header showed "09 - Rhythm Track - Got Money" playing, but SAGE's rotation slot still showed "01 Black Dog.wma" as if that were playing. No console errors.
+
+**Root cause (two bugs working together)**:
+
+1. **No codec check before loading** (`AudioEngine.jsx`): The server can stream any file regardless of format. When "01 Black Dog.wma" was assigned to SAGE, `inactiveDeck.load()` succeeded (server delivered the bytes), but the browser (Chromium/Linux) silently entered an error state on `play()` because WMA codec is unsupported. No `onerror` handler was attached to the music deck elements, so the error was swallowed. `ontimeupdate` never fired. After 5 seconds the watchdog triggered.
+
+2. **Watchdog didn't update rotation display** (`DJBooth.jsx`): The watchdog successfully recovered by playing a random track via `audioEngineRef.current.playTrack(...)`. It updated `lastAudioActivityRef`, `isPlayingRef`, and called `recordSongPlayed` — but it had no equivalent of `updateRotationUI`, so `rotationSongs` state was never updated. The display stayed stuck on the original (failed) assignment.
+
+### Fix A — AudioEngine codec check (before load)
+**File**: `src/components/dj/AudioEngine.jsx` — inside `playTrack`, immediately after `loadTrack` resolves:
+```js
+const CODEC_MAP = { mp3:'audio/mpeg', wav:'audio/wav', ogg:'audio/ogg',
+  flac:'audio/flac', m4a:'audio/mp4', aac:'audio/aac',
+  wma:'audio/x-ms-wma', opus:'audio/ogg; codecs=opus' };
+const urlExt = (trackData.url.split('?')[0].split('.').pop() || '').toLowerCase();
+const codecMime = CODEC_MAP[urlExt];
+if (codecMime) {
+  const probe = new Audio();
+  if (probe.canPlayType(codecMime) === '') {
+    // releaseLock, return false — DJBooth fallback logic handles cleanly
+  }
+}
+```
+`canPlayType` returns `''` (falsy) = definitely unsupported. Now WMA fails fast and cleanly, triggering the existing fallback chain which DOES call `updateRotationUI`.
+
+### Fix B — Watchdog rotation display update
+**File**: `src/pages/DJBooth.jsx` — watchdog's inner try block:
+Added `updateWatchdogRotationUI(recoveredTrack)` helper defined once, called after `recovered = true` in all three recovery branches (dancer playlist, server random, local pool). Updates `rotationSongsRef` and calls `setRotationSongs` so the card in the UI shows the actual playing track.
+
+### Fix C — Fleet error forwarding from venue Pis
+**File**: `server/index.js` — `POST /api/playback-errors`:
+If `FLEET_DEVICE_KEY` and `FLEET_SERVER_URL` env vars are set AND `IS_HOMEBASE !== 'true'`, the server async-POSTs to homebase's `POST /fleet/logs` with the error as a structured log entry. Completely fire-and-forget — doesn't affect the local response.
+
+**Required per-venue Pi setup** (one-time): Add `FLEET_DEVICE_KEY=<api key from device registration>` to `~/djbooth/.env` on each venue Pi. The key is in homebase's fleet dashboard device list.
+
+### GitHub
+- Commit: pending (push needed)
+- **All 3 units need `~/djbooth-update.sh`**
 
 ---
 

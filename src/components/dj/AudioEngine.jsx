@@ -480,6 +480,25 @@ const AudioEngine = forwardRef(({
       return false;
     }
 
+    // Codec check — bail out early for formats the browser definitely cannot play
+    // (e.g. WMA on Chromium/Linux).  canPlayType returns '' when support is absent.
+    const CODEC_MAP = {
+      mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+      flac: 'audio/flac', m4a: 'audio/mp4', aac: 'audio/aac',
+      wma: 'audio/x-ms-wma', opus: 'audio/ogg; codecs=opus',
+    };
+    const urlExt = (trackData.url.split('?')[0].split('.').pop() || '').toLowerCase();
+    const codecMime = CODEC_MAP[urlExt];
+    if (codecMime) {
+      const probe = new Audio();
+      if (probe.canPlayType(codecMime) === '') {
+        console.error(`❌ PlayTrack: Browser cannot play ${urlExt.toUpperCase()} (${trackData.name}) — skipping`);
+        releaseLock();
+        playTrackLockRef.current = null;
+        return false;
+      }
+    }
+
     const ctx = ensureAudioContext();
     crossfadeInProgressRef.current = true;
 
