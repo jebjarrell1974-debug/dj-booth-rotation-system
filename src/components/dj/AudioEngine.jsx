@@ -13,7 +13,7 @@ const DUCK_RELEASE_MS = 600;
 
 const NEAR_END_SECONDS = 3;
 
-const AUTO_GAIN_TARGET_LUFS = -14;
+const AUTO_GAIN_TARGET_LUFS = -10;
 const AUTO_GAIN_ANALYSIS_SECONDS = 10;
 const AUTO_GAIN_MIN = 0.3;
 const AUTO_GAIN_MAX = 2.5;
@@ -430,7 +430,15 @@ const AudioEngine = forwardRef(({
     if (!input) return null;
 
     if (typeof input === 'object' && input.url) {
-      return { url: input.url, name: input.name || input.url.split('/').pop(), file: null };
+      const url = input.url;
+      const name = input.name || url.split('/').pop();
+      if (input.auto_gain != null && autoGainCacheRef.current) {
+        const cacheKey = url.replace(/^blob:/, '');
+        const gain = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, input.auto_gain));
+        autoGainCacheRef.current.set(cacheKey, gain);
+        console.log(`🔊 AutoGain: pre-loaded server gain=${gain.toFixed(2)}x for ${name}`);
+      }
+      return { url, name, file: null };
     }
 
     if (typeof input === 'string') {

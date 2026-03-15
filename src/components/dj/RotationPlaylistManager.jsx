@@ -785,6 +785,7 @@ export default function RotationPlaylistManager({
                   playlistSongs.map((songName, idx) => (
                     <Draggable key={`playlist-${idx}-${songName}`} draggableId={`playlist-${idx}-${songName}`} index={idx}>
                       {(provided, snapshot) => (
+                    {(() => { const onCool = !!(songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS); return (
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
@@ -796,11 +797,12 @@ export default function RotationPlaylistManager({
                           : 'bg-[#151528] hover:bg-[#1e293b]'
                       } cursor-pointer`}
                     >
-                      <ListMusic className="w-4 h-4 text-[#a855f7] flex-shrink-0" />
+                      <ListMusic className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-[#a855f7]'}`} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm text-white truncate block">{songName}</span>
+                        <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{songName}</span>
                       </div>
                     </div>
+                    ); })()}
                       )}
                     </Draggable>
                   ))

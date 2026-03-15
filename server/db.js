@@ -150,6 +150,14 @@ try {
 }
 
 try {
+  db.prepare("SELECT lufs FROM music_tracks LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE music_tracks ADD COLUMN lufs REAL");
+  db.exec("ALTER TABLE music_tracks ADD COLUMN auto_gain REAL");
+  db.exec("ALTER TABLE music_tracks ADD COLUMN lufs_analyzed INTEGER DEFAULT 0");
+}
+
+try {
   db.prepare("SELECT club_name FROM voiceovers LIMIT 1").get();
 } catch {
   db.exec("ALTER TABLE voiceovers ADD COLUMN club_name TEXT");
@@ -618,7 +626,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   const where = conditions.join(' AND ');
   params.push(count * 4);
   let pool = readDb.prepare(
-    `SELECT t.id, t.name, t.path, t.genre
+    `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
      FROM music_tracks t
      WHERE ${where}
      ORDER BY RANDOM()
@@ -640,7 +648,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
     const fbWhere = fallbackConditions.join(' AND ');
     fallbackParams.push((count - pool.length) * 4);
     const fallback = readDb.prepare(
-      `SELECT t.id, t.name, t.path, t.genre,
+      `SELECT t.id, t.name, t.path, t.genre, t.auto_gain,
               h.last_played AS last_played
        FROM music_tracks t
        LEFT JOIN (
@@ -683,7 +691,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     for (const trackName of dancerPlaylist) {
       if (excludeSet.has(trackName)) continue;
       const track = readDb.prepare(
-        `SELECT t.id, t.name, t.path, t.genre,
+        `SELECT t.id, t.name, t.path, t.genre, t.auto_gain,
                 COALESCE(h.last_played, '1970-01-01') as last_played
          FROM music_tracks t
          LEFT JOIN (SELECT track_name, MAX(played_at) AS last_played FROM play_history GROUP BY track_name) h
@@ -723,6 +731,36 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
 
 export function getMusicTrackCount() {
   return readDb.prepare('SELECT COUNT(*) as count FROM music_tracks WHERE blocked = 0').get().count;
+}
+
+export function updateTrackLufs(path, lufs, autoGain) {
+  db.prepare(
+    'UPDATE music_tracks SET lufs = ?, auto_gain = ?, lufs_analyzed = 1 WHERE path = ?'
+  ).run(lufs, autoGain, path);
+}
+
+export function getTracksNeedingAnalysis(limit = 50) {
+  return readDb.prepare(
+    'SELECT id, path FROM music_tracks WHERE lufs_analyzed = 0 AND blocked = 0 ORDER BY RANDOM() LIMIT ?'
+  ).all(limit);
+}
+
+export function getLufsStats() {
+  const total = readDb.prepare('SELECT COUNT(*) as count FROM music_tracks WHERE blocked = 0').get().count;
+  const analyzed = readDb.prepare('SELECT COUNT(*) as count FROM music_tracks WHERE lufs_analyzed = 1 AND blocked = 0').get().count;
+  const withGain = readDb.prepare('SELECT COUNT(*) as count FROM music_tracks WHERE auto_gain IS NOT NULL AND blocked = 0').get().count;
+  return { total, analyzed, withGain, pending: total - analyzed };
+}
+
+export function getTrackAutoGains(filenames) {
+  if (!filenames || filenames.length === 0) return {};
+  const placeholders = filenames.map(() => '?').join(',');
+  const rows = readDb.prepare(
+    `SELECT name, auto_gain FROM music_tracks WHERE name IN (${placeholders}) AND auto_gain IS NOT NULL`
+  ).all(filenames);
+  const result = {};
+  for (const row of rows) result[row.name] = row.auto_gain;
+  return result;
 }
 
 export function getLastScanTime() {

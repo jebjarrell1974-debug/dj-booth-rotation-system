@@ -17,8 +17,10 @@ import {
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
-  exportDancers, importDancers, saveClientSettings, getClientSettings
+  exportDancers, importDancers, saveClientSettings, getClientSettings,
+  getLufsStats
 } from './db.js';
+import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
@@ -1244,6 +1246,19 @@ app.post('/api/music/rescan', authenticate, requireDJ, (req, res) => {
   }
 });
 
+app.get('/api/music/lufs-status', authenticate, (req, res) => {
+  const stats = getLufsStats();
+  const progress = getLufsAnalysisProgress();
+  res.json({ ...stats, isRunning: isLufsAnalysisRunning(), progress });
+});
+
+app.post('/api/music/analyze', authenticate, requireDJ, (req, res) => {
+  if (!MUSIC_PATH) return res.status(400).json({ error: 'MUSIC_PATH not configured' });
+  if (isLufsAnalysisRunning()) return res.json({ ok: true, message: 'Analysis already running' });
+  startLufsAnalysis(MUSIC_PATH);
+  res.json({ ok: true, message: 'LUFS analysis started in background' });
+});
+
 app.post('/api/music/block', authenticate, requireDJ, (req, res) => {
   const { trackName } = req.body;
   if (!trackName) return res.status(400).json({ error: 'trackName required' });
@@ -1648,6 +1663,7 @@ function initMusicScanner() {
       const count = getMusicTrackCount();
       updateBootStep('musicScan', 'done', `${count.toLocaleString()} tracks found`);
       startPeriodicScan(MUSIC_PATH, 5);
+      setTimeout(() => startLufsAnalysis(MUSIC_PATH), 5000);
     } catch (err) {
       updateBootStep('musicScan', 'error', err.message);
       console.error('❌ Initial music scan failed:', err.message);

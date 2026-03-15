@@ -94,32 +94,80 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of last session) — READ THIS FIRST
+## CURRENT STATUS (as of last session — March 15, 2026) — READ THIS FIRST
 
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
 - Play history pipeline: `djbooth_token` stored in `localStorage` (not `sessionStorage`), survives reboots
-- Voiceover system: 8-variation round-robin, locked to energy L4, legacy L4 key migration, generic fallbacks
+- Voiceover system: 5-variation true-random (V11), stale IDB auto-cleanup on load, generic fallbacks
 - All 3 units report to homebase fleet server (`100.95.238.71:3001`)
+- LUFS background analyzer: runs at boot (5s delay), FFmpeg analysis-only, -10 LUFS club target, 3 concurrent, stores in DB
+- Fleet manifest enriched with `auto_gain` values; venue Pis get gain values on next sync
+- AudioEngine: pre-populated gain cache from server values (skips 10s browser analysis when gain available)
+- Playlist panel orange cooldown: dancer's personal playlist now shows orange icon+text for recently played songs (same as genre folders panel)
+- Watchdog smart recovery: tries current dancer's playlist first, logs failed songs to `playback_errors` table
 
-### What was just fixed (commit `823af94` — needs `~/djbooth-update.sh` on all 3 units)
-1. **Song selection — playlist strict** (`server/db.js` `selectTracksForSet`): Songs are ONLY picked from the dancer's assigned playlist. No random library fallback when a playlist exists. Fresh songs (not played in 4h) shuffled randomly, cooldown songs ordered oldest-first.
-2. **Client cooldown ownership** (`DJBooth.jsx` `getDancerTracks`): Server owns cooldown logic via `play_history` — client no longer sends `cooldownNames` in exclude list. Local fallback is playlist-strict too.
-3. **Manual assignment URL resolution** (`DJBooth.jsx` `updateSongAssignments`): When a drag-drop song assignment arrives without a URL (name-only), it async-resolves via `resolveTrackByName` so display always matches playback.
-4. **HandleSkip display/audio mismatch fix** (`DJBooth.jsx`): When a pre-assigned track URL is unresolvable mid-set, plays a fallback instead of silently switching to a different song (which caused the display to show one song while a completely different one played).
+### What was just completed (Mar 15, 2026)
+1. **LUFS normalization** — `server/lufsAnalyzer.js` (new), `server/db.js` (3 new columns: `lufs`, `auto_gain`, `lufs_analyzed`; 4 new functions), `server/index.js` (2 new endpoints, auto-start after scan), `server/fleet-routes.js` (manifest enrichment), `AudioEngine.jsx` (cache pre-population + -10 LUFS target)
+2. **Playlist panel orange cooldown** — `src/components/dj/RotationPlaylistManager.jsx`: dancer personal playlist panel now checks `songCooldowns` and shows orange icon/text for recently played songs (was previously always purple/white)
+3. **V11 voice cache** — `AnnouncementSystem.jsx`: `CURRENT_VOICE_VERSION = 'V11'`, stale cache auto-purge on load
+4. **True random varNum** — `AnnouncementSystem.jsx`: `getNextVariationNum` picks randomly from 1–5 with no back-to-back repeats
+5. **Watchdog smart recovery + playback errors** — `server/db.js`: `playback_errors` table; Watchdog tries current dancer's playlist first; fleet dashboard shows error log with Clear All
+
+### New API endpoints
+- `GET /api/music/lufs-status` — returns `{ total, analyzed, withGain, pending, isRunning, progress }` (requires auth)
+- `POST /api/music/analyze` — manually triggers LUFS background analysis (requires DJ auth)
+
+### AudioEngine notes (CRITICAL — do not change behavior)
+- `AUTO_GAIN_TARGET_LUFS = -10` (changed from -14; -10 is club standard)
+- `loadTrack` accepts `{ url, name, auto_gain }` — if `auto_gain` present, pre-populates `autoGainCacheRef` so `analyzeTrackLoudness` returns immediately from cache; no 10s fetch+analyze
+- Log line: `🔊 AutoGain: pre-loaded server gain=X.XXx for SONGNAME`
 
 ### Outstanding TODOs
 - **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, `sudo systemctl restart djbooth`
-- **neonaidj003**: Investigate March 10 crash logs: `journalctl -u djbooth --since "2026-03-10 13:00:00" --until "2026-03-10 18:00:00" | tail -50`
 - **HDMI-2 display placement** (Pony Nation Pi): Rotation display window opens on HDMI-1 instead of HDMI-2 (see Session 35 below for full investigation state)
 - **Homebase-aware update script**: Skip Chrome kill/relaunch when `IS_HOMEBASE=true` in env
 - **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
-- **Business readiness**: System is nearly production-ready. Song selection, voiceovers, fleet management, and play history are all stable. Remaining issues are mostly Pi-side config.
+- **All 3 units need `~/djbooth-update.sh`** to pull all changes from this session
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 15, 2026 — Session 41 (LUFS Normalization + Playlist Cooldown Color — COMPLETE)
+
+### Feature: Server-Side LUFS Normalization
+**Problem**: AudioEngine did 10-second RMS analysis per song targeting -14 LUFS (streaming standard). Club systems need -10 LUFS and full-track analysis for accuracy.
+
+**Solution**: `server/lufsAnalyzer.js` — new background FFmpeg analysis pipeline.
+- FFmpeg analysis-only pass (no file modification): `ffmpeg -i input.mp3 -af loudnorm=I=-10:TP=-1:LRA=11:print_format=json -f null -`
+- Parses `input_i` (integrated LUFS) from JSON stderr output
+- Calculates `gain = clamp(10^((−10 − lufs) / 20), 0.3, 2.5)`
+- Runs 3 songs concurrently (nice to system), 150ms delay between batches
+- Auto-triggers 5 seconds after boot music scan; tracks marked `lufs_analyzed=1` so they're never reprocessed
+- Progress endpoint: `GET /api/music/lufs-status`; manual trigger: `POST /api/music/analyze`
+
+**DB changes** (`server/db.js`):
+- New columns: `music_tracks.lufs REAL`, `music_tracks.auto_gain REAL`, `music_tracks.lufs_analyzed INTEGER DEFAULT 0`
+- New functions: `updateTrackLufs(path, lufs, gain)`, `getTracksNeedingAnalysis(limit)`, `getLufsStats()`, `getTrackAutoGains(filenames)`
+- All track selection queries (`getRandomTracks`, `selectTracksForSet`) now include `auto_gain` in SELECT
+
+**Fleet manifest** (`server/fleet-routes.js`): enriches each entry with `auto_gain` from main DB by matching `fleet_music.filename = music_tracks.name`. Venue Pis get gain values transparently.
+
+**AudioEngine** (`src/components/dj/AudioEngine.jsx`):
+- `AUTO_GAIN_TARGET_LUFS`: -14 → -10 (club standard)
+- `loadTrack`: when input is `{ url, name, auto_gain }`, pre-populates `autoGainCacheRef.current.set(url, gain)` — `analyzeTrackLoudness` cache-hits immediately, skipping the 10s fetch+analyze
+
+### Fix: Playlist Panel Orange Cooldown Color
+**Problem**: Dancer's personal playlist panel in RotationPlaylistManager always showed purple icon + white text regardless of cooldown status. Genre folders panel already had orange for recently played songs.
+
+**Fix**: Added `onCool` check to `playlistSongs.map` render block (line ~791 in RotationPlaylistManager.jsx). Same pattern as the genre folders panel: `!!(songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS)`.
+- Icon: `text-[#a855f7]` → `text-orange-400` when `onCool`
+- Text: `text-white` → `text-orange-300` when `onCool`
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`
 
 ---
 
