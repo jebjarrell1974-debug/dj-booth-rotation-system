@@ -16,7 +16,7 @@ import {
   createPromoRequest, listPromoRequests, getPromoRequest, deletePromoRequest, completePromoRequest,
   getDancerBackup, listDancerBackups
 } from './fleet-db.js';
-import { getSession, saveVoiceover, getTrackAutoGains } from './db.js';
+import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms } from './db.js';
 import { getFleetStatus } from './fleet-monitor.js';
 
 const router = express.Router();
@@ -245,9 +245,11 @@ router.get('/music/manifest', authenticateDeviceMiddleware, (req, res) => {
   if (manifest.length > 0) {
     const filenames = manifest.map(m => m.filename).filter(Boolean);
     const gains = getTrackAutoGains(filenames);
+    const bpms = getTrackBpms(filenames);
     const enriched = manifest.map(m => ({
       ...m,
-      auto_gain: gains[m.filename] ?? null
+      auto_gain: gains[m.filename] ?? null,
+      bpm: bpms[m.filename] ?? null
     }));
     return res.json(enriched);
   }

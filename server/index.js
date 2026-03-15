@@ -21,6 +21,7 @@ import {
   getLufsStats
 } from './db.js';
 import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
+import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
@@ -1269,7 +1270,8 @@ app.post('/api/music/analyze', authenticate, requireDJ, (req, res) => {
   if (!MUSIC_PATH) return res.status(400).json({ error: 'MUSIC_PATH not configured' });
   if (isLufsAnalysisRunning()) return res.json({ ok: true, message: 'Analysis already running' });
   startLufsAnalysis(MUSIC_PATH);
-  res.json({ ok: true, message: 'LUFS analysis started in background' });
+  if (!isBpmAnalysisRunning()) startBpmAnalysis(MUSIC_PATH);
+  res.json({ ok: true, message: 'LUFS + BPM analysis started in background' });
 });
 
 app.post('/api/music/block', authenticate, requireDJ, (req, res) => {
@@ -1677,6 +1679,7 @@ function initMusicScanner() {
       updateBootStep('musicScan', 'done', `${count.toLocaleString()} tracks found`);
       startPeriodicScan(MUSIC_PATH, 5);
       setTimeout(() => startLufsAnalysis(MUSIC_PATH), 5000);
+      setTimeout(() => startBpmAnalysis(MUSIC_PATH), 15000);
     } catch (err) {
       updateBootStep('musicScan', 'error', err.message);
       console.error('❌ Initial music scan failed:', err.message);

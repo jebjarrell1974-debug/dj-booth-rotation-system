@@ -140,6 +140,11 @@ which xdotool >/dev/null 2>&1 || {
   sudo apt-get install -y xdotool >/dev/null 2>&1 || true
 }
 
+which aubio >/dev/null 2>&1 || {
+  echo "Installing aubio-tools for BPM detection..."
+  sudo apt-get install -y aubio-tools >/dev/null 2>&1 || true
+}
+
 WATCHDOG_SRC="$APP_DIR/public/djbooth-watchdog.sh"
 WATCHDOG_DEST="/home/$(whoami)/djbooth-watchdog.sh"
 if [ -f "$WATCHDOG_SRC" ]; then

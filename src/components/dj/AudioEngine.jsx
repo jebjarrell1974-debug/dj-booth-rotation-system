@@ -51,6 +51,7 @@ const AudioEngine = forwardRef(({
   const musicEqBassRef = useRef(null);
   const musicEqMidRef = useRef(null);
   const musicEqTrebleRef = useRef(null);
+  const musicEqAirRef = useRef(null);
   const voiceEqBassRef = useRef(null);
   const voiceEqMidRef = useRef(null);
   const voiceEqTrebleRef = useRef(null);
@@ -103,7 +104,7 @@ const AudioEngine = forwardRef(({
       limiterRef.current.release.value = 0.1;
       limiterRef.current.connect(masterGainRef.current);
 
-      const savedMusicEq = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}');
+      const savedMusicEq = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":1.5,"mid":-1.0,"treble":-1.0}');
       const savedVoiceEq = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
 
       musicEqBassRef.current = audioCtxRef.current.createBiquadFilter();
@@ -122,12 +123,18 @@ const AudioEngine = forwardRef(({
       musicEqTrebleRef.current.frequency.value = 4000;
       musicEqTrebleRef.current.gain.value = savedMusicEq.treble;
 
+      musicEqAirRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqAirRef.current.type = 'highshelf';
+      musicEqAirRef.current.frequency.value = 12000;
+      musicEqAirRef.current.gain.value = 1.5;
+
       musicBusGainRef.current = audioCtxRef.current.createGain();
       musicBusGainRef.current.gain.value = 1.0;
       musicBusGainRef.current.connect(musicEqBassRef.current);
       musicEqBassRef.current.connect(musicEqMidRef.current);
       musicEqMidRef.current.connect(musicEqTrebleRef.current);
-      musicEqTrebleRef.current.connect(limiterRef.current);
+      musicEqTrebleRef.current.connect(musicEqAirRef.current);
+      musicEqAirRef.current.connect(limiterRef.current);
 
       deckAGainRef.current = audioCtxRef.current.createGain();
       deckAGainRef.current.gain.value = 1.0;
@@ -437,6 +444,11 @@ const AudioEngine = forwardRef(({
         const gain = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, input.auto_gain));
         autoGainCacheRef.current.set(cacheKey, gain);
         console.log(`🔊 AutoGain: pre-loaded server gain=${gain.toFixed(2)}x for ${name}`);
+      }
+      if (input.bpm != null && bpmCacheRef.current) {
+        const cacheKey = url.replace(/^blob:/, '');
+        bpmCacheRef.current.set(cacheKey, input.bpm);
+        console.log(`🎵 BPM: pre-loaded server bpm=${input.bpm} for ${name}`);
       }
       return { url, name, file: null };
     }

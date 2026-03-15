@@ -216,8 +216,9 @@ If `FLEET_DEVICE_KEY` and `FLEET_SERVER_URL` env vars are set AND `IS_HOMEBASE !
 **Required per-venue Pi setup** (one-time): Add `FLEET_DEVICE_KEY=<api key from device registration>` to `~/djbooth/.env` on each venue Pi. The key is in homebase's fleet dashboard device list.
 
 ### GitHub
-- Commit: pending (push needed)
-- **All 3 units need `~/djbooth-update.sh`**
+- Commit: `9bbe34d` — "Fix rotation display mismatch + codec check + fleet error forwarding"
+- 142 files pushed
+- **All 3 units need `~/djbooth-update.sh`** to pull Sessions 41+42
 
 ---
 

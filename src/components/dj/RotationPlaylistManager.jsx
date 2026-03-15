@@ -784,8 +784,9 @@ export default function RotationPlaylistManager({
                 ) : (
                   playlistSongs.map((songName, idx) => (
                     <Draggable key={`playlist-${idx}-${songName}`} draggableId={`playlist-${idx}-${songName}`} index={idx}>
-                      {(provided, snapshot) => (
-                    {(() => { const onCool = !!(songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS); return (
+                      {(provided, snapshot) => {
+                        const onCool = !!(songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS);
+                        return (
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
@@ -802,8 +803,8 @@ export default function RotationPlaylistManager({
                         <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{songName}</span>
                       </div>
                     </div>
-                    ); })()}
-                      )}
+                        );
+                      }}
                     </Draggable>
                   ))
                 )}

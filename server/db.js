@@ -158,6 +158,13 @@ try {
 }
 
 try {
+  db.prepare("SELECT bpm FROM music_tracks LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE music_tracks ADD COLUMN bpm REAL");
+  db.exec("ALTER TABLE music_tracks ADD COLUMN bpm_analyzed INTEGER DEFAULT 0");
+}
+
+try {
   db.prepare("SELECT club_name FROM voiceovers LIMIT 1").get();
 } catch {
   db.exec("ALTER TABLE voiceovers ADD COLUMN club_name TEXT");
@@ -760,6 +767,29 @@ export function getTrackAutoGains(filenames) {
   ).all(filenames);
   const result = {};
   for (const row of rows) result[row.name] = row.auto_gain;
+  return result;
+}
+
+export function updateTrackBpm(path, bpm) {
+  db.prepare(
+    'UPDATE music_tracks SET bpm = ?, bpm_analyzed = 1 WHERE path = ?'
+  ).run(bpm, path);
+}
+
+export function getTracksNeedingBpmAnalysis(limit = 50) {
+  return readDb.prepare(
+    'SELECT id, path FROM music_tracks WHERE bpm_analyzed = 0 AND blocked = 0 ORDER BY RANDOM() LIMIT ?'
+  ).all(limit);
+}
+
+export function getTrackBpms(filenames) {
+  if (!filenames || filenames.length === 0) return {};
+  const placeholders = filenames.map(() => '?').join(',');
+  const rows = readDb.prepare(
+    `SELECT name, bpm FROM music_tracks WHERE name IN (${placeholders}) AND bpm IS NOT NULL`
+  ).all(filenames);
+  const result = {};
+  for (const row of rows) result[row.name] = row.bpm;
   return result;
 }
 
