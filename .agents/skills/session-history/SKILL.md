@@ -30,7 +30,12 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Run `~/djbooth-update.sh` to pull latest code
 
 **PENDING on all 3 units:**
-- Run `~/djbooth-update.sh` to pull commit `823af94` (song selection rewrite)
+- Run `~/djbooth-update.sh` to pull latest commit (warm EQ + air band + BPM + lazy pre-cache)
+- aubio-tools will auto-install on first update run if not already present
+
+**FUTURE TODO (approved, not yet built):**
+- Fix #5: Pre-build dist/ on homebase, ship compiled output to venue Pis instead of
+  running `vite build` on the Pi. Add show-active guard to block updates mid-show.
 
 ## Architecture Summary
 
@@ -1181,6 +1186,8 @@ The broadcast useEffect in DJBooth.jsx has a dependency array that controls when
 | `src/api/serverApi.js` | Client-side API wrapper |
 | `public/djbooth-update-github.sh` | Pi update script (GitHub-based) |
 | `replit.md` | Project documentation (always loaded into agent memory) |
+| `server/bpmAnalyzer.js` | BPM background analysis — ffprobe tag first, aubio fallback, normalizes 70-175 BPM range |
+| `server/lufsAnalyzer.js` | LUFS background analysis — FFmpeg loudnorm, -10 LUFS target |
 
 ## External Services
 - **ElevenLabs TTS**: Voice announcements (API key stored in browser localStorage per Pi)

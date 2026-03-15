@@ -673,6 +673,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
   const preCacheCancelRef = useRef(false);
+  const UPCOMING_CACHE_VARIATIONS = 3;
 
   const preCacheUpcoming = useCallback(async (upcomingDancers) => {
     const config = getApiConfig();
@@ -683,17 +684,19 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     await new Promise(r => setTimeout(r, 100));
     preCacheCancelRef.current = false;
 
-    const jobs = [];
-    for (let i = 0; i < upcomingDancers.length; i++) {
-      const d = upcomingDancers[i];
-      for (let v = 1; v <= NUM_VARIATIONS; v++) {
-        jobs.push([ANNOUNCEMENT_TYPES.INTRO, d.name, null, v, 1]);
-        jobs.push([ANNOUNCEMENT_TYPES.ROUND2, d.name, null, v, 2]);
-        jobs.push([ANNOUNCEMENT_TYPES.OUTRO, d.name, null, v, 1]);
+    const makeNextJobs = (dancer) => {
+      const jobs = [];
+      for (let v = 1; v <= UPCOMING_CACHE_VARIATIONS; v++) {
+        jobs.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
+        jobs.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, v, 2]);
+        jobs.push([ANNOUNCEMENT_TYPES.OUTRO, dancer.name, null, v, 1]);
       }
-    }
+      return jobs;
+    };
 
-    console.log(`🔄 Pre-cache upcoming: ${upcomingDancers.map(d => d.name).join(', ')} (${jobs.length} total, ${NUM_VARIATIONS} variations each)`);
+    const nextDancer = upcomingDancers[0];
+    const jobs = makeNextJobs(nextDancer);
+    console.log(`🔄 Pre-cache next entertainer: ${nextDancer.name} (${jobs.length} jobs — ${UPCOMING_CACHE_VARIATIONS} variations × 3 types)`);
 
     for (const [type, name, nextName, varNum, round] of jobs) {
       if (preCacheCancelRef.current) {
@@ -710,8 +713,28 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         console.error(`Pre-cache failed for ${type}-${name} var${varNum}:`, err.message);
       }
     }
+
     if (!preCacheCancelRef.current) {
-      console.log(`✅ Pre-cache upcoming complete`);
+      console.log(`✅ Pre-cache complete: ${nextDancer.name}`);
+    }
+
+    if (upcomingDancers.length > 1 && !preCacheCancelRef.current) {
+      const secondDancer = upcomingDancers[1];
+      const bgJobs = makeNextJobs(secondDancer);
+      console.log(`🔄 Background pre-cache: ${secondDancer.name}`);
+      (async () => {
+        for (const [type, name, nextName, varNum, round] of bgJobs) {
+          if (preCacheCancelRef.current) return;
+          try {
+            const result = await getOrGenerateAnnouncement(type, name, nextName, varNum, round);
+            if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
+            if (!result.fromCache) await new Promise(r => setTimeout(r, 6000));
+          } catch (err) {
+            console.error(`Background pre-cache failed for ${type}-${name} var${varNum}:`, err.message);
+          }
+        }
+        if (!preCacheCancelRef.current) console.log(`✅ Background pre-cache complete: ${secondDancer.name}`);
+      })();
     }
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
@@ -727,11 +750,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     if (total === 0) return true;
 
     const typesPerDancer = 3;
-    const jobsPerDancer = typesPerDancer * NUM_VARIATIONS;
+    const jobsPerDancer = typesPerDancer * UPCOMING_CACHE_VARIATIONS;
     const makeJobs = (dancerIdx) => {
       const d = rotationDancers[dancerIdx];
       const jobs = [];
-      for (let v = 1; v <= NUM_VARIATIONS; v++) {
+      for (let v = 1; v <= UPCOMING_CACHE_VARIATIONS; v++) {
         jobs.push({ type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1, varNum: v });
         jobs.push({ type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2, varNum: v });
         jobs.push({ type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1, varNum: v });
@@ -740,9 +763,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     };
 
     const bufferDancerCount = Math.min(bufferCount, total);
-    const totalJobs = total * jobsPerDancer;
+    const totalJobs = bufferDancerCount * jobsPerDancer;
 
-    console.log(`🔄 Rotation pre-cache: ${bufferDancerCount} entertainers to buffer, ${total - bufferDancerCount} background (${NUM_VARIATIONS} variations each)`);
+    console.log(`🔄 Rotation pre-cache: ${bufferDancerCount} entertainers foreground, ${total - bufferDancerCount} on-demand (${UPCOMING_CACHE_VARIATIONS} variations × 3 types each)`);
 
     let bufferCompleted = 0;
     for (let di = 0; di < bufferDancerCount; di++) {
@@ -759,30 +782,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         }
         bufferCompleted++;
       }
-      onProgress?.({ completed: bufferCompleted, total: totalJobs, dancersDone: di + 1, dancersTotal: total, phase: 'buffer' });
-    }
-
-    if (bufferDancerCount < total) {
-      (async () => {
-        let bgCompleted = bufferCompleted;
-        for (let di = bufferDancerCount; di < total; di++) {
-          if (preCacheCancelRef.current) return;
-          const jobs = makeJobs(di);
-          for (const job of jobs) {
-            if (preCacheCancelRef.current) return;
-            try {
-              const result = await getOrGenerateAnnouncement(job.type, job.name, job.nextName, job.varNum, job.round);
-              if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url);
-              if (!result.fromCache) await new Promise(r => setTimeout(r, 6000));
-            } catch (err) {
-              console.error(`Background pre-cache failed for ${job.type}-${job.name} var${job.varNum}:`, err.message);
-            }
-            bgCompleted++;
-          }
-          onProgress?.({ completed: bgCompleted, total: totalJobs, dancersDone: di + 1, dancersTotal: total, phase: 'background' });
-        }
-        console.log('✅ Background pre-cache complete for all entertainers');
-      })();
+      onProgress?.({ completed: bufferCompleted, total: totalJobs, dancersDone: di + 1, dancersTotal: bufferDancerCount, phase: 'buffer' });
     }
 
     return true;
