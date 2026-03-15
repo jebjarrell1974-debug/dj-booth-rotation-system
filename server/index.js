@@ -18,7 +18,7 @@ import {
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
   exportDancers, importDancers, saveClientSettings, getClientSettings,
-  getLufsStats
+  getLufsStats, bulkUpdateTrackAnalysis, getTracksNeedingAnyAnalysis
 } from './db.js';
 import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
 import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
@@ -1670,6 +1670,43 @@ app.use((err, req, res, next) => {
   }
 });
 
+async function syncAnalysisFromHomebase() {
+  const fleetKey = process.env.FLEET_DEVICE_KEY;
+  const fleetUrl = process.env.FLEET_SERVER_URL;
+  if (!fleetKey || !fleetUrl || process.env.IS_HOMEBASE === 'true') return;
+
+  try {
+    const filenames = getTracksNeedingAnyAnalysis();
+    if (filenames.length === 0) {
+      console.log('✅ Analysis sync: all tracks already analyzed locally');
+      return;
+    }
+    console.log(`📊 Analysis sync: requesting data for ${filenames.length} unanalyzed tracks from homebase...`);
+
+    const CHUNK_SIZE = 500;
+    let totalSynced = 0;
+    for (let i = 0; i < filenames.length; i += CHUNK_SIZE) {
+      const chunk = filenames.slice(i, i + CHUNK_SIZE);
+      const res = await fetch(`${fleetUrl}/fleet/music/analysis-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-device-key': fleetKey },
+        body: JSON.stringify({ filenames: chunk }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!res.ok) {
+        console.warn(`⚠️ Analysis sync chunk failed: ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const count = bulkUpdateTrackAnalysis(data);
+      totalSynced += count;
+    }
+    console.log(`✅ Analysis sync: pre-populated ${totalSynced} tracks from homebase — skipping local FFmpeg for those`);
+  } catch (err) {
+    console.warn(`⚠️ Analysis sync failed (will run local analysis instead): ${err.message}`);
+  }
+}
+
 function initMusicScanner() {
   if (MUSIC_PATH) {
     try {
@@ -1678,8 +1715,11 @@ function initMusicScanner() {
       const count = getMusicTrackCount();
       updateBootStep('musicScan', 'done', `${count.toLocaleString()} tracks found`);
       startPeriodicScan(MUSIC_PATH, 5);
-      setTimeout(() => startLufsAnalysis(MUSIC_PATH), 5000);
-      setTimeout(() => startBpmAnalysis(MUSIC_PATH), 15000);
+      setTimeout(async () => {
+        await syncAnalysisFromHomebase();
+        startLufsAnalysis(MUSIC_PATH);
+        setTimeout(() => startBpmAnalysis(MUSIC_PATH), 10000);
+      }, 5000);
     } catch (err) {
       updateBootStep('musicScan', 'error', err.message);
       console.error('❌ Initial music scan failed:', err.message);

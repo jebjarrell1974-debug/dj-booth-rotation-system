@@ -793,6 +793,48 @@ export function getTrackBpms(filenames) {
   return result;
 }
 
+export function getTracksNeedingAnyAnalysis() {
+  return readDb.prepare(
+    `SELECT name FROM music_tracks
+     WHERE (lufs_analyzed = 0 OR bpm_analyzed = 0) AND blocked = 0`
+  ).all().map(r => r.name);
+}
+
+export function getTrackAnalysisByFilenames(filenames) {
+  if (!filenames || filenames.length === 0) return {};
+  const placeholders = filenames.map(() => '?').join(',');
+  const rows = readDb.prepare(
+    `SELECT name, lufs, auto_gain, bpm
+     FROM music_tracks
+     WHERE name IN (${placeholders})
+       AND lufs_analyzed = 1
+       AND auto_gain IS NOT NULL
+       AND blocked = 0`
+  ).all(filenames);
+  const result = {};
+  for (const row of rows) {
+    result[row.name] = { lufs: row.lufs, auto_gain: row.auto_gain, bpm: row.bpm };
+  }
+  return result;
+}
+
+export function bulkUpdateTrackAnalysis(analysisData) {
+  const stmt = db.prepare(
+    `UPDATE music_tracks
+     SET lufs = ?, auto_gain = ?, lufs_analyzed = 1, bpm = ?, bpm_analyzed = 1
+     WHERE name = ? AND (lufs_analyzed = 0 OR bpm_analyzed = 0)`
+  );
+  const bulkUpdate = db.transaction((entries) => {
+    let count = 0;
+    for (const [name, data] of entries) {
+      const info = stmt.run(data.lufs ?? null, data.auto_gain ?? null, data.bpm ?? null, name);
+      if (info.changes > 0) count++;
+    }
+    return count;
+  });
+  return bulkUpdate(Object.entries(analysisData));
+}
+
 export function getLastScanTime() {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('last_music_scan');
   return row ? row.value : null;

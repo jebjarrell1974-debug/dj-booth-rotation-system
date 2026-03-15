@@ -16,7 +16,7 @@ import {
   createPromoRequest, listPromoRequests, getPromoRequest, deletePromoRequest, completePromoRequest,
   getDancerBackup, listDancerBackups
 } from './fleet-db.js';
-import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms } from './db.js';
+import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms, getTrackAnalysisByFilenames } from './db.js';
 import { getFleetStatus } from './fleet-monitor.js';
 
 const router = express.Router();
@@ -238,6 +238,17 @@ router.get('/voiceovers/download-by-name', authenticateDeviceMiddleware, (req, r
   res.set('X-Voiceover-Type', vo.voiceover_type);
   res.set('X-File-Hash', vo.file_hash);
   res.send(vo.file_data);
+});
+
+router.post('/music/analysis-sync', authenticateDeviceMiddleware, (req, res) => {
+  const { filenames } = req.body;
+  if (!Array.isArray(filenames) || filenames.length === 0) {
+    return res.status(400).json({ error: 'filenames array required' });
+  }
+  const analysis = getTrackAnalysisByFilenames(filenames);
+  const count = Object.keys(analysis).length;
+  console.log(`📊 Analysis sync: ${req.device.device_name || req.device.device_id} requested ${filenames.length} tracks, returning ${count} analyzed`);
+  res.json(analysis);
 });
 
 router.get('/music/manifest', authenticateDeviceMiddleware, (req, res) => {
