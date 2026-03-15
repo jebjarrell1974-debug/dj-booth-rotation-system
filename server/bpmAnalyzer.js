@@ -2,9 +2,9 @@ import { spawn } from 'child_process';
 import { join } from 'path';
 import { updateTrackBpm, getTracksNeedingBpmAnalysis } from './db.js';
 
-const BPM_CONCURRENCY = 2;
-const BATCH_SIZE = 40;
-const INTER_BATCH_DELAY_MS = 200;
+const BPM_CONCURRENCY = 1;
+const BATCH_SIZE = 20;
+const INTER_BATCH_DELAY_MS = 500;
 const ANALYSIS_TIMEOUT_MS = 60000;
 
 let isRunning = false;

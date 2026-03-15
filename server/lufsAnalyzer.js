@@ -5,9 +5,9 @@ import { updateTrackLufs, getTracksNeedingAnalysis } from './db.js';
 const LUFS_TARGET = -10;
 const LUFS_GAIN_MIN = 0.3;
 const LUFS_GAIN_MAX = 2.5;
-const LUFS_CONCURRENCY = 3;
-const BATCH_SIZE = 60;
-const INTER_BATCH_DELAY_MS = 150;
+const LUFS_CONCURRENCY = parseInt(process.env.LUFS_CONCURRENCY || '1', 10);
+const BATCH_SIZE = 20;
+const INTER_BATCH_DELAY_MS = 500;
 const ANALYSIS_TIMEOUT_MS = 300000;
 
 let isRunning = false;
