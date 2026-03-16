@@ -291,10 +291,11 @@ WEOF
   fi
 fi
 
-NOPASSWD_FILE="/etc/sudoers.d/010_${USER}-nopasswd"
+CURRENT_USER=$(whoami)
+NOPASSWD_FILE="/etc/sudoers.d/010_${CURRENT_USER}-nopasswd"
 if [ ! -f "$NOPASSWD_FILE" ]; then
-  echo "Configuring passwordless sudo for $USER..."
-  echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee "$NOPASSWD_FILE" > /dev/null
+  echo "Configuring passwordless sudo for $CURRENT_USER..."
+  echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" | sudo tee "$NOPASSWD_FILE" > /dev/null
   sudo chmod 0440 "$NOPASSWD_FILE"
   sudo visudo -c -f "$NOPASSWD_FILE" > /dev/null 2>&1 && \
     echo "Passwordless sudo configured" || \
