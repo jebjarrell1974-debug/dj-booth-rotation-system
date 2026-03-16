@@ -1448,88 +1448,9 @@ app.post('/api/kiosk/exit', authenticate, requireDJ, async (req, res) => {
 
 app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
   try {
-    const { spawn, execSync } = await import('child_process');
-    const { readdirSync, rmSync, writeFileSync } = await import('fs');
-    const os = await import('os');
-
-    console.log('[display/launch] Button pressed — finding Wayland socket...');
-
-    let waylandDisplay = null;
-    let runtimeDir = null;
-
-    let stolenEnv = null;
-    try {
-      const pids = execSync('pgrep -f "chromium" 2>/dev/null || true', { stdio: ['ignore','pipe','ignore'] }).toString().trim().split('\n').filter(Boolean);
-      for (const pid of pids) {
-        try {
-          const environ = execSync(`cat /proc/${pid}/environ 2>/dev/null`, { stdio: ['ignore','pipe','ignore'] }).toString();
-          const envLines = environ.split('\0').filter(Boolean);
-          const envObj = {};
-          for (const line of envLines) {
-            const idx = line.indexOf('=');
-            if (idx > 0) envObj[line.substring(0, idx)] = line.substring(idx + 1);
-          }
-          if (envObj.WAYLAND_DISPLAY && envObj.XDG_RUNTIME_DIR) {
-            waylandDisplay = envObj.WAYLAND_DISPLAY;
-            runtimeDir = envObj.XDG_RUNTIME_DIR;
-            stolenEnv = envObj;
-            console.log(`[display/launch] Stole full env from PID ${pid}: WAYLAND_DISPLAY=${waylandDisplay} DBUS=${envObj.DBUS_SESSION_BUS_ADDRESS || 'none'}`);
-            break;
-          }
-        } catch {}
-      }
-    } catch {}
-
-    if (!waylandDisplay) {
-      for (const uid of [1000, 1001, 1002]) {
-        const dir = `/run/user/${uid}`;
-        try {
-          const sockets = readdirSync(dir).filter(f => /^wayland-\d+$/.test(f));
-          if (sockets.length > 0) {
-            waylandDisplay = sockets.sort().reverse()[0];
-            runtimeDir = dir;
-            console.log(`[display/launch] Fallback: found socket ${dir}/${waylandDisplay}`);
-            break;
-          }
-        } catch {}
-      }
-    }
-
-    if (!waylandDisplay) {
-      waylandDisplay = 'wayland-1';
-      runtimeDir = `/run/user/1000`;
-      console.log(`[display/launch] Default fallback: ${runtimeDir}/${waylandDisplay}`);
-    }
-
-    try { execSync('pkill -f RotationChromium 2>/dev/null || true', { stdio: 'ignore' }); } catch {}
-    try { writeFileSync('/tmp/djbooth-display-trigger', '1', { mode: 0o644 }); } catch {}
-
-    await new Promise(r => setTimeout(r, 1200));
-
-    try { rmSync('/tmp/chromium-rotation', { recursive: true, force: true }); } catch {}
-
-    const env = {
-      ...(stolenEnv || process.env),
-      WAYLAND_DISPLAY: waylandDisplay,
-      XDG_RUNTIME_DIR: runtimeDir,
-      HOME: stolenEnv?.HOME || os.homedir()
-    };
-
-    console.log(`[display/launch] Spawning chromium with WAYLAND_DISPLAY=${waylandDisplay} XDG_RUNTIME_DIR=${runtimeDir}`);
-
-    const proc = spawn('chromium', [
-      '--kiosk',
-      '--class=RotationChromium',
-      '--user-data-dir=/tmp/chromium-rotation',
-      '--noerrdialogs',
-      '--disable-session-crashed-bubble',
-      '--autoplay-policy=no-user-gesture-required',
-      'http://localhost:3001/RotationDisplay'
-    ], { env, detached: true, stdio: 'ignore' });
-    proc.unref();
-
-    console.log(`[display/launch] Chromium spawned (PID ${proc.pid})`);
-    res.json({ ok: true, message: 'Rotation display launching', wayland: waylandDisplay, runtimeDir });
+    const { writeFileSync } = await import('fs');
+    writeFileSync('/tmp/djbooth-display-trigger', '1', { mode: 0o644 });
+    res.json({ ok: true, message: 'Display trigger sent' });
   } catch (err) {
     console.error('[display/launch] Error:', err.message);
     res.status(500).json({ error: err.message });
