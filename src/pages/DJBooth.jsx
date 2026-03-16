@@ -2312,25 +2312,14 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          if (commercialPlayed) {
-            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-            lastAudioActivityRef.current = Date.now();
-            const introUrl = await introPromise;
-            lastAudioActivityRef.current = Date.now();
-            if (introUrl) {
-              await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
-              lastAudioActivityRef.current = Date.now();
-            }
-          } else {
-            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-            audioEngineRef.current?.duck();
-            const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
-            lastAudioActivityRef.current = Date.now();
-            if (introUrl) {
-              await playPrefetchedAnnouncement(introUrl);
-            }
-            audioEngineRef.current?.unduck();
+          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
+          lastAudioActivityRef.current = Date.now();
+          if (introUrl) {
+            await playPrefetchedAnnouncement(introUrl);
           }
+          audioEngineRef.current?.unduck();
         }
         
         setRotation(newRotation);
@@ -2582,21 +2571,12 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          if (commercialPlayed) {
-            const introUrl = await prefetchAnnouncement('intro', nextDancer.name, null, 1);
-            lastAudioActivityRef.current = Date.now();
-            if (introUrl) {
-              await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
-              lastAudioActivityRef.current = Date.now();
-            }
-          } else {
-            const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-            audioEngineRef.current?.duck();
-            const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
-            lastAudioActivityRef.current = Date.now();
-            await playPrefetchedAnnouncement(announcementUrl);
-            audioEngineRef.current?.unduck();
-          }
+          const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
+          lastAudioActivityRef.current = Date.now();
+          await playPrefetchedAnnouncement(announcementUrl);
+          audioEngineRef.current?.unduck();
         }
 
         setRotation(newRotation);
@@ -2881,25 +2861,14 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          if (commercialPlayed) {
-            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-            lastAudioActivityRef.current = Date.now();
-            const introUrl = await introPromise;
-            lastAudioActivityRef.current = Date.now();
-            if (introUrl) {
-              await audioEngineRef.current?.playAnnouncement(introUrl, { autoDuck: false });
-              lastAudioActivityRef.current = Date.now();
-            }
-          } else {
-            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
-            audioEngineRef.current?.duck();
-            const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
-            lastAudioActivityRef.current = Date.now();
-            if (introUrl) {
-              await playPrefetchedAnnouncement(introUrl);
-            }
-            audioEngineRef.current?.unduck();
+          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+          audioEngineRef.current?.duck();
+          const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
+          lastAudioActivityRef.current = Date.now();
+          if (introUrl) {
+            await playPrefetchedAnnouncement(introUrl);
           }
+          audioEngineRef.current?.unduck();
         }
         
         setRotation(newRotation);
