@@ -3589,16 +3589,22 @@ export default function DJBooth() {
             )}
             {!remoteMode && (
               <>
-                <a href={createPageUrl('RotationDisplay')} target="_blank" rel="noopener noreferrer">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b] hover:text-white"
-                  >
-                    <Radio className="w-4 h-4 mr-2" />
-                    Open Display
-                  </Button>
-                </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b] hover:text-white"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/display/launch', { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('djbooth_token')}` } });
+                      if (!res.ok) throw new Error('Failed');
+                    } catch {
+                      window.open(createPageUrl('RotationDisplay'), '_blank');
+                    }
+                  }}
+                >
+                  <Radio className="w-4 h-4 mr-2" />
+                  Open Display
+                </Button>
                 <Link to={createPageUrl('Configuration')}>
                   <Button
                     variant="ghost"

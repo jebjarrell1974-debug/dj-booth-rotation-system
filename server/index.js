@@ -1446,6 +1446,39 @@ app.post('/api/kiosk/exit', authenticate, requireDJ, async (req, res) => {
   }
 });
 
+app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
+  try {
+    const { spawn } = await import('child_process');
+    const { writeFileSync } = await import('fs');
+    const uid = process.getuid ? process.getuid() : 1000;
+    const wayland = process.env.WAYLAND_DISPLAY || 'wayland-1';
+    const xdgRuntime = process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
+    const url = `http://localhost:${PORT}/RotationDisplay`;
+    const scriptPath = '/tmp/djbooth-display-launch.sh';
+    const script = [
+      '#!/bin/bash',
+      `export WAYLAND_DISPLAY=${wayland}`,
+      `export XDG_RUNTIME_DIR=${xdgRuntime}`,
+      'pkill -f "RotationChromium" 2>/dev/null || true',
+      'sleep 1',
+      'for i in $(seq 1 20); do',
+      '  if wlr-randr 2>/dev/null | grep -q "HDMI-A-2"; then break; fi',
+      '  sleep 1',
+      'done',
+      'sleep 1',
+      'rm -rf /tmp/chromium-rotation',
+      `chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required "${url}" &`,
+      'disown',
+    ].join('\n');
+    writeFileSync(scriptPath, script, { mode: 0o755 });
+    const child = spawn('bash', [scriptPath], { detached: true, stdio: 'ignore' });
+    child.unref();
+    res.json({ ok: true, message: 'Rotation display launching on HDMI-2' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/version', async (req, res) => {
   let commitHash = 'unknown';
   try {
