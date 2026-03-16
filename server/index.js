@@ -1457,23 +1457,43 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
     let waylandDisplay = null;
     let runtimeDir = null;
 
-    for (const uid of [1000, 1001, 1002]) {
-      const dir = `/run/user/${uid}`;
-      try {
-        const sockets = readdirSync(dir).filter(f => /^wayland-\d+$/.test(f));
-        if (sockets.length > 0) {
-          waylandDisplay = sockets.sort()[0];
-          runtimeDir = dir;
-          console.log(`[display/launch] Found Wayland socket: ${dir}/${waylandDisplay}`);
-          break;
-        }
-      } catch {}
+    try {
+      const pids = execSync('pgrep -f "chromium" 2>/dev/null || true', { stdio: ['ignore','pipe','ignore'] }).toString().trim().split('\n').filter(Boolean);
+      for (const pid of pids) {
+        try {
+          const environ = execSync(`cat /proc/${pid}/environ 2>/dev/null`, { stdio: ['ignore','pipe','ignore'] }).toString();
+          const envLines = environ.split('\0');
+          const wayland = envLines.find(e => e.startsWith('WAYLAND_DISPLAY='))?.split('=')[1];
+          const runtime = envLines.find(e => e.startsWith('XDG_RUNTIME_DIR='))?.split('=')[1];
+          if (wayland && runtime) {
+            waylandDisplay = wayland;
+            runtimeDir = runtime;
+            console.log(`[display/launch] Got Wayland env from PID ${pid}: WAYLAND_DISPLAY=${wayland} XDG_RUNTIME_DIR=${runtime}`);
+            break;
+          }
+        } catch {}
+      }
+    } catch {}
+
+    if (!waylandDisplay) {
+      for (const uid of [1000, 1001, 1002]) {
+        const dir = `/run/user/${uid}`;
+        try {
+          const sockets = readdirSync(dir).filter(f => /^wayland-\d+$/.test(f));
+          if (sockets.length > 0) {
+            waylandDisplay = sockets.sort().reverse()[0];
+            runtimeDir = dir;
+            console.log(`[display/launch] Fallback: found socket ${dir}/${waylandDisplay}`);
+            break;
+          }
+        } catch {}
+      }
     }
 
     if (!waylandDisplay) {
       waylandDisplay = 'wayland-1';
       runtimeDir = `/run/user/1000`;
-      console.log(`[display/launch] No socket found, defaulting to ${runtimeDir}/${waylandDisplay}`);
+      console.log(`[display/launch] Default fallback: ${runtimeDir}/${waylandDisplay}`);
     }
 
     try { execSync('pkill -f RotationChromium 2>/dev/null || true', { stdio: 'ignore' }); } catch {}
