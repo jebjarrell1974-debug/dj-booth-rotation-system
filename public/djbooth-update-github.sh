@@ -95,6 +95,12 @@ if [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
   cp "${EXTRACTED_DIR}public/djbooth-update-github.sh" "$HOME/djbooth-update.sh"
   chmod +x "$HOME/djbooth-update.sh"
   echo "Update script self-updated"
+  if [ "${DJBOOTH_RESTARTED}" != "1" ]; then
+    echo "Re-executing with new script version..."
+    export DJBOOTH_RESTARTED=1
+    export EXTRACTED_DIR="$EXTRACTED_DIR"
+    exec /bin/bash "$HOME/djbooth-update.sh"
+  fi
 fi
 
 echo "[4.5/7] Ensuring fleet environment variables..."
