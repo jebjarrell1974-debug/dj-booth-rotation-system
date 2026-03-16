@@ -167,9 +167,6 @@ cat > "$LABWC_DIR/rc.xml" << 'RCEOF'
 RCEOF
 cat > "$LABWC_DIR/autostart" << 'ASEOF'
 wlr-randr --output HDMI-A-2 --transform 90 &
-sleep 8
-rm -rf /tmp/chromium-rotation
-chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay &
 ASEOF
 for OLD_LAUNCHER in "$HOME/.config/autostart/djbooth-display.desktop" "$HOME/.config/autostart/neonaidj-rotation-display.desktop"; do
   if [ -f "$OLD_LAUNCHER" ]; then
@@ -177,13 +174,50 @@ for OLD_LAUNCHER in "$HOME/.config/autostart/djbooth-display.desktop" "$HOME/.co
     echo "Disabled duplicate launcher: $(basename $OLD_LAUNCHER)"
   fi
 done
+if [ "$IS_HOMEBASE" != "true" ]; then
+  for KIOSK_FILE in "$HOME/.config/autostart/djbooth-kiosk.desktop"; do
+    if [ -f "$KIOSK_FILE" ]; then
+      sed -i 's/X-GNOME-Autostart-enabled=true/X-GNOME-Autostart-enabled=false/g' "$KIOSK_FILE"
+      echo "Disabled kiosk auto-launcher (boot service handles launch timing): $(basename $KIOSK_FILE)"
+    fi
+  done
+fi
 labwc --reconfigure 2>/dev/null || true
 echo "Display configuration updated"
 
-echo "[boot-update] Setting up boot-time auto-update..."
-CRON_CMD="@reboot sleep 30 && DJBOOTH_BOOT_UPDATE=1 /bin/bash $HOME/djbooth-update.sh >> $HOME/djbooth-update.log 2>&1"
-(crontab -l 2>/dev/null | grep -v "djbooth-update.sh"; echo "$CRON_CMD") | crontab -
-echo "Boot-time auto-update scheduled"
+echo "[boot-update] Setting up boot-time auto-update service..."
+if [ "$IS_HOMEBASE" != "true" ]; then
+  BOOT_USER=$(whoami)
+  BOOT_UID=$(id -u)
+  sudo tee /etc/systemd/system/djbooth-boot.service > /dev/null << BOOTEOF
+[Unit]
+Description=DJ Booth Boot Update and Launch
+After=network-online.target graphical.target djbooth.service
+Wants=network-online.target
+Requires=djbooth.service
+
+[Service]
+Type=oneshot
+User=$BOOT_USER
+Environment=DJBOOTH_BOOT_UPDATE=1
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/$BOOT_UID
+ExecStart=/bin/bash $HOME/djbooth-update.sh
+RemainAfterExit=yes
+StandardOutput=append:$HOME/djbooth-boot.log
+StandardError=append:$HOME/djbooth-boot.log
+TimeoutStartSec=300
+
+[Install]
+WantedBy=graphical.target
+BOOTEOF
+  sudo systemctl daemon-reload
+  sudo systemctl enable djbooth-boot 2>/dev/null || true
+  (crontab -l 2>/dev/null | grep -v "djbooth-update.sh") | crontab - 2>/dev/null || true
+  echo "Boot-time update service installed and enabled"
+else
+  echo "Homebase — skipping boot service setup"
+fi
 
 WATCHDOG_SRC="$APP_DIR/public/djbooth-watchdog.sh"
 WATCHDOG_DEST="/home/$(whoami)/djbooth-watchdog.sh"
@@ -245,7 +279,59 @@ fi
 
 echo "[7/8] Restarting service..."
 if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
-  echo "Running as boot service — skipping restart (systemd will start djbooth next)"
+  echo "Running as boot service — restarting djbooth and launching browsers..."
+  export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+  if [ "$IS_HOMEBASE" != "true" ]; then
+    sudo systemctl restart "$SERVICE_NAME"
+
+    echo "Waiting for server to be ready..."
+    for i in $(seq 1 40); do
+      if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
+        echo "Server is up (attempt $i)"
+        break
+      fi
+      sleep 3
+    done
+
+    if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
+      echo "Launching kiosk browser..."
+      bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+      disown
+
+      echo "Waiting for Wayland session..."
+      for i in $(seq 1 30); do
+        if [ -S "$XDG_RUNTIME_DIR/wayland-1" ] || [ -S "$XDG_RUNTIME_DIR/wayland-0" ]; then
+          echo "Wayland ready (attempt $i)"
+          break
+        fi
+        sleep 1
+      done
+
+      echo "Waiting for HDMI-A-2 to be ready..."
+      for i in $(seq 1 30); do
+        if wlr-randr 2>/dev/null | grep -q "HDMI-A-2"; then
+          echo "HDMI-A-2 confirmed ready (attempt $i)"
+          break
+        fi
+        sleep 1
+      done
+      sleep 2
+
+      rm -rf /tmp/chromium-rotation
+      echo "Launching rotation display on HDMI-A-2..."
+      bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay" &
+      disown
+
+      sudo systemctl start djbooth-watchdog 2>/dev/null || true
+      echo "Boot launch complete"
+    else
+      echo "ERROR: Server did not come up — browsers not launched"
+    fi
+  else
+    echo "Homebase boot update — skipping browser launch"
+  fi
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   export DISPLAY=:0
 
@@ -274,8 +360,12 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
-      echo "UPDATE SUCCESSFUL — relaunching browser..."
+      echo "UPDATE SUCCESSFUL — relaunching browsers..."
       bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+      disown
+      sleep 2
+      rm -rf /tmp/chromium-rotation
+      bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay" &
       disown
     else
       echo "UPDATE SUCCESSFUL — homebase mode, no browser relaunch"

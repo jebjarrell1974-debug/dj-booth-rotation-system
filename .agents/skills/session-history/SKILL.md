@@ -12,13 +12,14 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - **Database path**: Production uses `/home/runner/data/djbooth.db` (outside project dir to survive republishing). Dev uses `./djbooth.db`. Configurable via `DB_PATH` env var.
 - **Default master PIN**: `36669`
 
-## Confirmed Fleet Devices (3 active units — scaling to 50+ within 6 months)
+## Confirmed Fleet Devices (4 active units — scaling to 50+ within 6 months)
 
 | Unit | Username | Tailscale IP | Role | Club | Notes |
 |---|---|---|---|---|---|
 | Homebase | `homebase` | `100.95.238.71` | Fleet server + DJ booth | Homebase | Fleet server lives HERE |
 | neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Nation | Music path: `/home/neonaidj001/djbooth/music/` |
-| neonaidj003 | unknown | `100.81.90.125` | DJ booth | Unknown (needs CLUB_NAME set) | Had 4 crashes Mar 10 — stable since |
+| neonaidj002 | `neonaidj002` | unknown | DJ booth | Unknown | Previously missing from records — confirmed Mar 16, 2026 |
+| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | Unknown (needs CLUB_NAME set) | Had 4 crashes Mar 10 — stable since |
 
 **Fleet .env rules:**
 - Homebase: `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
@@ -29,7 +30,7 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - SSH in and set `CLUB_NAME=<correct venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
 - Run `~/djbooth-update.sh` to pull latest code
 
-**PENDING on all 3 units:**
+**PENDING on all 4 units:**
 - Run `~/djbooth-update.sh` to pull latest commit (warm EQ + air band + BPM + lazy pre-cache)
 - aubio-tools will auto-install on first update run if not already present
 
@@ -95,7 +96,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 **Commit**: `8b28779` — "Fix: clear stale localStorage pre-picks on rotation start"
 
-**All 3 units need `~/djbooth-update.sh`** to pull this fix.
+**All 4 units need `~/djbooth-update.sh`** to pull this fix.
 
 ---
 
@@ -105,7 +106,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
 - Play history pipeline: `djbooth_token` stored in `localStorage` (not `sessionStorage`), survives reboots
 - Voiceover system: 5-variation true-random (V11), stale IDB auto-cleanup on load, generic fallbacks
-- All 3 units report to homebase fleet server (`100.95.238.71:3001`)
+- All 4 units report to homebase fleet server (`100.95.238.71:3001`)
 - LUFS background analyzer: runs at boot (5s delay), FFmpeg analysis-only, -10 LUFS club target, 3 concurrent, stores in DB
 - Fleet manifest enriched with `auto_gain` values; venue Pis get gain values on next sync
 - AudioEngine: pre-populated gain cache from server values (skips 10s browser analysis when gain available)
@@ -135,7 +136,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
 - **Homebase music scan**: Make homebase scan ALL music (not just its local library) so the fleet manifest is complete — possibly pointing `MUSIC_PATH` at a merged/mounted path or scanning multiple directories
 - **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<its api key from registration>` in `~/djbooth/.env` for playback errors to forward to fleet command
-- **All 3 units need `~/djbooth-update.sh`** to pull all changes from Sessions 41+42
+- **All 4 units need `~/djbooth-update.sh`** to pull all changes from Sessions 41+42
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
@@ -223,7 +224,7 @@ If `FLEET_DEVICE_KEY` and `FLEET_SERVER_URL` env vars are set AND `IS_HOMEBASE !
 ### GitHub
 - Commit: `9bbe34d` — "Fix rotation display mismatch + codec check + fleet error forwarding"
 - 142 files pushed
-- **All 3 units need `~/djbooth-update.sh`** to pull Sessions 41+42
+- **All 4 units need `~/djbooth-update.sh`** to pull Sessions 41+42
 
 ---
 
