@@ -80,6 +80,12 @@ cp "${EXTRACTED_DIR}tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}postcss.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}index.html" "$APP_DIR/" 2>/dev/null || true
 
+if [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
+  cp "${EXTRACTED_DIR}public/djbooth-update-github.sh" "$HOME/djbooth-update.sh"
+  chmod +x "$HOME/djbooth-update.sh"
+  echo "Update script self-updated"
+fi
+
 echo "[4.5/7] Ensuring fleet environment variables..."
 ENV_FILE="$APP_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
@@ -144,6 +150,40 @@ which aubio >/dev/null 2>&1 || {
   echo "Installing aubio-tools for BPM detection..."
   sudo apt-get install -y aubio-tools >/dev/null 2>&1 || true
 }
+
+echo "[display] Configuring labwc display settings..."
+LABWC_DIR="$HOME/.config/labwc"
+mkdir -p "$LABWC_DIR"
+cat > "$LABWC_DIR/rc.xml" << 'RCEOF'
+<?xml version="1.0"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="neon-dj-display" serverDecoration="no"/>
+    <windowRule identifier="RotationChromium">
+      <action name="MoveToOutput" output="HDMI-A-2"/>
+    </windowRule>
+  </windowRules>
+</labwc_config>
+RCEOF
+cat > "$LABWC_DIR/autostart" << 'ASEOF'
+wlr-randr --output HDMI-A-2 --transform 90 &
+sleep 8
+rm -rf /tmp/chromium-rotation
+chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay &
+ASEOF
+for OLD_LAUNCHER in "$HOME/.config/autostart/djbooth-display.desktop" "$HOME/.config/autostart/neonaidj-rotation-display.desktop"; do
+  if [ -f "$OLD_LAUNCHER" ]; then
+    sed -i 's/X-GNOME-Autostart-enabled=true/X-GNOME-Autostart-enabled=false/g' "$OLD_LAUNCHER"
+    echo "Disabled duplicate launcher: $(basename $OLD_LAUNCHER)"
+  fi
+done
+labwc --reconfigure 2>/dev/null || true
+echo "Display configuration updated"
+
+echo "[boot-update] Setting up boot-time auto-update..."
+CRON_CMD="@reboot sleep 30 && DJBOOTH_BOOT_UPDATE=1 /bin/bash $HOME/djbooth-update.sh >> $HOME/djbooth-update.log 2>&1"
+(crontab -l 2>/dev/null | grep -v "djbooth-update.sh"; echo "$CRON_CMD") | crontab -
+echo "Boot-time auto-update scheduled"
 
 WATCHDOG_SRC="$APP_DIR/public/djbooth-watchdog.sh"
 WATCHDOG_DEST="/home/$(whoami)/djbooth-watchdog.sh"
