@@ -215,33 +215,42 @@ fi
 labwc --reconfigure 2>/dev/null || true
 echo "Display configuration updated"
 
-echo "[boot-update] Setting up boot-time auto-update service..."
+echo "[boot-update] Setting up boot-time auto-update (service + cron backup)..."
 if [ "$IS_HOMEBASE" != "true" ]; then
   BOOT_USER=$(whoami)
   BOOT_HOME="/home/$(whoami)"
-  sudo tee /etc/systemd/system/djbooth-boot.service > /dev/null << BOOTEOF
+
+  sudo systemctl disable djbooth-boot 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/djbooth-boot.service
+
+  sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << BOOTEOF
 [Unit]
-Description=DJ Booth Boot Update
+Description=NEON AI DJ Boot Update
 After=network.target
 
 [Service]
 Type=oneshot
 User=$BOOT_USER
+WorkingDirectory=$BOOT_HOME/djbooth
 Environment=DJBOOTH_BOOT_UPDATE=1
 Environment=HOME=$BOOT_HOME
 ExecStart=/bin/bash $BOOT_HOME/djbooth-update.sh
 RemainAfterExit=yes
-StandardOutput=append:$BOOT_HOME/djbooth-boot.log
-StandardError=append:$BOOT_HOME/djbooth-boot.log
+StandardOutput=journal
+StandardError=journal
 TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target
 BOOTEOF
   sudo systemctl daemon-reload
-  sudo systemctl enable djbooth-boot 2>/dev/null || true
+  sudo systemctl enable djbooth-update.service 2>/dev/null || true
+  echo "Boot update service installed: djbooth-update.service"
+
   (crontab -l 2>/dev/null | grep -v "djbooth-update.sh") | crontab - 2>/dev/null || true
-  echo "Boot-time update service installed and enabled"
+  (crontab -l 2>/dev/null; echo "@reboot sleep 45 && DJBOOTH_BOOT_UPDATE=1 /bin/bash $BOOT_HOME/djbooth-update.sh >> $BOOT_HOME/djbooth-boot.log 2>&1") | crontab -
+  echo "Boot update cron installed (backup — writes to ~/djbooth-boot.log)"
+  echo "Belt + suspenders: both service and cron will attempt update on every reboot."
 else
   echo "Homebase — skipping boot service setup"
 fi
