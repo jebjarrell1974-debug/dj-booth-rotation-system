@@ -1448,9 +1448,45 @@ app.post('/api/kiosk/exit', authenticate, requireDJ, async (req, res) => {
 
 app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
   try {
-    const { writeFileSync } = await import('fs');
-    writeFileSync('/tmp/djbooth-display-trigger', '1', { mode: 0o644 });
-    res.json({ ok: true, message: 'Rotation display trigger sent' });
+    const { spawn, execSync } = await import('child_process');
+    const { readdirSync, rmSync, writeFileSync } = await import('fs');
+    const os = await import('os');
+
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 1000;
+    const runtimeDir = `/run/user/${uid}`;
+
+    let waylandDisplay = 'wayland-1';
+    try {
+      const sockets = readdirSync(runtimeDir).filter(f => /^wayland-\d+$/.test(f));
+      if (sockets.length > 0) waylandDisplay = sockets.sort()[0];
+    } catch {}
+
+    try { execSync('pkill -f RotationChromium 2>/dev/null || true', { stdio: 'ignore' }); } catch {}
+    try { writeFileSync('/tmp/djbooth-display-trigger', '1', { mode: 0o644 }); } catch {}
+
+    await new Promise(r => setTimeout(r, 1200));
+
+    try { rmSync('/tmp/chromium-rotation', { recursive: true, force: true }); } catch {}
+
+    const env = {
+      ...process.env,
+      WAYLAND_DISPLAY: waylandDisplay,
+      XDG_RUNTIME_DIR: runtimeDir,
+      HOME: os.homedir()
+    };
+
+    const proc = spawn('chromium', [
+      '--kiosk',
+      '--class=RotationChromium',
+      '--user-data-dir=/tmp/chromium-rotation',
+      '--noerrdialogs',
+      '--disable-session-crashed-bubble',
+      '--autoplay-policy=no-user-gesture-required',
+      'http://localhost:3001/RotationDisplay'
+    ], { env, detached: true, stdio: 'ignore' });
+    proc.unref();
+
+    res.json({ ok: true, message: 'Rotation display launching', wayland: waylandDisplay });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
