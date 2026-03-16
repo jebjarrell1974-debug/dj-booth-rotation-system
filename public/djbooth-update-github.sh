@@ -97,9 +97,8 @@ if [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
   echo "Update script self-updated"
   if [ "${DJBOOTH_RESTARTED}" != "1" ]; then
     echo "Re-executing with new script version..."
-    export DJBOOTH_RESTARTED=1
-    export EXTRACTED_DIR="$EXTRACTED_DIR"
-    exec /bin/bash "$HOME/djbooth-update.sh"
+    DJBOOTH_RESTARTED=1 /bin/bash "$HOME/djbooth-update.sh"
+    exit $?
   fi
 fi
 
@@ -209,13 +208,13 @@ if [ "$IS_HOMEBASE" != "true" ]; then
   sudo tee /etc/systemd/system/djbooth-boot.service > /dev/null << BOOTEOF
 [Unit]
 Description=DJ Booth Boot Update
-After=network.target djbooth.service
-Wants=network.target
+After=network.target
 
 [Service]
 Type=oneshot
 User=$BOOT_USER
 Environment=DJBOOTH_BOOT_UPDATE=1
+Environment=HOME=$BOOT_HOME
 ExecStart=/bin/bash $BOOT_HOME/djbooth-update.sh
 RemainAfterExit=yes
 StandardOutput=append:$BOOT_HOME/djbooth-boot.log
