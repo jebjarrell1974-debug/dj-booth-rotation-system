@@ -1717,8 +1717,12 @@ function initMusicScanner() {
       startPeriodicScan(MUSIC_PATH, 5);
       setTimeout(async () => {
         await syncAnalysisFromHomebase();
-        startLufsAnalysis(MUSIC_PATH);
-        setTimeout(() => startBpmAnalysis(MUSIC_PATH), 10000);
+        if (process.env.IS_HOMEBASE === 'true') {
+          startLufsAnalysis(MUSIC_PATH);
+          setTimeout(() => startBpmAnalysis(MUSIC_PATH), 10000);
+        } else {
+          console.log('ℹ️ LUFS/BPM: Skipping auto-analysis on venue Pi — synced from homebase');
+        }
       }, 5000);
     } catch (err) {
       updateBootStep('musicScan', 'error', err.message);
