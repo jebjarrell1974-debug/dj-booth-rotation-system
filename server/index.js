@@ -1452,14 +1452,29 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
     const { readdirSync, rmSync, writeFileSync } = await import('fs');
     const os = await import('os');
 
-    const uid = typeof process.getuid === 'function' ? process.getuid() : 1000;
-    const runtimeDir = `/run/user/${uid}`;
+    console.log('[display/launch] Button pressed — finding Wayland socket...');
 
-    let waylandDisplay = 'wayland-1';
-    try {
-      const sockets = readdirSync(runtimeDir).filter(f => /^wayland-\d+$/.test(f));
-      if (sockets.length > 0) waylandDisplay = sockets.sort()[0];
-    } catch {}
+    let waylandDisplay = null;
+    let runtimeDir = null;
+
+    for (const uid of [1000, 1001, 1002]) {
+      const dir = `/run/user/${uid}`;
+      try {
+        const sockets = readdirSync(dir).filter(f => /^wayland-\d+$/.test(f));
+        if (sockets.length > 0) {
+          waylandDisplay = sockets.sort()[0];
+          runtimeDir = dir;
+          console.log(`[display/launch] Found Wayland socket: ${dir}/${waylandDisplay}`);
+          break;
+        }
+      } catch {}
+    }
+
+    if (!waylandDisplay) {
+      waylandDisplay = 'wayland-1';
+      runtimeDir = `/run/user/1000`;
+      console.log(`[display/launch] No socket found, defaulting to ${runtimeDir}/${waylandDisplay}`);
+    }
 
     try { execSync('pkill -f RotationChromium 2>/dev/null || true', { stdio: 'ignore' }); } catch {}
     try { writeFileSync('/tmp/djbooth-display-trigger', '1', { mode: 0o644 }); } catch {}
@@ -1475,6 +1490,8 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
       HOME: os.homedir()
     };
 
+    console.log(`[display/launch] Spawning chromium with WAYLAND_DISPLAY=${waylandDisplay} XDG_RUNTIME_DIR=${runtimeDir}`);
+
     const proc = spawn('chromium', [
       '--kiosk',
       '--class=RotationChromium',
@@ -1486,8 +1503,10 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
     ], { env, detached: true, stdio: 'ignore' });
     proc.unref();
 
-    res.json({ ok: true, message: 'Rotation display launching', wayland: waylandDisplay });
+    console.log(`[display/launch] Chromium spawned (PID ${proc.pid})`);
+    res.json({ ok: true, message: 'Rotation display launching', wayland: waylandDisplay, runtimeDir });
   } catch (err) {
+    console.error('[display/launch] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
