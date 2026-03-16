@@ -100,7 +100,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of last session — March 15, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 43 — March 16, 2026) — READ THIS FIRST
 
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
@@ -110,19 +110,53 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - LUFS background analyzer: runs at boot (5s delay), FFmpeg analysis-only, -10 LUFS club target, 3 concurrent, stores in DB
 - Fleet manifest enriched with `auto_gain` values; venue Pis get gain values on next sync
 - AudioEngine: pre-populated gain cache from server values (skips 10s browser analysis when gain available)
-- Playlist panel orange cooldown: dancer's personal playlist now shows orange icon+text for recently played songs (same as genre folders panel)
+- Playlist panel orange cooldown: dancer's personal playlist now shows orange icon+text for recently played songs
 - Watchdog smart recovery: tries current dancer's playlist first, logs failed songs to `playback_errors` table
+- **Boot update confirmed working on neonaidj001**: `@reboot` cron fires `DJBOOTH_BOOT_UPDATE=1 ~/djbooth-update.sh >> ~/djbooth-boot.log 2>&1` — confirmed running on two separate reboots (log shows "Running as boot service" both times)
+- **HDMI-2 rotation display confirmed working on neonaidj001**: `chromium --kiosk --class=RotationChromium` + labwc windowRule `MoveToOutput HDMI-A-2` — confirmed window appears on HDMI-2
+- **labwc autostart** auto-launches rotation display 8 seconds after boot and runs watcher for "Open Display" button
 
-### What was just completed (Mar 15, 2026)
-1. **LUFS normalization** — `server/lufsAnalyzer.js` (new), `server/db.js` (3 new columns: `lufs`, `auto_gain`, `lufs_analyzed`; 4 new functions), `server/index.js` (2 new endpoints, auto-start after scan), `server/fleet-routes.js` (manifest enrichment), `AudioEngine.jsx` (cache pre-population + -10 LUFS target)
-2. **Playlist panel orange cooldown** — `src/components/dj/RotationPlaylistManager.jsx`: dancer personal playlist panel now checks `songCooldowns` and shows orange icon/text for recently played songs (was previously always purple/white)
-3. **V11 voice cache** — `AnnouncementSystem.jsx`: `CURRENT_VOICE_VERSION = 'V11'`, stale cache auto-purge on load
-4. **True random varNum** — `AnnouncementSystem.jsx`: `getNextVariationNum` picks randomly from 1–5 with no back-to-back repeats
-5. **Watchdog smart recovery + playback errors** — `server/db.js`: `playback_errors` table; Watchdog tries current dancer's playlist first; fleet dashboard shows error log with Clear All
+### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
+**Belt + suspenders on every venue Pi:**
+1. **`djbooth-update.service`** (systemd) — `After=network.target`, `StandardOutput=journal`, `TimeoutStartSec=600`
+   - Check: `systemctl status djbooth-update` / `journalctl -u djbooth-update --no-pager | tail -20`
+2. **`@reboot` cron** (backup) — fires 45s after boot, writes to `~/djbooth-boot.log`
+   - Check: `sudo cat ~/djbooth-boot.log` — look for fresh timestamp and "Update complete!"
+   - Log owned by root (cron runs as root on some Pi configs) — always use `sudo cat`
+- Both installed automatically by running `~/djbooth-update.sh` on the Pi
+- **Key marker in log**: `Running as boot service — skipping restart` = cron fired correctly
+- **`$USER` is empty in cron context** — script uses `$(whoami)` instead (fixed commit `c45371c`)
+- **Homebase skips boot service setup**: `IS_HOMEBASE=true` in env skips the service/cron install — homebase does NOT auto-update on boot
+
+### HDMI-2 Rotation Display (CONFIRMED WORKING — DO NOT CHANGE)
+- **labwc window rule**: `~/.config/labwc/rc.xml` — `<windowRule identifier="RotationChromium">` + `<action name="MoveToOutput" output="HDMI-A-2"/>` + `<action name="Maximize"/>`
+- **Chromium class**: `--class=RotationChromium` sets Wayland app_id correctly (verified via WAYLAND_DEBUG=1)
+- **Critical**: chromium MUST be launched from within the Wayland session (terminal on Pi desktop, or labwc autostart) — server process has no Wayland access and cannot launch it directly
+- **labwc autostart** (`~/.config/labwc/autostart`):
+  ```bash
+  wlr-randr --output HDMI-A-2 --transform 90 &
+  sleep 8
+  rm -rf /tmp/chromium-rotation
+  chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay &
+  (while true; do
+    if [ -f /tmp/djbooth-display-trigger ]; then
+      rm -f /tmp/djbooth-display-trigger
+      pkill -f "RotationChromium" 2>/dev/null || true
+      sleep 1
+      rm -rf /tmp/chromium-rotation
+      chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay &
+      disown
+    fi
+    sleep 2
+  done) &
+  ```
+- **"Open Display" button**: `POST /api/display/launch` → server writes `/tmp/djbooth-display-trigger` → watcher detects → re-launches chromium on HDMI-2
+- **Manual launch from terminal** (if needed): `pkill -f RotationChromium 2>/dev/null; sleep 1; rm -rf /tmp/chromium-rotation; chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay &`
 
 ### New API endpoints
 - `GET /api/music/lufs-status` — returns `{ total, analyzed, withGain, pending, isRunning, progress }` (requires auth)
 - `POST /api/music/analyze` — manually triggers LUFS background analysis (requires DJ auth)
+- `POST /api/display/launch` — writes `/tmp/djbooth-display-trigger` to signal watcher (requires auth)
 
 ### AudioEngine notes (CRITICAL — do not change behavior)
 - `AUTO_GAIN_TARGET_LUFS = -10` (changed from -14; -10 is club standard)
@@ -130,18 +164,41 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - Log line: `🔊 AutoGain: pre-loaded server gain=X.XXx for SONGNAME`
 
 ### Outstanding TODOs
-- **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, `sudo systemctl restart djbooth`
-- **HDMI-2 display placement** (Pony Nation Pi): Rotation display window opens on HDMI-1 instead of HDMI-2 (see Session 35 below for full investigation state)
+- **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+- **neonaidj002**: Tailscale IP still unknown — check fleet dashboard
 - **Homebase-aware update script**: Skip Chrome kill/relaunch when `IS_HOMEBASE=true` in env
 - **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
-- **Homebase music scan**: Make homebase scan ALL music (not just its local library) so the fleet manifest is complete — possibly pointing `MUSIC_PATH` at a merged/mounted path or scanning multiple directories
-- **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<its api key from registration>` in `~/djbooth/.env` for playback errors to forward to fleet command
-- **All 4 units need `~/djbooth-update.sh`** to pull all changes from Sessions 41+42
+- **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<api key from registration>` in `~/djbooth/.env`
+- **All venue Pis need `~/djbooth-update.sh`** to pull Session 43 fixes (sudoers fix, display watcher, boot service)
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 16, 2026 — Session 43 (Boot Update + HDMI-2 Display — CONFIRMED WORKING)
+
+### Boot Update — Confirmed Working
+- Replaced broken `djbooth-boot.service` (never installed) with belt+suspenders approach
+- `djbooth-update.service` (systemd, `After=network.target`, `StandardOutput=journal`) + `@reboot` cron backup
+- Cron writes to `~/djbooth-boot.log` — confirmed firing on two separate reboots on neonaidj001
+- Fixed `$USER` empty in cron context → now uses `$(whoami)` throughout (commit `c45371c`)
+- Both installed by running `~/djbooth-update.sh` once on the Pi
+
+### HDMI-2 Rotation Display — Confirmed Working
+- `chromium --kiosk --class=RotationChromium` + labwc `MoveToOutput HDMI-A-2` window rule confirmed working
+- labwc autostart fires 8 seconds after boot to auto-launch rotation display on HDMI-2
+- Watcher loop in labwc autostart handles "Open Display" button via `/tmp/djbooth-display-trigger`
+- Server writes trigger file → watcher detects within 2s → re-launches chromium on HDMI-2
+- Key insight: chromium must be launched FROM the Wayland session — server process cannot do it
+
+### Commits This Session
+- `367a968` — trigger-file display launch approach
+- `6172efe` — restore auto-launch on boot + watcher
+- `69d803` — belt+suspenders boot update (service + cron)
+- `c45371c` — fix $USER empty in cron context (use whoami)
 
 ---
 
