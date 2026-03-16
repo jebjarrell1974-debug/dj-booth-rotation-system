@@ -1457,18 +1457,23 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
     let waylandDisplay = null;
     let runtimeDir = null;
 
+    let stolenEnv = null;
     try {
       const pids = execSync('pgrep -f "chromium" 2>/dev/null || true', { stdio: ['ignore','pipe','ignore'] }).toString().trim().split('\n').filter(Boolean);
       for (const pid of pids) {
         try {
           const environ = execSync(`cat /proc/${pid}/environ 2>/dev/null`, { stdio: ['ignore','pipe','ignore'] }).toString();
-          const envLines = environ.split('\0');
-          const wayland = envLines.find(e => e.startsWith('WAYLAND_DISPLAY='))?.split('=')[1];
-          const runtime = envLines.find(e => e.startsWith('XDG_RUNTIME_DIR='))?.split('=')[1];
-          if (wayland && runtime) {
-            waylandDisplay = wayland;
-            runtimeDir = runtime;
-            console.log(`[display/launch] Got Wayland env from PID ${pid}: WAYLAND_DISPLAY=${wayland} XDG_RUNTIME_DIR=${runtime}`);
+          const envLines = environ.split('\0').filter(Boolean);
+          const envObj = {};
+          for (const line of envLines) {
+            const idx = line.indexOf('=');
+            if (idx > 0) envObj[line.substring(0, idx)] = line.substring(idx + 1);
+          }
+          if (envObj.WAYLAND_DISPLAY && envObj.XDG_RUNTIME_DIR) {
+            waylandDisplay = envObj.WAYLAND_DISPLAY;
+            runtimeDir = envObj.XDG_RUNTIME_DIR;
+            stolenEnv = envObj;
+            console.log(`[display/launch] Stole full env from PID ${pid}: WAYLAND_DISPLAY=${waylandDisplay} DBUS=${envObj.DBUS_SESSION_BUS_ADDRESS || 'none'}`);
             break;
           }
         } catch {}
@@ -1504,10 +1509,10 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
     try { rmSync('/tmp/chromium-rotation', { recursive: true, force: true }); } catch {}
 
     const env = {
-      ...process.env,
+      ...(stolenEnv || process.env),
       WAYLAND_DISPLAY: waylandDisplay,
       XDG_RUNTIME_DIR: runtimeDir,
-      HOME: os.homedir()
+      HOME: stolenEnv?.HOME || os.homedir()
     };
 
     console.log(`[display/launch] Spawning chromium with WAYLAND_DISPLAY=${waylandDisplay} XDG_RUNTIME_DIR=${runtimeDir}`);
