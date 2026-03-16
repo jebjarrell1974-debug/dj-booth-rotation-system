@@ -183,6 +183,17 @@ cat > "$LABWC_DIR/rc.xml" << 'RCEOF'
 RCEOF
 cat > "$LABWC_DIR/autostart" << 'ASEOF'
 wlr-randr --output HDMI-A-2 --transform 90 &
+(while true; do
+  if [ -f /tmp/djbooth-display-trigger ]; then
+    rm -f /tmp/djbooth-display-trigger
+    pkill -f "RotationChromium" 2>/dev/null || true
+    sleep 1
+    rm -rf /tmp/chromium-rotation
+    chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay &
+    disown
+  fi
+  sleep 2
+done) &
 ASEOF
 for OLD_LAUNCHER in "$HOME/.config/autostart/djbooth-display.desktop" "$HOME/.config/autostart/neonaidj-rotation-display.desktop"; do
   if [ -f "$OLD_LAUNCHER" ]; then
