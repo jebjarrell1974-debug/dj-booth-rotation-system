@@ -27,6 +27,17 @@ if [ ! -d "$APP_DIR" ]; then
   exit 1
 fi
 
+if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
+  echo "Boot mode — waiting for internet access..."
+  for i in $(seq 1 60); do
+    if curl -sf --max-time 5 https://github.com > /dev/null 2>&1; then
+      echo "Internet ready (attempt $i)"
+      break
+    fi
+    sleep 5
+  done
+fi
+
 echo "[1/8] Checking for OS package updates..."
 set +e
 sudo apt-get update -q 2>&1 | tail -3
@@ -177,8 +188,8 @@ done
 if [ "$IS_HOMEBASE" != "true" ]; then
   for KIOSK_FILE in "$HOME/.config/autostart/djbooth-kiosk.desktop"; do
     if [ -f "$KIOSK_FILE" ]; then
-      sed -i 's/X-GNOME-Autostart-enabled=true/X-GNOME-Autostart-enabled=false/g' "$KIOSK_FILE"
-      echo "Disabled kiosk auto-launcher (boot service handles launch timing): $(basename $KIOSK_FILE)"
+      sed -i 's/X-GNOME-Autostart-enabled=false/X-GNOME-Autostart-enabled=true/g' "$KIOSK_FILE"
+      echo "Ensured kiosk auto-launcher is enabled: $(basename $KIOSK_FILE)"
     fi
   done
 fi
@@ -188,28 +199,25 @@ echo "Display configuration updated"
 echo "[boot-update] Setting up boot-time auto-update service..."
 if [ "$IS_HOMEBASE" != "true" ]; then
   BOOT_USER=$(whoami)
-  BOOT_UID=$(id -u)
+  BOOT_HOME="/home/$(whoami)"
   sudo tee /etc/systemd/system/djbooth-boot.service > /dev/null << BOOTEOF
 [Unit]
-Description=DJ Booth Boot Update and Launch
-After=network-online.target graphical.target djbooth.service
-Wants=network-online.target
-Requires=djbooth.service
+Description=DJ Booth Boot Update
+After=network.target djbooth.service
+Wants=network.target
 
 [Service]
 Type=oneshot
 User=$BOOT_USER
 Environment=DJBOOTH_BOOT_UPDATE=1
-Environment=WAYLAND_DISPLAY=wayland-1
-Environment=XDG_RUNTIME_DIR=/run/user/$BOOT_UID
-ExecStart=/bin/bash $HOME/djbooth-update.sh
+ExecStart=/bin/bash $BOOT_HOME/djbooth-update.sh
 RemainAfterExit=yes
-StandardOutput=append:$HOME/djbooth-boot.log
-StandardError=append:$HOME/djbooth-boot.log
-TimeoutStartSec=300
+StandardOutput=append:$BOOT_HOME/djbooth-boot.log
+StandardError=append:$BOOT_HOME/djbooth-boot.log
+TimeoutStartSec=600
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target
 BOOTEOF
   sudo systemctl daemon-reload
   sudo systemctl enable djbooth-boot 2>/dev/null || true
@@ -279,58 +287,20 @@ fi
 
 echo "[7/8] Restarting service..."
 if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
-  echo "Running as boot service — restarting djbooth and launching browsers..."
-  export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
-  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-
-  if [ "$IS_HOMEBASE" != "true" ]; then
-    sudo systemctl restart "$SERVICE_NAME"
-
-    echo "Waiting for server to be ready..."
-    for i in $(seq 1 40); do
-      if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
-        echo "Server is up (attempt $i)"
-        break
-      fi
-      sleep 3
-    done
-
+  echo "Running as boot service — updating and restarting djbooth..."
+  sudo systemctl restart "$SERVICE_NAME"
+  echo "Waiting for server to be ready..."
+  for i in $(seq 1 40); do
     if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
-      echo "Launching kiosk browser..."
-      bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
-      disown
-
-      echo "Waiting for Wayland session..."
-      for i in $(seq 1 30); do
-        if [ -S "$XDG_RUNTIME_DIR/wayland-1" ] || [ -S "$XDG_RUNTIME_DIR/wayland-0" ]; then
-          echo "Wayland ready (attempt $i)"
-          break
-        fi
-        sleep 1
-      done
-
-      echo "Waiting for HDMI-A-2 to be ready..."
-      for i in $(seq 1 30); do
-        if wlr-randr 2>/dev/null | grep -q "HDMI-A-2"; then
-          echo "HDMI-A-2 confirmed ready (attempt $i)"
-          break
-        fi
-        sleep 1
-      done
-      sleep 2
-
-      rm -rf /tmp/chromium-rotation
-      echo "Launching rotation display on HDMI-A-2..."
-      bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay" &
-      disown
-
-      sudo systemctl start djbooth-watchdog 2>/dev/null || true
-      echo "Boot launch complete"
-    else
-      echo "ERROR: Server did not come up — browsers not launched"
+      echo "Server is up (attempt $i)"
+      break
     fi
+    sleep 3
+  done
+  if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
+    echo "Boot update complete — use Open Display button in app to launch rotation screen"
   else
-    echo "Homebase boot update — skipping browser launch"
+    echo "WARNING: Server did not respond after restart"
   fi
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   export DISPLAY=:0
