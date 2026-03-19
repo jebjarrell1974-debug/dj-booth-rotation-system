@@ -59,6 +59,34 @@ const cacheToIndexedDB = async (key, audioBlob) => {
   } catch (err) { console.error('IndexedDB cache failed:', err); }
 };
 
+const deleteFromIndexedDB = async (key) => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {}
+};
+
+const validateAudioBlob = async (blob) => {
+  if (!blob || blob.size < 5000) return false;
+  let ctx;
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    ctx = new AudioContext();
+    await ctx.decodeAudioData(arrayBuffer);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (ctx) ctx.close().catch(() => {});
+  }
+};
+
 const blobToBase64 = (blob) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -618,7 +646,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.log(`🎙️ Generating announcement: ${key} (var${varNum})`);
       setGeneratingType(type);
       const script = await generateScript(type, dancerName, nextDancerName, roundNumber, varNum);
-      const audioBlob = await generateAudio(script);
+
+      let audioBlob = await generateAudio(script);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (await validateAudioBlob(audioBlob)) break;
+        if (attempt === 3) throw new Error('Generated audio failed decode validation after 3 attempts');
+        console.warn(`⚠️ Audio decode validation failed (attempt ${attempt}/3) for ${key}, regenerating...`);
+        audioBlob = await generateAudio(script);
+      }
 
       await cacheToIndexedDB(key, audioBlob);
       await saveToServer(key, audioBlob, script, type, dancerName, LOCKED_LEVEL);
@@ -667,8 +702,24 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.log(`📢 AnnouncementSystem: Playing ${type} for ${dancerName} (var${varNum}, Round ${roundNumber})`);
       const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
       console.log(`📢 AnnouncementSystem: Got audio URL (cached=${result.fromCache}), playing...`);
-      await onPlay?.(result.url, audioOptions);
-      console.log(`📢 AnnouncementSystem: Playback complete`);
+      try {
+        await onPlay?.(result.url, audioOptions);
+        console.log(`📢 AnnouncementSystem: Playback complete`);
+      } catch (playError) {
+        const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${CURRENT_VOICE_VERSION}`;
+        console.warn(`⚠️ Playback failed for ${cacheKey} — purging corrupted entry and regenerating...`, playError.message);
+        await deleteFromIndexedDB(cacheKey);
+        try {
+          await fetch(`/api/voiceovers/${encodeURIComponent(cacheKey)}`, { method: 'DELETE', headers: getAuthHeaders() });
+        } catch {}
+        try {
+          const fresh = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
+          await onPlay?.(fresh.url, audioOptions);
+          console.log(`📢 AnnouncementSystem: Playback complete (recovered after cache purge)`);
+        } catch (retryError) {
+          console.error(`❌ Playback still failed after regeneration — skipping:`, retryError.message);
+        }
+      }
     } catch (error) {
       console.error(`❌ AnnouncementSystem Error (silent fallback):`, error.message);
       console.warn(`Announcement skipped: ${error.message} — music continues uninterrupted`);
