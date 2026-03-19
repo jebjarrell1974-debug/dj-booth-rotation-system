@@ -1497,9 +1497,28 @@ app.post('/api/kiosk/exit', authenticate, requireDJ, async (req, res) => {
 
 app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
   try {
-    const { writeFileSync } = await import('fs');
-    writeFileSync('/tmp/djbooth-display-trigger', '1', { mode: 0o644 });
-    res.json({ ok: true, message: 'Display trigger sent' });
+    const { spawn, execSync } = await import('child_process');
+    try { execSync('pkill -f "RotationChromium"', { timeout: 5000 }); } catch {}
+    await new Promise(r => setTimeout(r, 1000));
+    try { execSync('rm -rf /tmp/chromium-rotation', { timeout: 3000 }); } catch {}
+    const uid = process.getuid ? process.getuid() : 1000;
+    const env = {
+      ...process.env,
+      WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || 'wayland-1',
+      XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`,
+    };
+    const child = spawn('chromium', [
+      '--kiosk',
+      '--class=RotationChromium',
+      '--user-data-dir=/tmp/chromium-rotation',
+      '--noerrdialogs',
+      '--disable-session-crashed-bubble',
+      '--autoplay-policy=no-user-gesture-required',
+      'http://localhost:3001/RotationDisplay'
+    ], { detached: true, stdio: 'ignore', env });
+    child.unref();
+    console.log(`[display/launch] Launched RotationChromium (PID ${child.pid}) on HDMI-2`);
+    res.json({ ok: true, message: 'Rotation display launching on HDMI-2' });
   } catch (err) {
     console.error('[display/launch] Error:', err.message);
     res.status(500).json({ error: err.message });

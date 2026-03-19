@@ -3562,8 +3562,8 @@ export default function DJBooth() {
                     try {
                       const res = await fetch('/api/display/launch', { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('djbooth_token')}` } });
                       if (!res.ok) throw new Error('Failed');
-                    } catch {
-                      window.open(createPageUrl('RotationDisplay'), '_blank');
+                    } catch (err) {
+                      console.error('[Open Display] Failed to launch rotation display:', err.message);
                     }
                   }}
                 >
