@@ -418,11 +418,11 @@ if [ -n "$WIFI_CONN" ]; then
     echo "Wi-Fi ($WIFI_CONN) route metric set to 600 (local only)" || true
 fi
 
-if [ -n "$COMMIT_SHA" ]; then
-  STAMP_TS=$(date -u +%s)000
-  printf '%s|%s\n' "$COMMIT_SHA" "$STAMP_TS" > "$STAMP_FILE"
-  echo "✓ Update verified — stamped commit $SHORT_SHA at $(date '+%Y-%m-%d %H:%M')"
-fi
+STAMP_TS=$(date -u +%s)000
+STAMP_SHA="${COMMIT_SHA:-unknown}"
+SHORT_STAMP="${SHORT_SHA:-unknown}"
+printf '%s|%s\n' "$STAMP_SHA" "$STAMP_TS" > "$STAMP_FILE"
+echo "✓ Update stamped — ${SHORT_STAMP} at $(date '+%Y-%m-%d %H:%M')"
 
 echo ""
 echo "[8/8] Cleaning up..."

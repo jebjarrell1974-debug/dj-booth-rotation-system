@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
 import { networkInterfaces, hostname, uptime, freemem, totalmem } from 'os';
 
@@ -12,10 +12,21 @@ function executeRemoteCommand(command) {
   const appDir = process.env.APP_DIR || '/home/neonaidj001/djbooth';
   try {
     switch (command) {
-      case 'update':
-        console.log('📡 Executing remote update...');
-        execSync(`cd ${appDir} && bash public/djbooth-update-github.sh`, { timeout: 120000, stdio: 'inherit' });
+      case 'update': {
+        console.log('📡 Remote update queued — launching background process (takes 5-10 min)...');
+        const homeDir = process.env.HOME || `/home/${process.env.USER || 'pi'}`;
+        const updateScript = existsSync(`${homeDir}/djbooth-update.sh`)
+          ? `${homeDir}/djbooth-update.sh`
+          : `${appDir}/public/djbooth-update-github.sh`;
+        const child = spawn('bash', [updateScript], {
+          detached: true,
+          stdio: 'ignore',
+          env: { ...process.env, HOME: homeDir },
+        });
+        child.unref();
+        console.log(`📡 Update running as background process (PID ${child.pid}) — stamp file will appear when done`);
         break;
+      }
       case 'restart':
         console.log('📡 Executing remote restart...');
         execSync('sudo systemctl restart djbooth.service', { timeout: 30000, stdio: 'inherit' });

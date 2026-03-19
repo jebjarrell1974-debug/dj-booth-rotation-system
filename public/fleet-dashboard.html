@@ -577,6 +577,9 @@
       if (!sha) {
         return `<span style="color:#6b7280" title="Run the update script once to enable verification">${ts} <span style="font-size:10px">(unverified)</span></span>`;
       }
+      if (sha === 'unknown') {
+        return `${ts} <span style="color:#9ca3af;font-size:11px" title="Updated successfully — GitHub API unavailable for SHA">✓ <span style="font-size:10px">(SHA unavailable)</span></span>`;
+      }
       const match = currentCommitSha && sha === currentCommitSha;
       const noRef = !currentCommitSha;
       if (noRef) {
