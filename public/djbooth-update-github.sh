@@ -118,8 +118,12 @@ TMPDIR=$(mktemp -d /tmp/djbooth-extract-XXXXXX)
 tar xzf "$TMPFILE" -C "$TMPDIR"
 rm -f "$TMPFILE"
 
-EXTRACTED_DIR=$(ls -d "$TMPDIR"/*/  | head -1)
-if [ -z "$EXTRACTED_DIR" ]; then
+if [ "$USE_HOMEBASE_BUNDLE" = "true" ]; then
+  EXTRACTED_DIR="$TMPDIR/"
+else
+  EXTRACTED_DIR=$(ls -d "$TMPDIR"/*/ | head -1)
+fi
+if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
   echo "ERROR: No files extracted"
   rm -rf "$TMPDIR"
   exit 1
