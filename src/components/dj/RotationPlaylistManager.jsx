@@ -539,6 +539,8 @@ export default function RotationPlaylistManager({
       if (songs) songs.forEach(n => { if (id !== dancerId || songs.indexOf(n) !== songIndex) allAssigned.push(n); });
     });
 
+    const dancer = dancers.find(d => d.id === dancerId);
+    const dancerPlaylist = dancer?.playlist || [];
     const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
     try {
       const token = localStorage.getItem('djbooth_token');
@@ -550,7 +552,7 @@ export default function RotationPlaylistManager({
           count: 1,
           excludeNames: [...new Set(allAssigned)],
           genres: activeGenres,
-          dancerPlaylist: []
+          dancerPlaylist
         }),
         signal: AbortSignal.timeout(5000)
       });
@@ -572,9 +574,13 @@ export default function RotationPlaylistManager({
       console.warn('Re-roll failed:', err.message);
     }
 
-    const genrePool = filterByGenres(serverTracks.length > 0 ? serverTracks : tracks, activeGenres);
     const excludeSet = new Set(allAssigned);
-    const available = genrePool.filter(t => !excludeSet.has(t.name));
+    const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
+    const playlistSet = new Set(dancerPlaylist);
+    const playlistTracks = dancerPlaylist.length > 0
+      ? allTracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name))
+      : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
+    const available = playlistTracks.length > 0 ? playlistTracks : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
     if (available.length > 0) {
       const pick = available[Math.floor(Math.random() * available.length)];
       djOverridesRef.current.add(dancerId);
@@ -587,7 +593,7 @@ export default function RotationPlaylistManager({
     } else {
       toast.error('No other songs available to pick from');
     }
-  }, [djOptions, tracks, serverTracks]);
+  }, [djOptions, tracks, serverTracks, dancers]);
 
   const handleAddToRotation = (dancerId) => {
     if (!localRotation.includes(dancerId)) {
