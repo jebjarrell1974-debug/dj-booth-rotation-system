@@ -1385,13 +1385,23 @@ export default function Configuration() {
               <Wifi className="w-4 h-4 text-[#2563eb]" />
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Remote Connection</h3>
             </div>
-            <p className="text-xs text-gray-500 mb-3">Enter this IP on the iPad to connect as DJ Remote</p>
-            {serverIps.map((ip, i) => (
-              <div key={i} className="flex items-center justify-between py-2 px-3 bg-[#151528] rounded-lg mb-2 last:mb-0">
-                <span className="text-xs text-gray-400">{ip.interface}</span>
-                <span className="text-lg font-mono font-bold text-white">{ip.address}</span>
-              </div>
-            ))}
+            <p className="text-xs text-gray-500 mb-3">Use the WiFi IP on the iPad to connect as DJ Remote</p>
+            {serverIps.map((ip, i) => {
+              const iface = ip.interface || '';
+              const isWifi = /^wlan|^wlp|^wlx/i.test(iface);
+              const isEthernet = /^eth|^enp|^eno|^ens/i.test(iface);
+              const isTailscale = /tailscale|ts\d/i.test(iface);
+              const label = isWifi ? 'WiFi — use this for iPad'
+                : isEthernet ? 'Ethernet'
+                : isTailscale ? 'Tailscale (fleet)'
+                : iface;
+              return (
+                <div key={i} className={`flex items-center justify-between py-2 px-3 rounded-lg mb-2 last:mb-0 ${isWifi ? 'bg-blue-900/30 border border-blue-500/40' : 'bg-[#151528]'}`}>
+                  <span className={`text-xs font-medium ${isWifi ? 'text-blue-300' : 'text-gray-400'}`}>{label}</span>
+                  <span className={`text-lg font-mono font-bold ${isWifi ? 'text-[#00d4ff]' : 'text-white'}`}>{ip.address}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 
