@@ -690,7 +690,7 @@ export default function RotationPlaylistManager({
               className="w-full mb-2 px-3 py-2 bg-[#151528] border border-[#1e293b] rounded-lg text-sm text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
               style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '28px' }}
             >
-              <option value="genres">Genre Folders</option>
+              <option value="genres">Entertainers</option>
               {activeDancers.map(d => (
                 <option key={d.id} value={d.id}>
                   {d.name}'s Playlist ({(d.playlist || []).length})
