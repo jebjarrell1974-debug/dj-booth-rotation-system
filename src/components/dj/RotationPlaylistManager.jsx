@@ -159,19 +159,19 @@ export default function RotationPlaylistManager({
   }, [interstitialRemoteVersion]);
 
   useEffect(() => {
-    if (saveGuardRef.current > Date.now()) return;
-
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
       setSongAssignments(prev => {
         const fromActive = { ...prev };
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
           if (djOverridesRef.current.has(dancerId)) return;
-          if (trackList) fromActive[dancerId] = trackList.map(t => t.name);
+          if (trackList && trackList.length > 0) fromActive[dancerId] = trackList.map(t => t.name);
         });
         return fromActive;
       });
       return;
     }
+
+    if (saveGuardRef.current > Date.now()) return;
 
     const dancersNeedingAssignment = localRotation.filter(dancerId => {
       if (djOverridesRef.current.has(dancerId)) return false;
