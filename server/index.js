@@ -2,7 +2,8 @@ import express from 'express';
 import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, statSync, createReadStream, readdirSync, unlinkSync } from 'fs';
+import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFileSync } from 'fs';
+import { spawn as spawnProcess } from 'child_process';
 import { networkInterfaces, hostname } from 'os';
 import {
   getSetting, setSetting, hashPin, verifyPin,
@@ -132,6 +133,54 @@ function getMasterPin() {
 
 app.get('/__health', (req, res) => {
   res.status(200).send('OK');
+});
+
+app.get('/api/update/version', (req, res) => {
+  let sha = 'unknown', timestamp = null, prebuilt = false;
+  try {
+    const stampFile = `${process.env.HOME}/.djbooth-last-update`;
+    if (existsSync(stampFile)) {
+      const [s, t] = readFileSync(stampFile, 'utf8').trim().split('|');
+      sha = s || 'unknown';
+      timestamp = parseInt(t, 10) || null;
+    }
+  } catch {}
+  prebuilt = existsSync(join(__dirname, '..', 'dist'));
+  res.json({ sha, shortSha: sha !== 'unknown' ? sha.slice(0, 7) : 'unknown', timestamp, prebuilt });
+});
+
+app.get('/api/update/bundle', (req, res) => {
+  const appDir = join(__dirname, '..');
+  const distDir = join(appDir, 'dist');
+  if (!existsSync(distDir)) {
+    return res.status(503).json({ error: 'No pre-built dist/ available — Pi must build from source via GitHub' });
+  }
+  let sha = 'unknown';
+  try {
+    const stampFile = `${process.env.HOME}/.djbooth-last-update`;
+    if (existsSync(stampFile)) sha = readFileSync(stampFile, 'utf8').trim().split('|')[0] || 'unknown';
+  } catch {}
+  const includes = ['server', 'dist', 'public', 'package.json', 'package-lock.json',
+    'vite.config.js', 'tailwind.config.js', 'postcss.config.js', 'index.html']
+    .filter(f => existsSync(join(appDir, f)));
+  res.setHeader('Content-Type', 'application/gzip');
+  res.setHeader('Content-Disposition', 'attachment; filename="djbooth-bundle.tar.gz"');
+  res.setHeader('X-Djbooth-Sha', sha);
+  const tar = spawnProcess('tar', [
+    'czf', '-', '-C', appDir,
+    '--exclude=node_modules', '--exclude=music', '--exclude=voiceovers',
+    '--exclude=.env', '--exclude=.env.local', '--exclude=.git',
+    ...includes
+  ]);
+  tar.stdout.pipe(res);
+  tar.stderr.on('data', d => console.error('Bundle tar stderr:', d.toString().trim()));
+  tar.on('error', err => {
+    console.error('Bundle endpoint error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  });
+  tar.on('close', code => {
+    if (code !== 0) console.warn(`Bundle tar exited with code ${code}`);
+  });
 });
 
 app.get('/api/fleet-env', (req, res) => {

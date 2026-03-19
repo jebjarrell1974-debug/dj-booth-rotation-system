@@ -51,21 +51,58 @@ if [ -f /var/run/reboot-required ]; then
 fi
 set -e
 
-echo "[2/8] Downloading latest code from GitHub..."
+echo "[2/8] Fetching latest code..."
 TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
-HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMPFILE" "https://github.com/${GITHUB_REPO}/archive/refs/heads/${BRANCH}.tar.gz" 2>/dev/null || echo "000")
-if [ "$HTTP_CODE" != "200" ]; then
-  echo "ERROR: Download failed (HTTP $HTTP_CODE)"
-  echo "Check that the repo exists: https://github.com/${GITHUB_REPO}"
-  rm -f "$TMPFILE"
-  exit 1
-fi
-FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
-echo "Downloaded: ${FILESIZE} bytes"
+USE_HOMEBASE_BUNDLE=false
 
-COMMIT_SHA=$(curl -sf --max-time 8 "https://api.github.com/repos/${GITHUB_REPO}/commits/${BRANCH}" 2>/dev/null | grep -o '"sha":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-SHORT_SHA="${COMMIT_SHA:0:7}"
-[ -n "$SHORT_SHA" ] && echo "Commit SHA: $SHORT_SHA" || echo "Commit SHA: (unavailable)"
+LOCAL_IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+HOMEBASE_URL=$(grep "^FLEET_SERVER_URL=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+HOMEBASE_URL="${HOMEBASE_URL:-http://100.95.238.71:3001}"
+
+if [ "$LOCAL_IS_HOMEBASE" != "true" ] && [ "$DJBOOTH_SKIP_HOMEBASE" != "1" ]; then
+  echo "  Trying homebase at $HOMEBASE_URL..."
+  VERSION_INFO=$(curl -sf --max-time 8 "$HOMEBASE_URL/api/update/version" 2>/dev/null || echo "")
+  if [ -n "$VERSION_INFO" ]; then
+    HB_SHA=$(echo "$VERSION_INFO" | grep -o '"sha":"[^"]*"' | cut -d'"' -f4 || echo "")
+    HB_PREBUILT=$(echo "$VERSION_INFO" | grep -o '"prebuilt":[^,}]*' | cut -d':' -f2 | tr -d ' ' || echo "false")
+    if [ "$HB_PREBUILT" = "true" ]; then
+      echo "  Homebase has pre-built bundle (SHA: ${HB_SHA:0:7}) — downloading..."
+      HTTP_CODE=$(curl -sL -w "%{http_code}" --max-time 120 \
+        -D /tmp/djbooth-bundle-headers.txt \
+        -o "$TMPFILE" "$HOMEBASE_URL/api/update/bundle" 2>/dev/null || echo "000")
+      if [ "$HTTP_CODE" = "200" ]; then
+        COMMIT_SHA=$(grep -i "^x-djbooth-sha:" /tmp/djbooth-bundle-headers.txt 2>/dev/null | cut -d' ' -f2 | tr -d '\r' || echo "$HB_SHA")
+        SHORT_SHA="${COMMIT_SHA:0:7}"
+        FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
+        echo "  Downloaded from homebase: ${FILESIZE} bytes (SHA: ${SHORT_SHA:-unknown})"
+        USE_HOMEBASE_BUNDLE=true
+      else
+        echo "  Homebase bundle failed (HTTP $HTTP_CODE) — falling back to GitHub..."
+        rm -f "$TMPFILE"
+        TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
+      fi
+    else
+      echo "  Homebase has no pre-built dist/ — falling back to GitHub..."
+    fi
+  else
+    echo "  Homebase not reachable — falling back to GitHub..."
+  fi
+fi
+
+if [ "$USE_HOMEBASE_BUNDLE" = "false" ]; then
+  echo "  Downloading from GitHub..."
+  HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMPFILE" "https://github.com/${GITHUB_REPO}/archive/refs/heads/${BRANCH}.tar.gz" 2>/dev/null || echo "000")
+  if [ "$HTTP_CODE" != "200" ]; then
+    echo "ERROR: Download failed from both homebase and GitHub (HTTP $HTTP_CODE)"
+    rm -f "$TMPFILE"
+    exit 1
+  fi
+  FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
+  echo "  Downloaded from GitHub: ${FILESIZE} bytes"
+  COMMIT_SHA=$(curl -sf --max-time 8 "https://api.github.com/repos/${GITHUB_REPO}/commits/${BRANCH}" 2>/dev/null | grep -o '"sha":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+  SHORT_SHA="${COMMIT_SHA:0:7}"
+  [ -n "$SHORT_SHA" ] && echo "  Commit SHA: $SHORT_SHA" || echo "  Commit SHA: (unavailable)"
+fi
 
 echo "[3/8] Backing up current installation..."
 if [ -f "$APP_DIR/package.json" ]; then
@@ -97,6 +134,10 @@ cp "${EXTRACTED_DIR}vite.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}postcss.config.js" "$APP_DIR/" 2>/dev/null || true
 cp "${EXTRACTED_DIR}index.html" "$APP_DIR/" 2>/dev/null || true
+if [ -d "${EXTRACTED_DIR}dist" ]; then
+  cp -r "${EXTRACTED_DIR}dist" "$APP_DIR/"
+  echo "Pre-built frontend installed from homebase"
+fi
 
 if [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
   cp "${EXTRACTED_DIR}public/djbooth-update-github.sh" "$HOME/djbooth-update.sh"
@@ -152,7 +193,11 @@ fi
 cd "$APP_DIR"
 
 npm install --no-audit --no-fund 2>&1 | tail -3
-npx vite build 2>&1 | tail -3
+if [ "$USE_HOMEBASE_BUNDLE" = "true" ] && [ -d "$APP_DIR/dist" ]; then
+  echo "  Frontend pre-built by homebase — skipping vite build (saves ~3-5 min)"
+else
+  npx vite build 2>&1 | tail -3
+fi
 npm prune --production 2>&1 | tail -1
 
 rm -rf "$TMPDIR"
