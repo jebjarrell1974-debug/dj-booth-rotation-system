@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Shuffle, Trash2 } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Shuffle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -65,9 +65,6 @@ export default function RotationPlaylistManager({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeGenre, setActiveGenre] = useState(null);
   const [musicSource, setMusicSource] = useState('genres');
-  const [isDeleteMode, setIsDeleteMode] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [isDeletingTrack, setIsDeletingTrack] = useState(false);
 
   const activeDancers = useMemo(() =>
     (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name)),
@@ -658,33 +655,6 @@ export default function RotationPlaylistManager({
     toast.success('Rotation & playlists saved');
   };
 
-  const handleDeleteTrack = async (trackName) => {
-    if (isDeletingTrack) return;
-    setIsDeletingTrack(true);
-    try {
-      const token = localStorage.getItem('djbooth_token');
-      const res = await fetch('/api/music/track', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ trackName })
-      });
-      if (res.ok) {
-        setServerTracks(prev => prev.filter(t => t.name !== trackName));
-        toast.success(`Deleted: ${trackName}`);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(`Delete failed: ${err.error || res.statusText}`);
-      }
-    } catch (e) {
-      toast.error(`Delete failed: ${e.message}`);
-    } finally {
-      setIsDeletingTrack(false);
-      setPendingDelete(null);
-    }
-  };
 
   return (
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
@@ -702,13 +672,6 @@ export default function RotationPlaylistManager({
                     : `${playlistSongs.length} songs`
                   }
                 </span>
-                <button
-                  onClick={() => { setIsDeleteMode(v => !v); setPendingDelete(null); }}
-                  title={isDeleteMode ? 'Exit delete mode' : 'Delete tracks from system'}
-                  className={`p-1 rounded transition-colors ${isDeleteMode ? 'text-red-400 bg-red-900/30' : 'text-gray-600 hover:text-red-400 hover:bg-red-900/20'}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
               </div>
             </div>
             <select
@@ -830,51 +793,23 @@ export default function RotationPlaylistManager({
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
                           className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors ${
-                            isDeleteMode && pendingDelete === track.name
-                              ? 'bg-red-900/30 ring-2 ring-red-500/60'
-                              : snapshot.isDragging
+                            snapshot.isDragging
                               ? 'bg-[#00d4ff]/20 ring-2 ring-[#00d4ff]'
                               : 'bg-[#151528] hover:bg-[#1e293b]'
-                          } ${isDeleteMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing cursor-pointer'}`}
-                          onClick={() => !isDeleteMode && handleLibraryTrackClick(track.name)}
+                          } cursor-grab active:cursor-grabbing cursor-pointer`}
+                          onClick={() => handleLibraryTrackClick(track.name)}
                         >
                           {(() => { const onCool = !!(songCooldowns[track.name] && (Date.now() - songCooldowns[track.name]) < FOUR_HOURS_MS); return (
                           <Music2 className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-gray-500'}`} />
                           ); })()}
                           <div className="flex-1 min-w-0">
                             {(() => { const onCool = !!(songCooldowns[track.name] && (Date.now() - songCooldowns[track.name]) < FOUR_HOURS_MS); return (
-                            <span className={`text-sm truncate block ${isDeleteMode && pendingDelete === track.name ? 'text-red-300' : onCool ? 'text-orange-300' : 'text-white'}`}>{track.name}</span>
+                            <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{track.name}</span>
                             ); })()}
                             {!activeGenre && (track.genre || (track.path && track.path.includes('/'))) && (
                               <span className="text-xs text-gray-500 truncate block">{track.genre || track.path.split('/')[0]}</span>
                             )}
                           </div>
-                          {isDeleteMode && (
-                            pendingDelete === track.name ? (
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteTrack(track.name); }}
-                                  disabled={isDeletingTrack}
-                                  className="px-2 py-0.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded font-medium disabled:opacity-50"
-                                >
-                                  {isDeletingTrack ? '...' : 'Delete'}
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setPendingDelete(null); }}
-                                  className="px-2 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setPendingDelete(track.name); }}
-                                className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )
-                          )}
                         </div>
                       )}
                     </Draggable>
