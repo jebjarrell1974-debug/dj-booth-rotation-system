@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, Radio, ListMusic, Shuffle } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, Radio, ListMusic, Shuffle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -42,6 +42,7 @@ export default function RotationPlaylistManager({
   interstitialRemoteVersion,
   activeBreakInfo,
   onRemoveActiveBreakSong,
+  onUpdateActiveBreakSongs,
   djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
@@ -641,6 +642,32 @@ export default function RotationPlaylistManager({
     });
   }, []);
 
+  const moveActiveBreakSong = useCallback((upcomingIdx, direction) => {
+    if (!activeBreakInfo || !onUpdateActiveBreakSongs) return;
+    const { songs, currentIndex, breakKey } = activeBreakInfo;
+    const upcoming = [...songs.slice(currentIndex + 1)];
+    const targetIdx = upcomingIdx + direction;
+    if (targetIdx < 0 || targetIdx >= upcoming.length) return;
+    [upcoming[upcomingIdx], upcoming[targetIdx]] = [upcoming[targetIdx], upcoming[upcomingIdx]];
+    const newFullSongs = [...songs.slice(0, currentIndex + 1), ...upcoming];
+    onUpdateActiveBreakSongs(breakKey, newFullSongs);
+  }, [activeBreakInfo, onUpdateActiveBreakSongs]);
+
+  const replaceActiveBreakSong = useCallback((upcomingIdx) => {
+    if (!activeBreakInfo || !onUpdateActiveBreakSongs) return;
+    const { songs, currentIndex, breakKey } = activeBreakInfo;
+    const upcoming = [...songs.slice(currentIndex + 1)];
+    const allBreakNames = new Set(songs);
+    const allAssigned = new Set(Object.values(songAssignmentsRef.current).flat());
+    const pool = (serverTracks.length > 0 ? serverTracks : tracks).filter(t => !allBreakNames.has(t.name) && !allAssigned.has(t.name));
+    if (pool.length === 0) { toast.error('No other songs available'); return; }
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    upcoming[upcomingIdx] = pick.name;
+    const newFullSongs = [...songs.slice(0, currentIndex + 1), ...upcoming];
+    onUpdateActiveBreakSongs(breakKey, newFullSongs);
+    toast.success(`Swapped: ${pick.name.replace(/\.[^.]+$/, '')}`);
+  }, [activeBreakInfo, onUpdateActiveBreakSongs, tracks, serverTracks]);
+
   const lastSaveTimeRef = useRef(0);
   const lastSkipDancerTimeRef = useRef(0);
   const handleSave = async () => {
@@ -953,16 +980,40 @@ export default function RotationPlaylistManager({
                             return (
                               <div
                                 key={`active-break-${i}`}
-                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
+                                className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
                               >
                                 <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                <span className="text-xs text-violet-300 truncate flex-1">{songName}</span>
+                                <span className="text-xs text-violet-300 truncate flex-1 mx-1">{songName}</span>
+                                <button
+                                  onClick={() => moveActiveBreakSong(i, -1)}
+                                  disabled={i === 0}
+                                  title="Move up"
+                                  className="p-0.5 text-violet-400/60 hover:text-violet-200 disabled:opacity-20 disabled:cursor-not-allowed rounded transition-colors flex-shrink-0"
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => moveActiveBreakSong(i, 1)}
+                                  disabled={i === upcomingBreaks.length - 1}
+                                  title="Move down"
+                                  className="p-0.5 text-violet-400/60 hover:text-violet-200 disabled:opacity-20 disabled:cursor-not-allowed rounded transition-colors flex-shrink-0"
+                                >
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => replaceActiveBreakSong(i)}
+                                  title="Swap for another song"
+                                  className="p-0.5 text-violet-400/60 hover:text-amber-400 rounded transition-colors flex-shrink-0"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                </button>
                                 {onRemoveActiveBreakSong && activeBreakInfo.breakKey && (
                                   <button
                                     onClick={() => onRemoveActiveBreakSong(activeBreakInfo.breakKey, actualIndex)}
-                                    className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                    title="Remove"
+                                    className="p-0.5 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
                                   >
-                                    <X className="w-5 h-5" />
+                                    <X className="w-4 h-4" />
                                   </button>
                                 )}
                               </div>

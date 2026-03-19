@@ -3734,6 +3734,20 @@ export default function DJBooth() {
                     setActiveBreakInfo({ ...activeBreakInfo, songs: newSongs });
                   }
                 }}
+                onUpdateActiveBreakSongs={(breakKey, newFullSongs) => {
+                  const newInterstitials = { ...interstitialSongsRef.current };
+                  if (newFullSongs.length === 0) {
+                    delete newInterstitials[breakKey];
+                  } else {
+                    newInterstitials[breakKey] = newFullSongs;
+                  }
+                  interstitialSongsRef.current = newInterstitials;
+                  setInterstitialSongsState({ ...newInterstitials });
+                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(newInterstitials)); } catch {}
+                  if (activeBreakInfo && activeBreakInfo.breakKey === breakKey) {
+                    setActiveBreakInfo({ ...activeBreakInfo, songs: newFullSongs });
+                  }
+                }}
                 onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
