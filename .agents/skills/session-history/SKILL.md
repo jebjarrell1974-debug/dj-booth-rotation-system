@@ -100,21 +100,26 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 43 — March 16, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 45 — March 19, 2026) — READ THIS FIRST
 
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
 - Play history pipeline: `djbooth_token` stored in `localStorage` (not `sessionStorage`), survives reboots
-- Voiceover system: 5-variation true-random (V11), stale IDB auto-cleanup on load, generic fallbacks
+- Voiceover system: 5-variation, true-random (V11), stale IDB auto-cleanup on load, generic fallbacks
+- **Variant no-repeat rules (Session 45)**: outro→intro transition never shares same variant number; intro and outro within one dancer's set always use different numbers
+- **Corruption guard (Session 45)**: `validateAudioBlob()` decode-validates before caching (3 attempts); playback failure auto-purges IDB + server entry and regenerates
 - All 4 units report to homebase fleet server (`100.95.238.71:3001`)
 - LUFS background analyzer: runs at boot (5s delay), FFmpeg analysis-only, -10 LUFS club target, 3 concurrent, stores in DB
 - Fleet manifest enriched with `auto_gain` values; venue Pis get gain values on next sync
 - AudioEngine: pre-populated gain cache from server values (skips 10s browser analysis when gain available)
-- Playlist panel orange cooldown: dancer's personal playlist now shows orange icon+text for recently played songs
+- Playlist panel orange cooldown: dancer's personal playlist now shows orange icon+text for recently played songs; cooldown is **6 hours** (updated from 4h in Session 44)
 - Watchdog smart recovery: tries current dancer's playlist first, logs failed songs to `playback_errors` table
 - **Boot update confirmed working on neonaidj001**: `@reboot` cron fires `DJBOOTH_BOOT_UPDATE=1 ~/djbooth-update.sh >> ~/djbooth-boot.log 2>&1` — confirmed running on two separate reboots (log shows "Running as boot service" both times)
 - **HDMI-2 rotation display confirmed working on neonaidj001**: `chromium --kiosk --class=RotationChromium` + labwc windowRule `MoveToOutput HDMI-A-2` — confirmed window appears on HDMI-2
 - **labwc autostart** auto-launches rotation display 8 seconds after boot and runs watcher for "Open Display" button
+- **Fleet music deletion sync (Session 44)**: homebase deletions propagate to all Pis on next R2 sync; purge skips if R2 returns zero files (safety guard)
+- **Break song queue controls (Session 44)**: "Up Next" break song panel has ↑/↓ move, ↻ swap, ✕ remove per song
+- **WiFi IP display (Session 44)**: Configuration page highlights WiFi IP in blue labeled "WiFi — use this for iPad"
 
 ### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
 **Belt + suspenders on every venue Pi:**
@@ -165,16 +170,85 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ### Outstanding TODOs
 - **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+- **neonaidj001**: Set `DEVICE_ID=neonaidj001` in `~/djbooth/.env` (fleet heartbeat identification)
 - **neonaidj002**: Tailscale IP still unknown — check fleet dashboard
 - **Homebase-aware update script**: Skip Chrome kill/relaunch when `IS_HOMEBASE=true` in env
 - **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
 - **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<api key from registration>` in `~/djbooth/.env`
-- **All venue Pis need `~/djbooth-update.sh`** to pull Session 43 fixes (sudoers fix, display watcher, boot service)
+- **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` — should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
+- **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented.
+- **All venue Pis need `~/djbooth-update.sh`** to pull Sessions 44+45 fixes
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 19, 2026 — Session 45 (Voiceover Variant Rules + Corruption Guard)
+
+### Feature: Variant No-Repeat Rules (commit `48480e9`)
+**Two new rules enforced in `getNextVariationNum` in `AnnouncementSystem.jsx`:**
+
+**Rule 1 — No matching numbers across transitions:**
+After outro v3 plays, the next intro (regardless of dancer) cannot be v3. And vice versa — after an intro plays, the immediately following outro avoids the same number.
+
+**Rule 2 — No matching numbers within one set:**
+When Dancer A's intro is picked as v2, her outro for that same set cannot be v2.
+
+**Implementation:**
+- Added `lastPlayedTypeVariantRef = useRef({ intro: 0, outro: 0, round2: 0 })` — tracks last played variant number per type globally
+- Added `currentSetIntroVariantRef = useRef({})` — tracks intro variant per dancer name for current set
+- `getNextVariationNum` builds an `avoid` Set (last-for-this-key + cross-type + set-pairing), picks randomly from remaining candidates; fallback to just avoiding direct repeat if pool empties
+- `lastPlayedTypeVariantRef[type]` updated on every pick; `currentSetIntroVariantRef[dancerName]` set on every intro pick
+- **File**: `src/components/dj/AnnouncementSystem.jsx`
+
+### Feature: Voiceover Corruption Guard (commit `80bccdd`)
+**Root cause:** ElevenLabs occasionally returns a corrupted audio blob (bad header / truncated). Once cached, the same broken file plays every time, producing a "backward/slow" audio artifact. User had to manually delete files during the show.
+
+**Option 2 — Decode validation before caching:**
+- Added `validateAudioBlob(blob)` at module level: checks `blob.size >= 5000` then runs `AudioContext.decodeAudioData()`. Closes context in `finally`. Returns true/false.
+- After `generateAudio(script)`, loops up to 3 attempts: if blob fails validation, logs warning and calls `generateAudio` again. After 3 failures, throws (existing fallback chain handles it). Only a passing blob reaches `cacheToIndexedDB` / `saveToServer`.
+- **Pi CPU impact**: negligible — only runs during new generation (already a 1–5s API wait), takes ~50–200ms, temporary ~3–4MB peak RAM.
+
+**Option 3 — Auto-purge and regenerate on playback failure:**
+- Added `deleteFromIndexedDB(key)` at module level: opens IDB readwrite transaction, deletes entry by key, resolves on complete or error.
+- In `playAnnouncement`, wrapped `onPlay?.(result.url, audioOptions)` in inner try/catch. On failure: constructs `cacheKey`, calls `deleteFromIndexedDB(cacheKey)` + `DELETE /api/voiceovers/:cacheKey` (fire-and-forget), then regenerates via `getOrGenerateAnnouncement` and plays fresh. If retry also fails, logs and skips silently — music continues.
+- **Pi CPU impact**: zero in normal path (try/catch has no cost unless thrown). On corrupt-file recovery, brief network + generation overhead — acceptable since it's error recovery.
+
+**Files**: `src/components/dj/AnnouncementSystem.jsx` only
+
+---
+
+## Mar 19, 2026 — Session 44 (Break Song Controls + Commercial Fix + Cooldown + Fleet Sync + WiFi Display)
+
+### Feature: Break Song Queue Controls (commit `fc9c93c`)
+- "Up Next" break song panel now has per-song buttons: ↑ move up, ↓ move down, ↻ swap with random, ✕ remove
+- **File**: UI component handling the break song queue in DJBooth
+
+### Fix: Commercial Stop Bug (commit `57ddd30`)
+- **Bug**: Commercial counter wasn't advancing every dancer transition — it only triggered when `isCommercialDue()` returned true inside `handleSkip` / `handleTrackEnd`, so skipped commercials didn't clear properly
+- **Fix**: Removed `isCommercialDue()` guard in both handlers — counter now increments on every dancer transition. Skip list clears itself correctly.
+- **File**: `src/pages/DJBooth.jsx`
+
+### Fix: 6-Hour Cooldown + Random Fallback (commit `343082e`)
+- Cooldown updated from 4 → 6 hours in all 5 places in the codebase
+- When a dancer's playlist is fully on cooldown (all songs played within last 6h), server now picks random library songs respecting the active genre folder instead of replaying cooldown tracks
+- **File**: `src/pages/DJBooth.jsx`, `server/db.js` (cooldown threshold)
+
+### Feature: Fleet Music Deletion Sync (commit `a4b687a`)
+- Added `deleteMusicTrackByPath(path)` to `server/db.js`
+- `syncMusicFromR2` in `server/r2sync.js` now purges local files that are no longer in R2 — with safety guard: purge is skipped entirely if R2 returns zero files (prevents wiping library on R2 API failure)
+- Homebase deletions now propagate to all venue Pis on next sync or reboot
+- **Files**: `server/db.js`, `server/r2sync.js`
+
+### Feature: WiFi IP Display (commit `f55b987`)
+- Configuration page "Remote Connection" section now identifies network interfaces by type:
+  - `wlan*` → highlighted blue, labeled "WiFi — use this for iPad"
+  - `eth*` / `en*` → labeled "Ethernet"
+  - Tailscale range → labeled "Tailscale"
+- **File**: `src/pages/Configuration.jsx`
 
 ---
 

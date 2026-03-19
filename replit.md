@@ -13,7 +13,7 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 | neonaidj001 | `100.115.212.34` | DJ booth | Pony Nation | Music: `/home/neonaidj001/djbooth/music/` |
 | neonaidj003 | `100.81.90.125` | DJ booth | Unknown (needs `CLUB_NAME` set) | Stable since Mar 10 crashes |
 
-**All 3 units need `~/djbooth-update.sh`** to pull latest fixes (Sessions 41+42). Venue Pis also need `FLEET_DEVICE_KEY=<api key>` in `~/djbooth/.env` for fleet error forwarding.
+**All 3 units need `~/djbooth-update.sh`** to pull latest fixes (Sessions 44+45). Venue Pis also need `FLEET_DEVICE_KEY=<api key>` in `~/djbooth/.env` for fleet error forwarding. neonaidj001 also needs `DEVICE_ID=neonaidj001` set in `~/djbooth/.env`.
 
 ## User Preferences
 - Nightclub dark theme with neon cyan accent (#00d4ff) and blue secondary (#2563eb)
@@ -53,13 +53,19 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - **Energy level is always auto** (time-based, 5-tier system) — manual energy override UI removed
 - **No club name or day-of-week** in voiceover prompts or cache keys — prompts explicitly instruct "do not mention day/club/time"
 - **No club specials** in voiceover prompts — specials are moving to the commercial playback system instead
-- **Cache keys**: `{type}-{dancerName}-L{level}-V{varNum}` — voice version `V11` (changed from V10; bump version again if prompt/voice changes)
+- **Cache keys**: `{type}-{dancerName}-var{N}-V11` — voice version `V11` (bump if prompt/voice changes)
 - **Dancer changeover flow**: outro (outgoing) → commercial (if due) → track starts → intro (incoming) — no overlap
 - **Failed generation skip**: `failedGenerationsRef` Set prevents retry storms for the session
 - **Pre-cache**: buffers upcoming dancers with all 3 types × 5 variations each (15 voiceovers per dancer)
-- **True random varNum**: `getNextVariationNum` picks randomly from 1–5 with no back-to-back repeats
+- **Variant selection rules (Session 45)**:
+  - `getNextVariationNum` picks randomly from 1–5, avoiding: last used for that key, cross-transition match (outro→intro or intro→outro), same-set pairing (intro and outro for same dancer's set use different numbers)
+  - Tracks: `lastPlayedTypeVariantRef` (global, per type) + `currentSetIntroVariantRef` (per dancer name)
+- **Corruption guard (Session 45)**:
+  - `validateAudioBlob()` runs `decodeAudioData()` before caching; retries generation up to 3× on failure
+  - `deleteFromIndexedDB()` helper removes bad entries; playback failure auto-purges IDB + server and regenerates once
 - **ElevenLabs credits**: ~180K remaining this billing cycle; key `6e6ca8...71342`, voice ID `8RV9Jl85RVagCJGw9qhY`
 - **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Pi load
+- **Song cooldown**: 6 hours (updated from 4h in Session 44)
 
 ## Commercial System (Planned)
 - Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks
