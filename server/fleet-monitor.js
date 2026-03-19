@@ -1,4 +1,5 @@
 import db from './db.js';
+import { existsSync, readFileSync } from 'fs';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -111,6 +112,7 @@ async function registerHeartbeat(deviceId, data) {
     memPct: data.memPct || null,
     serviceUptime: data.serviceUptime || null,
     lastUpdateTime: data.lastUpdateTime || null,
+    lastUpdateCommit: data.lastUpdateCommit || null,
     activeEntertainers: data.activeEntertainers || 0,
     errorCount: data.errorCount || 0,
     network: data.network || null,
@@ -270,7 +272,18 @@ function setupFleetMonitorRoutes(app) {
   });
 
   app.get('/api/monitor/status', (req, res) => {
-    res.json({ devices: getFleetStatus(), telegramActive: isTelegramConfigured() });
+    let currentCommitSha = null;
+    try {
+      const stampFile = process.env.HOME
+        ? `${process.env.HOME}/.djbooth-last-update`
+        : `/home/${process.env.USER || 'homebase'}/.djbooth-last-update`;
+      if (existsSync(stampFile)) {
+        const raw = readFileSync(stampFile, 'utf8').trim();
+        const [sha] = raw.split('|');
+        if (sha && sha.length >= 7) currentCommitSha = sha.slice(0, 7);
+      }
+    } catch {}
+    res.json({ devices: getFleetStatus(), telegramActive: isTelegramConfigured(), currentCommitSha });
   });
 
   app.post('/api/monitor/test-telegram', async (req, res) => {

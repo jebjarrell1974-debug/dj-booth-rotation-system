@@ -6,6 +6,9 @@ APP_DIR="${DJBOOTH_APP_DIR:-/home/$(whoami)/djbooth}"
 SERVICE_NAME="${DJBOOTH_SERVICE:-djbooth}"
 BRANCH="${DJBOOTH_BRANCH:-main}"
 BACKUP_DIR="${APP_DIR}.backup-$(date +%Y%m%d-%H%M%S)"
+COMMIT_SHA=""
+SHORT_SHA=""
+STAMP_FILE="$HOME/.djbooth-last-update"
 
 echo "================================================"
 echo "  DJ Booth Auto-Updater (GitHub)"
@@ -59,6 +62,10 @@ if [ "$HTTP_CODE" != "200" ]; then
 fi
 FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
 echo "Downloaded: ${FILESIZE} bytes"
+
+COMMIT_SHA=$(curl -sf --max-time 8 "https://api.github.com/repos/${GITHUB_REPO}/commits/${BRANCH}" 2>/dev/null | grep -o '"sha":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+SHORT_SHA="${COMMIT_SHA:0:7}"
+[ -n "$SHORT_SHA" ] && echo "Commit SHA: $SHORT_SHA" || echo "Commit SHA: (unavailable)"
 
 echo "[3/8] Backing up current installation..."
 if [ -f "$APP_DIR/package.json" ]; then
@@ -409,6 +416,12 @@ fi
 if [ -n "$WIFI_CONN" ]; then
   sudo nmcli connection modify "$WIFI_CONN" ipv4.route-metric 600 2>/dev/null && \
     echo "Wi-Fi ($WIFI_CONN) route metric set to 600 (local only)" || true
+fi
+
+if [ -n "$COMMIT_SHA" ]; then
+  STAMP_TS=$(date -u +%s)000
+  printf '%s|%s\n' "$COMMIT_SHA" "$STAMP_TS" > "$STAMP_FILE"
+  echo "✓ Update verified — stamped commit $SHORT_SHA at $(date '+%Y-%m-%d %H:%M')"
 fi
 
 echo ""

@@ -109,15 +109,22 @@ function getServiceUptime() {
   return null;
 }
 
-function getLastUpdateTime() {
+function getLastSuccessfulUpdate() {
   try {
-    const gitDir = process.env.APP_DIR ? `${process.env.APP_DIR}/.git` : '/home/jebjarrell/djbooth/.git';
-    if (existsSync(`${gitDir}/FETCH_HEAD`)) {
-      const stat = statSync(`${gitDir}/FETCH_HEAD`);
-      return stat.mtimeMs;
+    const stampFile = process.env.HOME
+      ? `${process.env.HOME}/.djbooth-last-update`
+      : `/home/${process.env.USER || 'pi'}/.djbooth-last-update`;
+    if (existsSync(stampFile)) {
+      const raw = readFileSync(stampFile, 'utf8').trim();
+      const [sha, tsStr] = raw.split('|');
+      const ts = parseInt(tsStr, 10);
+      return {
+        lastUpdateTime: isNaN(ts) ? null : ts,
+        lastUpdateCommit: sha ? sha.slice(0, 7) : null,
+      };
     }
   } catch {}
-  return null;
+  return { lastUpdateTime: null, lastUpdateCommit: null };
 }
 
 function getNetworkLatency() {
@@ -224,7 +231,7 @@ async function sendHeartbeat(extraData = {}) {
     memTotal: memory.total,
     memPct: memory.pct,
     serviceUptime: getServiceUptime(),
-    lastUpdateTime: getLastUpdateTime(),
+    ...getLastSuccessfulUpdate(),
     activeEntertainers: extraData.activeEntertainers || 0,
     errorCount: extraData.errorCount || 0,
     dancer_names: extraData.dancer_names || [],
