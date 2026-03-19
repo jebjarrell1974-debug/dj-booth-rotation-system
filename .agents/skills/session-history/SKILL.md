@@ -27,12 +27,22 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - Fleet dashboard: `http://100.95.238.71:3001/fleet` (any Tailscale device)
 
 **PENDING on neonaidj003:**
-- SSH in and set `CLUB_NAME=<correct venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
-- Run `~/djbooth-update.sh` to pull latest code
+- Set `CLUB_NAME=<correct venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+- 003's `~/djbooth-update.sh` was manually replaced with new version (Session 46b) — next Update button press will complete correctly
 
-**PENDING on all 4 units:**
-- Run `~/djbooth-update.sh` to pull latest commit (warm EQ + air band + BPM + lazy pre-cache)
+**PENDING on neonaidj001:**
+- Set `DEVICE_ID=neonaidj001` in `~/djbooth/.env`
+- `~/djbooth-update.sh` likely also has the OLD 7-step script — same manual cp fix needed as 003
+
+**PENDING on all units (next reboot or Update button press):**
+- Pull Session 46b fixes — fleet Update button now works correctly (background process, no timeout kill)
+- Stamp will be written after next successful update (writes "unknown" if GitHub API unavailable)
 - aubio-tools will auto-install on first update run if not already present
+
+**Fleet Update button: NOW FIXED (commit `5f37890`)**
+- Was silently failing since day one — 2-min `execSync` timeout was killing the script mid-run
+- All successful updates on venue Pis were from boot auto-update (systemd), NOT the button
+- Button now uses detached `spawn()` — runs fully independent, can never be killed
 
 **FUTURE TODO (approved, not yet built):**
 - Fix #5: Pre-build dist/ on homebase, ship compiled output to venue Pis instead of
@@ -184,6 +194,37 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 19, 2026 — Session 46b (Fleet Update Reliability — Three Root Cause Fixes)
+
+### Root Cause Analysis: Why the Fleet Dashboard "Update" Button Was Silently Failing
+
+**Discovered by investigating why 003's stamp file never appeared after repeated Update button presses.**
+
+#### Bug 1 — 2-minute timeout on the Update command (CRITICAL, commit `5f37890`)
+`heartbeat-client.js` `executeRemoteCommand('update')` used `execSync()` with `timeout: 120000` (2 minutes). The full update script takes 5–10 minutes (apt-get, npm install, vite build). Node's `execSync` sends SIGKILL to the child process when the timeout fires — the update script dies mid-run, silently. **Every fleet dashboard Update button press was failing this way.** Updates that DID happen on venue Pis came from the boot auto-update via systemd (600s timeout), not the button.
+
+**Fix:** Changed to `spawn()` with `detached: true` + `child.unref()`. The update script now runs as a fully independent background process that can never be killed by the heartbeat client. Falls back to `public/djbooth-update-github.sh` if `~/djbooth-update.sh` doesn't exist.
+
+#### Bug 2 — GitHub API rate limit blocks stamp write (commit `5f37890`)
+The stamp-writing code was guarded by `if [ -n "$COMMIT_SHA" ]`. GitHub's unauthenticated API allows 60 req/hr per IP — when rate-limited, the SHA fetch returns empty and the stamp is silently skipped. Every update completed but left no stamp.
+
+**Fix:** Removed the guard. Stamp is always written. `COMMIT_SHA` defaults to "unknown" if API fails: `STAMP_SHA="${COMMIT_SHA:-unknown}"`.
+
+#### Bug 3 — Dashboard had no state for "unknown" SHA (commit `5f37890`)
+`renderUpdateStatus()` only handled: no SHA (unverified), known SHA matching homebase, known SHA not matching. "unknown" SHA would fall through to the orange ✗ mismatch display.
+
+**Fix:** Added explicit `sha === 'unknown'` branch — shows timestamp + gray `✓ (SHA unavailable)` with tooltip explaining GitHub API was unavailable. Correct signal: update happened, exact version unverifiable.
+
+### What IS reliable vs what was broken
+- **Boot auto-update (systemd `djbooth-update.service`)** — always worked correctly, 600s timeout, confirmed working ✓
+- **Fleet dashboard Update button** — was broken since day one due to 2-minute timeout ✗ → now fixed ✓
+- **Stamp writing** — was broken when GitHub API unavailable ✗ → now always writes ✓
+
+### One-time Pi action still needed for 003
+003 had the OLD `~/djbooth-update.sh` (7-step, no self-update logic). It was manually replaced via `cp ~/djbooth/public/djbooth-update-github.sh ~/djbooth-update.sh` and run once. 003 now has the correct new script installed. Next reboot or next Update button press will use the new script end-to-end.
 
 ---
 
