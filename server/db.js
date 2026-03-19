@@ -600,6 +600,15 @@ export function deleteMusicTrackFromDB(trackName) {
   }
 }
 
+export function deleteMusicTrackByPath(path) {
+  const track = readDb.prepare('SELECT name FROM music_tracks WHERE path = ?').get(path);
+  if (track) {
+    deleteMusicTrackFromDB(track.name);
+  } else {
+    db.prepare('DELETE FROM music_tracks WHERE path = ?').run(path);
+  }
+}
+
 export function getRecentCooldowns(hours = 6) {
   return readDb.prepare(
     `SELECT track_name, MAX(played_at) AS last_played

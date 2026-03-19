@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, createWriteStream } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, createWriteStream, unlinkSync } from 'fs';
 import { join, basename, extname } from 'path';
 import { pipeline } from 'stream/promises';
 
@@ -345,12 +345,12 @@ export async function listR2Music() {
 
 export async function syncMusicFromR2(musicDir) {
   const client = getClient();
-  if (!client) return { downloaded: 0, skipped: 0, errors: 0 };
+  if (!client) return { downloaded: 0, skipped: 0, errors: 0, purged: 0 };
 
   if (!existsSync(musicDir)) mkdirSync(musicDir, { recursive: true });
 
   const remoteFiles = await listR2Music();
-  let downloaded = 0, skipped = 0, errors = 0;
+  let downloaded = 0, skipped = 0, errors = 0, purged = 0;
 
   console.log(`☁️ R2 music sync: ${remoteFiles.length} files in cloud, checking local...`);
 
@@ -377,8 +377,52 @@ export async function syncMusicFromR2(musicDir) {
     }
   }
 
-  console.log(`☁️ R2 music sync complete: ${downloaded} downloaded, ${skipped} already local, ${errors} errors`);
-  return { downloaded, skipped, errors };
+  // Purge local files that no longer exist in R2 (homebase deletions propagate to fleet)
+  if (remoteFiles.length > 0) {
+    const r2PathSet = new Set(remoteFiles.map(f => f.path));
+    const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.wav', '.flac', '.wma']);
+
+    function walkLocal(dir, base = '') {
+      let results = [];
+      try {
+        const entries = readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const relPath = base ? `${base}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            results = results.concat(walkLocal(join(dir, entry.name), relPath));
+          } else if (AUDIO_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+            results.push(relPath);
+          }
+        }
+      } catch {}
+      return results;
+    }
+
+    const localFiles = walkLocal(musicDir);
+    const toDelete = localFiles.filter(relPath => !r2PathSet.has(relPath));
+
+    if (toDelete.length > 0) {
+      let dbMod;
+      try { dbMod = await import('./db.js'); } catch {}
+      for (const relPath of toDelete) {
+        const localPath = join(musicDir, relPath);
+        try {
+          unlinkSync(localPath);
+          console.log(`🗑️ R2 sync purge: deleted local file no longer in R2: ${relPath}`);
+          if (dbMod?.deleteMusicTrackByPath) {
+            dbMod.deleteMusicTrackByPath(relPath);
+          }
+          purged++;
+        } catch (e) {
+          console.warn(`⚠️ R2 sync purge: could not delete ${relPath}: ${e.message}`);
+        }
+      }
+      if (purged > 0) console.log(`🗑️ R2 sync purge complete: ${purged} file(s) removed to match homebase`);
+    }
+  }
+
+  console.log(`☁️ R2 music sync complete: ${downloaded} downloaded, ${skipped} already local, ${errors} errors, ${purged} purged`);
+  return { downloaded, skipped, errors, purged };
 }
 
 export async function syncMusicToR2(musicDir) {
