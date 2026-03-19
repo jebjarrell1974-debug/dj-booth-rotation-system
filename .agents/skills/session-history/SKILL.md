@@ -100,7 +100,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 45 — March 19, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 46 — March 19, 2026) — READ THIS FIRST
 
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
@@ -120,6 +120,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **Fleet music deletion sync (Session 44)**: homebase deletions propagate to all Pis on next R2 sync; purge skips if R2 returns zero files (safety guard)
 - **Break song queue controls (Session 44)**: "Up Next" break song panel has ↑/↓ move, ↻ swap, ✕ remove per song
 - **WiFi IP display (Session 44)**: Configuration page highlights WiFi IP in blue labeled "WiFi — use this for iPad"
+- **Verified update tracking (Session 46)**: Update script stamps `~/.djbooth-last-update` (SHA|timestamp) only on verified success. Fleet dashboard shows actual time + green ✓ / orange ✗ / gray per device based on SHA comparison to homebase. Activated by running `~/djbooth-update.sh` once on each Pi.
 
 ### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
 **Belt + suspenders on every venue Pi:**
@@ -177,12 +178,45 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<api key from registration>` in `~/djbooth/.env`
 - **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` — should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
 - **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented.
-- **All venue Pis need `~/djbooth-update.sh`** to pull Sessions 44+45 fixes
+- **All venue Pis + homebase need `~/djbooth-update.sh`** to pull Sessions 44–46 fixes and activate the verified update stamp
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 19, 2026 — Session 46 (Fleet Verified Update Tracking)
+
+### Feature: Verified Last-Update Stamp + Fleet Dashboard SHA Comparison (commit `c5388a7`)
+
+**Problem:** Fleet dashboard "Last Update" field read `.git/FETCH_HEAD` mtime — but Pis don't use git at all (tarball download). Field always returned null. No reliable way to know if a Pi actually updated.
+
+**Update script (`public/djbooth-update-github.sh`):**
+- After successful tarball download, queries GitHub API for the exact commit SHA: `curl .../commits/main` → parses first `"sha"` field
+- At the very end of the script — after the successful health check, before "[8/8] Cleaning up" — writes `~/.djbooth-last-update` in format `FULLSHA|EPOCH_MS_TIMESTAMP`
+- Stamp is only written when the script reaches that point; the rollback path (`exit 1`) never reaches it, so a failed update leaves the old (correct) stamp intact
+- One-time activation: run `~/djbooth-update.sh` once on each Pi including homebase
+
+**Heartbeat client (`server/heartbeat-client.js`):**
+- Replaced `getLastUpdateTime()` (which read non-existent `.git/FETCH_HEAD`) with `getLastSuccessfulUpdate()`
+- Reads `$HOME/.djbooth-last-update`, parses SHA and timestamp
+- Heartbeat payload now sends both `lastUpdateTime` (epoch ms) and `lastUpdateCommit` (7-char short SHA) via spread
+
+**Fleet monitor (`server/fleet-monitor.js`):**
+- Added `lastUpdateCommit` field to in-memory device store
+- Added `fs` import (`existsSync`, `readFileSync`)
+- `/api/monitor/status` now reads homebase's own `~/.djbooth-last-update` and includes `currentCommitSha` (7-char) in response JSON for all clients to compare against
+
+**Fleet dashboard (`public/fleet-dashboard.html`):**
+- `fetchStatus` stores `currentCommitSha` from response
+- `formatLastUpdate` rewritten to show actual time: "Today 10:42 PM", "Yesterday 9:15 AM", "Mar 18 9:15 AM" (was just "Today" / "Yesterday" / "3d ago")
+- New `renderUpdateStatus(d)` function replaces the plain timestamp in the Last Update row:
+  - **Green ✓ `abc1234`** — Pi's SHA matches homebase SHA (confirmed current)
+  - **Orange ✗ `def5678`** — Pi's SHA differs from homebase (needs update)
+  - **Gray `abc1234`** — homebase has no stamp yet (can't compare)
+  - **Gray "(unverified)"** — Pi has no stamp file yet (hasn't run new script once)
 
 ---
 
