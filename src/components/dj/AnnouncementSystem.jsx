@@ -144,15 +144,42 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const preCacheStartTimeRef = useRef(0);
   const variationCounterRef = useRef({});
   const failedGenerationsRef = useRef(new Set());
+  const lastPlayedTypeVariantRef = useRef({ intro: 0, outro: 0, round2: 0 });
+  const currentSetIntroVariantRef = useRef({});
 
   const getNextVariationNum = useCallback((type, dancerName, nextDancerName = null) => {
     const k = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
-    const last = variationCounterRef.current[k] || 0;
-    let next;
-    do {
-      next = Math.floor(Math.random() * NUM_VARIATIONS) + 1;
-    } while (next === last && NUM_VARIATIONS > 1);
+    const lastForKey = variationCounterRef.current[k] || 0;
+
+    const avoid = new Set();
+    avoid.add(lastForKey);
+
+    if (type === 'intro') {
+      avoid.add(lastPlayedTypeVariantRef.current.outro);
+    }
+    if (type === 'outro') {
+      avoid.add(lastPlayedTypeVariantRef.current.intro);
+      const setIntroVariant = currentSetIntroVariantRef.current[dancerName];
+      if (setIntroVariant) avoid.add(setIntroVariant);
+    }
+
+    avoid.delete(0);
+
+    const candidates = [];
+    for (let i = 1; i <= NUM_VARIATIONS; i++) {
+      if (!avoid.has(i)) candidates.push(i);
+    }
+    const pool = candidates.length > 0 ? candidates
+      : Array.from({ length: NUM_VARIATIONS }, (_, i) => i + 1).filter(i => i !== lastForKey);
+
+    const next = pool[Math.floor(Math.random() * pool.length)];
     variationCounterRef.current[k] = next;
+    lastPlayedTypeVariantRef.current[type] = next;
+
+    if (type === 'intro') {
+      currentSetIntroVariantRef.current[dancerName] = next;
+    }
+
     return next;
   }, []);
 
