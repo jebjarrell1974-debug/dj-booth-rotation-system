@@ -2285,8 +2285,6 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        const commercialDue = isCommercialDue();
-
         if (announcementsEnabled) {
           const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
           audioEngineRef.current?.duck();
@@ -2295,7 +2293,7 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         }
 
-        const commercialPlayed = commercialDue ? await playCommercialIfDue() : false;
+        const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
@@ -2834,8 +2832,6 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        const commercialDue2 = isCommercialDue();
-
         if (announcementsEnabled) {
           const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
           audioEngineRef.current?.duck();
@@ -2844,7 +2840,7 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         }
 
-        const commercialPlayed = commercialDue2 ? await playCommercialIfDue() : false;
+        const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
