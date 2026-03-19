@@ -600,7 +600,7 @@ export function deleteMusicTrackFromDB(trackName) {
   }
 }
 
-export function getRecentCooldowns(hours = 4) {
+export function getRecentCooldowns(hours = 6) {
   return readDb.prepare(
     `SELECT track_name, MAX(played_at) AS last_played
      FROM play_history
@@ -612,7 +612,7 @@ export function getRecentCooldowns(hours = 4) {
 export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   const recentlyPlayed = readDb.prepare(
     `SELECT track_name FROM play_history
-     WHERE played_at > datetime('now', 'localtime', '-4 hours')
+     WHERE played_at > datetime('now', 'localtime', '-6 hours')
      GROUP BY track_name`
   ).all().map(r => r.track_name);
 
@@ -683,46 +683,41 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
   if (dancerPlaylist.length > 0) {
     const excludeSet = new Set(excludeNames);
 
-    // Get all songs played in the last 4 hours (server is source of truth for cooldowns)
-    const recentlyPlayed4h = new Set(
+    // Get all songs played in the last 6 hours (server is source of truth for cooldowns)
+    const recentlyPlayed6h = new Set(
       readDb.prepare(
         `SELECT track_name FROM play_history
-         WHERE played_at > datetime('now', 'localtime', '-4 hours')
+         WHERE played_at > datetime('now', 'localtime', '-6 hours')
          GROUP BY track_name`
       ).all().map(r => r.track_name)
     );
 
     // Fetch playlist tracks from DB, split into fresh vs on-cooldown
     const freshTracks = [];
-    const cooldownTracks = [];
     for (const trackName of dancerPlaylist) {
       if (excludeSet.has(trackName)) continue;
       const track = readDb.prepare(
-        `SELECT t.id, t.name, t.path, t.genre, t.auto_gain,
-                COALESCE(h.last_played, '1970-01-01') as last_played
+        `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
          FROM music_tracks t
-         LEFT JOIN (SELECT track_name, MAX(played_at) AS last_played FROM play_history GROUP BY track_name) h
-         ON t.name = h.track_name
          WHERE t.name = ? AND t.blocked = 0`
       ).get(trackName);
       if (!track) continue;
-      if (recentlyPlayed4h.has(trackName)) {
-        cooldownTracks.push(track);
-      } else {
+      if (!recentlyPlayed6h.has(trackName)) {
         freshTracks.push(track);
       }
     }
 
-    // Shuffle fresh songs randomly, then append cooldown songs oldest-played first
-    for (let i = freshTracks.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
+    // Fresh playlist songs available — shuffle and return
+    if (freshTracks.length > 0) {
+      for (let i = freshTracks.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
+      }
+      return freshTracks.slice(0, count);
     }
-    cooldownTracks.sort((a, b) => a.last_played.localeCompare(b.last_played));
 
-    return [...freshTracks, ...cooldownTracks]
-      .slice(0, count)
-      .map(({ last_played, ...t }) => t);
+    // All playlist songs on cooldown — fall back to random library songs respecting active genres
+    return getRandomTracks(count, [...excludeSet], genres);
   }
 
   // No dancer playlist (break songs, autoplay queue) — random from full library with genre filter

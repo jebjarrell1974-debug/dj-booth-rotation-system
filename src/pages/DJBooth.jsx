@@ -164,7 +164,7 @@ export default function DJBooth() {
     return a;
   };
 
-  const COOLDOWN_MS = 4 * 60 * 60 * 1000;
+  const COOLDOWN_MS = 6 * 60 * 60 * 1000;
   const songCooldownRef = useRef(null);
   const [playedSongsMap, setPlayedSongsMap] = useState({});
 
@@ -185,7 +185,7 @@ export default function DJBooth() {
       try {
         const token = localStorage.getItem('djbooth_token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch('/api/history/cooldowns?hours=4', { headers });
+        const res = await fetch('/api/history/cooldowns?hours=6', { headers });
         if (res.ok) {
           const data = await res.json();
           if (data.cooldowns) {
@@ -1461,13 +1461,13 @@ export default function DJBooth() {
         const lp = cooldowns[t.name] || 0;
         return !lp || (now - lp) >= COOLDOWN_MS;
       });
-      const cooldownTracks = playlistTracks
-        .filter(t => { const lp = cooldowns[t.name] || 0; return lp && (now - lp) < COOLDOWN_MS; })
-        .sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
-      const pool = [...fisherYatesShuffle([...freshTracks]), ...cooldownTracks];
-      const result = pool.slice(0, count);
-      console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, playlist-strict)`);
-      return result;
+      if (freshTracks.length > 0) {
+        const result = fisherYatesShuffle([...freshTracks]).slice(0, count);
+        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, fresh playlist)`);
+        return result;
+      }
+      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} all playlist songs on cooldown — returning empty for random fallback`);
+      return [];
     }
 
     console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has no playlist — returning empty`);
