@@ -107,8 +107,8 @@ const sections = [
         text: 'A good target is at least as many songs as their set size (set in Options tab) plus a few extras so the system has variety. For a 3-song set, aim for 5–8 songs in their playlist. If an entertainer has fewer songs than their set size, the system automatically fills the remaining slots with auto-picks from the library — so a playlist with even 1 or 2 songs will still work fine.'
       },
       {
-        heading: 'Resetting or Clearing a Voiceover',
-        text: 'If an entertainer\'s AI announcement sounds wrong, mispronounces their name, or needs to be regenerated, tap "Reset Voiceover" on their card. This fully clears their cached announcement everywhere — server files, database, and browser cache — so a fresh one is generated the next time they come up in rotation. If the name pronunciation itself is the issue, reach out to have it added to the pronunciation correction list.'
+        heading: 'If an Announcement Sounds Wrong (Intro, Outro, Round 2, Round 3)',
+        text: 'Each entertainer has up to four announcement types: an intro (when they first take the stage), a mid-set call (during round 2 or 3, while they\'re still on stage), an outro (when they finish), and a transition (bridging into the next entertainer). If any of these sounds off — mispronounces the name, sounds robotic, or just doesn\'t land right — here\'s how to reset it:\n\n1. Go to the Entertainers tab.\n2. Find that entertainer\'s card.\n3. Tap "Reset Voiceover."\n4. Confirm the reset — this wipes all of their cached announcements from the server, database, and browser cache at once.\n5. Fresh announcements will be generated automatically the next time their set comes up in the rotation.\n\nNote: the reset clears all announcement types for that entertainer together — you can\'t reset just the intro or just the outro individually. If the name pronunciation is the root issue, the same steps apply — the new announcement will use the latest pronunciation settings.'
       }
     ]
   },
@@ -394,7 +394,7 @@ function Section({ section, isOpen, onToggle }) {
           {section.content.map((item, idx) => (
             <div key={idx}>
               <h4 className="text-[#00d4ff] font-medium text-sm mb-1">{item.heading}</h4>
-              <p className="text-gray-300 text-sm leading-relaxed">{item.text}</p>
+              <p className="text-gray-300 text-sm leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>{item.text}</p>
             </div>
           ))}
         </div>
