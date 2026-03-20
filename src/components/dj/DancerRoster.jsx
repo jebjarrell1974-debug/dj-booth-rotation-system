@@ -11,6 +11,31 @@ import {
 } from "@/components/ui/dialog";
 import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus, RotateCcw } from 'lucide-react';
 
+const clearDancerFromIndexedDB = async (dancerName) => {
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('djAnnouncementsDB', 1);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const tx = db.transaction('announcements', 'readwrite');
+    const store = tx.objectStore('announcements');
+    const allKeys = await new Promise((resolve, reject) => {
+      const req = store.getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const matches = allKeys.filter(k => k.includes(dancerName));
+    for (const key of matches) store.delete(key);
+    await new Promise((resolve) => { tx.oncomplete = resolve; tx.onerror = resolve; });
+    console.log(`🧹 Cleared ${matches.length} IndexedDB voiceover entries for "${dancerName}"`);
+    return matches.length;
+  } catch (e) {
+    console.error('Failed to clear IndexedDB voiceovers:', e);
+    return 0;
+  }
+};
+
 const DANCER_COLORS = [
   '#00d4ff', '#ff2d55', '#00e5ff', '#2563eb', '#39ff14', 
   '#ff6b35', '#ff1493', '#00bfff', '#ff4081', '#00ffc8'
@@ -106,6 +131,7 @@ export default function DancerRoster({
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
+      await clearDancerFromIndexedDB(dancerName);
       if (res.ok) {
         const data = await res.json();
         setVoiceoverResetCount(data.deleted || 0);
