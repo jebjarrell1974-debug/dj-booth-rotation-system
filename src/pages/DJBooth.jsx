@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { createPageUrl } from '@/utils';
 import { getApiConfig, saveApiConfig, loadApiConfig } from '@/components/apiConfig';
-import { getCurrentEnergyLevel, ENERGY_LEVELS } from '@/utils/energyLevels';
 import { toast } from 'sonner';
 import { 
   Music2, 
@@ -3274,18 +3273,6 @@ export default function DJBooth() {
                 <p className="text-[10px] text-gray-500">Automated Intelligent Disc Jockey</p>
               </div>
             </div>
-
-            {!remoteMode && (() => {
-              const config = getApiConfig();
-              const level = getCurrentEnergyLevel(config);
-              const info = ENERGY_LEVELS[level];
-              return (
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border" style={{ borderColor: info.color + '40', backgroundColor: info.color + '10' }}>
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: info.color }} />
-                  <span className="text-[10px] font-medium leading-tight whitespace-nowrap" style={{ color: info.color }}>{info.name}</span>
-                </div>
-              );
-            })()}
 
             {remoteMode ? (
               <div className="bg-[#2563eb]/10 rounded-lg border border-[#2563eb] p-3 min-w-[280px]">

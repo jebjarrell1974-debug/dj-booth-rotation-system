@@ -11,7 +11,9 @@ import { createPageUrl } from '@/utils';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import { toast } from 'sonner';
 import { getApiConfig, saveApiConfig, loadApiConfig } from '@/components/apiConfig';
-import { ENERGY_LEVELS, getCurrentEnergyLevel, VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+
+const LOCKED_LEVEL = 4;
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => {
   const ampm = i < 12 ? 'AM' : 'PM';
@@ -66,10 +68,6 @@ export default function Configuration() {
   const [apiDeviceId, setApiDeviceId] = useState('');
   const [displayRotation, setDisplayRotation] = useState('normal');
   const [displayRotationSaving, setDisplayRotationSaving] = useState(false);
-
-  const config = getApiConfig();
-  const currentLevel = getCurrentEnergyLevel({ clubOpenHour, clubCloseHour, energyOverride: config.energyOverride });
-  const levelInfo = ENERGY_LEVELS[currentLevel];
 
   useEffect(() => {
     loadApiConfig().then(cfg => {
@@ -222,8 +220,8 @@ export default function Configuration() {
 
     setIsCaching(true);
     const cfg = getApiConfig();
-    const level = getCurrentEnergyLevel(cfg);
-    toast.info(`Pre-caching announcements at Energy Level ${level}...`);
+    const level = LOCKED_LEVEL;
+    toast.info('Pre-caching announcements...');
 
     try {
       const rotationDancers = rotation.map(id => dancers.find(d => d.id === id)).filter(Boolean);
@@ -346,7 +344,7 @@ export default function Configuration() {
         }
       }
 
-      toast.success(`Pre-cached ${cached} announcements (${skipped} already cached) at L${level}`);
+      toast.success(`Pre-cached ${cached} announcements (${skipped} already cached)`);
     } catch (error) {
       console.error('Pre-cache error:', error);
       toast.error('Failed to pre-cache announcements');
@@ -614,20 +612,6 @@ export default function Configuration() {
                 </div>
               </div>
 
-              <div className="px-3 py-2.5 rounded-lg border" style={{ borderColor: levelInfo.color + '60', backgroundColor: levelInfo.color + '10' }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: levelInfo.color }} />
-                    <span className="text-sm font-medium" style={{ color: levelInfo.color }}>
-                      Current Energy: Level {currentLevel}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-400">{levelInfo.name}</span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Energy level auto-adjusts based on time of day and your club hours. Override available in the NEON DJ panel.
-                </p>
-              </div>
             </div>
           </div>
 

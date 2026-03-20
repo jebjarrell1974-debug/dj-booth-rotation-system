@@ -7,8 +7,10 @@ import { Play, Trash2, Mic, Radio, Send, CheckCircle, Clock, CalendarDays, MapPi
 import { toast } from 'sonner';
 import { getApiConfig } from '@/components/apiConfig';
 import { localIntegrations } from '@/api/localEntities';
-import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
+import { VOICE_SETTINGS } from '@/utils/energyLevels';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
+
+const LOCKED_LEVEL = 4;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('djbooth_token');
@@ -159,8 +161,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
     if (!apiKey) throw new Error('ElevenLabs API key not configured');
 
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
-    const energyLevel = getCurrentEnergyLevel(config);
-    const voiceSettings = VOICE_SETTINGS[energyLevel] || VOICE_SETTINGS[3];
+    const voiceSettings = VOICE_SETTINGS[LOCKED_LEVEL] || VOICE_SETTINGS[3];
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
@@ -246,7 +247,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
           script,
           type: 'promo',
           dancer_name: promoForm.event_name,
-          energy_level: getCurrentEnergyLevel(getApiConfig()),
+          energy_level: LOCKED_LEVEL,
         })
       });
       if (!saveRes.ok) throw new Error('Failed to save voiceover');

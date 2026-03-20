@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Mic, Download, Wifi, WifiOff, Loader2, Check, AlertCircle, HardDrive } from 'lucide-react';
 import { localIntegrations } from '@/api/localEntities';
 import { getApiConfig } from '@/components/apiConfig';
-import { VOICE_SETTINGS, ENERGY_LEVELS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
@@ -978,13 +978,6 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           </h3>
         </div>
         <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className="text-xs px-1.5 py-0"
-            style={{ borderColor: ENERGY_LEVELS[LOCKED_LEVEL].color + '80', color: ENERGY_LEVELS[LOCKED_LEVEL].color }}
-          >
-            L{LOCKED_LEVEL}
-          </Badge>
           <Badge
             variant="outline"
             className={isOnline ? 'border-green-500 text-green-400' : 'border-red-500 text-red-400'}

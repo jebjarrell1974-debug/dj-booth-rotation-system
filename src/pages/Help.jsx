@@ -44,10 +44,6 @@ const sections = [
         heading: 'Songs Per Set',
         text: 'Controls how many songs each entertainer performs per rotation turn. When the set count is reached, the system automatically crossfades into the next entertainer\'s music and triggers the transition announcement.'
       },
-      {
-        heading: 'Energy Level',
-        text: '"Auto" adjusts announcement energy based on the time of night relative to your open and close hours — mellower early in the evening, building to high-energy during peak hours. You can override it manually: L1 is chill and laid-back, L5 is hype and loud. The current energy level shows as a colored badge in the header so you can see it at a glance.'
-      }
     ]
   },
   {

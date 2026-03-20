@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { boothApi } from '@/api/serverApi';
 import DJOptions from '@/components/dj/DJOptions';
-import { ENERGY_LEVELS, VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
+import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
 import { getApiConfig } from '@/components/apiConfig';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import {
@@ -73,8 +73,6 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const trackTime = liveBoothState?.trackTime || 0;
   const trackDuration = liveBoothState?.trackDuration || 0;
   const trackTimeAt = liveBoothState?.trackTimeAt || 0;
-
-  const energyLevel = djOptions?.energyLevel || 4;
 
   const currentDancer = dancers?.find(d => d.id === rotationList[currentDancerIndex]);
   const rotationDancers = rotationList.map(id => dancers?.find(d => d.id === id)).filter(Boolean);
@@ -489,32 +487,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
               </div>
             </div>
 
-            {/* RIGHT: Rotation Order + Energy */}
+            {/* RIGHT: Rotation Order */}
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-
-              {/* Energy Level */}
-              <div className="flex-shrink-0 px-3 pt-3 pb-2.5 border-b border-[#151528]">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Club Energy Level</div>
-                <div className="flex gap-2">
-                  {Object.entries(ENERGY_LEVELS).map(([lvl, info]) => {
-                    const n = parseInt(lvl);
-                    const isActive = n === energyLevel;
-                    return (
-                      <button
-                        key={n}
-                        onClick={() => onOptionsChange?.({ ...djOptions, energyLevel: n })}
-                        className={`flex-1 h-14 rounded-xl font-bold text-lg flex flex-col items-center justify-center gap-0.5 transition-colors border ${
-                          isActive ? 'text-white border-transparent' : 'bg-[#0d0d1f] border-[#1e293b] text-gray-500 active:bg-[#1e293b]'
-                        }`}
-                        style={isActive ? { backgroundColor: info.color, borderColor: info.color } : {}}
-                      >
-                        <span>{n}</span>
-                        <span className="text-[11px] font-normal opacity-80">{info.short}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* Rotation list */}
               <div className="flex-1 overflow-y-auto px-3 py-2">
