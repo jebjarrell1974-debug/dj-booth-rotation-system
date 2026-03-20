@@ -181,6 +181,27 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - `loadTrack` accepts `{ url, name, auto_gain }` — if `auto_gain` present, pre-populates `autoGainCacheRef` so `analyzeTrackLoudness` returns immediately from cache; no 10s fetch+analyze
 - Log line: `🔊 AutoGain: pre-loaded server gain=X.XXx for SONGNAME`
 
+### Raspberry Pi Connect — Remote Access (TO SET UP NEXT MORNING)
+
+**What it is:** Official Raspberry Pi remote access tool. Free forever. Works from any phone/browser at `connect.raspberrypi.com` — gives you a terminal AND screen sharing with no app, no IP address, no VNC client needed. Replaces the VNC frustration completely.
+
+**Compatible with your hardware:** Raspberry Pi 5 + 64-bit Raspberry Pi OS Bookworm ✓
+
+**One-time setup on EACH Pi (run once with physical or current Tailscale access):**
+```bash
+sudo apt update && sudo apt install rpi-connect
+rpi-connect signin
+sudo loginctl enable-linger $USER
+```
+- `rpi-connect signin` gives you a URL — open it on your phone, sign in with a free Raspberry Pi account, name the Pi
+- `loginctl enable-linger $USER` keeps it running even when no one is logged in (critical for headless kiosk)
+
+**After setup — forever:** Go to `connect.raspberrypi.com` on phone, pick the Pi, click "Remote shell" → terminal in browser. Done.
+
+**Priority:** Do homebase first (most needed for remote updates). Then venue Pis next time on-site or via Tailscale.
+
+---
+
 ### Outstanding TODOs
 - **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
 - **neonaidj001**: Set `DEVICE_ID=neonaidj001` in `~/djbooth/.env` (fleet heartbeat identification)
