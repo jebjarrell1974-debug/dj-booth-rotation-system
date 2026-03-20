@@ -110,7 +110,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 46 — March 19, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 47 — March 20, 2026) — READ THIS FIRST
 
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
@@ -131,6 +131,8 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **Break song queue controls (Session 44)**: "Up Next" break song panel has ↑/↓ move, ↻ swap, ✕ remove per song
 - **WiFi IP display (Session 44)**: Configuration page highlights WiFi IP in blue labeled "WiFi — use this for iPad"
 - **Verified update tracking (Session 46)**: Update script stamps `~/.djbooth-last-update` (SHA|timestamp) only on verified success. Fleet dashboard shows actual time + green ✓ / orange ✗ / gray per device based on SHA comparison to homebase. Activated by running `~/djbooth-update.sh` once on each Pi.
+- **Pre-picked songs display fix (Session 47)**: Upcoming dancer cards in rotation panel now show auto-picked songs correctly after a dancer transition. commit `8cdd522`
+- **Reset Voiceover full clear fix (Session 47)**: Reset Voiceover button now clears both server files/DB AND browser IndexedDB cache — old audio can no longer replay in the same session. commit `a3f6c38`
 
 ### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
 **Belt + suspenders on every venue Pi:**
@@ -188,12 +190,82 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<api key from registration>` in `~/djbooth/.env`
 - **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` — should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
 - **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented.
-- **All venue Pis + homebase need `~/djbooth-update.sh`** to pull Sessions 44–46 fixes and activate the verified update stamp
+- **All venue Pis + homebase need `~/djbooth-update.sh`** to pull Sessions 44–47 fixes
+- **R2 voiceover gap**: Reset Voiceover now clears local + IndexedDB but NOT R2. On next boot, R2 sync may re-download cleared voiceovers. Low priority (same-session issue is fixed); full fix would delete from R2 in the reset endpoint
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 20, 2026 — Session 47 (Rotation Panel Display + Voiceover Reset + Fleet Ops)
+
+### Fix 1: Pre-Picked Songs Not Showing in Rotation Panel (commit `8cdd522`)
+
+**Bug:** Upcoming dancer cards showed "No songs assigned" even when songs were auto-picked and visible in console.
+
+**Root cause:** `djOverridesRef` in `RotationPlaylistManager.jsx` is a Set that gets populated whenever the DJ manually drags/assigns a song to a dancer. Once a dancer's ID is in this set, the sync from `activeRotationSongs` → `songAssignments` (the display source) is permanently skipped for that dancer — even on their NEXT rotation set. The set was never cleared between sets.
+
+**Fix:** Added `useEffect` in `RotationPlaylistManager.jsx` that watches `currentDancerIndex`. When the index changes (dancer transition), it reads the PREVIOUS dancer's ID from `localRotation[prevDancerIndexRef.current]`, removes them from `djOverridesRef`, then updates `prevDancerIndexRef`. This clears the flag after each set finishes so auto-picks show correctly next time.
+
+```javascript
+// New ref + effect added to RotationPlaylistManager.jsx
+const prevDancerIndexRef = React.useRef(currentDancerIndex);
+
+useEffect(() => {
+  if (!isRotationActive) return;
+  if (prevDancerIndexRef.current !== currentDancerIndex && localRotation && localRotation.length > 0) {
+    const finishedId = String(localRotation[prevDancerIndexRef.current]);
+    if (finishedId) djOverridesRef.current.delete(finishedId);
+  }
+  prevDancerIndexRef.current = currentDancerIndex;
+}, [currentDancerIndex, isRotationActive]);
+```
+
+**Files:** `src/components/dj/RotationPlaylistManager.jsx`
+
+---
+
+### Fix 2: Reset Voiceover Button Not Clearing Same Session (commit `a3f6c38`)
+
+**Bug:** After pressing Reset Voiceover on a dancer's card, pressing Queue Announcements would still play the OLD voiceover in the same session.
+
+**Root cause:** Voiceovers are cached in TWO places:
+1. Server filesystem + database — cleared by Reset button ✓
+2. Browser IndexedDB (`djAnnouncementsDB` / `announcements` store) — NOT cleared by Reset button ✗
+
+`AnnouncementSystem.jsx` checks IndexedDB first when playing announcements (`findCachedAtAnyVariation` → `getCachedFromIndexedDB`). If the audio blob is there, it serves it directly without asking the server. So the reset appeared to work but the browser still had the audio cached.
+
+**Fix:** Added `clearDancerFromIndexedDB()` function to `DancerRoster.jsx` that opens the same IndexedDB, gets all keys, filters to those containing the dancer's name (keys are formatted as `${type}-${dancerName}-var${n}-v${version}`), and deletes them. Called inside `resetVoiceoversForDancer` after the server API call.
+
+**Key note:** Reset still does NOT delete from R2 (Cloudflare). On next boot, R2 sync could re-download voiceovers if they were previously uploaded. This is a future fix; the same-session problem is now resolved.
+
+**Files:** `src/components/dj/DancerRoster.jsx`
+
+---
+
+### Fleet Operations Clarified This Session
+
+**Update chain:**
+- Code pushed to GitHub from Replit
+- Homebase pulls from GitHub via Update button in Fleet Command dashboard (queues command → heartbeat-client picks it up → runs `~/djbooth-update.sh`)
+- Venue Pis pull pre-built bundle from homebase via Update button OR reboot (auto-update on boot)
+- **Homebase does NOT auto-update on reboot** (`IS_HOMEBASE=true` skips boot service setup — by design)
+- **Venue Pis (001/002/003) DO auto-update on every reboot** (systemd `djbooth-update.service` + `@reboot` cron)
+
+**Bypass homebase for direct GitHub update (venue Pi terminal):**
+```
+DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh
+```
+Use when homebase hasn't updated yet but you need the fix immediately. Takes 3–5 min on Pi (builds frontend itself).
+
+**SSH from phone to Pi (when VNC fails):**
+- Install **Termius** app (iPhone App Store, free)
+- Make sure Tailscale is connected on phone
+- Connect: host `100.95.238.71`, port `22`, username `homebase`, Pi password
+- Run `~/djbooth-update.sh` once connected
 
 ---
 
