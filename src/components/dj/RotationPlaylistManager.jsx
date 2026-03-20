@@ -97,6 +97,7 @@ export default function RotationPlaylistManager({
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
   const djOverridesRef = React.useRef(new Set());
+  const prevDancerIndexRef = React.useRef(currentDancerIndex);
   const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
   const [serverTracks, setServerTracks] = useState([]);
@@ -158,6 +159,15 @@ export default function RotationPlaylistManager({
       setInterstitialSongs(savedInterstitials || {});
     }
   }, [interstitialRemoteVersion]);
+
+  useEffect(() => {
+    if (!isRotationActive) return;
+    if (prevDancerIndexRef.current !== currentDancerIndex && localRotation && localRotation.length > 0) {
+      const finishedId = String(localRotation[prevDancerIndexRef.current]);
+      if (finishedId) djOverridesRef.current.delete(finishedId);
+    }
+    prevDancerIndexRef.current = currentDancerIndex;
+  }, [currentDancerIndex, isRotationActive]);
 
   useEffect(() => {
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
