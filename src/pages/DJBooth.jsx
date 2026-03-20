@@ -3549,9 +3549,11 @@ export default function DJBooth() {
                   onClick={async () => {
                     try {
                       const res = await fetch('/api/display/launch', { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('djbooth_token')}` } });
-                      if (!res.ok) throw new Error('Failed');
+                      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Server error');
+                      toast.success('Display launching on HDMI-2');
                     } catch (err) {
-                      console.error('[Open Display] Failed to launch rotation display:', err.message);
+                      console.error('[Open Display] Failed:', err.message);
+                      toast.error(`Display launch failed: ${err.message}`);
                     }
                   }}
                 >
