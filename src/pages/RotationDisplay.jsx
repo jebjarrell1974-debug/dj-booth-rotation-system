@@ -115,11 +115,11 @@ export default function RotationDisplay() {
   const currentDancerId = validRotation[currentIndex];
   const currentDancer = dancers.find(d => d.id === currentDancerId);
 
+  const maxNext = Math.min(10, validRotation.length - 1);
   const nextDancers = [];
-  for (let i = 1; i <= Math.min(5, validRotation.length - 1); i++) {
+  for (let i = 1; i <= maxNext; i++) {
     const nextIndex = (currentIndex + i) % validRotation.length;
-    const nextDancerId = validRotation[nextIndex];
-    const dancer = dancers.find(d => d.id === nextDancerId);
+    const dancer = dancers.find(d => d.id === validRotation[nextIndex]);
     if (dancer) nextDancers.push(dancer);
   }
 
@@ -127,19 +127,29 @@ export default function RotationDisplay() {
   const breakSongIndex = displayData?.breakSongIndex ?? null;
   const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
 
+  const nextCount = nextDancers.length;
+  const nextFontSize = (i) => {
+    if (nextCount <= 1) return i === 0 ? '5.5rem' : '3.5rem';
+    if (nextCount === 2) return i === 0 ? '4.5rem' : '3rem';
+    if (nextCount === 3) return i === 0 ? '3.75rem' : i === 1 ? '2.75rem' : '2rem';
+    if (nextCount === 4) return i === 0 ? '3.25rem' : i === 1 ? '2.5rem' : '1.875rem';
+    return i === 0 ? '2.75rem' : i === 1 ? '2.25rem' : '1.75rem';
+  };
+  const nextOpacity = (i) => i === 0 ? 1 : i === 1 ? 0.6 : i === 2 ? 0.4 : 0.25;
+
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
       <style>{STYLES}</style>
 
-      {/* TOP: Current performer or break */}
-      <div className="h-[48%] flex flex-col items-center justify-center px-8 border-b border-[#1e293b]">
+      {/* TOP: Current performer or break — pushed to top, auto height */}
+      <div className="flex flex-col items-center px-8 pt-8 pb-5 border-b border-[#1e293b]">
         {isBreak ? (
           <>
-            <p className="stage-label text-2xl font-bold tracking-widest uppercase mb-5" style={LABEL_STYLE}>
+            <p className="stage-label text-2xl font-bold tracking-widest uppercase mb-4" style={LABEL_STYLE}>
               Break
             </p>
             {breakSongTotal > 0 && (
-              <div className="flex items-center gap-6 mb-6">
+              <div className="flex items-center gap-6 mb-4">
                 {Array.from({ length: breakSongTotal }).map((_, i) => {
                   const isDone = breakSongIndex !== null && i < breakSongIndex;
                   const isCurrent = breakSongIndex !== null && i === breakSongIndex;
@@ -179,27 +189,29 @@ export default function RotationDisplay() {
             </h1>
             <div
               ref={countdownRef}
-              className="font-black font-mono tabular-nums mt-3 leading-none"
+              className="font-black font-mono tabular-nums mt-2 leading-none"
               style={{ fontSize: '5.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
             />
           </>
         )}
       </div>
 
-      {/* BOTTOM: Next up */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <p className="stage-label text-2xl font-bold tracking-widest uppercase text-center pt-5 pb-3" style={LABEL_STYLE}>
-          {isBreak ? 'Up Next' : 'Next On Stage'}
-        </p>
-        <div className="flex flex-col gap-3 px-8 pb-6">
+      {/* BOTTOM: Full rotation list — starts immediately after top section */}
+      <div className="flex-1 flex flex-col overflow-hidden px-8 pt-5 pb-6">
+        {nextDancers.length > 0 && (
+          <p className="stage-label text-xl font-bold tracking-widest uppercase text-center mb-3" style={LABEL_STYLE}>
+            {isBreak ? 'Up Next' : 'Next On Stage'}
+          </p>
+        )}
+        <div className="flex flex-col gap-1 flex-1">
           {nextDancers.map((dancer, i) => (
             <div key={dancer.id} className="text-center">
               <h3
                 className="next-name font-bold text-white uppercase tracking-wider"
                 style={{
-                  fontSize: i === 0 ? '5rem' : i === 1 ? '3.25rem' : '2.25rem',
-                  opacity: i === 0 ? 1 : i === 1 ? 0.55 : 0.35,
-                  lineHeight: 1.1,
+                  fontSize: nextFontSize(i),
+                  opacity: nextOpacity(i),
+                  lineHeight: 1.05,
                 }}
               >
                 {dancer.name}

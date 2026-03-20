@@ -112,6 +112,22 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ## CURRENT STATUS (as of Session 48 — March 20, 2026) — READ THIS FIRST
 
+### Latest GitHub commit: `b90d955` — "Fix: Kiosk lock now overlays without logout — music/rotation keep playing behind lock screen; unlock via DJ PIN"
+
+### Session 48 — What was fixed tonight (all on GitHub, neonaidj001 partially updated)
+- **Open Display button** (`8053c79`): Server now writes `/tmp/djbooth-display-trigger` instead of trying to spawn Chromium directly. Button shows toast feedback.
+- **labwc autostart watcher loop** (Pi-side only, not code): neonaidj001 autostart file was missing the watcher loop. Rewrote `~/.config/labwc/autostart` with full block (pkill swayidle/swaylock + wlr-randr + Chromium launch + watcher loop). **neonaidj003 needs same fix before Monday.**
+- **swayidle/swaylock disabled** (Pi-side, neonaidj001): OS-level screen locker was killing audio when screen timed out. Killed and permanently disabled via autostart. **neonaidj003 needs same fix.**
+- **Kiosk lock overlay** (`b90d955`): CRITICAL FIX — lock screen now shows as an overlay instead of logging out and navigating away. Music, rotation, and voiceovers continue playing behind the locked screen. Unlock by entering 5-digit DJ PIN. No session destruction on lock.
+- **Homebase NOT yet updated**: All Session 48 fixes are on GitHub but homebase hasn't pulled them yet. Use `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` on any Pi to bypass homebase and pull direct from GitHub.
+
+### Update command — bypass homebase, go direct to GitHub
+```
+DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh
+```
+Via SSH: `ssh neonaidj001@100.115.212.34 "DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh"`
+Use this any time homebase is behind on updates.
+
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
 - Play history pipeline: `djbooth_token` stored in `localStorage` (not `sessionStorage`), survives reboots
@@ -137,6 +153,8 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **Energy level removed (Session 48)**: All user-facing energy level UI removed — buttons, header badge, config display, help entry, announcement panel L4 badge. Internal voice system still runs at locked level 4.
 - **Remote touch improvements (Session 48)**: All button tap targets enlarged for iPad landscape use — volume +/−, announce toggle, deactivate song, songs/break buttons, energy buttons, rotation move/remove, bottom nav, library rows, add-to-rotation, break slots.
 - **Countdown timer on RotationDisplay (Session 48)**: Live track countdown (updated every second via ref) + animated break dot indicators (cyan/done/upcoming) added to RotationDisplay.jsx.
+- **Kiosk lock overlay (Session 48)**: CRITICAL — lock screen no longer logs out and navigates away (which killed music). Now shows a full-screen overlay. DJ booth stays mounted, music/rotation/voiceovers keep playing behind it. Unlock with 5-digit DJ PIN via `/api/auth/login`. commit `b90d955`
+- **labwc autostart watcher loop confirmed on neonaidj001 (Session 48)**: Open Display button confirmed working after adding watcher loop to autostart. swayidle/swaylock confirmed killing audio — disabled permanently in autostart. neonaidj003 needs same autostart fix before field deployment.
 
 ### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
 **Belt + suspenders on every venue Pi:**
@@ -208,12 +226,13 @@ sudo loginctl enable-linger $USER
 
 ### Outstanding TODOs
 
-**After 4 AM set — Pi-side actions:**
-- **Run `~/djbooth-update.sh`** on all Pis (neonaidj001, 002, 003, homebase) to pull Session 48 fixes (display trigger fix, countdown timer, touch improvements, energy level removal)
-- ~~**Verify Open Display works on neonaidj001**~~ — DONE ✓ (Session 48). Watcher loop was missing from autostart. Started manually, rewrote `~/.config/labwc/autostart` with watcher block. Open Display button confirmed working — display fires on HDMI-2.
+**Immediate — after 4 AM set:**
+- **neonaidj001 — pull Session 48 code** (kiosk lock overlay, swayidle fix, countdown timer, display trigger): `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` — bypasses homebase (which hasn't updated yet), goes straight to GitHub. Pi-side autostart already fixed tonight (swayidle disabled, watcher loop added). Just needs the code update.
+- **Homebase — pull Session 48 code**: SSH in and run `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` on homebase itself, OR use the Fleet dashboard Update button once homebase is accessible. Latest commit is `b90d955`.
+- ~~**Verify Open Display works on neonaidj001**~~ — DONE ✓ (Session 48). Watcher loop was missing from autostart. Started manually, rewrote `~/.config/labwc/autostart`. Open Display button confirmed working. swayidle confirmed causing audio loss — disabled.
 - **neonaidj001**: Set `DEVICE_ID=neonaidj001` in `~/djbooth/.env` (fleet heartbeat identification)
 - **neonaidj002**: Tailscale IP still unknown — check fleet dashboard
-- **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented — decide on this and it makes Help "Set Booth IP" instructions concrete.
+- **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented.
 
 **neonaidj003 — Full pre-field checklist (must complete before Monday deployment):**
 - [ ] Run `~/djbooth-update.sh` — pull all latest code
