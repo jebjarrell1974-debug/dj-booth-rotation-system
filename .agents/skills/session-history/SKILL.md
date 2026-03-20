@@ -110,7 +110,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 47 — March 20, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 48 — March 20, 2026) — READ THIS FIRST
 
 ### What is working
 - Fleet heartbeat: 1-min interval, 3-min offline timeout, homebase is the fleet server
@@ -133,6 +133,10 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **Verified update tracking (Session 46)**: Update script stamps `~/.djbooth-last-update` (SHA|timestamp) only on verified success. Fleet dashboard shows actual time + green ✓ / orange ✗ / gray per device based on SHA comparison to homebase. Activated by running `~/djbooth-update.sh` once on each Pi.
 - **Pre-picked songs display fix (Session 47)**: Upcoming dancer cards in rotation panel now show auto-picked songs correctly after a dancer transition. commit `8cdd522`
 - **Reset Voiceover full clear fix (Session 47)**: Reset Voiceover button now clears both server files/DB AND browser IndexedDB cache — old audio can no longer replay in the same session. commit `a3f6c38`
+- **Open Display button fix (Session 48)**: `POST /api/display/launch` now correctly writes `/tmp/djbooth-display-trigger` instead of trying to spawn Chromium from the server process (which has no Wayland access and silently failed). Button now shows toast success/error. commit `8053c79`
+- **Energy level removed (Session 48)**: All user-facing energy level UI removed — buttons, header badge, config display, help entry, announcement panel L4 badge. Internal voice system still runs at locked level 4.
+- **Remote touch improvements (Session 48)**: All button tap targets enlarged for iPad landscape use — volume +/−, announce toggle, deactivate song, songs/break buttons, energy buttons, rotation move/remove, bottom nav, library rows, add-to-rotation, break slots.
+- **Countdown timer on RotationDisplay (Session 48)**: Live track countdown (updated every second via ref) + animated break dot indicators (cyan/done/upcoming) added to RotationDisplay.jsx.
 
 ### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
 **Belt + suspenders on every venue Pi:**
@@ -203,16 +207,41 @@ sudo loginctl enable-linger $USER
 ---
 
 ### Outstanding TODOs
-- **neonaidj003**: SSH in, set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+
+**After 4 AM set — Pi-side actions:**
+- **Run `~/djbooth-update.sh`** on all Pis (neonaidj001, 002, 003, homebase) to pull Session 48 fixes (display trigger fix, countdown timer, touch improvements, energy level removal)
+- ~~**Verify Open Display works on neonaidj001**~~ — DONE ✓ (Session 48). Watcher loop was missing from autostart. Started manually, rewrote `~/.config/labwc/autostart` with watcher block. Open Display button confirmed working — display fires on HDMI-2.
 - **neonaidj001**: Set `DEVICE_ID=neonaidj001` in `~/djbooth/.env` (fleet heartbeat identification)
 - **neonaidj002**: Tailscale IP still unknown — check fleet dashboard
+- **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented — decide on this and it makes Help "Set Booth IP" instructions concrete.
+
+**neonaidj003 — Full pre-field checklist (must complete before Monday deployment):**
+- [ ] Run `~/djbooth-update.sh` — pull all latest code
+- [ ] Set `CLUB_NAME=<venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
+- [ ] Set `DEVICE_ID=neonaidj003` in `~/djbooth/.env` (confirm it's there or add it)
+- [ ] Set `FLEET_DEVICE_KEY=<api key>` in `~/djbooth/.env` so it reports to fleet correctly
+- [ ] Confirm `djbooth` systemd service starts clean: `systemctl status djbooth`
+- [ ] Confirm boot auto-update fires: reboot, then `sudo cat ~/djbooth-boot.log` — look for fresh timestamp and "Update complete!"
+- [ ] Fix labwc autostart — run the full one-paste block from Session 48 notes. Fixes TWO confirmed issues: (1) watcher loop missing — Open Display button did nothing, (2) swayidle/swaylock running — screen timeout kills audio (CRITICAL). Confirmed on neonaidj001. neonaidj003 almost certainly has both problems.
+- [ ] Start watcher manually after fixing autostart (or reboot to let autostart fire it)
+- [ ] Confirm HDMI-2 rotation display loads automatically after reboot (8s after desktop loads)
+- [ ] Verify `ps aux | grep djbooth-display-trigger` shows watcher loop running
+- [ ] Press Open Display button from DJ booth — confirm green toast + display fires on HDMI-2
+- [ ] Log in as DJ, run a test rotation with at least 2 entertainers, verify music plays and announcements fire
+- [ ] Check fleet dashboard from homebase — confirm neonaidj003 shows as online and heartbeat is current
+- [ ] Add at least one entertainer, run Save All, verify voiceover pre-generation completes without error
+- [ ] Verify music library loads (rescan from Configuration if needed)
+- [ ] Test iPad remote: connect to neonaidj003 IP, confirm live state syncs and controls work
+
+**Future / lower priority:**
+- **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` → should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
+- **19" kiosk touchscreen**: General touch target treatment still needed (separate from iPad remote, lower priority).
+- **Multi-language announcements (WAY down the road)**: ElevenLabs `eleven_multilingual_v2` already supports it — same voice speaks Spanish/French/etc. if you send it text in that language. Script writer also supports it. Work needed: language field in config, thread it into prompt builder, update cache keys to include language, rewrite English-specific slang phrases into target-language equivalents. Technical lift is low; cultural accuracy is the real investment.
+- **Multi-stage support (discussed Session 48 — way down the road)**: One audio feed, one music system — all stages dance to whatever main stage is playing. Main stage gets full treatment (intro, round 2/3, outro) unchanged. Satellite stages only need a short "come to the stage" call announcement timed to fire during main stage round 2. What to build: (1) satellite dancer queue alongside main rotation with stage label per slot, (2) "satellite call" announcement type — short directional ElevenLabs voiceover, no hype build-up, (3) auto-trigger when main stage hits round 2 (or manual tap), (4) satellite stage cards on HDMI-2 rotation display below main stage countdown. Main stage system needs zero changes — satellite layer is purely additive. Complexity: medium. Hardest part is the queue management UI, not the announcements or triggers.
 - **Homebase-aware update script**: Skip Chrome kill/relaunch when `IS_HOMEBASE=true` in env
 - **USB SSD music library on homebase**: Mount 1TB exFAT SSD at fixed path, update homebase `MUSIC_PATH`
 - **Venue Pi fleet error key**: Each venue Pi needs `FLEET_DEVICE_KEY=<api key from registration>` in `~/djbooth/.env`
-- **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` — should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
-- **Fleet WiFi static IP plan**: Same SSID/subnet across all venues; static `192.168.88.100` on each Pi's `wlan0` via `/etc/dhcpcd.conf`. iPad enters IP once, works everywhere. Not yet implemented.
-- **All venue Pis + homebase need `~/djbooth-update.sh`** to pull Sessions 44–47 fixes
-- **R2 voiceover gap**: Reset Voiceover now clears local + IndexedDB but NOT R2. On next boot, R2 sync may re-download cleared voiceovers. Low priority (same-session issue is fixed); full fix would delete from R2 in the reset endpoint
+- **R2 voiceover gap**: Reset Voiceover now clears local + IndexedDB but NOT R2. On next boot, R2 sync may re-download cleared voiceovers. Low priority; full fix would delete from R2 in the reset endpoint
 
 ### Context Reset Prevention
 - **ALWAYS** keep this SKILL.md updated at the end of every session

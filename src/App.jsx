@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import BootScreen from '@/components/BootScreen';
 import Landing from '@/pages/Landing';
@@ -89,25 +89,32 @@ const KIOSK_INACTIVITY_MS = 3 * 60 * 1000;
 const KIOSK_WARNING_SECS = 30;
 
 function KioskLockManager() {
-  const { isAuthenticated, role, logout } = useAuth();
-  const navigate = useNavigate();
+  const { isAuthenticated, role } = useAuth();
   const location = useLocation();
   const [countdown, setCountdown] = useState(null);
+  const [locked, setLocked] = useState(false);
+  const [pin, setPin] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   const timerRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const countdownValRef = useRef(null);
+  const lockedRef = useRef(false);
+  const inputRef = useRef(null);
 
   const isActive = isAuthenticated && role === 'dj' && location.pathname !== '/RotationDisplay';
 
-  const doLock = useCallback(async () => {
+  const doLock = useCallback(() => {
     clearTimeout(timerRef.current);
     clearInterval(countdownIntervalRef.current);
     setCountdown(null);
-    await logout();
-    navigate('/');
-  }, [logout, navigate]);
+    lockedRef.current = true;
+    setLocked(true);
+    setPin('');
+    setUnlockError('');
+  }, []);
 
-  const resetTimer = useCallback(() => {
+  const startTimer = useCallback(() => {
     clearTimeout(timerRef.current);
     clearInterval(countdownIntervalRef.current);
     setCountdown(null);
@@ -127,46 +134,123 @@ function KioskLockManager() {
     }, KIOSK_INACTIVITY_MS - KIOSK_WARNING_SECS * 1000);
   }, [doLock]);
 
+  const resetTimer = useCallback(() => {
+    if (lockedRef.current) return;
+    startTimer();
+  }, [startTimer]);
+
+  const handleUnlock = useCallback(async () => {
+    if (pin.length !== 5 || unlocking) return;
+    setUnlocking(true);
+    setUnlockError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'dj', pin }),
+      });
+      if (res.ok) {
+        lockedRef.current = false;
+        setLocked(false);
+        setPin('');
+        setUnlockError('');
+        startTimer();
+      } else {
+        setUnlockError('Wrong PIN');
+        setPin('');
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
+    } catch {
+      setUnlockError('Connection error — try again');
+    } finally {
+      setUnlocking(false);
+    }
+  }, [pin, unlocking, startTimer]);
+
   useEffect(() => {
     if (!isActive) {
       clearTimeout(timerRef.current);
       clearInterval(countdownIntervalRef.current);
       setCountdown(null);
+      lockedRef.current = false;
+      setLocked(false);
       return;
     }
     document.addEventListener('click', resetTimer);
     document.addEventListener('touchstart', resetTimer);
-    resetTimer();
+    startTimer();
     return () => {
       document.removeEventListener('click', resetTimer);
       document.removeEventListener('touchstart', resetTimer);
       clearTimeout(timerRef.current);
       clearInterval(countdownIntervalRef.current);
     };
-  }, [isActive, resetTimer]);
+  }, [isActive, resetTimer, startTimer]);
 
-  if (!countdown) return null;
+  useEffect(() => {
+    if (locked) setTimeout(() => inputRef.current?.focus(), 150);
+  }, [locked]);
 
-  return (
-    <div
-      onClick={resetTimer}
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(8,8,26,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
-    >
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <div style={{ width: 88, height: 88, borderRadius: '50%', border: `3px solid ${countdown <= 10 ? '#ff2d55' : '#00d4ff'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', fontSize: 36, fontWeight: 700, color: countdown <= 10 ? '#ff2d55' : '#00d4ff', transition: 'color 0.3s, border-color 0.3s' }}>
-          {countdown}
+  if (countdown && !locked) {
+    return (
+      <div
+        onClick={resetTimer}
+        style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(8,8,26,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <div style={{ width: 88, height: 88, borderRadius: '50%', border: `3px solid ${countdown <= 10 ? '#ff2d55' : '#00d4ff'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', fontSize: 36, fontWeight: 700, color: countdown <= 10 ? '#ff2d55' : '#00d4ff', transition: 'color 0.3s, border-color 0.3s' }}>
+            {countdown}
+          </div>
+          <p style={{ color: '#fff', fontSize: 20, fontWeight: 600, marginBottom: '0.5rem' }}>Screen locking soon</p>
+          <p style={{ color: '#6b7280', fontSize: 14, marginBottom: '2rem' }}>Tap anywhere to stay logged in</p>
+          <button
+            onClick={e => { e.stopPropagation(); resetTimer(); }}
+            style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid #00d4ff', color: '#00d4ff', padding: '10px 32px', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Stay Logged In
+          </button>
         </div>
-        <p style={{ color: '#fff', fontSize: 20, fontWeight: 600, marginBottom: '0.5rem' }}>Screen locking soon</p>
-        <p style={{ color: '#6b7280', fontSize: 14, marginBottom: '2rem' }}>Tap anywhere to stay logged in</p>
-        <button
-          onClick={resetTimer}
-          style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid #00d4ff', color: '#00d4ff', padding: '10px 32px', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
-        >
-          Stay Logged In
-        </button>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (locked) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(8,8,26,0.97)', backdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', padding: '2rem', width: '100%', maxWidth: 360 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(0,212,255,0.08)', border: '2px solid #00d4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', fontSize: 26 }}>
+            🔒
+          </div>
+          <p style={{ color: '#00d4ff', fontSize: 12, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>NEON AI DJ</p>
+          <p style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: '0.4rem' }}>Screen Locked</p>
+          <p style={{ color: '#4b5563', fontSize: 13, marginBottom: '2rem' }}>♪ Music &amp; rotation playing in background</p>
+          <input
+            ref={inputRef}
+            type="password"
+            inputMode="numeric"
+            maxLength={5}
+            value={pin}
+            onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 5); setPin(v); setUnlockError(''); }}
+            onKeyDown={e => e.key === 'Enter' && handleUnlock()}
+            placeholder="5-digit PIN"
+            style={{ width: '100%', padding: '14px 16px', borderRadius: 10, border: `1.5px solid ${unlockError ? '#ff2d55' : '#1e293b'}`, background: '#0d0d1f', color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '0.3em', outline: 'none', marginBottom: unlockError ? '0.5rem' : '1rem', boxSizing: 'border-box', textAlign: 'center' }}
+          />
+          {unlockError && (
+            <p style={{ color: '#ff2d55', fontSize: 13, marginBottom: '0.75rem' }}>{unlockError}</p>
+          )}
+          <button
+            onClick={handleUnlock}
+            disabled={pin.length !== 5 || unlocking}
+            style={{ width: '100%', padding: '14px', borderRadius: 10, border: 'none', background: pin.length === 5 && !unlocking ? '#00d4ff' : 'rgba(0,212,255,0.15)', color: pin.length === 5 && !unlocking ? '#000' : '#374151', fontSize: 16, fontWeight: 700, cursor: pin.length === 5 && !unlocking ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}
+          >
+            {unlocking ? 'Unlocking...' : 'Unlock'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function AppRoutes() {
