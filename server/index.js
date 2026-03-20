@@ -1120,6 +1120,7 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     trackDuration: state.trackDuration || 0,
     trackTimeAt: state.trackTimeAt || 0,
     breakSongsPerSet: state.breakSongsPerSet || 0,
+    breakSongIndex: state.breakSongIndex != null ? state.breakSongIndex : null,
     interstitialSongs: state.interstitialSongs || {},
     commercialFreq: state.commercialFreq || 'off',
     commercialCounter: state.commercialCounter || 0,
@@ -1134,6 +1135,20 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
 
 app.get('/api/booth/state', authenticate, (req, res) => {
   res.json(liveBoothState);
+});
+
+app.get('/api/booth/display', (req, res) => {
+  res.json({
+    isRotationActive: liveBoothState.isRotationActive,
+    isPlaying: liveBoothState.isPlaying,
+    currentSongNumber: liveBoothState.currentSongNumber,
+    currentDancerName: liveBoothState.currentDancerName,
+    trackTime: liveBoothState.trackTime,
+    trackDuration: liveBoothState.trackDuration,
+    trackTimeAt: liveBoothState.trackTimeAt,
+    breakSongsPerSet: liveBoothState.breakSongsPerSet,
+    breakSongIndex: liveBoothState.breakSongIndex,
+  });
 });
 
 app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {

@@ -924,6 +924,7 @@ export default function DJBooth() {
           announcementsEnabled,
           rotationSongs: mergedSongs,
           interstitialSongs: interstitialSongsRef.current || {},
+          breakSongIndex: activeBreakInfo?.currentIndex ?? null,
           commercialFreq: localStorage.getItem('neonaidj_commercial_freq') || 'off',
           commercialCounter: commercialCounterRef.current,
           promoQueue: promoQueue,
@@ -940,7 +941,7 @@ export default function DJBooth() {
     broadcast();
     const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos, activeBreakInfo]);
 
   useEffect(() => {
     if (!activeStage) return;
