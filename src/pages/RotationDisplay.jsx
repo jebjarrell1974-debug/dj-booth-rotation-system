@@ -137,9 +137,6 @@ export default function RotationDisplay() {
 
   const nextCount = nextDancers.length;
   const FIXED_FONT = '5.5rem';
-  // Scroll if there are more than 7 names — duplicate list for seamless loop
-  const needsScroll = nextCount > 7;
-  const scrollDuration = nextCount * 3; // 3s per name
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
@@ -208,22 +205,16 @@ export default function RotationDisplay() {
           </p>
         )}
         <div className="flex-1 overflow-hidden">
-          <div
-            style={needsScroll ? {
-              animation: `scrollList ${scrollDuration}s linear infinite`,
-            } : {}}
-          >
-            {(needsScroll ? [...nextDancers, ...nextDancers] : nextDancers).map((dancer, i) => (
-              <div key={`${dancer.id}-${i}`} className="text-center">
-                <h3
-                  className="next-name font-bold text-white uppercase tracking-wider"
-                  style={{ fontSize: FIXED_FONT, lineHeight: 1.15 }}
-                >
-                  {dancer.name}
-                </h3>
-              </div>
-            ))}
-          </div>
+          {nextDancers.map((dancer) => (
+            <div key={dancer.id} className="text-center">
+              <h3
+                className="next-name font-bold text-white uppercase tracking-wider"
+                style={{ fontSize: FIXED_FONT, lineHeight: 1.15 }}
+              >
+                {dancer.name}
+              </h3>
+            </div>
+          ))}
         </div>
       </div>
     </div>
