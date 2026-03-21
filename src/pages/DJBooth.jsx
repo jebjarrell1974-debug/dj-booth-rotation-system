@@ -1457,26 +1457,35 @@ export default function DJBooth() {
       console.warn(`⚠️ getDancerTracks: Server select failed for ${dancer?.name}: ${err.message}, using local fallback`);
     }
 
-    // Local fallback — playlist-strict, cooldown oldest-first
+    // Local fallback (server unavailable) — playlist-strict, fresh first then oldest-cooldown
+    // folders_only mode: rawPlaylist is [] so we return [] and caller uses random library (correct)
     const excludeSet = new Set(excludeNames);
     const cooldowns = songCooldownRef.current || {};
     const now = Date.now();
 
     if (rawPlaylist.length > 0) {
-      const playlistTracks = rawPlaylist
+      const allPlaylistTracks = rawPlaylist
         .map(name => tracks.find(t => t.name === name && t.url))
         .filter(Boolean)
         .filter(t => !excludeSet.has(t.name));
-      const freshTracks = playlistTracks.filter(t => {
+      const freshTracks = allPlaylistTracks.filter(t => {
         const lp = cooldowns[t.name] || 0;
         return !lp || (now - lp) >= COOLDOWN_MS;
       });
-      if (freshTracks.length > 0) {
-        const result = fisherYatesShuffle([...freshTracks]).slice(0, count);
-        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, fresh playlist)`);
+      const cooldownTracks = allPlaylistTracks
+        .filter(t => {
+          const lp = cooldowns[t.name] || 0;
+          return lp && (now - lp) < COOLDOWN_MS;
+        })
+        .sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0)); // oldest-played first
+
+      const combined = [...fisherYatesShuffle([...freshTracks]), ...cooldownTracks];
+      if (combined.length > 0) {
+        const result = combined.slice(0, count);
+        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, ${freshTracks.length} fresh + ${cooldownTracks.length} cooldown)`);
         return result;
       }
-      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} all playlist songs on cooldown — returning empty for random fallback`);
+      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} — no playlist tracks found in local library`);
       return [];
     }
 

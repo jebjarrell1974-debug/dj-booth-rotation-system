@@ -712,21 +712,36 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
 }
 
 export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
-  // When a dancer has a playlist, pick ONLY from that playlist — never random library songs
+  // When a dancer has a playlist, pick ONLY from that playlist — never random library songs.
+  // folders_only mode sends dancerPlaylist=[] so it falls through to the random library path below.
   if (dancerPlaylist.length > 0) {
     const excludeSet = new Set(excludeNames);
+    const placeholders = dancerPlaylist.map(() => '?').join(',');
 
-    // Get all songs played in the last 6 hours (server is source of truth for cooldowns)
-    const recentlyPlayed6h = new Set(
+    // Which playlist songs were played in the last 6 hours?
+    const recentlyPlayedSet = new Set(
       readDb.prepare(
         `SELECT track_name FROM play_history
-         WHERE played_at > datetime('now', 'localtime', '-6 hours')
+         WHERE track_name IN (${placeholders})
+           AND played_at > datetime('now', 'localtime', '-6 hours')
          GROUP BY track_name`
-      ).all().map(r => r.track_name)
+      ).all(...dancerPlaylist).map(r => r.track_name)
     );
 
-    // Fetch playlist tracks from DB, split into fresh vs on-cooldown
+    // Last-played timestamp per track (for sorting cooldown tracks oldest-first)
+    const lastPlayedMap = {};
+    for (const row of readDb.prepare(
+      `SELECT track_name, MAX(played_at) as last_played
+       FROM play_history
+       WHERE track_name IN (${placeholders})
+       GROUP BY track_name`
+    ).all(...dancerPlaylist)) {
+      lastPlayedMap[row.track_name] = row.last_played;
+    }
+
+    // Fetch all playlist tracks from DB, split into fresh vs on-cooldown
     const freshTracks = [];
+    const cooldownTracks = [];
     for (const trackName of dancerPlaylist) {
       if (excludeSet.has(trackName)) continue;
       const track = readDb.prepare(
@@ -735,25 +750,33 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
          WHERE t.name = ? AND t.blocked = 0`
       ).get(trackName);
       if (!track) continue;
-      if (!recentlyPlayed6h.has(trackName)) {
+      if (recentlyPlayedSet.has(trackName)) {
+        cooldownTracks.push({ ...track, lastPlayed: lastPlayedMap[trackName] || '' });
+      } else {
         freshTracks.push(track);
       }
     }
 
-    // Fresh playlist songs available — shuffle and return
-    if (freshTracks.length > 0) {
-      for (let i = freshTracks.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
-      }
-      return freshTracks.slice(0, count);
+    // No playlist tracks exist in the DB at all — only then fall back to random library
+    if (freshTracks.length === 0 && cooldownTracks.length === 0) {
+      return getRandomTracks(count, [...excludeSet], genres);
     }
 
-    // All playlist songs on cooldown — fall back to random library songs respecting active genres
-    return getRandomTracks(count, [...excludeSet], genres);
+    // Shuffle fresh tracks for variety
+    for (let i = freshTracks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
+    }
+
+    // Sort cooldown tracks oldest-played-first so we recycle least-recently-heard songs
+    cooldownTracks.sort((a, b) => (a.lastPlayed < b.lastPlayed ? -1 : 1));
+
+    // Fresh first, then oldest-cooldown — always from their own playlist, never random library
+    return [...freshTracks, ...cooldownTracks].slice(0, count);
   }
 
-  // No dancer playlist (break songs, autoplay queue) — random from full library with genre filter
+  // No dancer playlist — folders_only mode, break songs, autoplay queue
+  // Pick random from full library with genre filter (unchanged behaviour)
   const usedNames = new Set(excludeNames);
   let filler = getRandomTracks(count, [...usedNames], genres);
   if (filler.length < count && genres.length > 0) {

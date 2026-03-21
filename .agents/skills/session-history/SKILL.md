@@ -110,9 +110,16 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 49 — March 21, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 50 — March 21, 2026) — READ THIS FIRST
 
-### Latest GitHub commit: `3786125` — "Staff accounts + audit log: named DJ/Manager PINs, activity log, master-gated CRUD"
+### Latest GitHub commit: `b7ba900` — "UI: Rotation Screen button rename + cyan color; rotation display natural stacking"
+
+### Session 50 — What was built (all on GitHub)
+- **"Rotation Screen" button**: Renamed from "Open Display" in DJBooth.jsx. Changed from gray outline to `bg-[#00d4ff] hover:bg-[#00a3cc] text-black font-semibold` — matches Save All button color. Stands out clearly in the top bar at all times.
+- **RotationDisplay natural stacking**: Names render at their fixed 5.5rem size, stacking naturally from top. With a full roster (~7-10+ names) they fill the screen. With fewer names, dark background fills the rest — no stretching, no redistribution. `flex-1` on the outer container still ensures the dark background covers the full screen edge-to-edge.
+- **Confirmed behavior**: The dark background always fills 100% of the display (h-screen). Names fill as much space as the roster warrants. No browser chrome, no white gaps.
+- **Confirmed scrolling**: Display polls every 5 seconds. When DJ advances rotation, screen updates within 5 seconds — new current name at top, list below shifts up automatically. No continuous scroll animation, clean snap updates.
+- **Max names shown**: Currently capped at 10. If the roster is large and 10 names don't fill the screen, cap can be raised.
 
 ### Session 49 — What was built (all on GitHub)
 - **Staff Accounts feature**: Named DJ/Manager accounts with individual PINs. Created/deleted in Configuration (master PIN only). Full CRUD: `GET/POST/DELETE /api/staff` all behind `requireMaster` middleware.
@@ -271,6 +278,7 @@ sudo loginctl enable-linger $USER
 - [ ] Test iPad remote: connect to neonaidj003 IP, confirm live state syncs and controls work
 
 **Future / lower priority:**
+- **R2 music write lockdown (APPROVED, not yet built)**: Create two separate Cloudflare R2 API tokens. Homebase token: full read/write to entire bucket (music + voiceovers). Venue Pi token: read-only on `music/` prefix, read/write on `voiceovers/` only. This enforces at the credential level that only homebase can add/modify music in R2. Venue Pis update script must also be changed to never upload to `music/` prefix. Voiceover sharing continues unchanged.
 - **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` → should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
 - **19" kiosk touchscreen**: General touch target treatment still needed (separate from iPad remote, lower priority).
 - **Multi-language announcements (WAY down the road)**: ElevenLabs `eleven_multilingual_v2` already supports it — same voice speaks Spanish/French/etc. if you send it text in that language. Script writer also supports it. Work needed: language field in config, thread it into prompt builder, update cache keys to include language, rewrite English-specific slang phrases into target-language equivalents. Technical lift is low; cultural accuracy is the real investment.
