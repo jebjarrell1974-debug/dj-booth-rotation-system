@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, Music2, Users, Layers, Mic, SlidersHorizontal, Radio, Monitor, Smartphone, Zap, Lock } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Music2, Users, Layers, Mic, SlidersHorizontal, Radio, Monitor, Smartphone, Zap, Lock, HelpCircle } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const sections = [
