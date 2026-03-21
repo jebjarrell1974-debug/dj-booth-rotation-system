@@ -197,25 +197,23 @@ export default function RotationDisplay() {
         )}
       </div>
 
-      {/* BOTTOM: Full rotation list — fixed font size, scrolls if needed */}
-      <div className="flex-1 flex flex-col overflow-hidden px-8 pt-5 pb-6">
+      {/* BOTTOM: Full rotation list — natural size, fills screen when enough names */}
+      <div className="flex-1 overflow-hidden px-8 pt-4 pb-4">
         {nextDancers.length > 0 && (
-          <p className="stage-label text-xl font-bold tracking-widest uppercase text-center mb-3" style={LABEL_STYLE}>
+          <p className="stage-label text-xl font-bold tracking-widest uppercase text-center mb-2" style={LABEL_STYLE}>
             {isBreak ? 'Up Next' : 'Next On Stage'}
           </p>
         )}
-        <div className="flex-1 overflow-hidden">
-          {nextDancers.map((dancer) => (
-            <div key={dancer.id} className="text-center">
-              <h3
-                className="next-name font-bold text-white uppercase tracking-wider"
-                style={{ fontSize: FIXED_FONT, lineHeight: 1.15 }}
-              >
-                {dancer.name}
-              </h3>
-            </div>
-          ))}
-        </div>
+        {nextDancers.map((dancer) => (
+          <div key={dancer.id} className="text-center">
+            <h3
+              className="next-name font-bold text-white uppercase tracking-wider"
+              style={{ fontSize: FIXED_FONT, lineHeight: 1.15 }}
+            >
+              {dancer.name}
+            </h3>
+          </div>
+        ))}
       </div>
     </div>
   );

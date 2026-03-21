@@ -3554,22 +3554,21 @@ export default function DJBooth() {
             {!remoteMode && (
               <>
                 <Button
-                  variant="outline"
                   size="sm"
-                  className="border-[#1e293b] text-gray-300 hover:bg-[#1e293b] hover:text-white"
+                  className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black font-semibold"
                   onClick={async () => {
                     try {
                       const res = await fetch('/api/display/launch', { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('djbooth_token')}` } });
                       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Server error');
                       toast.success('Display launching on HDMI-2');
                     } catch (err) {
-                      console.error('[Open Display] Failed:', err.message);
+                      console.error('[Rotation Screen] Failed:', err.message);
                       toast.error(`Display launch failed: ${err.message}`);
                     }
                   }}
                 >
                   <Radio className="w-4 h-4 mr-2" />
-                  Open Display
+                  Rotation Screen
                 </Button>
                 <Link to={createPageUrl('Configuration')}>
                   <Button

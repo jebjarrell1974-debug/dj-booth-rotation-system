@@ -110,11 +110,22 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 48 — March 20, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 49 — March 21, 2026) — READ THIS FIRST
 
-### Latest GitHub commit: `b90d955` — "Fix: Kiosk lock now overlays without logout — music/rotation keep playing behind lock screen; unlock via DJ PIN"
+### Latest GitHub commit: `3786125` — "Staff accounts + audit log: named DJ/Manager PINs, activity log, master-gated CRUD"
 
-### Session 48 — What was fixed tonight (all on GitHub, neonaidj001 partially updated)
+### Session 49 — What was built (all on GitHub)
+- **Staff Accounts feature**: Named DJ/Manager accounts with individual PINs. Created/deleted in Configuration (master PIN only). Full CRUD: `GET/POST/DELETE /api/staff` all behind `requireMaster` middleware.
+- **Activity Audit Log**: Every login, logout, skip, and break toggle gets recorded with staff name + role + timestamp. Master-gated `GET /api/audit/log` and `GET /api/audit/log.csv`. Auto-cleaned to 30 days / 1000 entries.
+- **Named login flow**: Login checks (1) master PIN → `staffName=Master, isMaster=true`; (2) named staff account → `staffName=Alex, staffRole=dj`; (3) legacy `dj_pin` hash → backward compat fallback. All 3 paths still use `role=dj` so all existing `requireDJ` middleware keeps working.
+- **DB additions**: `staff_accounts` table (id, name, role, pin plaintext, created_at), `audit_log` table (id, staff_name, staff_role, action, details, created_at), `staff_role` and `staff_name` columns on `sessions` table (all try/catch ALTER TABLE — safe migration).
+- **`createSession` signature updated**: `createSession(role, dancerId=null, staffName=null, isMaster=0, staffRole=null)` — all call sites updated.
+- **AuthContext.jsx**: Added `staffName`, `staffRole`, `isMaster` state. Populated from login response and session check. Exposed in context value.
+- **Configuration.jsx**: Two new sections added (master-PIN gated): **Staff Accounts** (add form with name/role/PIN, color-coded list with delete) and **Activity Log** (scrollable table with day-range filter, refresh, CSV download icon). Icons: Users, ClipboardList, ShieldCheck.
+- **DJBooth.jsx**: Module-level `auditEvent(action, details)` fire-and-forget helper. Called on: `skip_song` (after debounce in handleSkip), `break_mode_on` / `break_mode_off` (in onBreakSongsPerSetChange, only on toggle change). Never await — never blocks audio.
+- **Cleanup**: `setInterval(() => cleanOldAuditLog(30), ...)` added to server startup. `isStaffPinTaken()` prevents duplicate PINs. Master PIN itself can't be used as a staff PIN.
+
+### Session 48 — What was fixed (all on GitHub, neonaidj001 partially updated)
 - **Open Display button** (`8053c79`): Server now writes `/tmp/djbooth-display-trigger` instead of trying to spawn Chromium directly. Button shows toast feedback.
 - **labwc autostart watcher loop** (Pi-side only, not code): neonaidj001 autostart file was missing the watcher loop. Rewrote `~/.config/labwc/autostart` with full block (pkill swayidle/swaylock + wlr-randr + Chromium launch + watcher loop). **neonaidj003 needs same fix before Monday.**
 - **swayidle/swaylock disabled** (Pi-side, neonaidj001): OS-level screen locker was killing audio when screen timed out. Killed and permanently disabled via autostart. **neonaidj003 needs same fix.**
@@ -155,6 +166,7 @@ Use this any time homebase is behind on updates.
 - **Countdown timer on RotationDisplay (Session 48)**: Live track countdown (updated every second via ref) + animated break dot indicators (cyan/done/upcoming) added to RotationDisplay.jsx.
 - **Kiosk lock overlay (Session 48)**: CRITICAL — lock screen no longer logs out and navigates away (which killed music). Now shows a full-screen overlay. DJ booth stays mounted, music/rotation/voiceovers keep playing behind it. Unlock with 5-digit DJ PIN via `/api/auth/login`. commit `b90d955`
 - **labwc autostart watcher loop confirmed on neonaidj001 (Session 48)**: Open Display button confirmed working after adding watcher loop to autostart. swayidle/swaylock confirmed killing audio — disabled permanently in autostart. neonaidj003 needs same autostart fix before field deployment.
+- **Staff Accounts + Audit Log (Session 49)**: Named DJ/Manager accounts with individual PINs. Activity log records all logins, logouts, skips, break toggles. Master-gated in Configuration. Backward-compatible with legacy `dj_pin`. commit `3786125`
 
 ### Boot Update Mechanism (CONFIRMED WORKING — DO NOT CHANGE)
 **Belt + suspenders on every venue Pi:**
@@ -197,6 +209,12 @@ Use this any time homebase is behind on updates.
 - `GET /api/music/lufs-status` — returns `{ total, analyzed, withGain, pending, isRunning, progress }` (requires auth)
 - `POST /api/music/analyze` — manually triggers LUFS background analysis (requires DJ auth)
 - `POST /api/display/launch` — writes `/tmp/djbooth-display-trigger` to signal watcher (requires auth)
+- `GET /api/staff` — list all staff accounts (requires master PIN session)
+- `POST /api/staff` — create staff account `{name, role, pin}` (requires master PIN session)
+- `DELETE /api/staff/:id` — delete staff account (requires master PIN session)
+- `GET /api/audit/log?days=30&limit=200` — get audit log entries (requires master PIN session)
+- `GET /api/audit/log.csv?days=30` — download audit log as CSV file (requires master PIN session)
+- `POST /api/audit/event` — fire-and-forget audit event `{action, details?}` (requires DJ auth)
 
 ### AudioEngine notes (CRITICAL — do not change behavior)
 - `AUTO_GAIN_TARGET_LUFS = -10` (changed from -14; -10 is club standard)
@@ -266,6 +284,43 @@ sudo loginctl enable-linger $USER
 - **ALWAYS** keep this SKILL.md updated at the end of every session
 - **ALWAYS** push changes to GitHub before session ends (commit ID + short description)
 - If context is lost, the scratchpad at the top of the next session summary + this file is the full recovery source
+
+---
+
+## Mar 21, 2026 — Session 49 (Staff Accounts + Audit Log — commit `3786125`)
+
+### Feature: Named Staff Accounts (DJ / Manager)
+
+**What it does:** Instead of one shared DJ PIN, each staff member has their own named account. Login with their PIN → their name shows in the audit log. Master PIN always works and grants `is_master=1` access.
+
+**Login priority order:**
+1. Master PIN → `staffName=Master`, `staffRole=master`, `isMaster=true`
+2. Named staff account PIN → `staffName=Alex`, `staffRole=dj|manager`, `isMaster=false`
+3. Legacy `dj_pin` setting (hashed bcrypt) → `staffName=Staff`, `staffRole=dj` — backward compat fallback
+
+All three paths set `role=dj` in the session — all existing `requireDJ` middleware keeps working unchanged.
+
+**DB changes (safe try/catch ALTER TABLE — no migration needed):**
+- NEW `staff_accounts` table: `id, name, role TEXT ('dj'|'manager'), pin TEXT (plaintext), created_at`
+- NEW `audit_log` table: `id, staff_name, staff_role, action, details, created_at`
+- `sessions` table: added `staff_name TEXT DEFAULT NULL`, `is_master INTEGER DEFAULT 0`, `staff_role TEXT DEFAULT NULL`
+- `createSession` new signature: `createSession(role, dancerId=null, staffName=null, isMaster=0, staffRole=null)`
+
+**New server functions (db.js):** `createStaffAccount`, `listStaffAccounts`, `deleteStaffAccount`, `getStaffAccountByPin`, `isStaffPinTaken`, `createAuditEntry`, `getAuditLog`, `getAuditLogCsv`, `cleanOldAuditLog`
+
+**New server middleware:** `requireMaster` — checks `req.session.is_master`, returns 403 if not. `writeAudit(req, action, details)` — pulls name/role from session, writes to audit_log, never throws.
+
+**Audit events currently logged:** `login`, `logout`, `staff_created`, `staff_deleted`, `skip_song`, `break_mode_on`, `break_mode_off`. DJBooth calls `POST /api/audit/event` fire-and-forget (never awaited — never blocks audio).
+
+**AuthContext changes:** `staffName`, `staffRole`, `isMaster` state added. Populated from login response, session check response, and session-expired event. Exposed in context value.
+
+**Configuration.jsx changes:** Two new cards (inside master PIN gate):
+- **Staff Accounts**: Name + role dropdown + PIN input form. List of existing accounts with role badge (cyan=dj, yellow=manager), delete button. Prevents duplicate PINs, prevents using master PIN.
+- **Activity Log**: Scrollable table (max-h-80), day-range selector (7/30), refresh button, CSV download link. Columns: time (Mon DD HH:MM), staff name (color by role), action + details.
+
+**DJBooth.jsx:** Module-level `auditEvent(action, details)` helper — grabs token from localStorage, fires POST, swallows errors. Called at: `handleSkip` (after 2s debounce check), `onBreakSongsPerSetChange` (on toggle change only, not every increment).
+
+**Cleanup:** `setInterval(() => cleanOldAuditLog(30), 24h)` added. CSV filename uses today's ISO date. Staff PIN uniqueness enforced server-side with `isStaffPinTaken()`.
 
 ---
 
