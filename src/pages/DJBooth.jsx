@@ -43,6 +43,16 @@ import DJOptions from '@/components/dj/DJOptions';
 
 const DEFAULT_SONGS_PER_SET = 2;
 
+function auditEvent(action, details) {
+  const token = localStorage.getItem('djbooth_token');
+  if (!token) return;
+  fetch('/api/audit/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action, details: details || undefined }),
+  }).catch(() => {});
+}
+
 export default function DJBooth() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -1959,6 +1969,7 @@ export default function DJBooth() {
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
     lastSkipTimeRef.current = now;
+    auditEvent('skip_song');
     if (playingCommercialRef.current) {
       console.log('📺 HandleSkip: Skipping commercial');
       if (audioEngineRef.current) {
@@ -3925,11 +3936,14 @@ export default function DJBooth() {
                 currentSongNumber={currentSongNumber}
                 breakSongsPerSet={breakSongsPerSet}
                 onBreakSongsPerSetChange={(n) => {
+                  const wasBreak = breakSongsPerSetRef.current > 0;
                   setBreakSongsPerSet(n);
                   breakSongsPerSetRef.current = n;
                   if (n > 0) {
+                    if (!wasBreak) auditEvent('break_mode_on', `${n} break songs per set`);
                     autoPopulateBreakSongs(n);
                   } else {
+                    if (wasBreak) auditEvent('break_mode_off');
                     interstitialSongsRef.current = {};
                     setInterstitialSongsState({});
                     setInterstitialRemoteVersion(v => v + 1);

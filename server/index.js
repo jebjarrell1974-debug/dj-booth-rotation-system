@@ -19,7 +19,9 @@ import {
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
   exportDancers, importDancers, saveClientSettings, getClientSettings,
-  getLufsStats, bulkUpdateTrackAnalysis, getTracksNeedingAnyAnalysis
+  getLufsStats, bulkUpdateTrackAnalysis, getTracksNeedingAnyAnalysis,
+  createStaffAccount, listStaffAccounts, deleteStaffAccount, getStaffAccountByPin, isStaffPinTaken,
+  createAuditEntry, getAuditLog, getAuditLogCsv, cleanOldAuditLog
 } from './db.js';
 import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
 import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
@@ -99,6 +101,7 @@ console.error = (...args) => { errorCounter++; origConsoleError.apply(console, a
 setInterval(() => cleanExpiredSessions(DANCER_TIMEOUT_MS), 30 * 1000);
 setInterval(() => cleanOldPlayHistory(90), 24 * 60 * 60 * 1000);
 setInterval(() => cleanOldApiUsage(180), 24 * 60 * 60 * 1000);
+setInterval(() => cleanOldAuditLog(30), 24 * 60 * 60 * 1000);
 
 function authenticate(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -123,6 +126,19 @@ function authenticate(req, res, next) {
 function requireDJ(req, res, next) {
   if (req.session.role !== 'dj') return res.status(403).json({ error: 'DJ access required' });
   next();
+}
+
+function requireMaster(req, res, next) {
+  if (!req.session.is_master) return res.status(403).json({ error: 'Master PIN required' });
+  next();
+}
+
+function writeAudit(req, action, details = null) {
+  try {
+    const name = req.session?.staff_name || 'Unknown';
+    const role = req.session?.staff_role || req.session?.role || 'dj';
+    createAuditEntry(name, role, action, details);
+  } catch {}
 }
 
 const DEFAULT_MASTER_PIN = '36669';
@@ -235,31 +251,48 @@ app.post('/api/auth/auto-login', (req, res) => {
   if (!isLocal) {
     return res.status(403).json({ error: 'Auto-login only available from localhost' });
   }
-  const token = createSession('dj');
-  return res.json({ token, role: 'dj' });
+  const token = createSession('dj', null, 'Auto', 0, 'dj');
+  return res.json({ token, role: 'dj', staffName: 'Auto' });
 });
 
 app.post('/api/auth/login', (req, res) => {
   const { role, pin } = req.body;
-  
+
   if (!role || !pin || pin.length !== 5) {
     return res.status(400).json({ error: 'Role and 5-digit PIN required' });
   }
-  
+
   if (role === 'dj') {
     const masterPin = getMasterPin();
-    const isMaster = pin === masterPin;
-    const djPinHash = getSetting('dj_pin');
-    if (!djPinHash && !isMaster) {
-      return res.status(400).json({ error: 'DJ PIN not set. Please set it in the app first.' });
+
+    // 1. Master PIN — always works, grants master-level access
+    if (pin === masterPin) {
+      const token = createSession('dj', null, 'Master', 1, 'master');
+      createAuditEntry('Master', 'master', 'login', 'Master PIN login');
+      return res.json({ token, role: 'dj', staffName: 'Master', staffRole: 'master', isMaster: true });
     }
-    if (!isMaster && !verifyPin(pin, djPinHash)) {
+
+    // 2. Named staff account (DJ or Manager)
+    const staffAccount = getStaffAccountByPin(pin);
+    if (staffAccount) {
+      const token = createSession('dj', null, staffAccount.name, 0, staffAccount.role);
+      createAuditEntry(staffAccount.name, staffAccount.role, 'login', `${staffAccount.role} login`);
+      return res.json({ token, role: 'dj', staffName: staffAccount.name, staffRole: staffAccount.role, isMaster: false });
+    }
+
+    // 3. Legacy single DJ PIN fallback (backward compat)
+    const djPinHash = getSetting('dj_pin');
+    if (!djPinHash) {
+      return res.status(400).json({ error: 'No staff accounts set up. Please set a DJ PIN or create staff accounts.' });
+    }
+    if (!verifyPin(pin, djPinHash)) {
       return res.status(401).json({ error: 'Incorrect PIN' });
     }
-    const token = createSession('dj');
-    return res.json({ token, role: 'dj' });
+    const token = createSession('dj', null, 'Staff', 0, 'dj');
+    createAuditEntry('Staff', 'dj', 'login', 'Legacy DJ PIN login');
+    return res.json({ token, role: 'dj', staffName: 'Staff', staffRole: 'dj', isMaster: false });
   }
-  
+
   if (role === 'dancer') {
     const dancer = getDancerByPin(pin);
     if (!dancer) {
@@ -268,17 +301,23 @@ app.post('/api/auth/login', (req, res) => {
     const token = createSession('dancer', dancer.id);
     return res.json({ token, role: 'dancer', dancerId: dancer.id, dancerName: dancer.name });
   }
-  
+
   return res.status(400).json({ error: 'Invalid role' });
 });
 
 app.post('/api/auth/logout', authenticate, (req, res) => {
+  writeAudit(req, 'logout');
   deleteSession(req.headers.authorization.replace('Bearer ', ''));
   res.json({ ok: true });
 });
 
 app.get('/api/auth/session', authenticate, (req, res) => {
-  const data = { role: req.session.role };
+  const data = {
+    role: req.session.role,
+    staffName: req.session.staff_name || null,
+    staffRole: req.session.staff_role || null,
+    isMaster: !!req.session.is_master,
+  };
   if (req.session.dancer_id) {
     const dancer = getDancer(req.session.dancer_id);
     if (dancer) {
@@ -317,24 +356,82 @@ app.post('/api/settings/dj-pin/init', (req, res) => {
   const existing = getSetting('dj_pin');
   if (existing) {
     if (pin === getMasterPin() || verifyPin(pin, existing)) {
-      const token = createSession('dj');
+      const token = createSession('dj', null, 'Staff', 0, 'dj');
       return res.json({ ok: true, token, role: 'dj' });
     }
     return res.status(400).json({ error: 'DJ PIN already set' });
   }
   setSetting('dj_pin', hashPin(pin));
-  const token = createSession('dj');
+  const token = createSession('dj', null, 'Staff', 0, 'dj');
   res.json({ ok: true, token, role: 'dj' });
 });
 
 app.post('/api/fleet/auto-auth', (req, res) => {
-  const token = createSession('dj');
+  const token = createSession('dj', null, 'Fleet', 0, 'dj');
   res.json({ ok: true, token, role: 'dj' });
 });
 
 app.get('/api/settings/has-dj-pin', (req, res) => {
   const pin = getSetting('dj_pin');
-  res.json({ hasPin: !!pin });
+  const staffCount = listStaffAccounts().length;
+  res.json({ hasPin: !!pin || staffCount > 0 });
+});
+
+// ─── Staff Accounts (master PIN required) ─────────────────────────────────────
+
+app.get('/api/staff', authenticate, requireDJ, requireMaster, (req, res) => {
+  res.json(listStaffAccounts());
+});
+
+app.post('/api/staff', authenticate, requireDJ, requireMaster, (req, res) => {
+  const { name, role, pin } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+  if (!['dj', 'manager'].includes(role)) return res.status(400).json({ error: 'Role must be dj or manager' });
+  if (!pin || pin.length !== 5) return res.status(400).json({ error: '5-digit PIN required' });
+  if (pin === getMasterPin()) return res.status(400).json({ error: 'Cannot use the master PIN' });
+  if (isStaffPinTaken(pin)) return res.status(400).json({ error: 'PIN already in use by another staff member' });
+  try {
+    const account = createStaffAccount(name.trim(), role, pin);
+    writeAudit(req, 'staff_created', `Created ${role} account: ${name.trim()}`);
+    res.json(account);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/staff/:id', authenticate, requireDJ, requireMaster, (req, res) => {
+  const accounts = listStaffAccounts();
+  const account = accounts.find(a => a.id === parseInt(req.params.id));
+  if (!account) return res.status(404).json({ error: 'Staff account not found' });
+  deleteStaffAccount(parseInt(req.params.id));
+  writeAudit(req, 'staff_deleted', `Deleted ${account.role} account: ${account.name}`);
+  res.json({ ok: true });
+});
+
+// ─── Audit Log (master PIN required) ──────────────────────────────────────────
+
+app.get('/api/audit/log', authenticate, requireDJ, requireMaster, (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const limit = parseInt(req.query.limit) || 500;
+  res.json(getAuditLog({ limit, days }));
+});
+
+app.get('/api/audit/log.csv', authenticate, requireDJ, requireMaster, (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const csv = getAuditLogCsv(days);
+  const filename = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+});
+
+// ─── Audit Event (any DJ session) ─────────────────────────────────────────────
+
+app.post('/api/audit/event', authenticate, requireDJ, (req, res) => {
+  const { action, details } = req.body;
+  if (!action) return res.status(400).json({ error: 'Action required' });
+  writeAudit(req, action, details || null);
+  res.json({ ok: true });
 });
 
 app.get('/api/config/defaults', (req, res) => {

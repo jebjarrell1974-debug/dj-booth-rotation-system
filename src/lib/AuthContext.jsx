@@ -6,6 +6,9 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
+  const [staffName, setStaffName] = useState(null);
+  const [staffRole, setStaffRole] = useState(null);
+  const [isMaster, setIsMaster] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
@@ -25,8 +28,11 @@ export const AuthProvider = ({ children }) => {
           if (res.ok) {
             const data = await res.json();
             setSessionInfo(data);
-            setUser({ name: 'DJ' });
+            setUser({ name: data.staffName || 'DJ' });
             setRole('dj');
+            setStaffName(data.staffName || null);
+            setStaffRole(data.staffRole || null);
+            setIsMaster(!!data.isMaster);
             setIsAuthenticated(true);
             setIsLoadingAuth(false);
             return;
@@ -39,13 +45,19 @@ export const AuthProvider = ({ children }) => {
     }
     try {
       const data = await auth.checkSession();
-      setUser({ name: data.dancerName || 'DJ', dancerId: data.dancerId });
+      setUser({ name: data.dancerName || data.staffName || 'DJ', dancerId: data.dancerId });
       setRole(data.role);
+      setStaffName(data.staffName || null);
+      setStaffRole(data.staffRole || null);
+      setIsMaster(!!data.isMaster);
       setIsAuthenticated(true);
     } catch {
       clearToken();
       setUser(null);
       setRole(null);
+      setStaffName(null);
+      setStaffRole(null);
+      setIsMaster(false);
       setIsAuthenticated(false);
     }
     setIsLoadingAuth(false);
@@ -59,6 +71,9 @@ export const AuthProvider = ({ children }) => {
     const handler = () => {
       setUser(null);
       setRole(null);
+      setStaffName(null);
+      setStaffRole(null);
+      setIsMaster(false);
       setIsAuthenticated(false);
     };
     window.addEventListener('djbooth-session-expired', handler);
@@ -88,8 +103,11 @@ export const AuthProvider = ({ children }) => {
     }
 
     setSessionInfo(data);
-    setUser({ name: data.dancerName || 'DJ', dancerId: data.dancerId });
+    setUser({ name: data.dancerName || data.staffName || 'DJ', dancerId: data.dancerId });
     setRole(data.role);
+    setStaffName(data.staffName || null);
+    setStaffRole(data.staffRole || null);
+    setIsMaster(!!data.isMaster);
     setIsAuthenticated(true);
     return data;
   }, [role, isAuthenticated]);
@@ -97,8 +115,11 @@ export const AuthProvider = ({ children }) => {
   const initDjPin = useCallback(async (pin) => {
     const data = await auth.initDjPin(pin);
     setSessionInfo(data);
-    setUser({ name: 'DJ' });
+    setUser({ name: 'Staff' });
     setRole('dj');
+    setStaffName('Staff');
+    setStaffRole('dj');
+    setIsMaster(false);
     setIsAuthenticated(true);
     return data;
   }, []);
@@ -112,6 +133,9 @@ export const AuthProvider = ({ children }) => {
     clearToken();
     setUser(null);
     setRole(null);
+    setStaffName(null);
+    setStaffRole(null);
+    setIsMaster(false);
     setIsAuthenticated(false);
   }, [dancerSession]);
 
@@ -125,6 +149,9 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{ 
       user, 
       role,
+      staffName,
+      staffRole,
+      isMaster,
       isAuthenticated, 
       isLoadingAuth,
       isLoadingPublicSettings,

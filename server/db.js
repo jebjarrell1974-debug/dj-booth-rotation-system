@@ -140,6 +140,26 @@ db.exec(`
     reason TEXT,
     occurred_at TEXT DEFAULT (datetime('now', 'localtime'))
   );
+
+  CREATE TABLE IF NOT EXISTS staff_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'dj',
+    pin_hash TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_name TEXT NOT NULL DEFAULT 'Unknown',
+    staff_role TEXT DEFAULT 'dj',
+    action TEXT NOT NULL,
+    details TEXT,
+    occurred_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_audit_log_occurred_at ON audit_log(occurred_at);
+  CREATE INDEX IF NOT EXISTS idx_audit_log_staff_name ON audit_log(staff_name);
 `);
 
 try {
@@ -182,6 +202,10 @@ try {
 } catch {
   db.exec("ALTER TABLE voiceovers ADD COLUMN day_of_week INTEGER");
 }
+
+try { db.exec("ALTER TABLE sessions ADD COLUMN staff_name TEXT DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE sessions ADD COLUMN is_master INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE sessions ADD COLUMN staff_role TEXT DEFAULT NULL"); } catch {}
 
 function getVoiceoverDir() {
   if (process.env.VOICEOVER_PATH) {
@@ -385,11 +409,11 @@ export function generateToken() {
   return token;
 }
 
-export function createSession(role, dancerId = null) {
+export function createSession(role, dancerId = null, staffName = null, isMaster = 0, staffRole = null) {
   const token = generateToken();
   db.prepare(
-    'INSERT INTO sessions (token, role, dancer_id, last_seen) VALUES (?, ?, ?, ?)'
-  ).run(token, role, dancerId, Date.now());
+    'INSERT INTO sessions (token, role, dancer_id, last_seen, staff_name, is_master, staff_role) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(token, role, dancerId, Date.now(), staffName, isMaster ? 1 : 0, staffRole);
   return token;
 }
 
@@ -1018,6 +1042,74 @@ export function getVoiceoverFilePath(cacheKey) {
   const filePath = join(VOICEOVER_DIR, row.file_name);
   if (!existsSync(filePath)) return null;
   return filePath;
+}
+
+// ─── Staff Accounts ───────────────────────────────────────────────────────────
+
+export function createStaffAccount(name, role, pin) {
+  const pinHash = hashPin(pin);
+  db.prepare(
+    'INSERT INTO staff_accounts (name, role, pin_hash) VALUES (?, ?, ?)'
+  ).run(name, role, pinHash);
+  return db.prepare('SELECT id, name, role, created_at FROM staff_accounts WHERE rowid = last_insert_rowid()').get();
+}
+
+export function listStaffAccounts() {
+  return db.prepare('SELECT id, name, role, created_at FROM staff_accounts ORDER BY created_at ASC').all();
+}
+
+export function deleteStaffAccount(id) {
+  db.prepare('DELETE FROM staff_accounts WHERE id = ?').run(id);
+}
+
+export function getStaffAccountByPin(pin) {
+  const rows = db.prepare('SELECT * FROM staff_accounts').all();
+  for (const row of rows) {
+    if (verifyPin(pin, row.pin_hash)) return { id: row.id, name: row.name, role: row.role };
+  }
+  return null;
+}
+
+export function isStaffPinTaken(pin) {
+  const rows = db.prepare('SELECT pin_hash FROM staff_accounts').all();
+  return rows.some(r => verifyPin(pin, r.pin_hash));
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+export function createAuditEntry(staffName, staffRole, action, details = null) {
+  db.prepare(
+    'INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)'
+  ).run(staffName || 'Unknown', staffRole || 'dj', action, details || null);
+}
+
+export function getAuditLog({ limit = 500, offset = 0, days = 30 } = {}) {
+  return db.prepare(
+    `SELECT * FROM audit_log
+     WHERE occurred_at >= datetime('now', 'localtime', ?)
+     ORDER BY occurred_at DESC
+     LIMIT ? OFFSET ?`
+  ).all(`-${days} days`, limit, offset);
+}
+
+export function getAuditLogCsv(days = 30) {
+  const rows = db.prepare(
+    `SELECT occurred_at, staff_name, staff_role, action, details
+     FROM audit_log
+     WHERE occurred_at >= datetime('now', 'localtime', ?)
+     ORDER BY occurred_at DESC`
+  ).all(`-${days} days`);
+  const header = 'Date/Time,Staff Name,Role,Action,Details\n';
+  const lines = rows.map(r =>
+    [r.occurred_at, r.staff_name, r.staff_role, r.action, r.details || '']
+      .map(v => `"${String(v).replace(/"/g, '""')}"`)
+      .join(',')
+  );
+  return header + lines.join('\n');
+}
+
+export function cleanOldAuditLog(daysToKeep = 30) {
+  db.prepare(`DELETE FROM audit_log WHERE occurred_at < datetime('now', 'localtime', ?)`).run(`-${daysToKeep} days`);
 }
 
 export default db;

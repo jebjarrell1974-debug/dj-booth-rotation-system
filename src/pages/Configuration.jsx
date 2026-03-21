@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, RotateCw, Trash2, MonitorOff, Monitor, BarChart3 } from 'lucide-react';
+import { Settings, Key, Mic, ArrowLeft, Download, Check, Lock, Building2, Clock, Server, FolderOpen, Upload, Music, Wifi, RefreshCw, Plus, X, Zap, Cloud, CloudUpload, CloudDownload, Ban, RotateCcw, RotateCw, Trash2, MonitorOff, Monitor, BarChart3, Users, ClipboardList, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
@@ -68,6 +68,15 @@ export default function Configuration() {
   const [apiDeviceId, setApiDeviceId] = useState('');
   const [displayRotation, setDisplayRotation] = useState('normal');
   const [displayRotationSaving, setDisplayRotationSaving] = useState(false);
+  const [staffAccounts, setStaffAccounts] = useState([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState('dj');
+  const [newStaffPin, setNewStaffPin] = useState('');
+  const [staffSaving, setStaffSaving] = useState(false);
+  const [auditLog, setAuditLog] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditDays, setAuditDays] = useState('30');
 
   useEffect(() => {
     loadApiConfig().then(cfg => {
@@ -126,6 +135,26 @@ export default function Configuration() {
       .catch(() => {});
   }, [isUnlocked]);
 
+  const loadStaffAccounts = useCallback(async () => {
+    setStaffLoading(true);
+    try {
+      const token = localStorage.getItem('djbooth_token');
+      const res = await fetch('/api/staff', { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setStaffAccounts(await res.json());
+    } catch {} finally { setStaffLoading(false); }
+  }, []);
+
+  const loadAuditLog = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const token = localStorage.getItem('djbooth_token');
+      const res = await fetch(`/api/audit/log?days=${auditDays}&limit=200`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setAuditLog(await res.json());
+    } catch {} finally { setAuditLoading(false); }
+  }, [auditDays]);
+
   const loadApiCosts = useCallback(async () => {
     setApiCostsLoading(true);
     try {
@@ -147,6 +176,14 @@ export default function Configuration() {
   useEffect(() => {
     if (isUnlocked) loadApiCosts();
   }, [isUnlocked, loadApiCosts]);
+
+  useEffect(() => {
+    if (isUnlocked) loadStaffAccounts();
+  }, [isUnlocked, loadStaffAccounts]);
+
+  useEffect(() => {
+    if (isUnlocked) loadAuditLog();
+  }, [isUnlocked, auditDays, loadAuditLog]);
 
   useEffect(() => {
     if (!configReady) return;
@@ -1031,6 +1068,113 @@ export default function Configuration() {
           </div>
         </div>
 
+        {/* ── Staff Accounts ────────────────────────────────────────── */}
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-1">
+            <Users className="w-5 h-5 text-[#00d4ff]" />
+            <h2 className="text-lg font-semibold">Staff Accounts</h2>
+          </div>
+          <p className="text-sm text-gray-400 mb-4">
+            Create named DJ and Manager accounts. Each person logs in with their own PIN — their name is recorded in the activity log.
+          </p>
+
+          {/* Add new staff form */}
+          <div className="bg-[#08081a] rounded-lg border border-[#1e293b] p-4 mb-4">
+            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-3">Add Staff Member</p>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <Input
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  placeholder="Name (e.g. Alex)"
+                  className="bg-[#0d0d1f] border-[#1e293b] flex-1"
+                />
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value)}
+                  className="bg-[#0d0d1f] border border-[#1e293b] text-white rounded-md px-3 text-sm"
+                >
+                  <option value="dj">DJ</option>
+                  <option value="manager">Manager</option>
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={newStaffPin}
+                  onChange={(e) => setNewStaffPin(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                  placeholder="5-digit PIN"
+                  inputMode="numeric"
+                  type="password"
+                  className="bg-[#0d0d1f] border-[#1e293b] font-mono tracking-widest flex-1"
+                />
+                <Button
+                  disabled={!newStaffName.trim() || newStaffPin.length !== 5 || staffSaving}
+                  onClick={async () => {
+                    setStaffSaving(true);
+                    try {
+                      const token = localStorage.getItem('djbooth_token');
+                      const res = await fetch('/api/staff', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ name: newStaffName.trim(), role: newStaffRole, pin: newStaffPin }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) { toast.error(data.error || 'Failed to add staff'); return; }
+                      toast.success(`${newStaffName.trim()} added`);
+                      setNewStaffName('');
+                      setNewStaffPin('');
+                      setNewStaffRole('dj');
+                      loadStaffAccounts();
+                    } catch { toast.error('Connection failed'); }
+                    finally { setStaffSaving(false); }
+                  }}
+                  className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Staff list */}
+          {staffLoading ? (
+            <p className="text-xs text-gray-500 text-center py-3">Loading...</p>
+          ) : staffAccounts.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-3">No staff accounts yet. Add one above.</p>
+          ) : (
+            <div className="space-y-2">
+              {staffAccounts.map((account) => (
+                <div key={account.id} className="flex items-center gap-3 bg-[#08081a] rounded-lg px-4 py-2.5 border border-[#1e293b]">
+                  <ShieldCheck className={`w-4 h-4 flex-shrink-0 ${account.role === 'manager' ? 'text-yellow-400' : 'text-[#00d4ff]'}`} />
+                  <span className="text-sm text-white flex-1">{account.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    account.role === 'manager'
+                      ? 'bg-yellow-900/40 text-yellow-400'
+                      : 'bg-[#00d4ff]/10 text-[#00d4ff]'
+                  }`}>
+                    {account.role}
+                  </span>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Delete ${account.name}?`)) return;
+                      const token = localStorage.getItem('djbooth_token');
+                      await fetch(`/api/staff/${account.id}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      toast.success(`${account.name} removed`);
+                      loadStaffAccounts();
+                    }}
+                    className="text-gray-600 hover:text-red-400 transition-colors ml-2"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <Wifi className="w-5 h-5 text-[#00d4ff]" />
@@ -1561,6 +1705,69 @@ export default function Configuration() {
             <p className="text-xs text-gray-500 text-center py-3">
               {apiCostsLoading ? 'Loading cost data...' : 'No cost data available'}
             </p>
+          )}
+        </div>
+
+        {/* ── Activity Log ──────────────────────────────────────────── */}
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-1">
+            <ClipboardList className="w-5 h-5 text-[#00d4ff]" />
+            <h2 className="text-lg font-semibold flex-1">Activity Log</h2>
+            <select
+              value={auditDays}
+              onChange={(e) => setAuditDays(e.target.value)}
+              className="bg-[#08081a] border border-[#1e293b] text-white rounded-md px-2 py-1 text-xs"
+            >
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+            <button
+              onClick={loadAuditLog}
+              disabled={auditLoading}
+              className="text-gray-400 hover:text-[#00d4ff] transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${auditLoading ? 'animate-spin' : ''}`} />
+            </button>
+            <a
+              href={`/api/audit/log.csv?days=${auditDays}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-gray-400 hover:text-[#00d4ff] transition-colors"
+              title="Download CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </a>
+          </div>
+          <p className="text-sm text-gray-400 mb-4">
+            Who logged in, when, and what actions they took. Kept for {auditDays} days.
+          </p>
+
+          {auditLoading ? (
+            <p className="text-xs text-gray-500 text-center py-4">Loading...</p>
+          ) : auditLog.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-4">No activity recorded yet.</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-y-auto">
+              {auditLog.map((entry) => {
+                const ts = new Date(entry.created_at);
+                const timeStr = ts.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                const roleBadgeColor =
+                  entry.staff_role === 'master' ? 'text-yellow-400' :
+                  entry.staff_role === 'manager' ? 'text-orange-400' :
+                  'text-[#00d4ff]';
+                return (
+                  <div key={entry.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#08081a] border border-[#1e293b]/50">
+                    <span className="text-xs text-gray-500 font-mono w-28 flex-shrink-0">{timeStr}</span>
+                    <span className={`text-xs font-semibold w-20 flex-shrink-0 ${roleBadgeColor}`}>
+                      {entry.staff_name || '—'}
+                    </span>
+                    <span className="text-xs text-gray-300 flex-1 truncate">
+                      {entry.action}{entry.details ? ` — ${entry.details}` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
