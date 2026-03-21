@@ -128,14 +128,10 @@ export default function RotationDisplay() {
   const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
 
   const nextCount = nextDancers.length;
-  const nextFontSize = (i) => {
-    if (nextCount <= 1) return i === 0 ? '5.5rem' : '3.5rem';
-    if (nextCount === 2) return i === 0 ? '4.5rem' : '3rem';
-    if (nextCount === 3) return i === 0 ? '3.75rem' : i === 1 ? '2.75rem' : '2rem';
-    if (nextCount === 4) return i === 0 ? '3.25rem' : i === 1 ? '2.5rem' : '1.875rem';
-    return i === 0 ? '2.75rem' : i === 1 ? '2.25rem' : '1.75rem';
-  };
-  const nextOpacity = (i) => i === 0 ? 1 : i === 1 ? 0.6 : i === 2 ? 0.4 : 0.25;
+  const uniformFontSize =
+    nextCount <= 2 ? '4rem' :
+    nextCount <= 4 ? '3rem' :
+    nextCount <= 6 ? '2.4rem' : '2rem';
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
@@ -145,11 +141,11 @@ export default function RotationDisplay() {
       <div className="flex flex-col items-center px-8 pt-8 pb-5 border-b border-[#1e293b]">
         {isBreak ? (
           <>
-            <p className="stage-label text-2xl font-bold tracking-widest uppercase mb-4" style={LABEL_STYLE}>
+            <p className="stage-label text-lg font-bold tracking-widest uppercase mb-2" style={LABEL_STYLE}>
               Break
             </p>
             {breakSongTotal > 0 && (
-              <div className="flex items-center gap-6 mb-4">
+              <div className="flex items-center gap-4 mb-2">
                 {Array.from({ length: breakSongTotal }).map((_, i) => {
                   const isDone = breakSongIndex !== null && i < breakSongIndex;
                   const isCurrent = breakSongIndex !== null && i === breakSongIndex;
@@ -158,8 +154,8 @@ export default function RotationDisplay() {
                       key={i}
                       className={isCurrent ? 'break-dot-active' : ''}
                       style={{
-                        width: 40,
-                        height: 40,
+                        width: 28,
+                        height: 28,
                         borderRadius: '50%',
                         background: isCurrent ? '#00d4ff' : isDone ? 'rgba(0,212,255,0.3)' : 'transparent',
                         border: `3px solid ${isCurrent ? '#00d4ff' : isDone ? 'rgba(0,212,255,0.45)' : 'rgba(255,255,255,0.18)'}`,
@@ -173,7 +169,7 @@ export default function RotationDisplay() {
             <div
               ref={countdownRef}
               className="font-black font-mono tabular-nums leading-none"
-              style={{ fontSize: '7rem', color: '#00d4ff', textShadow: '0 0 30px rgba(0,212,255,0.45)', minHeight: '1em' }}
+              style={{ fontSize: '4.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
             />
           </>
         ) : (
@@ -204,14 +200,14 @@ export default function RotationDisplay() {
           </p>
         )}
         <div className="flex flex-col gap-1 flex-1">
-          {nextDancers.map((dancer, i) => (
+          {nextDancers.map((dancer) => (
             <div key={dancer.id} className="text-center">
               <h3
                 className="next-name font-bold text-white uppercase tracking-wider"
                 style={{
-                  fontSize: nextFontSize(i),
-                  opacity: nextOpacity(i),
-                  lineHeight: 1.05,
+                  fontSize: uniformFontSize,
+                  opacity: 1,
+                  lineHeight: 1.1,
                 }}
               >
                 {dancer.name}

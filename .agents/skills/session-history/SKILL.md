@@ -119,7 +119,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **labwc autostart watcher loop** (Pi-side only, not code): neonaidj001 autostart file was missing the watcher loop. Rewrote `~/.config/labwc/autostart` with full block (pkill swayidle/swaylock + wlr-randr + Chromium launch + watcher loop). **neonaidj003 needs same fix before Monday.**
 - **swayidle/swaylock disabled** (Pi-side, neonaidj001): OS-level screen locker was killing audio when screen timed out. Killed and permanently disabled via autostart. **neonaidj003 needs same fix.**
 - **Kiosk lock overlay** (`b90d955`): CRITICAL FIX — lock screen now shows as an overlay instead of logging out and navigating away. Music, rotation, and voiceovers continue playing behind the locked screen. Unlock by entering 5-digit DJ PIN. No session destruction on lock.
-- **Homebase NOT yet updated**: All Session 48 fixes are on GitHub but homebase hasn't pulled them yet. Use `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` on any Pi to bypass homebase and pull direct from GitHub.
+- **Homebase NOT yet updated for Session 48**: Use `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` on homebase to pull direct from GitHub. **User commits to updating homebase every night** — venue Pis reboot at 8:30 AM daily and pull from homebase, so nightly homebase update ensures all Pis get latest code every morning automatically.
 
 ### Update command — bypass homebase, go direct to GitHub
 ```
