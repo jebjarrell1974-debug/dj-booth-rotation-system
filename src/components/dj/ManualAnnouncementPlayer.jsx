@@ -431,31 +431,6 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
           </Button>
         </div>
 
-        {(pendingRequests.length > 0 || completedRequests.length > 0) && (
-          <div className="mt-4 pt-4 border-t border-[#1e293b]">
-            <h4 className="text-xs text-gray-400 uppercase tracking-wider mb-2">Your Requests</h4>
-            <div className="space-y-2">
-              {pendingRequests.map(r => (
-                <div key={r.id} className="flex items-center gap-2 bg-[#0d0d1f] rounded-lg p-2 border border-[#1e293b]">
-                  <Clock className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-white truncate">{r.event_name}</p>
-                    <p className="text-[10px] text-yellow-400/70">Pending — waiting for Voice Studio</p>
-                  </div>
-                </div>
-              ))}
-              {completedRequests.map(r => (
-                <div key={r.id} className="flex items-center gap-2 bg-[#0d0d1f] rounded-lg p-2 border border-[#1e293b]">
-                  <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-white truncate">{r.event_name}</p>
-                    <p className="text-[10px] text-green-400/70">Recorded — promo is ready</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

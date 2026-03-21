@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, Music2, Users, Layers, Mic, SlidersHorizontal, Settings, Radio, Monitor, Smartphone, FolderOpen, Zap, Shield, HelpCircle, Lock } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Music2, Users, Layers, Mic, SlidersHorizontal, Radio, Monitor, Smartphone, Zap, Lock } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const sections = [
@@ -171,64 +171,6 @@ const sections = [
     ]
   },
   {
-    id: 'settings',
-    icon: Settings,
-    title: 'Settings (Gear Icon)',
-    content: [
-      {
-        heading: 'Where to Find It',
-        text: 'Tap the gear icon in the top-right corner of the DJ Booth. This is separate from Configuration — Settings stores API keys for AI services, while Configuration handles club info, music paths, and system PINs.'
-      },
-      {
-        heading: 'ElevenLabs API Key',
-        text: 'Required for voice announcements. Log in to elevenlabs.io, go to your profile, copy your API key, and paste it here. The key is saved locally on the device — you only need to enter it once.'
-      },
-      {
-        heading: 'OpenAI API Key',
-        text: 'Required for generating announcement scripts. Log in to platform.openai.com, create an API key, and paste it here. If you prefer not to use OpenAI, the Configuration page has a "Script Model" setting with a built-in alternative that doesn\'t require a key.'
-      },
-      {
-        heading: 'ElevenLabs Voice ID',
-        text: 'If you have a custom cloned voice in ElevenLabs, paste its Voice ID here to use it for all announcements. Leave blank to use the default voice.'
-      },
-      {
-        heading: 'Auto-Save',
-        text: 'All settings save automatically as you type. There is no save button — just enter or paste your values and they\'re stored immediately.'
-      }
-    ]
-  },
-  {
-    id: 'configuration',
-    icon: Shield,
-    title: 'Configuration Page',
-    content: [
-      {
-        heading: 'Accessing Configuration',
-        text: 'Tap the slider icon in the top-right of the DJ Booth header. You\'ll be prompted for the Master PIN (different from the DJ PIN). The Master PIN protects system-level settings. If you don\'t know it, ask whoever set up the system.'
-      },
-      {
-        heading: 'Club Name and Hours',
-        text: 'Set your club name, open hour, and close hour. The AI uses these for time-aware announcements — it knows whether it\'s early in the night or peak hours and adjusts energy accordingly. Get these right on first setup and you rarely need to change them.'
-      },
-      {
-        heading: 'Music Path',
-        text: 'Set the full folder path to where your music files live on the device. On a Raspberry Pi this is typically something like "/home/pi/Music" or "/home/user/Music." Once set, the system scans this folder and all subfolders automatically. Tap "Rescan Music" any time you add new files.'
-      },
-      {
-        heading: 'Changing PINs',
-        text: 'Change the DJ PIN (what the DJ enters to log in) and the Master PIN (what\'s needed for Configuration) from this page. Keep the Master PIN private — share the DJ PIN with your DJs. Each entertainer has their own individual PIN set from the Entertainers tab.'
-      },
-      {
-        heading: 'Script Model',
-        text: 'Choose which AI generates announcement scripts. "Auto" uses the built-in model and requires no OpenAI key. Other options use OpenAI models directly for potentially more varied scripts. Start with Auto and switch if you want to experiment.'
-      },
-      {
-        heading: 'Voiceover Cache Management',
-        text: 'The "Clear All Voiceovers" option wipes all pre-generated announcements and forces fresh ones to be created. Use this if you\'ve changed your voice settings and want everything regenerated, or if announcements sound stale.'
-      }
-    ]
-  },
-  {
     id: 'rotation-display',
     icon: Radio,
     title: 'Rotation Display (HDMI Screen)',
@@ -340,37 +282,6 @@ const sections = [
       }
     ]
   },
-  {
-    id: 'music-tips',
-    icon: FolderOpen,
-    title: 'Music Library Tips',
-    content: [
-      {
-        heading: 'Recommended Folder Structure',
-        text: 'Organize music into clearly named genre folders inside your main music directory: Hip-Hop/, R&B/, Pop/, Top-40/, Latin/, etc. Each folder name becomes a genre toggle in the Options tab. Keep names short and clear — they show up directly in the UI.'
-      },
-      {
-        heading: 'The FEATURE Folder',
-        text: 'The FEATURE folder is special — songs in it play to full length without the 3-minute auto-advance. Use it for guest performers, live sets, or extended mixes. Name the folder exactly "FEATURE" (all caps).'
-      },
-      {
-        heading: 'Supported File Formats',
-        text: 'The system supports MP3, M4A, WAV, OGG, FLAC, AAC, WMA, and WEBM. MP3 and M4A are the most reliable and recommended formats for best compatibility.'
-      },
-      {
-        heading: 'Song Duration Cap',
-        text: 'Normal songs are capped at approximately 3 minutes to keep the rotation moving and transition smoothly. The system crossfades to the next track automatically at that point. Songs in the FEATURE folder are the exception and play to full length.'
-      },
-      {
-        heading: 'Song Cooldown',
-        text: 'The system tracks every song played and enforces a 6-hour cooldown — no song repeats within a 6-hour window. This applies across entertainer sets and break songs alike, keeping the music fresh throughout even a long night.'
-      },
-      {
-        heading: 'Break Song Auto-Fill',
-        text: 'When you press "Save All," any empty break slots are filled automatically using songs from the active genres. The system avoids repeating songs already assigned to entertainers or other break slots in the same rotation. You can also drag specific songs into break slots to override the auto-fill — great if you have a go-to track you always want between sets.'
-      }
-    ]
-  }
 ];
 
 function Section({ section, isOpen, onToggle }) {
