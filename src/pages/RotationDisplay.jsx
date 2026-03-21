@@ -115,7 +115,15 @@ export default function RotationDisplay() {
   const currentDancerId = validRotation[currentIndex];
   const currentDancer = dancers.find(d => d.id === currentDancerId);
 
-  const maxNext = Math.min(10, validRotation.length - 1);
+  const isBreak = displayData?.currentSongNumber === 0 && displayData?.isRotationActive;
+  const breakSongIndex = displayData?.breakSongIndex ?? null;
+  const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
+
+  // During break: show ALL dancers (including the one who just performed, at the end)
+  // During active: show all except current (they're shown at top)
+  const maxNext = isBreak
+    ? Math.min(10, validRotation.length)
+    : Math.min(10, validRotation.length - 1);
   const nextDancers = [];
   for (let i = 1; i <= maxNext; i++) {
     const nextIndex = (currentIndex + i) % validRotation.length;
@@ -123,15 +131,11 @@ export default function RotationDisplay() {
     if (dancer) nextDancers.push(dancer);
   }
 
-  const isBreak = displayData?.currentSongNumber === 0 && displayData?.isRotationActive;
-  const breakSongIndex = displayData?.breakSongIndex ?? null;
-  const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
-
   const nextCount = nextDancers.length;
   const uniformFontSize =
-    nextCount <= 2 ? '4rem' :
-    nextCount <= 4 ? '3rem' :
-    nextCount <= 6 ? '2.4rem' : '2rem';
+    nextCount <= 2 ? '5.5rem' :
+    nextCount <= 4 ? '4.5rem' :
+    nextCount <= 6 ? '3.5rem' : '2.75rem';
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
