@@ -133,9 +133,9 @@ export default function RotationDisplay() {
 
   const nextCount = nextDancers.length;
   const uniformFontSize =
-    nextCount <= 2 ? '5.5rem' :
-    nextCount <= 4 ? '4.5rem' :
-    nextCount <= 6 ? '3.5rem' : '2.75rem';
+    nextCount <= 2 ? '6rem' :
+    nextCount <= 4 ? '5rem' :
+    nextCount <= 6 ? '4rem' : '3.25rem';
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
