@@ -132,10 +132,11 @@ export default function RotationDisplay() {
   }
 
   const nextCount = nextDancers.length;
-  const uniformFontSize =
-    nextCount <= 2 ? '6rem' :
-    nextCount <= 4 ? '5rem' :
-    nextCount <= 6 ? '4rem' : '3.25rem';
+  // Dynamically fill available space — cap at 6.5vh (slightly below the top name's ~7vh)
+  const availableVh = 58;
+  const rawVh = nextCount > 0 ? availableVh / (nextCount * 1.15) : 6.5;
+  const clampedVh = Math.min(rawVh, 6.5);
+  const uniformFontSize = `${clampedVh.toFixed(1)}vh`;
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
