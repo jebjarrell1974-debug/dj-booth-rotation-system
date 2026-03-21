@@ -19,6 +19,10 @@ const STYLES = `
     0%, 100% { opacity: 1; box-shadow: 0 0 14px rgba(0,212,255,0.8), 0 0 28px rgba(0,212,255,0.4); }
     50%      { opacity: 0.75; box-shadow: 0 0 8px rgba(0,212,255,0.5), 0 0 16px rgba(0,212,255,0.2); }
   }
+  @keyframes scrollList {
+    0%   { transform: translateY(0); }
+    100% { transform: translateY(-50%); }
+  }
   .current-name {
     animation: nameEntrance 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards,
                softPulse 3.5s ease-in-out 0.6s infinite;
@@ -132,11 +136,10 @@ export default function RotationDisplay() {
   }
 
   const nextCount = nextDancers.length;
-  // Dynamically fill available space — cap at 6.5vh (slightly below the top name's ~7vh)
-  const availableVh = 58;
-  const rawVh = nextCount > 0 ? availableVh / (nextCount * 1.15) : 6.5;
-  const clampedVh = Math.min(rawVh, 6.5);
-  const uniformFontSize = `${clampedVh.toFixed(1)}vh`;
+  const FIXED_FONT = '5.5rem';
+  // Scroll if there are more than 7 names — duplicate list for seamless loop
+  const needsScroll = nextCount > 7;
+  const scrollDuration = nextCount * 3; // 3s per name
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
@@ -197,28 +200,30 @@ export default function RotationDisplay() {
         )}
       </div>
 
-      {/* BOTTOM: Full rotation list — starts immediately after top section */}
+      {/* BOTTOM: Full rotation list — fixed font size, scrolls if needed */}
       <div className="flex-1 flex flex-col overflow-hidden px-8 pt-5 pb-6">
         {nextDancers.length > 0 && (
           <p className="stage-label text-xl font-bold tracking-widest uppercase text-center mb-3" style={LABEL_STYLE}>
             {isBreak ? 'Up Next' : 'Next On Stage'}
           </p>
         )}
-        <div className="flex flex-col gap-1 flex-1">
-          {nextDancers.map((dancer) => (
-            <div key={dancer.id} className="text-center">
-              <h3
-                className="next-name font-bold text-white uppercase tracking-wider"
-                style={{
-                  fontSize: uniformFontSize,
-                  opacity: 1,
-                  lineHeight: 1.1,
-                }}
-              >
-                {dancer.name}
-              </h3>
-            </div>
-          ))}
+        <div className="flex-1 overflow-hidden">
+          <div
+            style={needsScroll ? {
+              animation: `scrollList ${scrollDuration}s linear infinite`,
+            } : {}}
+          >
+            {(needsScroll ? [...nextDancers, ...nextDancers] : nextDancers).map((dancer, i) => (
+              <div key={`${dancer.id}-${i}`} className="text-center">
+                <h3
+                  className="next-name font-bold text-white uppercase tracking-wider"
+                  style={{ fontSize: FIXED_FONT, lineHeight: 1.15 }}
+                >
+                  {dancer.name}
+                </h3>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
