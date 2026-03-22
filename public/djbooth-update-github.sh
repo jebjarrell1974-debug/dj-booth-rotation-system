@@ -229,8 +229,11 @@ mkdir -p "$LABWC_DIR"
 cat > "$LABWC_DIR/rc.xml" << 'RCEOF'
 <?xml version="1.0"?>
 <labwc_config>
+  <touch deviceName="ILITEK ILITEK-TP" mapToOutput="HDMI-A-1" mouseEmulation="no"/>
   <windowRules>
-    <windowRule identifier="neon-dj-display" serverDecoration="no"/>
+    <windowRule identifier="neon-dj-display" serverDecoration="no">
+      <action name="MoveToOutput" output="HDMI-A-1"/>
+    </windowRule>
     <windowRule identifier="RotationChromium">
       <action name="MoveToOutput" output="HDMI-A-2"/>
     </windowRule>
@@ -425,7 +428,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
       echo "UPDATE SUCCESSFUL — relaunching browsers..."
-      bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+      bash -c "chromium --kiosk --class=neon-dj-display --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
       disown
       sleep 2
       rm -rf /tmp/chromium-rotation
