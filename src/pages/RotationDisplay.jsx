@@ -126,8 +126,8 @@ export default function RotationDisplay() {
   // During break: show ALL dancers (including the one who just performed, at the end)
   // During active: show all except current (they're shown at top)
   const maxNext = isBreak
-    ? Math.min(10, validRotation.length)
-    : Math.min(10, validRotation.length - 1);
+    ? validRotation.length
+    : validRotation.length - 1;
   const nextDancers = [];
   for (let i = 1; i <= maxNext; i++) {
     const nextIndex = (currentIndex + i) % validRotation.length;
