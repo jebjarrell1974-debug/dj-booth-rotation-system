@@ -6,6 +6,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import BootScreen from '@/components/BootScreen';
+import VirtualKeyboard from '@/components/VirtualKeyboard';
 import Landing from '@/pages/Landing';
 import DJBooth from '@/pages/DJBooth';
 import DancerView from '@/pages/DancerView';
@@ -201,10 +202,14 @@ function AppRoutes() {
       .catch(() => setIsHomebase(false));
   }, []);
 
+  const location = useLocation();
+  const isRotationDisplay = location.pathname === '/RotationDisplay';
+
   return (
     <>
       <KioskLockManager />
       <PersistentDJBooth />
+      {!isRotationDisplay && <VirtualKeyboard />}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/Landing" element={<Landing />} />
