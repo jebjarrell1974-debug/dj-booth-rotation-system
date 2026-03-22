@@ -1719,6 +1719,7 @@ export default function DJBooth() {
   }, [getDancerTracks, playTrack, playFallbackTrack, tracks, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, updateStageState]);
 
   const lastRotationToggleRef = useRef(0);
+  const lastAnnouncementsToggleRef = useRef(0);
   const startRotation = useCallback(async () => {
     const now = Date.now();
     if (now - lastRotationToggleRef.current < 2000) return;
@@ -3335,7 +3336,12 @@ export default function DJBooth() {
                     size="sm"
                     variant="ghost"
                     className={`h-8 px-2 ${liveBoothState?.announcementsEnabled ? 'text-[#00d4ff]' : 'text-gray-500'}`}
-                    onClick={() => boothApi.sendCommand('toggleAnnouncements')}
+                    onClick={() => {
+                      const now = Date.now();
+                      if (now - lastAnnouncementsToggleRef.current < 1000) return;
+                      lastAnnouncementsToggleRef.current = now;
+                      boothApi.sendCommand('toggleAnnouncements');
+                    }}
                   >
                     {liveBoothState?.announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                   </Button>

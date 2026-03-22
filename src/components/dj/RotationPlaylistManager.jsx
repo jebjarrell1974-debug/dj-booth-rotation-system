@@ -688,7 +688,11 @@ export default function RotationPlaylistManager({
     onUpdateActiveBreakSongs(breakKey, newFullSongs);
   }, [activeBreakInfo, onUpdateActiveBreakSongs]);
 
+  const lastBreakSwapTimeRef = useRef(0);
   const replaceActiveBreakSong = useCallback((upcomingIdx) => {
+    const now = Date.now();
+    if (now - lastBreakSwapTimeRef.current < 1000) return;
+    lastBreakSwapTimeRef.current = now;
     if (!activeBreakInfo || !onUpdateActiveBreakSongs) return;
     const { songs, currentIndex, breakKey } = activeBreakInfo;
     const upcoming = [...songs.slice(currentIndex + 1)];
