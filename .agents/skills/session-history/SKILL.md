@@ -16,15 +16,15 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 
 | Unit | Username | Tailscale IP | Role | Club | Notes |
 |---|---|---|---|---|---|
-| Homebase | `homebase` | `100.95.238.71` | Fleet server + DJ booth | Homebase | Fleet server lives HERE |
-| neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Nation | Music path: `/home/neonaidj001/djbooth/music/` |
-| neonaidj002 | `neonaidj002` | unknown | DJ booth | Unknown | Previously missing from records — confirmed Mar 16, 2026 |
-| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | Unknown (needs CLUB_NAME set) | Had 4 crashes Mar 10 — stable since |
+| Homebase | `neonaidj` | `100.109.73.27` | Fleet server + DJ booth | Homebase | NEW HP Compaq 8200 Elite (Mar 2026). Old Pi homebase retired (was `100.95.238.71`). |
+| neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Bama | Deploying Tuesday. Music path: `/home/neonaidj001/djbooth/music/` |
+| neonaidj002 | `neonaidj002` | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
+| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | Pony Evansville | Deploying Monday. Had 4 crashes Mar 10 — stable since |
 
 **Fleet .env rules:**
 - Homebase: `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
-- All venue Pis: `FLEET_SERVER_URL=http://100.95.238.71:3001`
-- Fleet dashboard: `http://100.95.238.71:3001/fleet` (any Tailscale device)
+- All venue Pis: `FLEET_SERVER_URL=http://100.109.73.27:3001` (NEW homebase IP — must update all Pis)
+- Fleet dashboard: `http://100.109.73.27:3001/fleet` (any Tailscale device)
 
 **PENDING on neonaidj003:**
 - Set `CLUB_NAME=<correct venue name>` in `~/djbooth/.env`, then `sudo systemctl restart djbooth`
@@ -228,24 +228,16 @@ Use this any time homebase is behind on updates.
 - `loadTrack` accepts `{ url, name, auto_gain }` — if `auto_gain` present, pre-populates `autoGainCacheRef` so `analyzeTrackLoudness` returns immediately from cache; no 10s fetch+analyze
 - Log line: `🔊 AutoGain: pre-loaded server gain=X.XXx for SONGNAME`
 
-### Raspberry Pi Connect — Remote Access (TO SET UP NEXT MORNING)
+### ~~Raspberry Pi Connect — CANCELLED, DO NOT INSTALL~~
 
-**What it is:** Official Raspberry Pi remote access tool. Free forever. Works from any phone/browser at `connect.raspberrypi.com` — gives you a terminal AND screen sharing with no app, no IP address, no VNC client needed. Replaces the VNC frustration completely.
+**Decision (Session 50):** Do NOT install Raspberry Pi Connect on any fleet Pi. Researched and compared against Tailscale — Tailscale wins for this fleet in every category:
+- Pi Connect conflicts with Tailscale (gray screen bug when both run simultaneously)
+- Pi Connect is Pi-only — can't join laptop, phone, or iPad to the same network
+- Pi Connect organizational fleet plan costs $0.50/device/month — scales badly to 50+ Pis
+- Tailscale already running on all Pis, already handles SSH, fleet heartbeats, fleet dashboard — free for up to 100 devices
+- Everything Pi Connect would offer, Tailscale already does better for this setup
 
-**Compatible with your hardware:** Raspberry Pi 5 + 64-bit Raspberry Pi OS Bookworm ✓
-
-**One-time setup on EACH Pi (run once with physical or current Tailscale access):**
-```bash
-sudo apt update && sudo apt install rpi-connect
-rpi-connect signin
-sudo loginctl enable-linger $USER
-```
-- `rpi-connect signin` gives you a URL — open it on your phone, sign in with a free Raspberry Pi account, name the Pi
-- `loginctl enable-linger $USER` keeps it running even when no one is logged in (critical for headless kiosk)
-
-**After setup — forever:** Go to `connect.raspberrypi.com` on phone, pick the Pi, click "Remote shell" → terminal in browser. Done.
-
-**Priority:** Do homebase first (most needed for remote updates). Then venue Pis next time on-site or via Tailscale.
+**Use Tailscale SSH for all remote access.** Do not install rpi-connect.
 
 ---
 
@@ -279,6 +271,7 @@ sudo loginctl enable-linger $USER
 
 **Future / lower priority:**
 - **R2 music write lockdown (APPROVED, not yet built)**: Create two separate Cloudflare R2 API tokens. Homebase token: full read/write to entire bucket (music + voiceovers). Venue Pi token: read-only on `music/` prefix, read/write on `voiceovers/` only. This enforces at the credential level that only homebase can add/modify music in R2. Venue Pis update script must also be changed to never upload to `music/` prefix. Voiceover sharing continues unchanged.
+- **Playlist song mismatch investigation (NEEDS DIAGNOSIS — Mar 22 show)**: Some dancers played random library songs instead of playlist songs on first rotation. Other dancers worked correctly. Music drive confirmed intact — all songs present. Root cause unknown. To diagnose: SSH neonaidj001, run `sqlite3 ~/data/djbooth.db "SELECT name FROM music_tracks WHERE name LIKE '%<partial song name>%';"` to compare against broken dancer's playlist entries. May be case mismatch, encoding difference, or extra whitespace in stored names.
 - **Commercial ducking bug (DEFERRED)**: Post-commercial intro block uses `autoDuck: false` → should be `autoDuck: true`. One-line fix in `DJBooth.jsx` post-commercial intro `playAnnouncement` call. User deferred.
 - **19" kiosk touchscreen**: General touch target treatment still needed (separate from iPad remote, lower priority).
 - **Multi-language announcements (WAY down the road)**: ElevenLabs `eleven_multilingual_v2` already supports it — same voice speaks Spanish/French/etc. if you send it text in that language. Script writer also supports it. Work needed: language field in config, thread it into prompt builder, update cache keys to include language, rewrite English-specific slang phrases into target-language equivalents. Technical lift is low; cultural accuracy is the real investment.

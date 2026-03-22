@@ -58,17 +58,17 @@ export default function RotationDisplay() {
   const { data: stageState = null } = useQuery({
     queryKey: ['stage-server'],
     queryFn: () => fetch('/api/stage/current').then(r => r.json()),
-    refetchInterval: 5000,
+    refetchInterval: 1000,
     refetchIntervalInBackground: true,
-    staleTime: 4000
+    staleTime: 800
   });
 
   const { data: dancers = [] } = useQuery({
     queryKey: ['dancers'],
     queryFn: () => localEntities.Dancer.list(),
-    refetchInterval: 10000,
+    refetchInterval: 1000,
     refetchIntervalInBackground: true,
-    staleTime: 9000
+    staleTime: 800
   });
 
   const { data: displayData = null } = useQuery({
