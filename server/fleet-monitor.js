@@ -33,7 +33,7 @@ async function sendTelegram(message) {
 
 function ensureDeviceInDb(deviceId, data) {
   try {
-    const existing = db.prepare('SELECT device_id FROM fleet_devices WHERE device_id = ?').get(deviceId);
+    const existing = db.prepare('SELECT device_id FROM fleet_devices WHERE device_id = ? COLLATE NOCASE OR device_name = ? COLLATE NOCASE').get(deviceId, deviceId);
     if (!existing) {
       const apiKey = 'auto_' + deviceId + '_' + Date.now().toString(36);
       db.prepare(`
@@ -83,13 +83,28 @@ function recordHeartbeatInDb(deviceId, data) {
 }
 
 async function registerHeartbeat(deviceId, data) {
+  deviceId = (deviceId || '').toLowerCase().trim();
+  if (!deviceId) return;
+
+  // If no direct match, check if a registered device's name matches this deviceId.
+  // This merges the heartbeat into the existing registered entry instead of creating a duplicate.
+  let effectiveId = deviceId;
+  if (!devices.has(deviceId)) {
+    for (const [key, dev] of devices) {
+      if (dev.name && dev.name.toLowerCase() === deviceId) {
+        effectiveId = key;
+        break;
+      }
+    }
+  }
+
   const now = Date.now();
-  const existing = devices.get(deviceId);
+  const existing = devices.get(effectiveId);
   const wasOffline = existing?.status === 'offline';
 
-  devices.set(deviceId, {
-    deviceId,
-    name: data.name || deviceId,
+  devices.set(effectiveId, {
+    deviceId: effectiveId,
+    name: existing?.name || data.name || deviceId,
     clubName: data.clubName || 'Unknown',
     ip: data.ip || '',
     tailscaleIp: data.tailscaleIp || '',
@@ -124,7 +139,7 @@ async function registerHeartbeat(deviceId, data) {
       const { upsertDancerRoster } = await import('./fleet-db.js');
       for (const name of data.dancer_names) {
         if (name && typeof name === 'string') {
-          upsertDancerRoster(name.trim(), deviceId);
+          upsertDancerRoster(name.trim(), effectiveId);
         }
       }
     } catch {}
@@ -133,7 +148,7 @@ async function registerHeartbeat(deviceId, data) {
   if (data.recentPlays && Array.isArray(data.recentPlays) && data.recentPlays.length > 0) {
     try {
       const { storePlayHistory } = await import('./fleet-db.js');
-      storePlayHistory(deviceId, data.recentPlays);
+      storePlayHistory(effectiveId, data.recentPlays);
     } catch (err) {
       console.error('Fleet play history store error:', err.message);
     }
@@ -143,7 +158,7 @@ async function registerHeartbeat(deviceId, data) {
     try {
       const { saveDancerBackup } = await import('./fleet-db.js');
       saveDancerBackup(
-        deviceId,
+        effectiveId,
         JSON.stringify(data.dancerBackup.dancers),
         JSON.stringify(data.dancerBackup.settings || {})
       );
@@ -152,11 +167,11 @@ async function registerHeartbeat(deviceId, data) {
     }
   }
 
-  ensureDeviceInDb(deviceId, data);
-  recordHeartbeatInDb(deviceId, data);
+  ensureDeviceInDb(effectiveId, data);
+  recordHeartbeatInDb(effectiveId, data);
 
   if (wasOffline) {
-    const dev = devices.get(deviceId);
+    const dev = devices.get(effectiveId);
     const downtime = existing ? Math.round((now - existing.lastHeartbeat) / 60000) : 0;
     sendTelegram(
       `✅ <b>RECOVERED</b>\n` +
