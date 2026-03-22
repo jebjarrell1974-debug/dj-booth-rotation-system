@@ -243,7 +243,7 @@ export default function MusicLibrary({
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
                     isSelected(track.name)
                       ? 'bg-[#00d4ff]/20 text-[#00d4ff]'
-                      : 'text-gray-300 hover:bg-[#151528] hover:text-white'
+                      : 'text-[#E0E0E0] hover:bg-[#151528] hover:text-white'
                   }`}
                 >
                   {selectionMode && isSelected(track.name) ? (
@@ -295,7 +295,7 @@ export default function MusicLibrary({
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
                       isSelected(songName)
                         ? 'bg-[#a855f7]/20 text-[#a855f7]'
-                        : 'text-gray-300 hover:bg-[#151528] hover:text-white'
+                        : 'text-[#E0E0E0] hover:bg-[#151528] hover:text-white'
                     }`}
                   >
                     <ListMusic className="w-4 h-4 text-[#a855f7] flex-shrink-0" />

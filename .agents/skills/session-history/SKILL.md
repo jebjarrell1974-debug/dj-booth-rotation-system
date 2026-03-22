@@ -32,7 +32,8 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 
 **PENDING on neonaidj001:**
 - Set `DEVICE_ID=neonaidj001` in `~/djbooth/.env`
-- `~/djbooth-update.sh` likely also has the OLD 7-step script — same manual cp fix needed as 003
+- Update `FLEET_SERVER_URL` from old IP to new homebase: `sed -i 's|FLEET_SERVER_URL=http://100.95.238.71:3001|FLEET_SERVER_URL=http://100.109.73.27:3001|' ~/djbooth/.env && sudo systemctl restart djbooth`
+- ~~OLD 7-step script~~ — RESOLVED: Manually updated March 22 with `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh`. New 8-step script now installed.
 
 **PENDING on all units (next reboot or Update button press):**
 - Pull Session 46b fixes — fleet Update button now works correctly (background process, no timeout kill)
@@ -110,9 +111,42 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 50 — March 21, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 51 — March 22, 2026) — READ THIS FIRST
 
-### Latest GitHub commit: `b7ba900` — "UI: Rotation Screen button rename + cyan color; rotation display natural stacking"
+### Latest GitHub commit: `e0b5bac` — "Fix: boot update service waits for network-online before starting"
+
+### Fleet Dashboard correct URL (UPDATED)
+- **OLD (retired):** `100.95.238.71:3001/fleet` — DO NOT USE
+- **NEW (correct):** `http://100.109.73.27:3001/fleet`
+
+### Session 51 — What was fixed / built
+
+**Boot update fix (commit `e0b5bac`):**
+- Root cause confirmed: `djbooth-update.service` was using `After=network.target` which only means the NIC is up, NOT that internet is available. Service fired immediately at boot, hit GitHub before internet was ready, got `HTTP 000`, and failed every reboot.
+- Fix: Changed to `After=network-online.target` + `Wants=network-online.target` in the systemd service definition inside `public/djbooth-update-github.sh`.
+- The new script also has a built-in 5-minute internet wait loop when `DJBOOTH_BOOT_UPDATE=1` — belt + suspenders.
+- **neonaidj001**: Manually updated March 22 using `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh`. Now has new 8-step script and new service file. Tomorrow's 8:30 AM reboot is first real test.
+- **neonaidj003 + all future units**: Will get fix automatically on next update run.
+
+**neonaidj001 FLEET_SERVER_URL still wrong (PENDING):**
+- Still pointing at old retired homebase `100.95.238.71`. Causes heartbeat timeouts every minute.
+- Fix command (run on neonaidj001):
+  ```bash
+  sed -i 's|FLEET_SERVER_URL=http://100.95.238.71:3001|FLEET_SERVER_URL=http://100.109.73.27:3001|' ~/djbooth/.env && sudo systemctl restart djbooth
+  ```
+
+**UI readability improvements (commits `b441a00`):**
+- Song names in rotation cards: `text-xs` → `text-sm` (matches dancer name size)
+- Break song names: `text-xs` → `text-sm`
+- Upcoming queue song names: `text-xs` → `text-sm`
+- Music library track color: `text-gray-300` → `text-[#E0E0E0]` (softer, less glare)
+- Song previews under dancer names in live rotation: `text-xs text-gray-500` → `text-sm text-gray-400`
+- Research basis: off-white `#E0E0E0` on dark bg reduces eye strain vs pure white; 14px minimum for extended use
+
+**Button hardening (commits from Session 51):**
+- Reroll button: in-flight lock per slot, spinner icon, ignores rapid clicks
+- Voice ON/OFF toggle: 1-second cooldown
+- Break song Swap: 1-second cooldown
 
 ### Session 50 — What was built (all on GitHub)
 - **"Rotation Screen" button**: Renamed from "Open Display" in DJBooth.jsx. Changed from gray outline to `bg-[#00d4ff] hover:bg-[#00a3cc] text-black font-semibold` — matches Save All button color. Stands out clearly in the top bar at all times.

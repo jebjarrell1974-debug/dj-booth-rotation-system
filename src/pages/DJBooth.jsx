@@ -3665,7 +3665,7 @@ export default function DJBooth() {
                           <div className="flex-1 min-w-0">
                             <p className={`text-sm font-medium ${isCurrent ? 'text-[#00d4ff]' : 'text-white'}`}>{dancer.name}</p>
                             {dancerSongs.length > 0 && (
-                              <p className="text-xs text-gray-500 truncate">{dancerSongs.map(s => typeof s === 'string' ? s : s.name).join(', ')}</p>
+                              <p className="text-sm text-gray-400 truncate">{dancerSongs.map(s => typeof s === 'string' ? s : s.name).join(', ')}</p>
                             )}
                           </div>
                           <button

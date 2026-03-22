@@ -1022,7 +1022,7 @@ export default function RotationPlaylistManager({
                                 className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
                               >
                                 <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                <span className="text-xs text-violet-300 truncate flex-1 mx-1">{songName}</span>
+                                <span className="text-sm text-violet-300 truncate flex-1 mx-1">{songName}</span>
                                 <button
                                   onClick={() => moveActiveBreakSong(i, -1)}
                                   disabled={i === 0}
@@ -1176,7 +1176,7 @@ export default function RotationPlaylistManager({
                                                           : 'bg-[#0d0d1f] border-[#1e293b]'
                                                 }`}
                                               >
-                                                <span className="text-xs font-bold w-4 flex-shrink-0 text-[#00d4ff]">{isNowPlaying ? '▶' : songIdx + 1}</span>
+                                                <span className="text-sm font-bold w-4 flex-shrink-0 text-[#00d4ff]">{isNowPlaying ? '▶' : songIdx + 1}</span>
                                                 {isRerollingSlot ? (
                                                   <RefreshCw className="w-3 h-3 flex-shrink-0 text-amber-400 animate-spin" />
                                                 ) : canReroll ? (
@@ -1184,7 +1184,7 @@ export default function RotationPlaylistManager({
                                                 ) : (
                                                   <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-400' : 'text-gray-500'}`} />
                                                 )}
-                                                <span className={`text-xs truncate flex-1 ${isNowPlaying ? 'text-white font-medium' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-gray-300'}`}>{songName}</span>
+                                                <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{songName}</span>
                                                 <button
                                                   onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
                                                   className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
@@ -1238,7 +1238,7 @@ export default function RotationPlaylistManager({
                                     >
                                       <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
                                       <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                      <span className="text-xs truncate flex-1 text-violet-300">{songName}</span>
+                                      <span className="text-sm truncate flex-1 text-violet-300">{songName}</span>
                                       <button
                                         onClick={() => removeInterstitialSong(breakKey, songIdx)}
                                         className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
@@ -1392,7 +1392,7 @@ export default function RotationPlaylistManager({
                                         <span className="text-[10px] text-gray-500 w-3 text-center flex-shrink-0">{i + 1}</span>
                                       )}
                                       <Music2 className={`w-3 h-3 flex-shrink-0 ${track.autoFilled ? 'text-gray-500' : 'text-cyan-400'}`} />
-                                      <span className={`text-xs truncate flex-1 ${
+                                      <span className={`text-sm truncate flex-1 ${
                                         i === 0 ? 'text-cyan-300 font-medium' : track.autoFilled ? 'text-gray-400' : 'text-cyan-300/80'
                                       }`}>{track.name}</span>
                                       {track.genre && (
