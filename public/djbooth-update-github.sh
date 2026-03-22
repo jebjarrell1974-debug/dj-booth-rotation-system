@@ -290,7 +290,8 @@ if [ "$IS_HOMEBASE" != "true" ]; then
   sudo tee /etc/systemd/system/djbooth-update.service > /dev/null << BOOTEOF
 [Unit]
 Description=NEON AI DJ Boot Update
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
