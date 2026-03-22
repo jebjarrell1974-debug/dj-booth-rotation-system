@@ -213,7 +213,7 @@ app.get('/api/fleet-env', (req, res) => {
   const lines = [];
   for (const key of FLEET_KEYS) {
     let val = process.env[key] || '';
-    if (key === 'FLEET_SERVER_URL') val = `http://100.95.238.71:3001`;
+    if (key === 'FLEET_SERVER_URL') val = `http://100.109.73.27:3001`;
     if (key === 'PORT') val = '3001';
     if (key === 'NODE_ENV') val = 'production';
     if (val) lines.push(`${key}=${val}`);

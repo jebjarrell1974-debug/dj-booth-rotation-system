@@ -61,7 +61,7 @@ USE_HOMEBASE_BUNDLE=false
 
 LOCAL_IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
 HOMEBASE_URL=$(grep "^FLEET_SERVER_URL=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
-HOMEBASE_URL="${HOMEBASE_URL:-http://100.95.238.71:3001}"
+HOMEBASE_URL="${HOMEBASE_URL:-http://100.109.73.27:3001}"
 
 if [ "$LOCAL_IS_HOMEBASE" != "true" ] && [ "$DJBOOTH_SKIP_HOMEBASE" != "1" ]; then
   echo "  Trying homebase at $HOMEBASE_URL..."
@@ -162,7 +162,7 @@ echo "[4.5/7] Ensuring fleet environment variables..."
 ENV_FILE="$APP_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
   echo "Creating .env with fleet defaults..."
-  FLEET_SERVER="http://100.95.238.71:3001"
+  FLEET_SERVER="http://100.109.73.27:3001"
   echo "Fetching fleet config from homebase..."
   HTTP_CODE=$(curl -sf -o "$ENV_FILE" -w "%{http_code}" "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ] && [ -s "$ENV_FILE" ]; then
@@ -172,11 +172,11 @@ if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
 PORT=3001
 NODE_ENV=production
-FLEET_SERVER_URL=http://100.95.238.71:3001
+FLEET_SERVER_URL=http://100.109.73.27:3001
 ENVEOF
   fi
 else
-  FLEET_SERVER="http://100.95.238.71:3001"
+  FLEET_SERVER="http://100.109.73.27:3001"
   FLEET_ENV=$(curl -sf "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "")
   if [ -n "$FLEET_ENV" ]; then
     KEYS_TO_CHECK="ELEVENLABS_API_KEY ELEVENLABS_VOICE_ID OPENAI_API_KEY AUPHONIC_API_KEY R2_ACCOUNT_ID R2_BUCKET_NAME R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID"
@@ -191,7 +191,7 @@ else
     done
   fi
   grep -q "^NODE_ENV=" "$ENV_FILE" || echo "NODE_ENV=production" >> "$ENV_FILE"
-  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.95.238.71:3001" >> "$ENV_FILE"
+  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.109.73.27:3001" >> "$ENV_FILE"
 fi
 
 echo "[6/8] Building frontend..."

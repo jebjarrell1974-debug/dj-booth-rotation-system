@@ -62,7 +62,7 @@ npx vite build 2>&1 | tail -5
 
 echo "[5/8] Setting up environment variables..."
 if [ ! -f "$APP_DIR/.env" ]; then
-  FLEET_SERVER="http://100.95.238.71:3001"
+  FLEET_SERVER="http://100.109.73.27:3001"
   echo "Fetching fleet config from homebase..."
   HTTP_CODE=$(curl -sf -o "$APP_DIR/.env" -w "%{http_code}" "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ] && [ -s "$APP_DIR/.env" ]; then
@@ -74,7 +74,7 @@ if [ ! -f "$APP_DIR/.env" ]; then
     cat > "$APP_DIR/.env" << 'ENVEOF'
 PORT=3001
 NODE_ENV=production
-FLEET_SERVER_URL=http://100.95.238.71:3001
+FLEET_SERVER_URL=http://100.109.73.27:3001
 ENVEOF
   fi
 else
@@ -210,7 +210,7 @@ echo "  SETUP COMPLETE!"
 echo ""
 echo "  Unit:       $UNIT_USER"
 echo "  Tailscale:  $TAILSCALE_IP"
-echo "  Fleet URL:  http://100.95.238.71:3001"
+echo "  Fleet URL:  http://100.109.73.27:3001"
 echo "  App URL:    http://localhost:3001"
 echo ""
 echo "  Reboot to start kiosk mode:"
