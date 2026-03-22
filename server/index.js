@@ -982,6 +982,9 @@ app.post('/api/r2/sync/music', authenticate, requireDJ, async (req, res) => {
   try {
     if (!MUSIC_PATH) return res.status(400).json({ error: 'MUSIC_PATH not configured' });
     if (direction === 'upload') {
+      if (process.env.IS_HOMEBASE !== 'true') {
+        return res.status(403).json({ error: 'Only homebase can upload music to R2' });
+      }
       const result = await syncMusicToR2(MUSIC_PATH);
       res.json({ ok: true, ...result });
     } else {
@@ -1950,18 +1953,24 @@ async function initR2Sync() {
   }
   try {
     if (MUSIC_PATH) {
-      updateBootStep('musicSync', 'running', 'Downloading...');
-      const musicResult = await syncMusicFromR2(MUSIC_PATH);
-      updateBootStep('musicSync', 'done', `${musicResult.downloaded} new, ${musicResult.skipped} cached`);
-      console.log(`☁️ Music sync: ${musicResult.downloaded} new, ${musicResult.skipped} cached`);
-      if (musicResult.downloaded > 0) {
-        scanMusicFolder(MUSIC_PATH, true);
+      if (process.env.IS_HOMEBASE === 'true') {
+        // Homebase is the music master — push local library to R2, never pull
+        updateBootStep('musicSync', 'skipped', 'Homebase — source of truth, does not pull from R2');
+        updateBootStep('musicUpload', 'running', 'Pushing library to R2...');
+        const musicUpResult = await syncMusicToR2(MUSIC_PATH);
+        updateBootStep('musicUpload', 'done', `${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+        console.log(`☁️ Music upload: ${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+      } else {
+        // Venue Pi — pull from R2 (homebase's library), never push music up
+        updateBootStep('musicSync', 'running', 'Downloading from homebase...');
+        const musicResult = await syncMusicFromR2(MUSIC_PATH);
+        updateBootStep('musicSync', 'done', `${musicResult.downloaded} new, ${musicResult.skipped} cached`);
+        console.log(`☁️ Music sync: ${musicResult.downloaded} new, ${musicResult.skipped} cached`);
+        if (musicResult.downloaded > 0) {
+          scanMusicFolder(MUSIC_PATH, true);
+        }
+        updateBootStep('musicUpload', 'skipped', 'Venue Pi — homebase manages music uploads');
       }
-
-      updateBootStep('musicUpload', 'running', 'Uploading...');
-      const musicUpResult = await syncMusicToR2(MUSIC_PATH);
-      updateBootStep('musicUpload', 'done', `${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
-      console.log(`☁️ Music upload: ${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
     } else {
       updateBootStep('musicSync', 'skipped');
       updateBootStep('musicUpload', 'skipped');

@@ -19,7 +19,7 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 | Homebase | `neonaidj` | `100.109.73.27` | Fleet server + DJ booth | Homebase | NEW HP Compaq 8200 Elite (Mar 2026). Old Pi homebase retired (was `100.95.238.71`). |
 | neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Bama | Deploying Tuesday. Music path: `/home/neonaidj001/djbooth/music/` |
 | neonaidj002 | `neonaidj002` | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
-| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | Pony Evansville | Deploying Monday. Had 4 crashes Mar 10 — stable since |
+| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | Deploying Monday. Had 4 crashes Mar 10 — stable since |
 
 **Fleet .env rules:**
 - Homebase: `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
