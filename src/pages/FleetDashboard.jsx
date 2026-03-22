@@ -383,7 +383,19 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
         <div className="flex justify-between"><span className="text-gray-500">Service</span><span className="text-gray-300">{formatUptime(device.serviceUptime)}</span></div>
         <div className="flex justify-between"><span className="text-gray-500">Entertainers</span><span className="text-pink-400">{device.activeEntertainers || 0}</span></div>
         <div className="flex justify-between"><span className="text-gray-500">Errors</span><span className={device.errorCount > 0 ? 'text-red-400' : 'text-gray-300'}>{device.errorCount || 0}</span></div>
-        <div className="flex justify-between"><span className="text-gray-500">Last Update</span><span className="text-gray-300">{device.lastUpdateTime ? formatTimeAgo(device.lastUpdateTime) : '--'}</span></div>
+        <div className="flex justify-between col-span-2">
+          <span className="text-gray-500">Last Update</span>
+          <span className={
+            !device.lastUpdateTime ? 'text-gray-600' :
+            (Date.now() - device.lastUpdateTime) > 7 * 24 * 60 * 60 * 1000 ? 'text-red-400' :
+            (Date.now() - device.lastUpdateTime) > 24 * 60 * 60 * 1000 ? 'text-yellow-400' :
+            'text-green-400'
+          }>
+            {device.lastUpdateTime
+              ? `${formatTimeAgo(device.lastUpdateTime)}${device.lastUpdateCommit ? ` · ${device.lastUpdateCommit}` : ''}`
+              : 'Never'}
+          </span>
+        </div>
         <div className="flex justify-between"><span className="text-gray-500">IP</span><span className="text-gray-300">{device.tailscaleIp || '--'}</span></div>
         <div className="flex justify-between col-span-2"><span className="text-gray-500">Network</span><span className="text-gray-300"><NetworkBars network={device.network} /></span></div>
       </div>
