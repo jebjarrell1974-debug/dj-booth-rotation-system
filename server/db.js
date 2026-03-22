@@ -715,6 +715,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
   // When a dancer has a playlist, pick ONLY from that playlist — never random library songs.
   // folders_only mode sends dancerPlaylist=[] so it falls through to the random library path below.
   if (dancerPlaylist.length > 0) {
+    console.log(`🎵 selectTracksForSet: playlist mode — ${dancerPlaylist.length} songs in playlist, need ${count}`);
     const excludeSet = new Set(excludeNames);
     const placeholders = dancerPlaylist.map(() => '?').join(',');
 
@@ -742,6 +743,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     // Fetch all playlist tracks from DB, split into fresh vs on-cooldown
     const freshTracks = [];
     const cooldownTracks = [];
+    const notFoundInDB = [];
     for (const trackName of dancerPlaylist) {
       if (excludeSet.has(trackName)) continue;
       const track = readDb.prepare(
@@ -749,7 +751,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
          FROM music_tracks t
          WHERE t.name = ? AND t.blocked = 0`
       ).get(trackName);
-      if (!track) continue;
+      if (!track) { notFoundInDB.push(trackName); continue; }
       if (recentlyPlayedSet.has(trackName)) {
         cooldownTracks.push({ ...track, lastPlayed: lastPlayedMap[trackName] || '' });
       } else {
@@ -757,8 +759,14 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
       }
     }
 
+    if (notFoundInDB.length > 0) {
+      console.warn(`⚠️ selectTracksForSet: ${notFoundInDB.length} playlist song(s) NOT found in music_tracks DB: ${notFoundInDB.slice(0, 5).join(' | ')}${notFoundInDB.length > 5 ? ` ... +${notFoundInDB.length - 5} more` : ''}`);
+    }
+    console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh, ${cooldownTracks.length} on-cooldown, ${notFoundInDB.length} not-in-DB`);
+
     // No playlist tracks exist in the DB at all — only then fall back to random library
     if (freshTracks.length === 0 && cooldownTracks.length === 0) {
+      console.warn(`⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library`);
       return getRandomTracks(count, [...excludeSet], genres);
     }
 
@@ -771,8 +779,10 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     // Sort cooldown tracks oldest-played-first so we recycle least-recently-heard songs
     cooldownTracks.sort((a, b) => (a.lastPlayed < b.lastPlayed ? -1 : 1));
 
+    const result = [...freshTracks, ...cooldownTracks].slice(0, count);
+    console.log(`🎵 selectTracksForSet: returning [${result.map(t => t.name).join(' | ')}]`);
     // Fresh first, then oldest-cooldown — always from their own playlist, never random library
-    return [...freshTracks, ...cooldownTracks].slice(0, count);
+    return result;
   }
 
   // No dancer playlist — folders_only mode, break songs, autoplay queue
