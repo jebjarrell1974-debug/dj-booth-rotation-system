@@ -100,6 +100,8 @@ export default function RotationPlaylistManager({
   const prevDancerIndexRef = React.useRef(currentDancerIndex);
   const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
+  const rerollingRef = React.useRef(new Set());
+  const [rerollingKeys, setRerollingKeys] = useState(new Set());
   const [serverTracks, setServerTracks] = useState([]);
   const [serverGenres, setServerGenres] = useState([]);
   const [serverTotalTracks, setServerTotalTracks] = useState(0);
@@ -179,7 +181,7 @@ export default function RotationPlaylistManager({
         });
         return fromActive;
       });
-      return;
+      // Do NOT return early — dancers absent from activeRotationSongs still need auto-assignment below
     }
 
     if (saveGuardRef.current > Date.now()) return;
@@ -252,11 +254,20 @@ export default function RotationPlaylistManager({
           console.warn(`⚠️ RotationPlaylist: Server select failed for ${dancer.name}: ${err.message}`);
         }
 
-        const genrePool = filterByGenres(tracks, activeGenres);
         const excludeSet = new Set(batchExcludes);
-        const available = genrePool.filter(t => !excludeSet.has(t.name));
-        const shuffled = fisherYatesShuffle(available);
-        const assigned = shuffled.slice(0, songsPerSet).map(t => t.name);
+        const fallbackPlaylist = dancer?.playlist || [];
+        let assigned = [];
+        if (!isFoldersOnly && fallbackPlaylist.length > 0) {
+          const playlistSet = new Set(fallbackPlaylist);
+          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
+          assigned = fisherYatesShuffle(playlistTracks).slice(0, songsPerSet).map(t => t.name);
+        }
+        if (assigned.length < songsPerSet) {
+          const genrePool = filterByGenres(tracks, activeGenres);
+          const usedSet = new Set([...excludeSet, ...assigned]);
+          const available = genrePool.filter(t => !usedSet.has(t.name));
+          assigned = [...assigned, ...fisherYatesShuffle(available).slice(0, songsPerSet - assigned.length).map(t => t.name)];
+        }
         newAssignments[dancerId] = assigned;
         assigned.forEach(n => batchExcludes.push(n));
       }
@@ -545,64 +556,78 @@ export default function RotationPlaylistManager({
   };
 
   const rerollSong = useCallback(async (dancerId, songIndex) => {
-    const allAssigned = [];
-    Object.entries(songAssignmentsRef.current).forEach(([id, songs]) => {
-      if (songs) songs.forEach(n => { if (id !== dancerId || songs.indexOf(n) !== songIndex) allAssigned.push(n); });
-    });
+    const key = `${dancerId}-${songIndex}`;
+    if (rerollingRef.current.has(key)) return;
+    rerollingRef.current.add(key);
+    setRerollingKeys(prev => new Set([...prev, key]));
 
-    const dancer = dancers.find(d => d.id === dancerId);
-    const dancerPlaylist = dancer?.playlist || [];
-    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const finish = () => {
+      rerollingRef.current.delete(key);
+      setRerollingKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+    };
+
     try {
-      const token = localStorage.getItem('djbooth_token');
-      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-      const res = await fetch('/api/music/select', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          count: 1,
-          excludeNames: [...new Set(allAssigned)],
-          genres: activeGenres,
-          dancerPlaylist
-        }),
-        signal: AbortSignal.timeout(5000)
+      const allAssigned = [];
+      Object.entries(songAssignmentsRef.current).forEach(([id, songs]) => {
+        if (songs) songs.forEach(n => { if (id !== dancerId || songs.indexOf(n) !== songIndex) allAssigned.push(n); });
       });
-      if (res.ok) {
-        const data = await res.json();
-        const newTrack = data.tracks?.[0];
-        if (newTrack) {
-          djOverridesRef.current.add(dancerId);
-          setSongAssignments(prev => {
-            const current = [...(prev[dancerId] || [])];
-            current[songIndex] = newTrack.name;
-            return { ...prev, [dancerId]: current };
-          });
-          toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('Re-roll failed:', err.message);
-    }
 
-    const excludeSet = new Set(allAssigned);
-    const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
-    const playlistSet = new Set(dancerPlaylist);
-    const playlistTracks = dancerPlaylist.length > 0
-      ? allTracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name))
-      : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
-    const available = playlistTracks.length > 0 ? playlistTracks : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
-    if (available.length > 0) {
-      const pick = available[Math.floor(Math.random() * available.length)];
-      djOverridesRef.current.add(dancerId);
-      setSongAssignments(prev => {
-        const current = [...(prev[dancerId] || [])];
-        current[songIndex] = pick.name;
-        return { ...prev, [dancerId]: current };
-      });
-      toast.success(`Re-rolled: ${pick.name.replace(/\.[^.]+$/, '')}`);
-    } else {
-      toast.error('No other songs available to pick from');
+      const dancer = dancers.find(d => d.id === dancerId);
+      const dancerPlaylist = dancer?.playlist || [];
+      const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+      try {
+        const token = localStorage.getItem('djbooth_token');
+        const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+        const res = await fetch('/api/music/select', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            count: 1,
+            excludeNames: [...new Set(allAssigned)],
+            genres: activeGenres,
+            dancerPlaylist
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const newTrack = data.tracks?.[0];
+          if (newTrack) {
+            djOverridesRef.current.add(dancerId);
+            setSongAssignments(prev => {
+              const current = [...(prev[dancerId] || [])];
+              current[songIndex] = newTrack.name;
+              return { ...prev, [dancerId]: current };
+            });
+            toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Re-roll failed:', err.message);
+      }
+
+      const excludeSet = new Set(allAssigned);
+      const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
+      const playlistSet = new Set(dancerPlaylist);
+      const playlistTracks = dancerPlaylist.length > 0
+        ? allTracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name))
+        : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
+      const available = playlistTracks.length > 0 ? playlistTracks : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
+      if (available.length > 0) {
+        const pick = available[Math.floor(Math.random() * available.length)];
+        djOverridesRef.current.add(dancerId);
+        setSongAssignments(prev => {
+          const current = [...(prev[dancerId] || [])];
+          current[songIndex] = pick.name;
+          return { ...prev, [dancerId]: current };
+        });
+        toast.success(`Re-rolled: ${pick.name.replace(/\.[^.]+$/, '')}`);
+      } else {
+        toast.error('No other songs available to pick from');
+      }
+    } finally {
+      finish();
     }
   }, [djOptions, tracks, serverTracks, dancers]);
 
@@ -1124,7 +1149,9 @@ export default function RotationPlaylistManager({
                                         const isPlayed = isCurrentDancer && songIdx < (currentSongNumber - 1);
                                         const isNowPlaying = isCurrentDancer && songIdx === (currentSongNumber - 1);
                                         if (isPlayed) return null;
-                                        const canReroll = !isNowPlaying;
+                                        const rerollKey = `${dancer.id}-${songIdx}`;
+                                        const isRerollingSlot = rerollingKeys.has(rerollKey);
+                                        const canReroll = !isNowPlaying && !isRerollingSlot;
                                         return (
                                           <Draggable key={`${dancer.id}-${songName}`} draggableId={`assigned-${dancer.id}-${songName}`} index={songIdx}>
                                             {(songDragProvided, songDragSnapshot) => (
@@ -1138,13 +1165,17 @@ export default function RotationPlaylistManager({
                                                     ? 'bg-[#00d4ff]/20 border-[#00d4ff]'
                                                     : isNowPlaying
                                                       ? 'bg-[#00d4ff]/15 border-[#00d4ff]/50'
-                                                      : canReroll
-                                                        ? 'bg-[#0d0d1f] border-[#1e293b] hover:border-amber-500/50 hover:bg-amber-900/10 cursor-pointer'
-                                                        : 'bg-[#0d0d1f] border-[#1e293b]'
+                                                      : isRerollingSlot
+                                                        ? 'bg-[#0d0d1f] border-[#1e293b] opacity-60 cursor-wait'
+                                                        : canReroll
+                                                          ? 'bg-[#0d0d1f] border-[#1e293b] hover:border-amber-500/50 hover:bg-amber-900/10 cursor-pointer'
+                                                          : 'bg-[#0d0d1f] border-[#1e293b]'
                                                 }`}
                                               >
                                                 <span className="text-xs font-bold w-4 flex-shrink-0 text-[#00d4ff]">{isNowPlaying ? '▶' : songIdx + 1}</span>
-                                                {canReroll ? (
+                                                {isRerollingSlot ? (
+                                                  <RefreshCw className="w-3 h-3 flex-shrink-0 text-amber-400 animate-spin" />
+                                                ) : canReroll ? (
                                                   <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
                                                 ) : (
                                                   <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-400' : 'text-gray-500'}`} />
