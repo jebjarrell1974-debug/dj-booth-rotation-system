@@ -425,11 +425,11 @@ export async function syncMusicFromR2(musicDir) {
   return { downloaded, skipped, errors, purged };
 }
 
-export async function syncMusicToR2(musicDir) {
+export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
   const client = getClient();
-  if (!client) return { uploaded: 0, skipped: 0, errors: 0 };
+  if (!client) return { uploaded: 0, skipped: 0, errors: 0, purged: 0 };
 
-  if (!existsSync(musicDir)) return { uploaded: 0, skipped: 0, errors: 0 };
+  if (!existsSync(musicDir)) return { uploaded: 0, skipped: 0, errors: 0, purged: 0 };
 
   const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.wav', '.flac', '.wma']);
 
@@ -448,10 +448,11 @@ export async function syncMusicToR2(musicDir) {
   }
 
   const localFiles = walkLocal(musicDir);
+  const localSet = new Set(localFiles);
   const remoteFiles = await listR2Music();
   const remoteMap = new Map(remoteFiles.map(f => [f.path, f.size]));
 
-  let uploaded = 0, skipped = 0, errors = 0;
+  let uploaded = 0, skipped = 0, errors = 0, purged = 0;
 
   console.log(`☁️ R2 music upload: ${localFiles.length} local files, ${remoteFiles.length} remote files`);
 
@@ -488,8 +489,25 @@ export async function syncMusicToR2(musicDir) {
     }
   }
 
-  console.log(`☁️ R2 music upload complete: ${uploaded} uploaded, ${skipped} already remote, ${errors} errors`);
-  return { uploaded, skipped, errors };
+  // Homebase rewrite: delete R2 files not in local library
+  if (purgeOrphans && localFiles.length > 0) {
+    const toDelete = remoteFiles.filter(f => !localSet.has(f.path));
+    if (toDelete.length > 0) {
+      console.log(`☁️ R2 purge: removing ${toDelete.length} R2 file(s) not in homebase library...`);
+      for (const f of toDelete) {
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: `music/${f.path}` }));
+          console.log(`🗑️ R2 purge: deleted music/${f.path}`);
+          purged++;
+        } catch (err) {
+          console.error(`☁️ R2 purge: failed to delete ${f.path}: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  console.log(`☁️ R2 music upload complete: ${uploaded} uploaded, ${skipped} already remote, ${errors} errors, ${purged} purged from R2`);
+  return { uploaded, skipped, errors, purged };
 }
 
 export async function getR2Stats() {

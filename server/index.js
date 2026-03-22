@@ -1957,8 +1957,8 @@ async function initR2Sync() {
         // Homebase is the music master — push local library to R2, never pull
         updateBootStep('musicSync', 'skipped', 'Homebase — source of truth, does not pull from R2');
         updateBootStep('musicUpload', 'running', 'Pushing library to R2...');
-        const musicUpResult = await syncMusicToR2(MUSIC_PATH);
-        updateBootStep('musicUpload', 'done', `${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
+        const musicUpResult = await syncMusicToR2(MUSIC_PATH, { purgeOrphans: true });
+        updateBootStep('musicUpload', 'done', `${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud, ${musicUpResult.purged} removed from R2`);
         console.log(`☁️ Music upload: ${musicUpResult.uploaded} uploaded, ${musicUpResult.skipped} already in cloud`);
       } else {
         // Venue Pi — pull from R2 (homebase's library), never push music up
