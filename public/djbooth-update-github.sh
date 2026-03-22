@@ -43,11 +43,15 @@ fi
 
 echo "[1/8] Checking for OS package updates..."
 set +e
-sudo apt-get update -q 2>&1 | tail -3
-sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q 2>&1 | tail -5
-if [ -f /var/run/reboot-required ]; then
-  echo "  System reboot required after package updates. Scheduling reboot for 08:30..."
-  sudo shutdown -r 08:30 "Scheduled reboot after system update" 2>/dev/null || true
+if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
+  echo "  Boot mode — skipping OS upgrade to keep update fast"
+else
+  sudo apt-get update -q 2>&1 | tail -3
+  sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q 2>&1 | tail -5
+  if [ -f /var/run/reboot-required ]; then
+    echo "  System reboot required after package updates. Scheduling reboot for 08:30..."
+    sudo shutdown -r 08:30 "Scheduled reboot after system update" 2>/dev/null || true
+  fi
 fi
 set -e
 
@@ -306,7 +310,7 @@ ExecStart=/bin/bash $BOOT_HOME/djbooth-update.sh
 RemainAfterExit=yes
 StandardOutput=journal
 StandardError=journal
-TimeoutStartSec=600
+TimeoutStartSec=1800
 
 [Install]
 WantedBy=multi-user.target
