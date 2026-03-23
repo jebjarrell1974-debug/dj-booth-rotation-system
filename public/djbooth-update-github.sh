@@ -482,8 +482,8 @@ if [ "$IS_HOMEBASE_VAL" != "true" ] && [ -n "$WIFI_CONN" ]; then
     sudo nmcli connection modify "$WIFI_CONN" \
       ipv4.method manual \
       ipv4.addresses "192.168.88.100/24" \
-      ipv4.gateway "192.168.88.1" \
-      ipv4.dns "8.8.8.8" \
+      ipv4.gateway "" \
+      ipv4.dns "" \
       ipv4.route-metric 600 2>/dev/null && \
     sudo nmcli connection up "$WIFI_CONN" 2>/dev/null && \
       echo "Wi-Fi static IP set: 192.168.88.100 (iPad remote access)" || \
