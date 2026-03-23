@@ -66,27 +66,11 @@ export default function DancerRoster({
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDeleteConfirm = async () => {
-    if (!deleteTarget || deletePin.length !== 5) return;
+    if (!deleteTarget) return;
     setIsDeleting(true);
-    setDeleteError('');
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'dj', pin: deletePin })
-      });
-      const data = await res.json();
-      if (!data.success || data.role !== 'dj') {
-        setDeleteError('Invalid manager PIN');
-        setIsDeleting(false);
-        return;
-      }
-      onDeleteDancer(deleteTarget.id);
-      setDeleteTarget(null);
-      setDeletePin('');
-    } catch {
-      setDeleteError('Verification failed');
-    }
+    onDeleteDancer(deleteTarget.id);
+    setDeleteTarget(null);
+    setDeletePin('');
     setIsDeleting(false);
   };
 
@@ -408,66 +392,29 @@ export default function DancerRoster({
         </div>
       </ScrollArea>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeletePin(''); setDeleteError(''); } }}>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent className="bg-[#0d0d1f] border-[#1e293b] max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete Entertainer</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-gray-300 text-sm text-center">
-              Enter manager PIN to delete <span className="font-semibold text-white">{deleteTarget?.name}</span>
+          <div className="flex flex-col gap-5">
+            <p className="text-gray-300 text-center">
+              Are you sure you want to delete <span className="font-semibold text-white">{deleteTarget?.name}</span>? This cannot be undone.
             </p>
-            <div className="flex gap-3 justify-center">
-              {[0,1,2,3,4].map(i => (
-                <div key={i} className={`w-10 h-12 rounded-lg border-2 flex items-center justify-center text-xl font-bold transition-colors ${
-                  i < deletePin.length ? 'border-red-500 bg-red-500/20 text-red-400' : 'border-[#1e293b] bg-[#08081a] text-gray-600'
-                }`}>
-                  {i < deletePin.length ? '•' : ''}
-                </div>
-              ))}
-            </div>
-            {deleteError && <p className="text-red-400 text-xs text-center">{deleteError}</p>}
-            <div className="grid grid-cols-3 gap-2 w-full">
-              {[1,2,3,4,5,6,7,8,9].map(d => (
-                <button
-                  key={d}
-                  onClick={() => setDeletePin(prev => prev.length < 5 ? prev + String(d) : prev)}
-                  disabled={isDeleting}
-                  className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-xl font-semibold hover:bg-[#1e293b] active:bg-red-500/20 transition-colors"
-                >
-                  {d}
-                </button>
-              ))}
-              <div />
-              <button
-                onClick={() => setDeletePin(prev => prev.length < 5 ? prev + '0' : prev)}
-                disabled={isDeleting}
-                className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-xl font-semibold hover:bg-[#1e293b] active:bg-red-500/20 transition-colors"
-              >
-                0
-              </button>
-              <button
-                onClick={() => setDeletePin(prev => prev.slice(0, -1))}
-                disabled={isDeleting}
-                className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-gray-400 flex items-center justify-center hover:bg-[#1e293b] hover:text-white transition-colors"
-              >
-                <Delete className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex gap-2 w-full">
+            <div className="flex gap-3">
               <Button
                 variant="outline"
-                className="flex-1 border-[#1e293b] text-gray-400"
-                onClick={() => { setDeleteTarget(null); setDeletePin(''); setDeleteError(''); }}
+                className="flex-1 h-14 text-lg border-[#1e293b] text-gray-400"
+                onClick={() => setDeleteTarget(null)}
               >
                 Cancel
               </Button>
               <Button
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                disabled={deletePin.length !== 5 || isDeleting}
+                className="flex-1 h-14 text-lg bg-red-600 hover:bg-red-700 text-white"
+                disabled={isDeleting}
                 onClick={handleDeleteConfirm}
               >
-                {isDeleting ? 'Verifying...' : 'Delete'}
+                {isDeleting ? 'Deleting...' : 'Delete'}
               </Button>
             </div>
           </div>
