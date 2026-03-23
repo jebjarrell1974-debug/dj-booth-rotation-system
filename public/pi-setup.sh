@@ -203,6 +203,17 @@ fi
 if [ -n "$WIFI_CONN" ]; then
   sudo nmcli connection modify "$WIFI_CONN" ipv4.route-metric 600 2>/dev/null && echo "WiFi set to local only (metric 600)" || true
 fi
+if [ -n "$WIFI_CONN" ]; then
+  sudo nmcli connection modify "$WIFI_CONN" \
+    ipv4.method manual \
+    ipv4.addresses "192.168.88.100/24" \
+    ipv4.gateway "192.168.88.1" \
+    ipv4.dns "8.8.8.8" \
+    ipv4.route-metric 600 2>/dev/null && \
+  sudo nmcli connection up "$WIFI_CONN" 2>/dev/null && \
+    echo "WiFi static IP set: 192.168.88.100 (iPad remote access)" || \
+    echo "WiFi static IP: could not apply (connect to venue WiFi first)"
+fi
 
 echo "[12/12] Downloading update script..."
 curl -o "$UNIT_HOME/djbooth-update.sh" "https://raw.githubusercontent.com/$GITHUB_REPO/main/public/djbooth-update-github.sh" && chmod +x "$UNIT_HOME/djbooth-update.sh"

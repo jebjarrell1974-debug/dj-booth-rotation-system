@@ -475,6 +475,24 @@ if [ -n "$WIFI_CONN" ]; then
     echo "Wi-Fi ($WIFI_CONN) route metric set to 600 (local only)" || true
 fi
 
+IS_HOMEBASE_VAL=$(grep "^IS_HOMEBASE=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+if [ "$IS_HOMEBASE_VAL" != "true" ] && [ -n "$WIFI_CONN" ]; then
+  CURRENT_IP=$(nmcli -g IP4.ADDRESS connection show "$WIFI_CONN" 2>/dev/null | head -1)
+  if [ "$CURRENT_IP" != "192.168.88.100/24" ]; then
+    sudo nmcli connection modify "$WIFI_CONN" \
+      ipv4.method manual \
+      ipv4.addresses "192.168.88.100/24" \
+      ipv4.gateway "192.168.88.1" \
+      ipv4.dns "8.8.8.8" \
+      ipv4.route-metric 600 2>/dev/null && \
+    sudo nmcli connection up "$WIFI_CONN" 2>/dev/null && \
+      echo "Wi-Fi static IP set: 192.168.88.100 (iPad remote access)" || \
+      echo "Wi-Fi static IP: could not apply (WiFi may not be connected)"
+  else
+    echo "Wi-Fi static IP already set: 192.168.88.100"
+  fi
+fi
+
 STAMP_TS=$(date -u +%s)000
 STAMP_SHA="${COMMIT_SHA:-unknown}"
 SHORT_STAMP="${SHORT_SHA:-unknown}"
