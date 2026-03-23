@@ -827,6 +827,7 @@ const AudioEngine = forwardRef(({
       }
 
       voice.src = audioUrl;
+      voice.load();
       voice.volume = 1.0;
       voice.loop = false;
 
