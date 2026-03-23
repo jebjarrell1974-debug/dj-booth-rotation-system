@@ -42,12 +42,15 @@ if [ "$TAILSCALE_IP" = "not connected" ] || [ -z "$TAILSCALE_IP" ]; then
 fi
 echo "Tailscale IP: $TAILSCALE_IP"
 
-echo "[2/8] Installing Node.js..."
+echo "[2/8] Installing Node.js and SSH server..."
 if ! command -v node &> /dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt install -y nodejs
 fi
 echo "Node: $(node --version)"
+sudo apt install -y openssh-server
+sudo systemctl enable --now ssh
+echo "SSH: $(sudo systemctl is-active ssh)"
 
 echo "[3/8] Cloning app from GitHub..."
 if [ ! -d "$APP_DIR" ]; then
