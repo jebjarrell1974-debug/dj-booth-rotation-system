@@ -169,18 +169,6 @@ export default function Landing() {
                 </Button>
               )}
               <Button
-                onClick={() => setMode('dj-remote')}
-                variant="outline"
-                className={`h-16 text-lg font-semibold ${
-                  !isLocalDevice
-                    ? 'bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black border-0'
-                    : 'border-[#2563eb] bg-[#2563eb]/10 text-[#00d4ff] hover:bg-[#2563eb]/20 hover:text-white'
-                }`}
-              >
-                <Wifi className="w-5 h-5 mr-3" />
-                DJ / Manager Remote
-              </Button>
-              <Button
                 onClick={() => setMode('dancer')}
                 variant="outline"
                 className="h-16 text-lg font-semibold border-[#1e293b] bg-[#0d0d1f] text-white hover:bg-[#151528] hover:text-white"
