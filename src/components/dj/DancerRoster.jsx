@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus, RotateCcw } from 'lucide-react';
+import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus, RotateCcw, Delete } from 'lucide-react';
 
 const clearDancerFromIndexedDB = async (dancerName) => {
   try {
@@ -413,27 +413,52 @@ export default function DancerRoster({
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete Entertainer</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-gray-300 text-sm">
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-gray-300 text-sm text-center">
               Enter manager PIN to delete <span className="font-semibold text-white">{deleteTarget?.name}</span>
             </p>
-            <Input
-              type="password"
-              inputMode="numeric"
-              maxLength={5}
-              placeholder="5-digit manager PIN"
-              value={deletePin}
-              onChange={(e) => setDeletePin(e.target.value.replace(/\D/g, '').slice(0, 5))}
-              onKeyDown={(e) => e.key === 'Enter' && handleDeleteConfirm()}
-              className="bg-[#08081a] border-[#1e293b] text-center text-lg tracking-[0.5em]"
-              autoFocus
-            />
+            <div className="flex gap-3 justify-center">
+              {[0,1,2,3,4].map(i => (
+                <div key={i} className={`w-10 h-12 rounded-lg border-2 flex items-center justify-center text-xl font-bold transition-colors ${
+                  i < deletePin.length ? 'border-red-500 bg-red-500/20 text-red-400' : 'border-[#1e293b] bg-[#08081a] text-gray-600'
+                }`}>
+                  {i < deletePin.length ? '•' : ''}
+                </div>
+              ))}
+            </div>
             {deleteError && <p className="text-red-400 text-xs text-center">{deleteError}</p>}
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2 w-full">
+              {[1,2,3,4,5,6,7,8,9].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDeletePin(prev => prev.length < 5 ? prev + String(d) : prev)}
+                  disabled={isDeleting}
+                  className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-xl font-semibold hover:bg-[#1e293b] active:bg-red-500/20 transition-colors"
+                >
+                  {d}
+                </button>
+              ))}
+              <div />
+              <button
+                onClick={() => setDeletePin(prev => prev.length < 5 ? prev + '0' : prev)}
+                disabled={isDeleting}
+                className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-white text-xl font-semibold hover:bg-[#1e293b] active:bg-red-500/20 transition-colors"
+              >
+                0
+              </button>
+              <button
+                onClick={() => setDeletePin(prev => prev.slice(0, -1))}
+                disabled={isDeleting}
+                className="h-14 rounded-xl bg-[#151528] border border-[#1e293b] text-gray-400 flex items-center justify-center hover:bg-[#1e293b] hover:text-white transition-colors"
+              >
+                <Delete className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex gap-2 w-full">
               <Button
                 variant="outline"
                 className="flex-1 border-[#1e293b] text-gray-400"
-                onClick={() => setDeleteTarget(null)}
+                onClick={() => { setDeleteTarget(null); setDeletePin(''); setDeleteError(''); }}
               >
                 Cancel
               </Button>
