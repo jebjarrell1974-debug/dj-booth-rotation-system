@@ -168,6 +168,15 @@ export default function Landing() {
                   NEON AI DJ
                 </Button>
               )}
+              {!isLocalDevice && (
+                <Button
+                  onClick={() => setMode('dj-remote')}
+                  className="h-16 text-lg font-semibold bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black"
+                >
+                  <Music2 className="w-5 h-5 mr-3" />
+                  DJ / Manager Remote
+                </Button>
+              )}
               <Button
                 onClick={() => setMode('dancer')}
                 variant="outline"
