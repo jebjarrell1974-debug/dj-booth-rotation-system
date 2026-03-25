@@ -3124,6 +3124,8 @@ export default function DJBooth() {
     lastRotationToggleRef.current = now;
     setIsRotationActive(false);
     isRotationActiveRef.current = false;
+    setCurrentDancerIndex(0);
+    currentDancerIndexRef.current = 0;
     setCurrentSongNumber(1);
     currentSongNumberRef.current = 1;
     setRotationSongs({});
