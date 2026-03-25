@@ -121,7 +121,7 @@ export default function DancerView() {
       if (Date.now() - lastActivityRef.current > INACTIVITY_TIMEOUT) {
         if (isDancerSession) {
           logoutDancerSession();
-          navigate('/DJBooth');
+          navigate('/');
         } else {
           navigate('/');
         }
@@ -280,7 +280,7 @@ export default function DancerView() {
     flushSave();
     if (isDancerSession) {
       logoutDancerSession();
-      navigate('/DJBooth');
+      navigate('/');
     } else {
       navigate('/');
     }
