@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import BootScreen from '@/components/BootScreen';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
@@ -16,7 +16,6 @@ import FleetDashboard from '@/pages/FleetDashboard';
 import VoiceStudio from '@/pages/VoiceStudio';
 import Help from '@/pages/Help';
 
-// Set title immediately before any component mounts so Wayfire window-rules can match it
 if (window.location.pathname === '/RotationDisplay') { document.title = 'NEON DJ Rotation'; }
 
 class ErrorBoundary extends React.Component {
@@ -97,8 +96,11 @@ const KIOSK_WARNING_SECS = 30;
 function KioskLockManager() {
   const { isAuthenticated, role } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
   const [countdown, setCountdown] = useState(null);
+  const [locked, setLocked] = useState(false);
+  const [pin, setPin] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   const timerRef = useRef(null);
   const countdownIntervalRef = useRef(null);
   const countdownValRef = useRef(null);
@@ -111,8 +113,10 @@ function KioskLockManager() {
     clearInterval(countdownIntervalRef.current);
     setCountdown(null);
     lockedRef.current = true;
-    navigate('/');
-  }, [navigate]);
+    setLocked(true);
+    setPin('');
+    setUnlockError('');
+  }, []);
 
   const startTimer = useCallback(() => {
     clearTimeout(timerRef.current);
@@ -139,13 +143,48 @@ function KioskLockManager() {
     startTimer();
   }, [startTimer]);
 
-  // When DJ logs back in and lands on the booth page, reset the lock and restart the timer
-  useEffect(() => {
-    if (location.pathname === '/DJBooth' && isAuthenticated && role === 'dj' && lockedRef.current) {
-      lockedRef.current = false;
-      startTimer();
+  const handleUnlock = useCallback(async (pinToTry) => {
+    if (pinToTry.length !== 5 || unlocking) return;
+    setUnlocking(true);
+    setUnlockError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'dj', pin: pinToTry }),
+      });
+      if (res.ok) {
+        lockedRef.current = false;
+        setLocked(false);
+        setPin('');
+        setUnlockError('');
+        startTimer();
+      } else {
+        setUnlockError('Incorrect PIN');
+        setPin('');
+      }
+    } catch {
+      setUnlockError('Connection error');
+      setPin('');
     }
-  }, [location.pathname, isAuthenticated, role, startTimer]);
+    setUnlocking(false);
+  }, [unlocking, startTimer]);
+
+  const handlePinDigit = useCallback((digit) => {
+    setPin(prev => {
+      const next = prev + digit;
+      if (next.length === 5) {
+        handleUnlock(next);
+        return next;
+      }
+      return next;
+    });
+  }, [handleUnlock]);
+
+  const handlePinBackspace = useCallback(() => {
+    setPin(prev => prev.slice(0, -1));
+    setUnlockError('');
+  }, []);
 
   useEffect(() => {
     if (!isActive) {
@@ -153,6 +192,7 @@ function KioskLockManager() {
       clearInterval(countdownIntervalRef.current);
       setCountdown(null);
       lockedRef.current = false;
+      setLocked(false);
       return;
     }
     document.addEventListener('click', resetTimer);
@@ -165,6 +205,51 @@ function KioskLockManager() {
       clearInterval(countdownIntervalRef.current);
     };
   }, [isActive, resetTimer, startTimer]);
+
+  if (locked) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(8,8,26,0.96)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', width: '100%', maxWidth: 320, padding: '0 1.5rem' }}>
+          <div style={{ color: '#00d4ff', fontSize: 13, fontWeight: 700, letterSpacing: 3, marginBottom: '2rem', textTransform: 'uppercase' }}>Screen Locked</div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginBottom: '1.25rem' }}>
+            {[0,1,2,3,4].map(i => (
+              <div key={i} style={{ width: 14, height: 14, borderRadius: '50%', background: i < pin.length ? '#00d4ff' : 'rgba(255,255,255,0.15)', transition: 'background 0.15s', boxShadow: i < pin.length ? '0 0 8px #00d4ff88' : 'none' }} />
+            ))}
+          </div>
+          {unlockError && <div style={{ color: '#ff2d55', fontSize: 13, marginBottom: '0.75rem', minHeight: 20 }}>{unlockError}</div>}
+          {!unlockError && unlocking && <div style={{ color: '#6b7280', fontSize: 13, marginBottom: '0.75rem', minHeight: 20 }}>Checking...</div>}
+          {!unlockError && !unlocking && <div style={{ minHeight: 20, marginBottom: '0.75rem' }} />}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
+            {[1,2,3,4,5,6,7,8,9].map(d => (
+              <button
+                key={d}
+                onClick={() => handlePinDigit(String(d))}
+                disabled={unlocking}
+                style={{ height: 68, fontSize: 26, fontWeight: 600, color: '#fff', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, cursor: 'pointer', transition: 'background 0.12s' }}
+              >
+                {d}
+              </button>
+            ))}
+            <button
+              onClick={handlePinBackspace}
+              disabled={unlocking}
+              style={{ height: 68, fontSize: 20, fontWeight: 600, color: '#6b7280', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, cursor: 'pointer' }}
+            >
+              ⌫
+            </button>
+            <button
+              onClick={() => handlePinDigit('0')}
+              disabled={unlocking}
+              style={{ height: 68, fontSize: 26, fontWeight: 600, color: '#fff', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, cursor: 'pointer' }}
+            >
+              0
+            </button>
+            <div style={{ height: 68 }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (countdown) {
     return (
