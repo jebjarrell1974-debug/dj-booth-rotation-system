@@ -782,10 +782,16 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
       [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
     }
 
-    // Not enough fresh playlist songs to fill the set — pad with oldest-cooldown tracks
-    cooldownTracks.sort((a, b) => (a.lastPlayed < b.lastPlayed ? -1 : 1));
+    // Fewer fresh playlist songs than needed — fill remaining slots from genre folders
+    if (freshTracks.length < count) {
+      const fillerExclude = [...excludeSet, ...freshTracks.map(t => t.name)];
+      const filler = getRandomTracks(count - freshTracks.length, fillerExclude, genres);
+      const result = [...freshTracks, ...filler];
+      console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh playlist + ${filler.length} genre filler → [${result.map(t => t.name).join(' | ')}]`);
+      return result;
+    }
 
-    const result = [...freshTracks, ...cooldownTracks].slice(0, count);
+    const result = freshTracks.slice(0, count);
     console.log(`🎵 selectTracksForSet: returning [${result.map(t => t.name).join(' | ')}]`);
     return result;
   }
