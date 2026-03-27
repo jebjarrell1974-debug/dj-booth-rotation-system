@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { DragDropContext, Droppable, Draggable, useMouseSensor } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,86 @@ const filterByGenres = (trackList, activeGenres) => {
   const filtered = trackList.filter(t => activeGenres.includes(t.genre));
   return filtered.length > 0 ? filtered : trackList;
 };
+
+const LONG_PRESS_MS = 500;
+const SCROLL_SLOP_PX = 8;
+
+function useLongPressTouchSensor(api) {
+  const phaseRef = useRef({ type: 'IDLE' });
+
+  useEffect(() => {
+    function cleanup() {
+      const phase = phaseRef.current;
+      if (phase.type === 'PENDING') {
+        clearTimeout(phase.timerId);
+        phase.actions.abort();
+      }
+      phaseRef.current = { type: 'IDLE' };
+    }
+
+    function onTouchStart(event) {
+      if (event.defaultPrevented || phaseRef.current.type !== 'IDLE') return;
+      const draggableId = api.findClosestDraggableId(event);
+      if (!draggableId) return;
+      const actions = api.tryGetLock(draggableId, cleanup, { sourceEvent: event });
+      if (!actions) return;
+      const touch = event.touches[0];
+      const startPoint = { x: touch.clientX, y: touch.clientY };
+      const timerId = setTimeout(() => {
+        if (phaseRef.current.type !== 'PENDING') return;
+        const { actions, startPoint } = phaseRef.current;
+        const dragActions = actions.fluidLift(startPoint);
+        phaseRef.current = { type: 'DRAGGING', actions: dragActions };
+      }, LONG_PRESS_MS);
+      phaseRef.current = { type: 'PENDING', actions, startPoint, timerId };
+    }
+
+    function onTouchMove(event) {
+      const phase = phaseRef.current;
+      if (phase.type === 'DRAGGING') {
+        event.preventDefault();
+        const touch = event.touches[0];
+        phase.actions.move({ x: touch.clientX, y: touch.clientY });
+        return;
+      }
+      if (phase.type === 'PENDING') {
+        const touch = event.touches[0];
+        const dx = touch.clientX - phase.startPoint.x;
+        const dy = touch.clientY - phase.startPoint.y;
+        if (Math.sqrt(dx * dx + dy * dy) > SCROLL_SLOP_PX) cleanup();
+      }
+    }
+
+    function onTouchEnd() {
+      const phase = phaseRef.current;
+      if (phase.type === 'DRAGGING') {
+        phase.actions.drop({ shouldBlockNextClick: true });
+        phaseRef.current = { type: 'IDLE' };
+        return;
+      }
+      cleanup();
+    }
+
+    function onTouchCancel() {
+      const phase = phaseRef.current;
+      if (phase.type === 'DRAGGING') phase.actions.cancel({ shouldBlockNextClick: true });
+      cleanup();
+    }
+
+    const opts = { capture: true, passive: false };
+    window.addEventListener('touchstart', onTouchStart, opts);
+    window.addEventListener('touchmove', onTouchMove, opts);
+    window.addEventListener('touchend', onTouchEnd, { capture: true });
+    window.addEventListener('touchcancel', onTouchCancel, { capture: true });
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart, opts);
+      window.removeEventListener('touchmove', onTouchMove, opts);
+      window.removeEventListener('touchend', onTouchEnd, { capture: true });
+      window.removeEventListener('touchcancel', onTouchCancel, { capture: true });
+      cleanup();
+    };
+  }, [api]);
+}
 
 export default function RotationPlaylistManager({ 
   dancers, 
@@ -730,7 +810,7 @@ export default function RotationPlaylistManager({
 
   return (
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
-      <DragDropContext onDragEnd={handleDragEnd}>
+      <DragDropContext onDragEnd={handleDragEnd} sensors={[useMouseSensor, useLongPressTouchSensor]} enableDefaultSensors={false}>
         <div ref={libraryPanelRef} className="w-1/2 border-r border-[#1e293b] flex flex-col">
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
