@@ -2285,7 +2285,10 @@ export default function DJBooth() {
           return;
         }
 
-        const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
+        const scratchSongs = { ...rotationSongsRef.current };
+        delete scratchSongs[finishedDancerId];
+        rotationSongsRef.current = scratchSongs;
+        const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
@@ -2833,7 +2836,10 @@ export default function DJBooth() {
           return;
         }
 
-        const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
+        const scratchSongs = { ...rotationSongsRef.current };
+        delete scratchSongs[finishedDancerId];
+        rotationSongsRef.current = scratchSongs;
+        const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
