@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { localEntities } from '@/api/localEntities';
 import { useQuery } from '@tanstack/react-query';
 
@@ -50,9 +50,27 @@ const LABEL_STYLE = {
 };
 
 export default function RotationDisplay() {
+  const [showCountdown, setShowCountdown] = useState(() => {
+    const stored = localStorage.getItem('djbooth_display_countdown');
+    return stored === null ? true : stored === 'true';
+  });
+
   useEffect(() => {
     document.title = 'NEON DJ Rotation';
     return () => { document.title = 'NEON AI DJ'; };
+  }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      const stored = localStorage.getItem('djbooth_display_countdown');
+      setShowCountdown(stored === null ? true : stored === 'true');
+    };
+    window.addEventListener('djbooth_display_countdown_changed', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('djbooth_display_countdown_changed', handler);
+      window.removeEventListener('storage', handler);
+    };
   }, []);
 
   const { data: stageState = null } = useQuery({
@@ -149,6 +167,11 @@ export default function RotationDisplay() {
             <p className="stage-label text-lg font-bold tracking-widest uppercase mb-2" style={LABEL_STYLE}>
               Break
             </p>
+            <h1
+              className="current-name text-9xl font-black text-white uppercase tracking-wider text-center leading-tight mb-2"
+            >
+              Break Song
+            </h1>
             {breakSongTotal > 0 && (
               <div className="flex items-center gap-4 mb-2">
                 {Array.from({ length: breakSongTotal }).map((_, i) => {
@@ -171,11 +194,13 @@ export default function RotationDisplay() {
                 })}
               </div>
             )}
-            <div
-              ref={countdownRef}
-              className="font-black font-mono tabular-nums leading-none"
-              style={{ fontSize: '4.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
-            />
+            {showCountdown && (
+              <div
+                ref={countdownRef}
+                className="font-black font-mono tabular-nums leading-none"
+                style={{ fontSize: '4.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+              />
+            )}
           </>
         ) : (
           <>
@@ -188,11 +213,13 @@ export default function RotationDisplay() {
             >
               {currentDancer ? currentDancer.name : '—'}
             </h1>
-            <div
-              ref={countdownRef}
-              className="font-black font-mono tabular-nums mt-2 leading-none"
-              style={{ fontSize: '5.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
-            />
+            {showCountdown && (
+              <div
+                ref={countdownRef}
+                className="font-black font-mono tabular-nums mt-2 leading-none"
+                style={{ fontSize: '5.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+              />
+            )}
           </>
         )}
       </div>

@@ -111,9 +111,100 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 51 — March 22, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 53 — March 27, 2026) — READ THIS FIRST
 
-### Latest GitHub commit: `e0b5bac` — "Fix: boot update service waits for network-online before starting"
+### Latest commits this session (all on GitHub):
+- `536ee4e` — Kiosk timeout: navigate to landing page instead of PIN overlay (music keeps playing)
+- `575d3550` — RotationDisplay: show "BREAK SONG" h1 where dancer name normally appears during breaks
+- `2386d3e` — Options tab: add Display Screen Timer toggle (show/hide countdown on crowd screen)
+- `865557a` — Options tab: remove Exit Kiosk Mode (moved to Configuration page only, behind master PIN)
+
+### Rollback point BEFORE song selection changes: `d1269da11102297beb56dfbbc877b7e39d86e30d`
+Use this commit to roll back if the song selection changes break anything.
+
+### Song selection changes — PLANNED (not yet implemented):
+**Iron-clad rules agreed with user:**
+1. Pick songs from dancer's assigned playlist first
+2. Exclude songs played by ANYONE in the last **4 hours** (not 6 — change in server/db.js)
+3. If dancer has NO fresh songs (all in cooldown OR no playlist) → fall back to genre folders selected in Options, filtered by same 4-hour cooldown
+4. Manual DJ selection (drag to dancer, pick from browser) → always plays regardless of cooldown. Play IS logged to history so auto-selection respects it afterward. But the DJ is never blocked from manually choosing any song.
+
+**Files to change:**
+- `server/db.js` — `selectTracksForSet`: change `-6 hours` → `-4 hours`. Change fallback: when `freshTracks.length === 0` and `cooldownTracks.length > 0`, fall back to genre folders via `getRandomTracks` instead of using oldest cooldown track.
+- `src/pages/DJBooth.jsx` — `getDancerTracks`: verify manual assignment path fully bypasses cooldown, no additional changes needed per user clarification.
+
+**What currently exists (before change):**
+- Cooldown: 6 hours server-side
+- When all playlist songs are in cooldown: plays oldest-cooldown track from dancer's playlist (WRONG — should fall back to genre folders)
+- Manual assignments: already bypass `getDancerTracks` via `existingTracks` check in `beginRotation`/`handleTrackEnd`
+
+### Session 53 — What was changed this session
+
+**Kiosk inactivity timeout behavior changed (App.jsx):**
+- OLD: 3-min timeout → full-screen PIN pad overlay on top of DJBooth
+- NEW: 3-min timeout → 30-sec countdown warning → navigate to `/` (landing page)
+- Music/rotation/voiceovers keep playing via `PersistentDJBooth` (DJBooth stays mounted, hidden)
+- Timer pauses while on landing page (won't re-fire until DJ logs back in and returns to DJBooth)
+- Session stays alive underneath — no token destruction — DJBooth API calls keep working
+- Countdown overlay now says "Returning to login screen / Tap anywhere to stay active"
+
+**RotationDisplay — Break Song display (RotationDisplay.jsx):**
+- During a break, "BREAK SONG" now appears in big white h1 where the dancer name normally shows
+- Uses same `current-name` class (neon glow, pulse animation) as dancer name
+- Layout: "Break" label → "BREAK SONG" h1 → break dots → countdown timer
+- Next dancer still shows correctly in "Up Next" section below
+
+**Display Screen Timer toggle (DJOptions.jsx + RotationDisplay.jsx):**
+- New toggle in Options tab: between Commercials and Music Selection Mode sections
+- Stored in `localStorage` key `djbooth_display_countdown` (default: true = show)
+- RotationDisplay reads on mount, listens for `djbooth_display_countdown_changed` event + `storage` event
+- Toggling updates the crowd display live without reload
+
+**Exit Kiosk Mode moved (DJOptions.jsx → Configuration.jsx):**
+- Removed from Options tab entirely (was accessible to any logged-in DJ — too easy to hit accidentally)
+- Now lives only in Configuration page, behind master PIN
+- Already existed in Configuration — just removed from Options
+
+### Latest GitHub commit before session 52: `a44c7c5` — "Fix: restore lock overlay so music never stops on kiosk timeout; fix landing page buttons; fix DancerView exit; fix rotation restart index"
+
+### Update pipeline — HOW IT WORKS (confirmed, do not second-guess)
+1. Code changes are made in Replit → **Replit automatically syncs every commit to GitHub** (live connection, no manual push needed for normal changes)
+2. User updates homebase by running `~/djbooth-update.sh` on homebase — pulls latest from GitHub — user does this nightly
+3. Venue Pis reboot at 8:30 AM and pull from homebase automatically — confirmed working
+- **github-pi-update skill** (explicit full-tree push): Only needed when a large structural change must be force-synced or the auto-sync is suspected to have missed something. NOT required for normal session work.
+- **Why 003 had old 3-button landing page on March 25**: 003's 8:30 AM auto-update ran before the user had updated homebase that day. When 003 rebooted, homebase hadn't yet pulled the `c5ed6c4` fix. Next reboot will get correct code.
+- **Rule**: After making significant fixes, remind user to update homebase so tomorrow's Pi reboots get the latest.
+
+### Session 52 — What was fixed / built (GitHub commit `a44c7c5`)
+
+**Kiosk lock overlay restored (App.jsx — CRITICAL):**
+- `KioskLockManager` was navigating to `/` on inactivity timeout, unmounting DJBooth and killing music
+- This was a regression introduced in commit `46df0c8` (March 21) that undid the Session 48 critical fix
+- Restored: timeout now shows a full-screen PIN pad overlay on top of DJBooth
+- DJBooth stays mounted, music/rotation/voiceovers keep playing behind the lock screen
+- DJ enters any valid DJ PIN to unlock — no session destruction, no navigation
+- `PersistentDJBooth` component already kept DJBooth alive; lock overlay just needed to not navigate away
+
+**Landing page buttons — correct behavior (Landing.jsx):**
+- Kiosk (localhost): shows "NEON AI DJ" + "Entertainer" only
+- Remote/iPad (non-localhost): shows "DJ / Manager Remote" + "Entertainer" only
+- `isLocalDevice` = `window.location.hostname === 'localhost' || '127.0.0.1'`
+- 003 was showing old code (all 3 buttons) because it hadn't updated from GitHub since March 22
+
+**DancerView exit fix (DancerView.jsx):**
+- Inactivity timeout and manual logout both navigate to `/` (landing page) instead of `/DJBooth`
+- Applies to both `isDancerSession` path and fallback path
+
+**Rotation restart index fix (DJBooth.jsx):**
+- `stopRotation()` resets `currentDancerIndex` to 0
+- Restart always begins from position 0 of whatever order the DJ has arranged
+
+### Action needed after this session
+- User: run `~/djbooth-update.sh` on homebase to pull `a44c7c5` from GitHub
+- Then force update on 003 when venue goes dark: `~/djbooth-update.sh`
+- 001 also needs update when accessible
+
+### Latest GitHub commit: `e0b5bac` (March 22) — SUPERSEDED by `a44c7c5` above
 
 ### Fleet Dashboard correct URL (UPDATED)
 - **OLD (retired):** `100.95.238.71:3001/fleet` — DO NOT USE

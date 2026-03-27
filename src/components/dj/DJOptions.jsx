@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, ChevronDown, Music, MonitorOff, Radio } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
 export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq }) {
@@ -16,6 +17,10 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
   const [commercialDropdownOpen, setCommercialDropdownOpen] = useState(false);
   const commercialRef = useRef(null);
   const commercialSyncedRef = useRef(false);
+  const [displayCountdown, setDisplayCountdown] = useState(() => {
+    const stored = localStorage.getItem('djbooth_display_countdown');
+    return stored === null ? true : stored === 'true';
+  });
 
   useEffect(() => {
     if (!commercialSyncedRef.current && externalCommercialFreq != null) {
@@ -157,6 +162,26 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
               ? 'A promo plays between every other entertainer set.'
               : 'A promo plays between every third entertainer set.'}
           </p>
+        </div>
+
+        <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Monitor className="w-4 h-4 text-[#00d4ff]" />
+              <div>
+                <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Display Screen Timer</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Show song countdown on the crowd-facing screen</p>
+              </div>
+            </div>
+            <Switch
+              checked={displayCountdown}
+              onCheckedChange={(val) => {
+                setDisplayCountdown(val);
+                localStorage.setItem('djbooth_display_countdown', String(val));
+                window.dispatchEvent(new Event('djbooth_display_countdown_changed'));
+              }}
+            />
+          </div>
         </div>
 
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
@@ -409,29 +434,6 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
             Reset to flat
           </button>
         </div>
-      </div>
-
-      <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-        <button
-          onClick={async () => {
-            if (!confirm('Exit kiosk mode? The browser will close. You can relaunch from the Pi desktop or via SSH.')) return;
-            try {
-              const token = localStorage.getItem('djbooth_token');
-              await fetch('/api/kiosk/exit', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {})
-                }
-              });
-            } catch {}
-          }}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm font-medium"
-        >
-          <MonitorOff className="w-4 h-4" />
-          Exit Kiosk Mode
-        </button>
-        <p className="text-xs text-gray-500 mt-2 text-center">Closes the fullscreen browser. Relaunch from Pi desktop or via SSH.</p>
       </div>
 
     </div>
