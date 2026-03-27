@@ -97,7 +97,7 @@ export default function RotationPlaylistManager({
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
   const djOverridesRef = React.useRef(new Set());
-  const prevDancerIndexRef = React.useRef(currentDancerIndex);
+  const prevCurrentDancerIdRef = React.useRef(null);
   const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
   const rerollingRef = React.useRef(new Set());
@@ -163,13 +163,13 @@ export default function RotationPlaylistManager({
   }, [interstitialRemoteVersion]);
 
   useEffect(() => {
-    if (!isRotationActive) return;
-    if (prevDancerIndexRef.current !== currentDancerIndex && localRotation && localRotation.length > 0) {
-      const finishedId = String(localRotation[prevDancerIndexRef.current]);
-      if (finishedId) djOverridesRef.current.delete(finishedId);
+    if (!isRotationActive || !localRotation || localRotation.length === 0) return;
+    const currentId = String(localRotation[0]);
+    if (prevCurrentDancerIdRef.current && prevCurrentDancerIdRef.current !== currentId) {
+      djOverridesRef.current.delete(prevCurrentDancerIdRef.current);
     }
-    prevDancerIndexRef.current = currentDancerIndex;
-  }, [currentDancerIndex, isRotationActive]);
+    prevCurrentDancerIdRef.current = currentId;
+  }, [localRotation, isRotationActive]);
 
   useEffect(() => {
     if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
