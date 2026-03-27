@@ -124,7 +124,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 ### Rollback point BEFORE song selection changes: `d1269da11102297beb56dfbbc877b7e39d86e30d`
 Use this commit to roll back if the song selection changes break anything.
 
-### Song selection changes — PLANNED (not yet implemented):
+### Song selection changes — IMPLEMENTED (commit `54f937`):
 **Iron-clad rules agreed with user:**
 1. Pick songs from dancer's assigned playlist first
 2. Exclude songs played by ANYONE in the last **4 hours** (not 6 — change in server/db.js)

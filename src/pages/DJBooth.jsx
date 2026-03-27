@@ -2288,7 +2288,7 @@ export default function DJBooth() {
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const [freshTracks, prePicked] = await Promise.all([
-          (existingTracks && existingTracks.length > 0) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
+          (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
           finishedDancer ? getDancerTracks(finishedDancer).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
@@ -2568,7 +2568,7 @@ export default function DJBooth() {
       try {
         lastAudioActivityRef.current = Date.now();
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
-        let freshTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
+        let freshTracks = (existingTracks && existingTracks.length >= songsPerSetRef.current) ? existingTracks : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         setRotationSongs(updatedSongs);
@@ -2835,7 +2835,7 @@ export default function DJBooth() {
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const [freshTracks, prePicked] = await Promise.all([
-          (existingTracks && existingTracks.length > 0) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
+          (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
           finishedDancer ? getDancerTracks(finishedDancer).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
@@ -3170,7 +3170,7 @@ export default function DJBooth() {
         const nextDancer = dancers.find(d => d.id === nextDancerId);
         if (!nextDancer) return;
         const existingTracks = rotationSongsRef.current[nextDancerId];
-        const nextTracks = (existingTracks && existingTracks.length > 0) ? existingTracks : await getDancerTracks(nextDancer);
+        const nextTracks = (existingTracks && existingTracks.length >= songsPerSetRef.current) ? existingTracks : await getDancerTracks(nextDancer);
         const firstTrack = nextTracks?.[0];
         if (firstTrack?.url) {
           preloadedTrackRef.current = { dancerId: nextDancerId, track: firstTrack };
