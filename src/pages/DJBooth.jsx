@@ -2287,9 +2287,10 @@ export default function DJBooth() {
 
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
+        const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
           (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
-          finishedDancer ? getDancerTracks(finishedDancer).catch(e => {
+          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
           }) : Promise.resolve([])
@@ -2834,9 +2835,10 @@ export default function DJBooth() {
 
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
+        const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
           (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
-          finishedDancer ? getDancerTracks(finishedDancer).catch(e => {
+          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
           }) : Promise.resolve([])
