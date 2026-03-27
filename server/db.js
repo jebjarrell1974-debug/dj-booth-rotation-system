@@ -645,7 +645,7 @@ export function getRecentCooldowns(hours = 6) {
 export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   const recentlyPlayed = readDb.prepare(
     `SELECT track_name FROM play_history
-     WHERE played_at > datetime('now', 'localtime', '-6 hours')
+     WHERE played_at > datetime('now', 'localtime', '-4 hours')
      GROUP BY track_name`
   ).all().map(r => r.track_name);
 
@@ -719,12 +719,12 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     const excludeSet = new Set(excludeNames);
     const placeholders = dancerPlaylist.map(() => '?').join(',');
 
-    // Which playlist songs were played in the last 6 hours?
+    // Which playlist songs were played in the last 4 hours?
     const recentlyPlayedSet = new Set(
       readDb.prepare(
         `SELECT track_name FROM play_history
          WHERE track_name IN (${placeholders})
-           AND played_at > datetime('now', 'localtime', '-6 hours')
+           AND played_at > datetime('now', 'localtime', '-4 hours')
          GROUP BY track_name`
       ).all(...dancerPlaylist).map(r => r.track_name)
     );
@@ -764,9 +764,15 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     }
     console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh, ${cooldownTracks.length} on-cooldown, ${notFoundInDB.length} not-in-DB`);
 
-    // No playlist tracks exist in the DB at all — only then fall back to random library
+    // No playlist tracks exist in the DB at all — fall back to random library
     if (freshTracks.length === 0 && cooldownTracks.length === 0) {
       console.warn(`⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library`);
+      return getRandomTracks(count, [...excludeSet], genres);
+    }
+
+    // All playlist songs on cooldown — fall back to genre folders instead of replaying recently-heard songs
+    if (freshTracks.length === 0) {
+      console.warn(`⚠️ selectTracksForSet: all ${cooldownTracks.length} playlist song(s) on 4-hour cooldown — falling back to genre folders`);
       return getRandomTracks(count, [...excludeSet], genres);
     }
 
@@ -776,12 +782,11 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
       [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
     }
 
-    // Sort cooldown tracks oldest-played-first so we recycle least-recently-heard songs
+    // Not enough fresh playlist songs to fill the set — pad with oldest-cooldown tracks
     cooldownTracks.sort((a, b) => (a.lastPlayed < b.lastPlayed ? -1 : 1));
 
     const result = [...freshTracks, ...cooldownTracks].slice(0, count);
     console.log(`🎵 selectTracksForSet: returning [${result.map(t => t.name).join(' | ')}]`);
-    // Fresh first, then oldest-cooldown — always from their own playlist, never random library
     return result;
   }
 

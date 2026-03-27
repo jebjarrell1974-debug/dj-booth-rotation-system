@@ -173,7 +173,7 @@ export default function DJBooth() {
     return a;
   };
 
-  const COOLDOWN_MS = 6 * 60 * 60 * 1000;
+  const COOLDOWN_MS = 4 * 60 * 60 * 1000;
   const songCooldownRef = useRef(null);
   const [playedSongsMap, setPlayedSongsMap] = useState({});
 

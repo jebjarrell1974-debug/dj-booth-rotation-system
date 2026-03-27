@@ -113,11 +113,13 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ## CURRENT STATUS (as of Session 53 — March 27, 2026) — READ THIS FIRST
 
-### Latest commits this session (all on GitHub):
-- `536ee4e` — Kiosk timeout: navigate to landing page instead of PIN overlay (music keeps playing)
-- `575d3550` — RotationDisplay: show "BREAK SONG" h1 where dancer name normally appears during breaks
-- `2386d3e` — Options tab: add Display Screen Timer toggle (show/hide countdown on crowd screen)
-- `865557a` — Options tab: remove Exit Kiosk Mode (moved to Configuration page only, behind master PIN)
+### Latest GitHub commit: `0e3e41c` — "Session 53: landing page timeout, break song display, countdown toggle, exit kiosk moved to config"
+
+### What's in `0e3e41c`:
+- Kiosk timeout: navigate to landing page instead of PIN overlay (music keeps playing)
+- RotationDisplay: show "BREAK SONG" h1 where dancer name normally appears during breaks
+- Options tab: add Display Screen Timer toggle (show/hide countdown on crowd screen)
+- Options tab: remove Exit Kiosk Mode (moved to Configuration page only, behind master PIN)
 
 ### Rollback point BEFORE song selection changes: `d1269da11102297beb56dfbbc877b7e39d86e30d`
 Use this commit to roll back if the song selection changes break anything.
