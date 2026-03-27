@@ -32,23 +32,6 @@ export default function Layout({ children, currentPageName }) {
           color: white;
         }
         
-        /* Custom scrollbar — touch-friendly size */
-        ::-webkit-scrollbar {
-          width: 14px;
-          height: 14px;
-        }
-        ::-webkit-scrollbar-track {
-          background: #0d0d1f;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: #3a4a6b;
-          border-radius: 7px;
-          border: 2px solid #0d0d1f;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: #00d4ff;
-        }
-        
         /* Slider styling */
         [data-orientation="horizontal"] [data-radix-slider-track] {
           background: #1e293b;

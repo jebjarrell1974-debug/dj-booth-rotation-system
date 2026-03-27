@@ -1409,19 +1409,24 @@ export default function DJBooth() {
     } catch { return null; }
   }, []);
 
-  const getDancerTracks = useCallback(async (dancer, additionalExcludes = []) => {
+  const getDancerTracks = useCallback(async (dancer, additionalExcludes = [], skipAssigned = false) => {
     const count = songsPerSetRef.current;
     const opts = djOptionsRef.current;
     const isFoldersOnly = opts?.musicMode === 'folders_only';
 
     // Only exclude songs already assigned to other dancers this cycle.
     // Server owns cooldown logic via play_history — do NOT send cooldown names here.
+    // skipAssigned=true is used for bottom-of-rotation pre-picks: the dancer won't play
+    // again for many transitions, so excluding other dancers' songs would over-restrict
+    // a small playlist. Server cooldown handles the real anti-repeat work.
     const assignedNames = [];
-    const songs = rotationSongsRef.current;
-    if (songs) {
-      Object.values(songs).forEach(trackList => {
-        if (trackList) trackList.forEach(t => { if (t?.name) assignedNames.push(t.name); });
-      });
+    if (!skipAssigned) {
+      const songs = rotationSongsRef.current;
+      if (songs) {
+        Object.values(songs).forEach(trackList => {
+          if (trackList) trackList.forEach(t => { if (t?.name) assignedNames.push(t.name); });
+        });
+      }
     }
 
     const excludeNames = [...new Set([...assignedNames, ...additionalExcludes])];
@@ -2293,7 +2298,7 @@ export default function DJBooth() {
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
           (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
-          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude).catch(e => {
+          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
           }) : Promise.resolve([])
@@ -2844,7 +2849,7 @@ export default function DJBooth() {
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
           (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
-          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude).catch(e => {
+          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
           }) : Promise.resolve([])

@@ -111,34 +111,57 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 53 — March 27, 2026) — READ THIS FIRST
+## CRITICAL USER RULE — READ BEFORE EVERY SESSION
+- **ALWAYS discuss proposed changes and get EXPLICIT APPROVAL before modifying any code or pushing to GitHub.**
+- User runs `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` after every push. If you push without telling them, they don't know to update and the fix never reaches the device.
+- Only push when user explicitly says "push" or "push please."
 
-### Latest GitHub commit: `0e3e41c` — "Session 53: landing page timeout, break song display, countdown toggle, exit kiosk moved to config"
+---
 
-### What's in `0e3e41c`:
-- Kiosk timeout: navigate to landing page instead of PIN overlay (music keeps playing)
-- RotationDisplay: show "BREAK SONG" h1 where dancer name normally appears during breaks
-- Options tab: add Display Screen Timer toggle (show/hide countdown on crowd screen)
-- Options tab: remove Exit Kiosk Mode (moved to Configuration page only, behind master PIN)
+## CURRENT STATUS (as of Session 54 — March 27, 2026) — READ THIS FIRST
+
+### Latest GitHub commits this session:
+- `5ae0cb6` — "Fix: clear finished dancer slot before pre-picking so own songs dont block new selection"
+- `61fb632` — "Fix: increase scrollbar width to 14px for touch screen usability"
 
 ### Rollback point BEFORE song selection changes: `d1269da11102297beb56dfbbc877b7e39d86e30d`
-Use this commit to roll back if the song selection changes break anything.
+Use this commit to roll back if the song selection changes cause problems.
 
-### Song selection changes — IMPLEMENTED (commit `54f937`):
-**Iron-clad rules agreed with user:**
-1. Pick songs from dancer's assigned playlist first
-2. Exclude songs played by ANYONE in the last **4 hours** (not 6 — change in server/db.js)
-3. If dancer has NO fresh songs (all in cooldown OR no playlist) → fall back to genre folders selected in Options, filtered by same 4-hour cooldown
-4. Manual DJ selection (drag to dancer, pick from browser) → always plays regardless of cooldown. Play IS logged to history so auto-selection respects it afterward. But the DJ is never blocked from manually choosing any song.
+### Session 54 — What was changed this session
 
-**Files to change:**
-- `server/db.js` — `selectTracksForSet`: change `-6 hours` → `-4 hours`. Change fallback: when `freshTracks.length === 0` and `cooldownTracks.length > 0`, fall back to genre folders via `getRandomTracks` instead of using oldest cooldown track.
-- `src/pages/DJBooth.jsx` — `getDancerTracks`: verify manual assignment path fully bypasses cooldown, no additional changes needed per user clarification.
+**Root bug fixed — dancer shows 1 song at bottom after DJ deletes 1 from set:**
+The core issue: when `getDancerTracks(finishedDancer)` was called at the flip, `rotationSongsRef.current` still held the finished dancer's old stale pre-pick in their slot. All those songs were included in `assignedNames` (the exclusion list sent to the server), artificially restricting the pool the server could pick from. With a smaller playlist, this caused the server to return only 1 song.
 
-**What currently exists (before change):**
-- Cooldown: 6 hours server-side
-- When all playlist songs are in cooldown: plays oldest-cooldown track from dancer's playlist (WRONG — should fall back to genre folders)
-- Manual assignments: already bypass `getDancerTracks` via `existingTracks` check in `beginRotation`/`handleTrackEnd`
+**Fix (commit `5ae0cb6`) — `src/pages/DJBooth.jsx`:**
+In BOTH flip locations (handleSkip and handleTrackEnd — identical code, changed with `replace_all`):
+```javascript
+// Before calling getDancerTracks, clear the finished dancer's stale slot
+const scratchSongs = { ...rotationSongsRef.current };
+delete scratchSongs[finishedDancerId];
+rotationSongsRef.current = scratchSongs;
+const existingTracks = scratchSongs[newRotation[newIdx]];
+```
+This runs before the `Promise.all([getDancerTracks(nextDancer), getDancerTracks(finishedDancer, playingTrackExclude)])` call, so when getDancerTracks reads `rotationSongsRef.current` to build `assignedNames`, the finished dancer's own songs are no longer in the list.
+
+**Other song selection changes made this session (also in current code):**
+- `existingTracks.length >= songsPerSetRef.current` (4 spots in DJBooth.jsx) — when a dancer's pre-pick at the bottom has fewer songs than configured (because DJ deleted one), the system throws it away and gets a full fresh set instead of playing a short set
+- `playingTrackExclude` added in both flip locations — currently-playing track explicitly excluded from finished dancer's next pre-pick so it can't immediately repeat
+- `server/db.js` genre filler — when `freshTracks.length < count` (playlist has some fresh songs but not enough to fill the set), fills remaining slots from general library. Safety net for small playlists.
+- All-on-cooldown fallback — when every playlist song is on 4-hour cooldown, falls back to general library instead of replaying cooldown songs
+
+**Scrollbar — touch-friendly (commit `61fb632`) — `src/Layout.jsx`:**
+- Width: `8px` → `14px` (applies globally to all scrollable areas via `::-webkit-scrollbar`)
+- Thumb: more visible blue-gray `#3a4a6b`, rounded corners, 2px border gap from track
+- Hover: turns cyan `#00d4ff`
+- One file change covers entire app — confirmed no other scrollbar CSS overrides exist anywhere
+
+### Song selection rules — current state (all implemented):
+1. Pick songs from dancer's assigned playlist first (fresh = not played in last 4 hours)
+2. 4-hour cooldown — server AND client both set to 4 hours
+3. All playlist songs on cooldown → fall back to general library (genre folder if active genres set)
+4. Partial fresh set (fewer fresh songs than songsPerSet) → fill remaining slots from general library
+5. Manual DJ selection always bypasses cooldown; play IS logged to history
+6. At every rotation flip, if dancer's pre-pick has fewer songs than songsPerSet → get fresh full set
 
 ### Session 53 — What was changed this session
 
