@@ -127,6 +127,7 @@ export default function RotationPlaylistManager({
   announcementsEnabled,
   onAnnouncementsToggle,
   onSkipDancer,
+  onDancerDragReorder,
   currentDancerIndex,
   commercialCounter = 0,
   availablePromos = [],
@@ -527,6 +528,9 @@ export default function RotationPlaylistManager({
       const [moved] = newRotation.splice(source.index, 1);
       newRotation.splice(destination.index, 0, moved);
       setLocalRotation(newRotation);
+      if (isRotationActive && localRotation[0] !== newRotation[0]) {
+        onDancerDragReorder?.(newRotation, localRotation[0], newRotation[0]);
+      }
       return;
     }
 

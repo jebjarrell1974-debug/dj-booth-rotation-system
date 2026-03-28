@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { isRemoteMode } from '@/api/serverApi';
 import BootScreen from '@/components/BootScreen';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
 import Landing from '@/pages/Landing';
@@ -17,6 +18,14 @@ import VoiceStudio from '@/pages/VoiceStudio';
 import Help from '@/pages/Help';
 
 if (window.location.pathname === '/RotationDisplay') { document.title = 'NEON DJ Rotation'; }
+
+function isTabletDevice() {
+  const ua = navigator.userAgent || '';
+  return /iPad|Android(?!.*Mobile)|Tablet/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+const SHOW_VIRTUAL_KEYBOARD = !isRemoteMode() && !isTabletDevice();
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -198,7 +207,7 @@ function AppRoutes() {
     <>
       <KioskLockManager />
       <PersistentDJBooth />
-      {!isRotationDisplay && <VirtualKeyboard />}
+      {SHOW_VIRTUAL_KEYBOARD && !isRotationDisplay && <VirtualKeyboard />}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/Landing" element={<Landing />} />

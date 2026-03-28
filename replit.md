@@ -69,6 +69,15 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Pi load
 - **Song cooldown**: 6 hours (updated from 4h in Session 44)
 
+## Recent Session Fixes (Sessions 48–49)
+- **Bug 1**: `onDancerDragReorder` callback added to `RotationPlaylistManager`; fires when pos-0 changes during active rotation; DJBooth resets indices to 0 and calls `handleSkip` after 100ms state flush
+- **Bug 2/3**: `playingInterstitialBreakKeyRef` stored before rotation flip in both `handleSkip` and `handleTrackEnd`; read in all interstitial branches; cleared on break end and `stopRotation`
+- **Bug 4**: `breakSongIndex != null` condition in `RotationDisplay` prevents crowd display flicker on intro / set-start
+- **Bug 5**: Post-rotation cached tracks re-validated against `songCooldownRef`; one stale track invalidates the whole cache
+- **Custom keyboard**: `VirtualKeyboard.jsx` fully rewritten — NEON theme, 56px keys, 3 layouts + numpad, shift auto-resets, slide-up animation; gated to kiosk (not remote, not tablet)
+- **Server cold-start fix**: `liveBoothState` initial object now includes all fields served by `/api/booth/display` (`breakSongIndex: null`, `breakSongsPerSet: 0`, `trackTime: 0`, `trackDuration: 0`, `trackTimeAt: 0`, `volume`, `voiceGain`, `commercialFreq`, `commercialCounter`, `promoQueue`, `availablePromos`, `skippedCommercials`, `interstitialSongs`) — prevents `undefined` fields being silently omitted from JSON before first DJ session posts state
+- **Test harness**: 128/128 passing (`node test/test-harness.mjs`) — covers all 5 bugs, keyboard layouts, text cursor manipulation, double-skip during break, `stopRotation` ref cleanup, and live `/api/booth/display` shape verification
+
 ## Commercial System (Planned)
 - Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks
 - The specials textarea will live in the Commercials section of DJ Options (not yet implemented)

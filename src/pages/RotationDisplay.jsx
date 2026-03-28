@@ -137,7 +137,7 @@ export default function RotationDisplay() {
   const currentDancerId = validRotation[currentIndex];
   const currentDancer = dancers.find(d => d.id === currentDancerId);
 
-  const isBreak = displayData?.currentSongNumber === 0 && displayData?.isRotationActive;
+  const isBreak = displayData?.breakSongIndex != null && displayData?.isRotationActive;
   const breakSongIndex = displayData?.breakSongIndex ?? null;
   const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
 

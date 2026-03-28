@@ -140,6 +140,7 @@ export default function DJBooth() {
   const [interstitialRemoteVersion, setInterstitialRemoteVersion] = useState(0);
   const [plannedSongAssignments, setPlannedSongAssignments] = useState({});
   const playingInterstitialRef = useRef(false);
+  const playingInterstitialBreakKeyRef = useRef(null);
   const interstitialIndexRef = useRef(0);
   const [activeBreakInfo, setActiveBreakInfo] = useState(null);
   const handleSkipRef = useRef(null);
@@ -2038,7 +2039,7 @@ export default function DJBooth() {
       const rot = rotationRef.current;
       const idx = currentDancerIndexRef.current;
       const currentDancerId = rot[idx];
-      const breakKey = `after-${currentDancerId}`;
+      const breakKey = playingInterstitialBreakKeyRef.current || `after-${currentDancerId}`;
       const breakSongs = interstitialSongsRef.current[breakKey] || [];
       const breakIdx = interstitialIndexRef.current;
 
@@ -2067,6 +2068,7 @@ export default function DJBooth() {
       }
 
       playingInterstitialRef.current = false;
+      playingInterstitialBreakKeyRef.current = null;
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
       console.log('⏭️ HandleSkip: No more break songs, advancing to next dancer');
@@ -2229,6 +2231,7 @@ export default function DJBooth() {
           updateStageState(0, flippedRotation);
 
           playingInterstitialRef.current = true;
+          playingInterstitialBreakKeyRef.current = breakKey;
           interstitialIndexRef.current = 1;
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           const firstBreakName = breakSongs[0];
@@ -2297,7 +2300,7 @@ export default function DJBooth() {
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
-          (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
+          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
           finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
@@ -2486,7 +2489,7 @@ export default function DJBooth() {
       const dnc = dancersRef.current;
       const idx = currentDancerIndexRef.current;
       const currentDancerId = rot[idx];
-      const breakKey = `after-${currentDancerId}`;
+      const breakKey = playingInterstitialBreakKeyRef.current || `after-${currentDancerId}`;
       const breakSongs = interstitialSongsRef.current[breakKey] || [];
       const breakIdx = interstitialIndexRef.current;
 
@@ -2553,6 +2556,7 @@ export default function DJBooth() {
       }
 
       playingInterstitialRef.current = false;
+      playingInterstitialBreakKeyRef.current = null;
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
       const clearedInterstitials2 = { ...interstitialSongsRef.current };
@@ -2577,7 +2581,11 @@ export default function DJBooth() {
       try {
         lastAudioActivityRef.current = Date.now();
         const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
-        let freshTracks = (existingTracks && existingTracks.length >= songsPerSetRef.current) ? existingTracks : await getDancerTracks(nextDancer);
+        const _postCd = songCooldownRef.current || {};
+        const _postNow = Date.now();
+        const _postValid = existingTracks && existingTracks.length >= songsPerSetRef.current &&
+          existingTracks.every(t => !_postCd[t.name] || ((_postNow - _postCd[t.name]) >= COOLDOWN_MS));
+        let freshTracks = _postValid ? existingTracks : await getDancerTracks(nextDancer);
         let nextTrack = freshTracks?.[0];
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         setRotationSongs(updatedSongs);
@@ -2780,6 +2788,7 @@ export default function DJBooth() {
           updateStageState(0, flippedRotation);
 
           playingInterstitialRef.current = true;
+          playingInterstitialBreakKeyRef.current = breakKey;
           interstitialIndexRef.current = 1;
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           const firstBreakName = breakSongs[0];
@@ -2848,7 +2857,7 @@ export default function DJBooth() {
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
-          (existingTracks && existingTracks.length >= songsPerSetRef.current) ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer),
+          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
           finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
             console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
             return [];
@@ -3147,6 +3156,7 @@ export default function DJBooth() {
     rotationPendingRef.current = false;
     setRotationPending(false);
     playingInterstitialRef.current = false;
+    playingInterstitialBreakKeyRef.current = null;
     interstitialIndexRef.current = 0;
     setActiveBreakInfo(null);
   }, []);
@@ -3967,6 +3977,20 @@ export default function DJBooth() {
                   const dancer = dancers.find(d => d.id === dancerId);
                   console.log('⏭️ Skipped dancer to bottom:', dancer?.name);
                   toast(`${dancer?.name || 'Entertainer'} moved to end of rotation`, { icon: '⏭️' });
+                }}
+                onDancerDragReorder={(newRotation, oldFirstId, newFirstId) => {
+                  if (!isRotationActive) return;
+                  setRotation(newRotation);
+                  rotationRef.current = newRotation;
+                  setCurrentDancerIndex(0);
+                  currentDancerIndexRef.current = 0;
+                  setCurrentSongNumber(0);
+                  currentSongNumberRef.current = 0;
+                  updateStageState(0, newRotation);
+                  const incomingDancer = dancers.find(d => d.id === newFirstId);
+                  console.log('🔀 Drag reorder: jumping to new first dancer:', incomingDancer?.name);
+                  toast(`Now playing: ${incomingDancer?.name || 'Entertainer'}`, { icon: '🔀' });
+                  setTimeout(() => handleSkipRef.current?.(), 100);
                 }}
                 currentSongNumber={currentSongNumber}
                 breakSongsPerSet={breakSongsPerSet}
