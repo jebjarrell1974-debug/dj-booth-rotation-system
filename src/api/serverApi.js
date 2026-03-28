@@ -77,8 +77,11 @@ async function apiFetch(path, options = {}) {
       _tokenOverride = null;
       window.dispatchEvent(new Event('djbooth-dancer-session-expired'));
     } else {
-      clearToken();
-      window.dispatchEvent(new Event('djbooth-session-expired'));
+      const currentToken = getToken();
+      if (currentToken === null || token === currentToken) {
+        clearToken();
+        window.dispatchEvent(new Event('djbooth-session-expired'));
+      }
     }
     throw new Error('Session expired');
   }

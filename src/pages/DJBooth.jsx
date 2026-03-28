@@ -3993,6 +3993,7 @@ export default function DJBooth() {
                   setTimeout(() => handleSkipRef.current?.(), 100);
                 }}
                 currentSongNumber={currentSongNumber}
+                currentTrack={currentTrack}
                 breakSongsPerSet={breakSongsPerSet}
                 onBreakSongsPerSetChange={(n) => {
                   const wasBreak = breakSongsPerSetRef.current > 0;

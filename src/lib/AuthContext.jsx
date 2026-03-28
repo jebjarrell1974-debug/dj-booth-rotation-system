@@ -43,6 +43,7 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       return;
     }
+    const tokenAtStart = info.token;
     try {
       const data = await auth.checkSession();
       setUser({ name: data.dancerName || data.staffName || 'DJ', dancerId: data.dancerId });
@@ -51,14 +52,23 @@ export const AuthProvider = ({ children }) => {
       setStaffRole(data.staffRole || null);
       setIsMaster(!!data.isMaster);
       setIsAuthenticated(true);
-    } catch {
-      clearToken();
-      setUser(null);
-      setRole(null);
-      setStaffName(null);
-      setStaffRole(null);
-      setIsMaster(false);
-      setIsAuthenticated(false);
+    } catch (err) {
+      if (err.message === 'Session expired' && getToken() === null) {
+        setUser(null);
+        setRole(null);
+        setStaffName(null);
+        setStaffRole(null);
+        setIsMaster(false);
+        setIsAuthenticated(false);
+      } else if (err.message !== 'Session expired' && getToken() === tokenAtStart) {
+        clearToken();
+        setUser(null);
+        setRole(null);
+        setStaffName(null);
+        setStaffRole(null);
+        setIsMaster(false);
+        setIsAuthenticated(false);
+      }
     }
     setIsLoadingAuth(false);
   }, []);

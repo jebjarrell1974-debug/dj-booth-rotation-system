@@ -772,6 +772,86 @@ async function testKeyboardLayouts() {
   assert('ABC key → back to lower', currentLayout === 'lower');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SONG HIGHLIGHT BUG — currentTrack name-match vs index-match
+// ─────────────────────────────────────────────────────────────────────────────
+async function testSongHighlight() {
+  console.log('\n━━━ SONG HIGHLIGHT: Name-match vs index-match ━━━━━━━━━━━━━━━━━');
+
+  // Mirrors the new logic in RotationPlaylistManager (lines 1241-1243)
+  function computeHighlight(assigned, currentTrack, currentSongNumber, isCurrentDancer) {
+    const currentTrackIdx = isCurrentDancer && currentTrack ? assigned.indexOf(currentTrack) : -1;
+    return assigned.map((songName, songIdx) => {
+      const isNowPlaying = isCurrentDancer && currentTrack
+        ? songName === currentTrack
+        : isCurrentDancer && songIdx === (currentSongNumber - 1);
+      const isPlayed = isCurrentDancer && (
+        currentTrackIdx >= 0 ? songIdx < currentTrackIdx : songIdx < (currentSongNumber - 1)
+      );
+      return { songName, isNowPlaying, isPlayed };
+    });
+  }
+
+  // A: Happy path — currentTrack matches assigned[0], so song 1 highlights correctly
+  const assigned = ['Wild Ones.mp3', 'Bobby Brown.mp3'];
+  const resA = computeHighlight(assigned, 'Wild Ones.mp3', 1, true);
+  assert('Highlight-A: Wild Ones highlighted (name match)', resA[0].isNowPlaying === true);
+  assert('Highlight-A: Bobby Brown NOT highlighted', resA[1].isNowPlaying === false);
+  assert('Highlight-A: No songs marked played (first song)', resA[0].isPlayed === false);
+
+  // B: The bug scenario — tracks reassigned mid-song
+  // Playing Wild Ones (slot 0), but assigned now has Bobby Brown in slot 0
+  const assignedAfterReroll = ['Bobby Brown.mp3', 'Inoj - Ring My Bell.mp3'];
+  const resB = computeHighlight(assignedAfterReroll, 'Wild Ones.mp3', 1, true);
+  assert('Highlight-B: Bobby Brown NOT highlighted despite being at index 0 (fix verified)',
+    resB[0].isNowPlaying === false);
+  assert('Highlight-B: Inoj NOT highlighted either', resB[1].isNowPlaying === false);
+  assert('Highlight-B: No false isPlayed when currentTrack not in list', 
+    resB[0].isPlayed === false && resB[1].isPlayed === false);
+
+  // Old (broken) logic for comparison
+  function oldIsNowPlaying(songIdx, currentSongNumber, isCurrentDancer) {
+    return isCurrentDancer && songIdx === (currentSongNumber - 1);
+  }
+  assert('Highlight-B: OLD logic wrongly highlighted Bobby Brown at idx 0',
+    oldIsNowPlaying(0, 1, true) === true);
+
+  // C: Song 2 playing, song 1 should be hidden (isPlayed=true)
+  const assigned2 = ['Wild Ones.mp3', 'Electric Feel.mp3'];
+  const resC = computeHighlight(assigned2, 'Electric Feel.mp3', 2, true);
+  assert('Highlight-C: Electric Feel highlighted (song 2)', resC[1].isNowPlaying === true);
+  assert('Highlight-C: Wild Ones marked as played (hidden)', resC[0].isPlayed === true);
+  assert('Highlight-C: Electric Feel not marked played', resC[1].isPlayed === false);
+
+  // D: Song 2 playing but assigned shows different song at slot 1 (same reroll bug)
+  // Playing Electric Feel, but slot 1 now has Inoj after reroll
+  const assigned2Rerolled = ['Wild Ones.mp3', 'Inoj - Ring My Bell.mp3'];
+  const resD = computeHighlight(assigned2Rerolled, 'Electric Feel.mp3', 2, true);
+  assert('Highlight-D: Inoj NOT highlighted despite being at index 1', resD[1].isNowPlaying === false);
+  assert('Highlight-D: Wild Ones still hidden via index fallback (currentSongNumber=2 → idx 0 was played)',
+    resD[0].isPlayed === true);
+  assert('Highlight-D: OLD logic would have wrongly highlighted Inoj at idx 1',
+    oldIsNowPlaying(1, 2, true) === true);
+
+  // E: Not the current dancer — nothing highlighted
+  const resE = computeHighlight(assigned, 'Wild Ones.mp3', 1, false);
+  assert('Highlight-E: Non-current dancer — no song highlighted', resE.every(r => !r.isNowPlaying));
+  assert('Highlight-E: Non-current dancer — no songs hidden', resE.every(r => !r.isPlayed));
+
+  // F: currentTrack is null — graceful fallback to index
+  const resF = computeHighlight(assigned, null, 1, true);
+  assert('Highlight-F: null currentTrack — falls back to index match (slot 0 highlighted)',
+    resF[0].isNowPlaying === true && resF[1].isNowPlaying === false);
+
+  // G: 3-song set, song 3 playing — 2 songs marked played
+  const assigned3 = ['Song A.mp3', 'Song B.mp3', 'Song C.mp3'];
+  const resG = computeHighlight(assigned3, 'Song C.mp3', 3, true);
+  assert('Highlight-G: Song C highlighted', resG[2].isNowPlaying === true);
+  assert('Highlight-G: Song A marked played', resG[0].isPlayed === true);
+  assert('Highlight-G: Song B marked played', resG[1].isPlayed === true);
+  assert('Highlight-G: Song C not marked played', resG[2].isPlayed === false);
+}
+
 async function cleanup() {
   console.log('\n━━━ CLEANUP ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   for (const [name, dancer] of [['TestMinnie', dancerMinnie], ['TestBlair', dancerBlair]]) {
@@ -801,6 +881,7 @@ async function cleanup() {
     await testKeyboard();
     await testKeyboardTextManipulation();
     await testKeyboardLayouts();
+    await testSongHighlight();
     await testServerIntegration();
     await testLiveBoothDisplay();
   } catch (err) {

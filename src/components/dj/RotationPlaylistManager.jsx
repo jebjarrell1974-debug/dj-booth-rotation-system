@@ -140,7 +140,8 @@ export default function RotationPlaylistManager({
   autoplayQueue = [],
   onAutoplayQueueChange,
   onAutoplayQueueRemove,
-  songCooldowns = {}
+  songCooldowns = {},
+  currentTrack = null
 }) {
   const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const [searchQuery, setSearchQuery] = useState('');
@@ -1234,8 +1235,9 @@ export default function RotationPlaylistManager({
                                     <div className="space-y-1">
                                       {assigned.map((songName, songIdx) => {
                                         const isCurrentDancer = isRotationActive && index === currentDancerIndex;
-                                        const isPlayed = isCurrentDancer && songIdx < (currentSongNumber - 1);
-                                        const isNowPlaying = isCurrentDancer && songIdx === (currentSongNumber - 1);
+                                        const currentTrackIdx = isCurrentDancer && currentTrack ? assigned.indexOf(currentTrack) : -1;
+                                        const isNowPlaying = isCurrentDancer && currentTrack ? songName === currentTrack : isCurrentDancer && songIdx === (currentSongNumber - 1);
+                                        const isPlayed = isCurrentDancer && (currentTrackIdx >= 0 ? songIdx < currentTrackIdx : songIdx < (currentSongNumber - 1));
                                         if (isPlayed) return null;
                                         const rerollKey = `${dancer.id}-${songIdx}`;
                                         const isRerollingSlot = rerollingKeys.has(rerollKey);
