@@ -5,17 +5,17 @@ NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent
 
 The system aims to provide an AI DJ that never sleeps, offering human-sounding voice announcements, built-in redundancy for continuous operation even offline, and a comprehensive fleet management dashboard for multi-location businesses. It includes an iPad remote control, a commercial playback system with auto-generated promos, and per-unit API cost tracking. The project envisions a reliable, autonomous entertainment system built for demanding nightclub environments.
 
-## Fleet Devices (3 active — scaling to 50+ within 6 months)
+## Fleet Devices (4 active — scaling to 50+ within 6 months)
 
 | Unit | Tailscale IP | Role | Club | Status |
 |---|---|---|---|---|
-| Homebase | `100.95.238.71` | Fleet server + DJ booth | Homebase | Fleet server lives here |
-| neonaidj001 | `100.115.212.34` | DJ booth | Pony Nation | Music: `/home/neonaidj001/djbooth/music/` |
-| neonaidj003 | `100.81.90.125` | DJ booth | Unknown (needs `CLUB_NAME` set) | Stable since Mar 10 crashes |
+| Homebase | `100.109.73.27` | Fleet server + DJ booth | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026) |
+| neonaidj001 | `100.115.212.34` | DJ booth | Pony Bama | SSH: `neonaidj001@100.115.212.34` |
+| neonaidj002 | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
+| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | Stable since Mar 10 crashes |
 
-**All 3 units + homebase need `~/djbooth-update.sh`** to pull latest fixes (Sessions 44–47) and activate verified update tracking. Venue Pis also need `FLEET_DEVICE_KEY=<api key>` in `~/djbooth/.env` for fleet error forwarding. neonaidj001 also needs `DEVICE_ID=neonaidj001` set in `~/djbooth/.env`.
-
-**Bypass homebase for direct GitHub update:** `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh`
+**Fleet dashboard**: `http://100.109.73.27:3001/fleet`
+**Update pipeline**: `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` to bypass homebase and pull direct from GitHub.
 
 ## User Preferences
 - Nightclub dark theme with neon cyan accent (#00d4ff) and blue secondary (#2563eb)
@@ -68,6 +68,20 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - **ElevenLabs credits**: ~180K remaining this billing cycle; key `6e6ca8...71342`, voice ID `8RV9Jl85RVagCJGw9qhY`
 - **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Pi load
 - **Song cooldown**: 6 hours (updated from 4h in Session 44)
+
+## Recent Session Fixes (Sessions 54–55 — March 2026)
+
+### Session 55 (March 28, 2026) — commits `e794a2`, `c5042e9`
+- **`djSavedSongsRef` fix**: DJ-manually-saved songs now survive dancer transitions. Dedicated `djSavedSongsRef = useRef({})` stores saves per dancer, consumed once on next transition. Replaces the fragile cooldown-check approach.
+- **Fleet audio diagnostics**: Added rolling event log, pre-pick cache tracking, transition timing, and watchdog capture to DJBooth.jsx. Threaded through all 5 layers (DJBooth → liveBoothState → getExtraData → heartbeat → fleet-monitor → FleetDashboard).
+- **currentDancer/currentSong null bug fixed**: `getExtraData()` in server/index.js now populates these fields from `liveBoothState`. They were always null before.
+- **FleetDashboard Audio Diagnostics panel**: Per-device card shows rotation/audio/voice status badges, last transition duration (color-coded), cache hit rate, dead air watchdog alerts, and scrollable 20-entry event log.
+
+### PENDING TO-DO (next session):
+1. Fix Telegram alerts (broken since homebase migration)
+2. Smart Telegram alerts: fire on dead air, slow transitions, low cache hit rate — with full context
+3. Dead air parallel fix: move `duck()` call before `Promise.all([getDancerTracks, outro prefetch])` — eliminates sequential wait
+4. Use `preloadedTrackRef` in transitions: it pre-fetches the next track but is NEVER consumed — transitions ignore it and call the API anyway
 
 ## Recent Session Fixes (Sessions 48–49)
 - **Bug 1**: `onDancerDragReorder` callback added to `RotationPlaylistManager`; fires when pos-0 changes during active rotation; DJBooth resets indices to 0 and calls `handleSkip` after 100ms state flush

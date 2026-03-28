@@ -118,7 +118,89 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 54 — March 27, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 55 — March 28, 2026) — READ THIS FIRST
+
+### Latest GitHub commits this session:
+- `e794a2` — "Fix: use explicit djSavedSongsRef to survive dancer transitions (handles partial saves, cooldown-agnostic)"
+- `c5042e9` — "Add fleet audio diagnostics: event log, transition timing, pre-pick tracking, watchdog reporting, FleetDashboard panel"
+
+### PENDING TO-DO (approved, not yet built):
+1. **Fix Telegram** — alerts have been broken since homebase migration. Needs investigation.
+2. **Smart Telegram diagnostic alerts** — once Telegram works: fire detailed alerts when watchdog detects dead air, transition >3s, or cache miss rate drops below threshold. Include dancer, track, timing, and gap duration so context is ready to bring to AI for analysis.
+3. **Dead air parallel fix** — when announcements are ON and a dancer's set ends, the outro isn't fetched until after getDancerTracks completes (sequential). Fix: move duck call before the Promise.all, and start the outro prefetch IN PARALLEL with track selection. Also move track_play logDiag call before `playTrack` (already done). NOT YET CODED — plan approved.
+4. **Use `preloadedTrackRef` in transitions** — there is already a preload mechanism (useEffect at ~line 3200 in DJBooth.jsx) that pre-fetches the next dancer's first track 2s after index changes and stores it in `preloadedTrackRef`. But this ref is NEVER READ during transitions — the transition ignores it and makes a fresh API call anyway. Fix: check `preloadedTrackRef` first; if it matches the incoming dancer and has a URL, use it immediately. Fill the rest of the set in background. Eliminates the API call from the audio gap entirely.
+
+### Session 55 — What was changed this session
+
+**Song-save revert bug fix — `djSavedSongsRef` (commit `e794a2`) — `src/pages/DJBooth.jsx`:**
+
+Root cause confirmed from Session 54: when a dancer transitions off stage, `handleSkip` and `handleTrackEnd` both call `getDancerTracks` for the pre-pick, which runs with the finished dancer's slot cleared. This was correct. BUT the intermediate fix (commit `d22877`, cooldown-check approach) would fail if ANY pre-picked song was on cooldown — even one cooldown song invalidated the entire DJ save. This made partial saves (DJ changes 1 of 3 songs) silently fall through to random picks.
+
+Final fix: `djSavedSongsRef = useRef({})` — a dedicated ref that stores DJ-manually-saved tracks per dancer. Populated in `onSaveAll` when the DJ saves manual overrides. Consumed once (and deleted from ref) on the next transition for that dancer. Replaces the cooldown check entirely.
+
+Key properties:
+- Pre-pick miss → `getDancerTracks` API call (unchanged behavior)
+- Pre-pick hit → DJ's exact saved tracks (no cooldown check, no API call)
+- Partial saves (DJ changes 1 of 3) → all 3 tracks saved as-is
+- Multi-round safety: ref entry deleted after first use — next round goes back to auto-pick
+- Cross-dancer isolation: ref indexed by dancerId, no interference
+- Last save wins: second Save All just overwrites the ref
+
+Changed in BOTH `handleSkip` and `handleTrackEnd` full dancer transition blocks using `replace_all`.
+
+**Dead air root cause analysis (Pi 003 — user confirmed voice ON):**
+
+With announcements ON, when a dancer's last track ends:
+1. Track ends → silence begins
+2. `Promise.all([getDancerTracks, prePick])` — if pre-pick cache is invalid, API call fires → 0.5-2s of silence
+3. Only AFTER that: outro prefetch begins (sequential, not parallel)
+4. `duck()` called → `waitForDuck()` = 300ms settle
+5. Outro plays — silence finally ends
+
+So even with voice ON there's a dead air gap = getDancerTracks_time + outro_fetch_time + 300ms settle.
+The minimum gap even with perfect pre-cache = just 300ms (duck settle).
+The maximum gap = sum of all three sequential waits.
+
+Key discovery: `preloadedTrackRef` (line ~3200 in DJBooth.jsx) pre-fetches and stores the next dancer's first track in memory, but is NEVER read during transitions. Transitions ignore it and call `getDancerTracks` fresh. This is wasted work.
+
+**Fleet audio diagnostics (commit `c5042e9`):**
+
+Added to `src/pages/DJBooth.jsx`:
+- 5 new refs: `diagLogRef` (rolling 20 events), `prePickHitsRef`, `prePickMissesRef`, `lastTransitionMsRef`, `lastWatchdogRef`
+- `logDiag(type, data)` helper — prepends entry with `{ ts: Date.now(), type, ...data }`, trims to 20
+- Events logged:
+  - `transition_start` — `{ from, to, trigger }` — fired at start of full dancer transition (both handleSkip and handleTrackEnd)
+  - `prepick_hit` — `{ dancer }` — pre-cache was valid, no API call needed
+  - `prepick_miss` — `{ dancer }` — pre-cache invalid, getDancerTracks API call triggered (gap source)
+  - `track_play` — `{ dancer, track, gapMs }` — track started, gapMs = time since transition_start
+  - `track_play_fallback` — `{ dancer, reason }` — no URL, fell back to random
+  - `transition_complete` — `{ dancer, durationMs, trigger }` — full duration including announcements
+  - `watchdog_fired` — `{ silentMs, dancer, track }` — dead air detected, captures who/what/how long
+- `lastWatchdogRef` stores `{ at, silentMs, dancer, track }` for the most recent watchdog fire
+
+Added to `boothApi.postState()` (runs every 2s):
+`diagLog`, `prePickHits`, `prePickMisses`, `lastTransitionMs`, `lastWatchdogAt`, `lastWatchdogSilentMs`, `lastWatchdogDancer`, `lastWatchdogTrack`
+
+Added to `server/index.js`:
+- New fields in `liveBoothState` defaults
+- `/api/booth/state` handler now accepts and stores all new fields
+- `getExtraData()` now returns all new fields + **FIXED** `currentDancer`/`currentSong` (were always null before — `getExtraData` never read them from `liveBoothState`)
+
+Added to `server/heartbeat-client.js`:
+All new fields forwarded in payload: `isRotationActive`, `isPlaying`, `announcementsEnabled`, `songsPerSet`, `diagLog`, `prePickHits`, `prePickMisses`, `lastTransitionMs`, `lastWatchdogAt`, `lastWatchdogSilentMs`, `lastWatchdogDancer`, `lastWatchdogTrack`
+
+Added to `server/fleet-monitor.js`:
+All new fields stored in `devices.set()` in-memory map (no DB schema change needed)
+
+Added to `src/pages/FleetDashboard.jsx`:
+- New imports: `Radio`, `Volume2`, `VolumeX`, `Zap` from lucide-react
+- "Audio Diagnostics" collapsible panel per device card (only shown when device is online)
+- Shows: Rotation On/Off badge, Playing/Silent badge, Voice On/Off badge, Last Transition (green/yellow/red), Cache Hit Rate (green/yellow/red), Songs/Set, dead air alert banner (red, with dancer+track+duration), "No dead air this session" when clean, collapsible event log (20 entries, newest first, color coded by severity)
+- Summary line on collapsed header: shows "⚠ Dead air logged" in red when lastWatchdogAt is set
+
+---
+
+## CURRENT STATUS (as of Session 54 — March 27, 2026)
 
 ### Latest GitHub commits this session:
 - `5ae0cb6` — "Fix: clear finished dancer slot before pre-picking so own songs dont block new selection"
