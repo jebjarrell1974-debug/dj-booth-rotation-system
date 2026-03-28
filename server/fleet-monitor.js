@@ -1,4 +1,5 @@
 import db from './db.js';
+import { listDancerBackups } from './fleet-db.js';
 import { existsSync, readFileSync } from 'fs';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -263,8 +264,7 @@ function getFleetStatus() {
   const result = [];
   let backupSummary = [];
   try {
-    const { listDancerBackups } = db ? { listDancerBackups: () => db.prepare('SELECT device_id, dancer_count, backed_up_at FROM device_dancer_backups ORDER BY backed_up_at DESC').all() } : {};
-    if (listDancerBackups) backupSummary = listDancerBackups();
+    backupSummary = listDancerBackups();
   } catch {}
   const backupByDevice = {};
   for (const b of backupSummary) backupByDevice[b.device_id] = b;
