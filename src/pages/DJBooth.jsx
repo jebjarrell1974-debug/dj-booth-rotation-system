@@ -127,6 +127,11 @@ export default function DJBooth() {
   const lastAudioActivityRef = useRef(Date.now());
   const playbackExpectedRef = useRef(false);
   const watchdogRecoveringRef = useRef(false);
+  const diagLogRef = useRef([]);
+  const prePickHitsRef = useRef(0);
+  const prePickMissesRef = useRef(0);
+  const lastTransitionMsRef = useRef(null);
+  const lastWatchdogRef = useRef(null);
   const rotationPendingRef = useRef(false);
   const [rotationPending, setRotationPending] = useState(false);
   const [preCachingForStart, setPreCachingForStart] = useState(false);
@@ -164,6 +169,11 @@ export default function DJBooth() {
       lastAudioActivityRef.current = Date.now();
       r();
     }, DUCK_SETTLE_MS));
+  };
+
+  const logDiag = (type, data = {}) => {
+    const entry = { ts: Date.now(), type, ...data };
+    diagLogRef.current = [entry, ...diagLogRef.current].slice(0, 20);
   };
   
   const fisherYatesShuffle = (arr) => {
@@ -946,6 +956,14 @@ export default function DJBooth() {
           trackTime: currentTimeRef.current || 0,
           trackDuration: durationRef.current || 0,
           trackTimeAt: Date.now(),
+          diagLog: diagLogRef.current,
+          prePickHits: prePickHitsRef.current,
+          prePickMisses: prePickMissesRef.current,
+          lastTransitionMs: lastTransitionMsRef.current,
+          lastWatchdogAt: lastWatchdogRef.current?.at || null,
+          lastWatchdogSilentMs: lastWatchdogRef.current?.silentMs || null,
+          lastWatchdogDancer: lastWatchdogRef.current?.dancer || null,
+          lastWatchdogTrack: lastWatchdogRef.current?.track || null,
         });
       } catch {}
     };
@@ -2294,6 +2312,9 @@ export default function DJBooth() {
           return;
         }
 
+        const _skipTransStart = Date.now();
+        logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
+
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
         if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
@@ -2304,7 +2325,7 @@ export default function DJBooth() {
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
@@ -2341,12 +2362,16 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+          logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _skipTransStart });
           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
           if (!trackOk) await playFallbackTrack(true);
         } else {
+          logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
           await playFallbackTrack(true);
         }
         lastAudioActivityRef.current = Date.now();
+        lastTransitionMsRef.current = Date.now() - _skipTransStart;
+        logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip' });
 
         if (announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -2856,6 +2881,9 @@ export default function DJBooth() {
           return;
         }
 
+        const _teTransStart = Date.now();
+        logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
+
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
         if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
@@ -2866,7 +2894,7 @@ export default function DJBooth() {
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
@@ -2903,12 +2931,16 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+          logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
           if (!trackOk) await playFallbackTrack(true);
         } else {
+          logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
           await playFallbackTrack(true);
         }
         lastAudioActivityRef.current = Date.now();
+        lastTransitionMsRef.current = Date.now() - _teTransStart;
+        logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end' });
 
         if (announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
@@ -2974,6 +3006,11 @@ export default function DJBooth() {
       }
       
       console.warn('🐕 WATCHDOG: No audio activity for', Math.round(silentFor/1000), 's — emergency recovery!');
+      const _wdDancer = dancersRef.current?.find(d => String(d.id) === String(rotationRef.current[currentDancerIndexRef.current]));
+      const _wdDancerName = _wdDancer?.name || null;
+      const _wdTrack = currentTrackRef.current;
+      lastWatchdogRef.current = { at: Date.now(), silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack };
+      logDiag('watchdog_fired', { silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack });
       watchdogRecoveringRef.current = true;
       transitionInProgressRef.current = true;
       transitionStartTimeRef.current = Date.now();

@@ -132,6 +132,18 @@ async function registerHeartbeat(deviceId, data) {
     errorCount: data.errorCount || 0,
     network: data.network || null,
     recentLogs: data.recentLogs || [],
+    isRotationActive: data.isRotationActive || false,
+    isPlaying: data.isPlaying || false,
+    announcementsEnabled: data.announcementsEnabled !== false,
+    songsPerSet: data.songsPerSet || 3,
+    diagLog: data.diagLog || [],
+    prePickHits: data.prePickHits || 0,
+    prePickMisses: data.prePickMisses || 0,
+    lastTransitionMs: data.lastTransitionMs ?? null,
+    lastWatchdogAt: data.lastWatchdogAt ?? null,
+    lastWatchdogSilentMs: data.lastWatchdogSilentMs ?? null,
+    lastWatchdogDancer: data.lastWatchdogDancer ?? null,
+    lastWatchdogTrack: data.lastWatchdogTrack ?? null,
   });
 
   if (data.dancer_names && Array.isArray(data.dancer_names)) {

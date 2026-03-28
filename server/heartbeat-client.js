@@ -253,6 +253,18 @@ async function sendHeartbeat(extraData = {}) {
       dancers: dancerBackup.dancers,
       settings: dancerBackup.settings,
     },
+    isRotationActive: extraData.isRotationActive || false,
+    isPlaying: extraData.isPlaying || false,
+    announcementsEnabled: extraData.announcementsEnabled !== false,
+    songsPerSet: extraData.songsPerSet || 3,
+    diagLog: extraData.diagLog || [],
+    prePickHits: extraData.prePickHits || 0,
+    prePickMisses: extraData.prePickMisses || 0,
+    lastTransitionMs: extraData.lastTransitionMs ?? null,
+    lastWatchdogAt: extraData.lastWatchdogAt ?? null,
+    lastWatchdogSilentMs: extraData.lastWatchdogSilentMs ?? null,
+    lastWatchdogDancer: extraData.lastWatchdogDancer ?? null,
+    lastWatchdogTrack: extraData.lastWatchdogTrack ?? null,
   };
 
   try {

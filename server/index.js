@@ -103,6 +103,14 @@ let liveBoothState = {
   availablePromos: [],
   skippedCommercials: [],
   updatedAt: 0,
+  diagLog: [],
+  prePickHits: 0,
+  prePickMisses: 0,
+  lastTransitionMs: null,
+  lastWatchdogAt: null,
+  lastWatchdogSilentMs: null,
+  lastWatchdogDancer: null,
+  lastWatchdogTrack: null,
 };
 
 let remoteCommandQueue = [];
@@ -1241,6 +1249,14 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     availablePromos: state.availablePromos || [],
     skippedCommercials: state.skippedCommercials || [],
     updatedAt: Date.now(),
+    diagLog: state.diagLog || [],
+    prePickHits: state.prePickHits || 0,
+    prePickMisses: state.prePickMisses || 0,
+    lastTransitionMs: state.lastTransitionMs ?? null,
+    lastWatchdogAt: state.lastWatchdogAt ?? null,
+    lastWatchdogSilentMs: state.lastWatchdogSilentMs ?? null,
+    lastWatchdogDancer: state.lastWatchdogDancer ?? null,
+    lastWatchdogTrack: state.lastWatchdogTrack ?? null,
   };
   broadcastSSE('boothState', { state: liveBoothState });
   res.json({ ok: true });
@@ -2040,6 +2056,20 @@ if (isDirectRun) {
         activeEntertainers,
         errorCount: errorCounter,
         dancer_names,
+        currentDancer: liveBoothState.currentDancerName || null,
+        currentSong: liveBoothState.currentTrack || null,
+        isRotationActive: liveBoothState.isRotationActive || false,
+        isPlaying: liveBoothState.isPlaying || false,
+        announcementsEnabled: liveBoothState.announcementsEnabled !== false,
+        songsPerSet: liveBoothState.songsPerSet || 3,
+        diagLog: liveBoothState.diagLog || [],
+        prePickHits: liveBoothState.prePickHits || 0,
+        prePickMisses: liveBoothState.prePickMisses || 0,
+        lastTransitionMs: liveBoothState.lastTransitionMs ?? null,
+        lastWatchdogAt: liveBoothState.lastWatchdogAt ?? null,
+        lastWatchdogSilentMs: liveBoothState.lastWatchdogSilentMs ?? null,
+        lastWatchdogDancer: liveBoothState.lastWatchdogDancer ?? null,
+        lastWatchdogTrack: liveBoothState.lastWatchdogTrack ?? null,
       };
     });
     initR2Sync().catch(err => {

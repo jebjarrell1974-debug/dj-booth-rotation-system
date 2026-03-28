@@ -8,7 +8,8 @@ import {
   ChevronDown, ChevronRight, Copy, Check, History,
   Upload, Package, Search, Filter, XCircle, 
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
-  AlertCircle, Info, DollarSign, Monitor, Users, Download, RotateCcw
+  AlertCircle, Info, DollarSign, Monitor, Users, Download, RotateCcw,
+  Radio, Volume2, VolumeX, Zap
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -404,6 +405,106 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
         <div className="px-4 pb-2 text-xs">
           <span className="text-gray-500">Now Playing: </span>
           <span className="text-purple-400">{device.currentDancer || ''}{device.currentDancer && device.currentSong ? ' — ' : ''}{device.currentSong || ''}</span>
+        </div>
+      )}
+
+      {isOnline && (
+        <div className="border-t border-[#1a1a2e] px-3 py-2">
+          <details>
+            <summary className="text-[11px] text-gray-500 cursor-pointer hover:text-gray-300 select-none flex items-center gap-1.5 list-none">
+              <Activity className="w-3 h-3 text-cyan-500 shrink-0" />
+              <span>Audio Diagnostics</span>
+              {device.lastWatchdogAt && <span className="ml-1 text-[10px] text-red-400 font-medium">⚠ Dead air logged</span>}
+            </summary>
+            <div className="mt-2 space-y-2">
+
+              <div className="flex flex-wrap gap-1.5">
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${device.isRotationActive ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/10 text-gray-600'}`}>
+                  <Radio className="w-2.5 h-2.5" />{device.isRotationActive ? 'Rotation On' : 'Rotation Off'}
+                </span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${device.isPlaying ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/10 text-gray-600'}`}>
+                  {device.isPlaying ? <Volume2 className="w-2.5 h-2.5" /> : <VolumeX className="w-2.5 h-2.5" />}{device.isPlaying ? 'Playing' : 'Silent'}
+                </span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${device.announcementsEnabled ? 'bg-purple-500/20 text-purple-400' : 'bg-gray-500/10 text-gray-600'}`}>
+                  <Mic className="w-2.5 h-2.5" />{device.announcementsEnabled ? 'Voice On' : 'Voice Off'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                {device.lastTransitionMs != null && (
+                  <>
+                    <span className="text-gray-600">Last Transition</span>
+                    <span className={device.lastTransitionMs > 5000 ? 'text-red-400 font-semibold' : device.lastTransitionMs > 2000 ? 'text-yellow-400' : 'text-green-400'}>
+                      {(device.lastTransitionMs / 1000).toFixed(2)}s{device.lastTransitionMs > 2000 ? ' ⚠' : ' ✓'}
+                    </span>
+                  </>
+                )}
+                {(device.prePickHits + device.prePickMisses) > 0 && (() => {
+                  const total = device.prePickHits + device.prePickMisses;
+                  const pct = Math.round((device.prePickHits / total) * 100);
+                  return (
+                    <>
+                      <span className="text-gray-600">Cache Hit Rate</span>
+                      <span className={pct < 50 ? 'text-red-400 font-semibold' : pct < 70 ? 'text-yellow-400' : 'text-green-400'}>
+                        {device.prePickHits}/{total} ({pct}%){pct < 70 ? ' ⚠' : ' ✓'}
+                      </span>
+                    </>
+                  );
+                })()}
+                <span className="text-gray-600">Songs / Set</span>
+                <span className="text-gray-400">{device.songsPerSet || 3}</span>
+              </div>
+
+              {device.lastWatchdogAt ? (
+                <div className="flex items-start gap-1.5 bg-red-500/10 border border-red-500/20 rounded p-1.5">
+                  <AlertTriangle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-[10px] text-red-400 font-medium">Dead Air Detected {formatTimeAgo(device.lastWatchdogAt)}</p>
+                    <p className="text-[10px] text-red-300/70">
+                      {(device.lastWatchdogSilentMs / 1000).toFixed(1)}s gap
+                      {device.lastWatchdogDancer ? ` — ${device.lastWatchdogDancer}` : ''}
+                      {device.lastWatchdogTrack ? `: "${device.lastWatchdogTrack}"` : ''}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-green-600">✓ No dead air this session</p>
+              )}
+
+              {device.diagLog && device.diagLog.length > 0 && (
+                <details>
+                  <summary className="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400 select-none list-none flex items-center gap-1">
+                    <Zap className="w-2.5 h-2.5" /> Event Log ({device.diagLog.length})
+                  </summary>
+                  <div className="mt-1 max-h-48 overflow-y-auto space-y-0.5">
+                    {device.diagLog.map((entry, i) => {
+                      const time = new Date(entry.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                      const isWatchdog = entry.type === 'watchdog_fired';
+                      const isMiss = entry.type === 'prepick_miss';
+                      const isFallback = entry.type.includes('fallback');
+                      const isComplete = entry.type === 'transition_complete';
+                      const color = isWatchdog ? 'text-red-400' : isMiss ? 'text-yellow-400' : isFallback ? 'text-orange-400' : isComplete ? 'text-cyan-500/80' : 'text-gray-600';
+                      const labels = {
+                        transition_start: `▶ ${entry.from || '?'} → ${entry.to || '?'} [${entry.trigger || ''}]`,
+                        transition_complete: `✓ Done ${(entry.durationMs/1000).toFixed(2)}s — ${entry.dancer || ''}`,
+                        prepick_hit: `✓ Cache hit — ${entry.dancer || ''}`,
+                        prepick_miss: `⚠ Cache miss — ${entry.dancer || ''} (API call)`,
+                        track_play: `♪ "${entry.track || ''}" / ${entry.dancer || ''} gap:${((entry.gapMs||0)/1000).toFixed(2)}s`,
+                        track_play_fallback: `⚠ Fallback — ${entry.dancer || ''}: ${entry.reason || ''}`,
+                        watchdog_fired: `🚨 Dead air ${((entry.silentMs||0)/1000).toFixed(1)}s — ${entry.dancer || ''}: "${entry.track || ''}"`,
+                      };
+                      const label = labels[entry.type] || `${entry.type}`;
+                      return (
+                        <div key={i} className={`text-[9px] font-mono ${color} leading-relaxed`}>
+                          <span className="text-gray-700 mr-1">{time}</span>{label}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+              )}
+            </div>
+          </details>
         </div>
       )}
 
