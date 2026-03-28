@@ -125,10 +125,45 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - `c5042e9` — "Add fleet audio diagnostics: event log, transition timing, pre-pick tracking, watchdog reporting, FleetDashboard panel"
 
 ### PENDING TO-DO (approved, not yet built):
-1. **Fix Telegram** — alerts have been broken since homebase migration. Needs investigation.
-2. **Smart Telegram diagnostic alerts** — once Telegram works: fire detailed alerts when watchdog detects dead air, transition >3s, or cache miss rate drops below threshold. Include dancer, track, timing, and gap duration so context is ready to bring to AI for analysis.
-3. **Dead air parallel fix** — when announcements are ON and a dancer's set ends, the outro isn't fetched until after getDancerTracks completes (sequential). Fix: move duck call before the Promise.all, and start the outro prefetch IN PARALLEL with track selection. Also move track_play logDiag call before `playTrack` (already done). NOT YET CODED — plan approved.
-4. **Use `preloadedTrackRef` in transitions** — there is already a preload mechanism (useEffect at ~line 3200 in DJBooth.jsx) that pre-fetches the next dancer's first track 2s after index changes and stores it in `preloadedTrackRef`. But this ref is NEVER READ during transitions — the transition ignores it and makes a fresh API call anyway. Fix: check `preloadedTrackRef` first; if it matches the incoming dancer and has a URL, use it immediately. Fill the rest of the set in background. Eliminates the API call from the audio gap entirely.
+
+#### FLEET DASHBOARD FIXES (Pi .env changes — no code push needed):
+1. **neonaidj001 showing as "raspberrypi" / "No club assigned"** — `DEVICE_ID` and `CLUB_NAME` are not set in 001's `.env`. Heartbeat-client falls back to system hostname which is `raspberrypi` (default Pi hostname). Fix (run on neonaidj001):
+   ```bash
+   echo "DEVICE_ID=neonaidj001" >> ~/djbooth/.env
+   echo "CLUB_NAME=PONY BAMA" >> ~/djbooth/.env
+   sudo systemctl restart djbooth
+   ```
+   Optional: also fix the system hostname: `sudo hostnamectl set-hostname neonaidj001`
+
+2. **neonaidj003 showing 0 voiceovers** — `heartbeat-client.js` reads `process.env.VOICEOVER_PATH || process.env.VOICEOVER_DIR || ''` — if neither env var is set it returns empty string and counts 0 files. Server/db.js has a smarter fallback but heartbeat-client doesn't use it. Two fixes needed:
+   - **On 003**: `echo "VOICEOVER_PATH=/home/neonaidj003/djbooth/voiceovers" >> ~/djbooth/.env && sudo systemctl restart djbooth`
+   - **Code fix**: `server/heartbeat-client.js` should import and use `getVoiceoverDirPath()` from `server/db.js` instead of its own env-only lookup with empty fallback. This fixes reporting for any Pi missing that env var.
+   - **Also verify**: R2 sync is actually downloading voiceovers to 003. If the path is right but count is still 0, voiceovers aren't syncing from R2 to that unit.
+
+#### TELEGRAM (full investigation complete):
+3. **Fix Telegram on homebase** — The credentials are known and working. Issue is they were never written to homebase's `.env` after migrating from old Pi homebase. Fix (run on homebase at 100.109.73.27):
+   ```bash
+   echo "TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA" >> ~/djbooth/.env
+   echo "TELEGRAM_CHAT_ID=8567217273" >> ~/djbooth/.env
+   sudo systemctl restart djbooth
+   ```
+   Then verify with the test endpoint: `POST http://100.109.73.27:3001/api/monitor/test-telegram` (requires master PIN auth). Should send "🧪 Test Alert — NEON AI DJ fleet monitoring is active!" to Telegram.
+
+   **Current Telegram triggers** (in `server/fleet-monitor.js`):
+   - Device goes **offline** — fires after `HEARTBEAT_TIMEOUT_MS` (3 min) of no heartbeat; message includes device name, club, last seen time
+   - Device comes back **online** — fires on first heartbeat after offline; includes downtime in minutes
+   - **Test message** — `POST /api/monitor/test-telegram`
+   - **Broadcast** — `POST /api/monitor/broadcast` (sends any message to fleet Telegram)
+
+4. **Smart Telegram diagnostic alerts** — once Telegram is working, add these triggers to `server/fleet-monitor.js`:
+   - Dead air watchdog fired (`lastWatchdogAt` is new, `lastWatchdogSilentMs > threshold`) — message includes dancer, track, silence duration, last transition time
+   - Transition took > 3s (`lastTransitionMs` field now in heartbeat)
+   - Cache miss rate below 50% for a session (`prePickMisses / (prePickHits + prePickMisses)`)
+   - Each alert type should fire at most once per 10 min per device (debounce) to avoid spam
+
+#### DEAD AIR / AUDIO FIXES (code changes needed):
+5. **Dead air parallel fix** — with announcements ON, gap = getDancerTracks_time + outro_fetch_time + 300ms settle, all sequential. Fix: move `duck()` before the `Promise.all([getDancerTracks(...), getDancerTracks(...)])` and start outro prefetch inside the same Promise.all. NOT YET CODED — plan approved.
+6. **Use `preloadedTrackRef` in transitions** — useEffect at ~line 3200 in DJBooth.jsx pre-fetches and stores the next dancer's first track in `preloadedTrackRef`, but transitions completely ignore it and call `getDancerTracks` fresh every time. Fix: check `preloadedTrackRef.current` first — if it matches incoming dancer and has a URL, use it immediately and fill rest of set in background. Eliminates the API-call gap when pre-fetch worked.
 
 ### Session 55 — What was changed this session
 
