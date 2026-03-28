@@ -2293,18 +2293,25 @@ export default function DJBooth() {
           return;
         }
 
+        const savedForFinished = rotationSongsRef.current[finishedDancerId];
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
         const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
+        const _cdFin = songCooldownRef.current || {};
+        const _nowFin = Date.now();
+        const savedFinishedValid = savedForFinished && savedForFinished.length >= songsPerSetRef.current &&
+          savedForFinished.every(t => t.url && (!_cdFin[t.name] || (_nowFin - _cdFin[t.name]) >= COOLDOWN_MS));
         const [freshTracks, prePicked] = await Promise.all([
           (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
-          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
-            console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
-            return [];
-          }) : Promise.resolve([])
+          savedFinishedValid
+            ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(savedForFinished))
+            : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
+                console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+                return [];
+              }) : Promise.resolve([])
         ]);
         let nextTrack = freshTracks?.[0];
 
@@ -2850,18 +2857,25 @@ export default function DJBooth() {
           return;
         }
 
+        const savedForFinished = rotationSongsRef.current[finishedDancerId];
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
         const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
+        const _cdFin = songCooldownRef.current || {};
+        const _nowFin = Date.now();
+        const savedFinishedValid = savedForFinished && savedForFinished.length >= songsPerSetRef.current &&
+          savedForFinished.every(t => t.url && (!_cdFin[t.name] || (_nowFin - _cdFin[t.name]) >= COOLDOWN_MS));
         const [freshTracks, prePicked] = await Promise.all([
           (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
-          finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
-            console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
-            return [];
-          }) : Promise.resolve([])
+          savedFinishedValid
+            ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(savedForFinished))
+            : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
+                console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+                return [];
+              }) : Promise.resolve([])
         ]);
         let nextTrack = freshTracks?.[0];
 
