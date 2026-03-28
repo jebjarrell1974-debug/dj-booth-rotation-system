@@ -3815,7 +3815,13 @@ export default function DJBooth() {
                     const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
                     if (currentPerformerId != null) {
                       const newIdx = newRotation.indexOf(currentPerformerId);
-                      if (newIdx >= 0 && newIdx !== currentDancerIndexRef.current) {
+                      const wasAtTop = currentDancerIndexRef.current === 0;
+                      const movedAwayFromTop = wasAtTop && newIdx !== 0;
+                      if (movedAwayFromTop) {
+                        console.log(`🔄 Save All: current dancer dragged off top — treating as skip, resetting to new top dancer`);
+                        currentSongNumberRef.current = 0;
+                        setCurrentSongNumber(0);
+                      } else if (newIdx >= 0 && newIdx !== currentDancerIndexRef.current) {
                         console.log(`🔄 Save All: adjusting currentDancerIndex ${currentDancerIndexRef.current} → ${newIdx} (performer ID ${currentPerformerId})`);
                         setCurrentDancerIndex(newIdx);
                         currentDancerIndexRef.current = newIdx;
