@@ -2315,6 +2315,9 @@ export default function DJBooth() {
         const _skipTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
 
+        const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
+        if (announcementsEnabled) audioEngineRef.current?.duck();
+
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
         if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
@@ -2324,14 +2327,17 @@ export default function DJBooth() {
         const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
-        const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
-          djSavedValid
-            ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
-            : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
-                console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
-                return [];
-              }) : Promise.resolve([])
+        const [[freshTracks, prePicked]] = await Promise.all([
+          Promise.all([
+            (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+            djSavedValid
+              ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
+              : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
+                  console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+                  return [];
+                }) : Promise.resolve([])
+          ]),
+          announcementsEnabled ? waitForDuck() : Promise.resolve()
         ]);
         let nextTrack = freshTracks?.[0];
 
@@ -2346,9 +2352,7 @@ export default function DJBooth() {
         rotationSongsRef.current = updatedSongs;
 
         if (announcementsEnabled) {
-          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
+          const outroUrl = await outroPromise;
           await playPrefetchedAnnouncement(outroUrl);
           audioEngineRef.current?.unduck();
         }
@@ -2884,6 +2888,9 @@ export default function DJBooth() {
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
+        const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
+        if (announcementsEnabled) audioEngineRef.current?.duck();
+
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
         if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
@@ -2893,14 +2900,17 @@ export default function DJBooth() {
         const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
-        const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
-          djSavedValid
-            ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
-            : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
-                console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
-                return [];
-              }) : Promise.resolve([])
+        const [[freshTracks, prePicked]] = await Promise.all([
+          Promise.all([
+            (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+            djSavedValid
+              ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
+              : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
+                  console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+                  return [];
+                }) : Promise.resolve([])
+          ]),
+          announcementsEnabled ? waitForDuck() : Promise.resolve()
         ]);
         let nextTrack = freshTracks?.[0];
 
@@ -2915,9 +2925,7 @@ export default function DJBooth() {
         rotationSongsRef.current = updatedSongs;
 
         if (announcementsEnabled) {
-          const outroPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
-          audioEngineRef.current?.duck();
-          const [, outroUrl] = await Promise.all([waitForDuck(), outroPromise]);
+          const outroUrl = await outroPromise;
           await playPrefetchedAnnouncement(outroUrl);
           audioEngineRef.current?.unduck();
         }

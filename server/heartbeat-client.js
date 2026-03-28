@@ -1,6 +1,7 @@
 import { execSync, spawn } from 'child_process';
 import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
 import { networkInterfaces, hostname, uptime, freemem, totalmem } from 'os';
+import { dirname, join } from 'path';
 
 const HEARTBEAT_INTERVAL_MS = 1 * 60 * 1000;
 const FLEET_SERVER_URL = process.env.FLEET_SERVER_URL || '';
@@ -212,7 +213,13 @@ async function sendHeartbeat(extraData = {}) {
   const ips = getLocalIps();
   const disk = getDiskInfo();
   const musicPath = process.env.MUSIC_PATH || '';
-  const voiceoverPath = process.env.VOICEOVER_PATH || process.env.VOICEOVER_DIR || '';
+  const voiceoverPath = (() => {
+    if (process.env.VOICEOVER_PATH) return process.env.VOICEOVER_PATH;
+    if (process.env.VOICEOVER_DIR) return process.env.VOICEOVER_DIR;
+    if (process.env.DB_PATH) return join(dirname(process.env.DB_PATH), 'voiceovers');
+    const appDir = process.env.APP_DIR || '/home/neonaidj001/djbooth';
+    return join(appDir, 'voiceovers');
+  })();
 
   const memory = getMemoryInfo();
   const network = getNetworkLatency();

@@ -10,6 +10,17 @@ const devices = new Map();
 const pendingCommands = new Map();
 let checkInterval = null;
 
+const alertCooldowns = new Map();
+const ALERT_COOLDOWN_MS = 10 * 60 * 1000;
+
+function canSendAlert(deviceId, alertType) {
+  const key = `${deviceId}:${alertType}`;
+  const last = alertCooldowns.get(key) || 0;
+  if (Date.now() - last < ALERT_COOLDOWN_MS) return false;
+  alertCooldowns.set(key, Date.now());
+  return true;
+}
+
 function isTelegramConfigured() {
   return !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 }
@@ -190,6 +201,43 @@ async function registerHeartbeat(deviceId, data) {
       `<b>${dev.name}</b> (${dev.clubName})\n` +
       `Back online after ${downtime} min`
     );
+  }
+
+  if (isTelegramConfigured() && existing && !wasOffline) {
+    const dev = devices.get(effectiveId);
+
+    if (data.lastWatchdogAt && data.lastWatchdogAt !== existing.lastWatchdogAt &&
+        (data.lastWatchdogSilentMs || 0) > 2000 && canSendAlert(effectiveId, 'dead_air')) {
+      sendTelegram(
+        `🔇 <b>DEAD AIR</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `${((data.lastWatchdogSilentMs || 0) / 1000).toFixed(1)}s silence detected\n` +
+        `Dancer: ${data.lastWatchdogDancer || 'unknown'}\n` +
+        `Track: ${data.lastWatchdogTrack || 'unknown'}`
+      );
+    }
+
+    if (data.lastTransitionMs != null && data.lastTransitionMs !== existing.lastTransitionMs &&
+        data.lastTransitionMs > 3000 && canSendAlert(effectiveId, 'slow_transition')) {
+      sendTelegram(
+        `⏱ <b>SLOW TRANSITION</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Transition took ${(data.lastTransitionMs / 1000).toFixed(1)}s`
+      );
+    }
+
+    const totalPicks = (data.prePickHits || 0) + (data.prePickMisses || 0);
+    if (totalPicks >= 5) {
+      const missRate = (data.prePickMisses || 0) / totalPicks;
+      if (missRate > 0.5 && canSendAlert(effectiveId, 'low_cache_rate')) {
+        sendTelegram(
+          `📉 <b>LOW CACHE RATE</b>\n` +
+          `<b>${dev.name}</b> (${dev.clubName})\n` +
+          `${Math.round(missRate * 100)}% pre-pick misses (${data.prePickMisses}/${totalPicks})\n` +
+          `Dead air risk is elevated`
+        );
+      }
+    }
   }
 }
 
