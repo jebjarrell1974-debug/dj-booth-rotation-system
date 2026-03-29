@@ -121,6 +121,7 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 ## CURRENT STATUS (as of Session 56 — March 29, 2026) — READ THIS FIRST
 
 ### Latest GitHub commits this session:
+- `0132946` — "Fix: pulling current dancer skips next dancer — adjust currentDancerIndex on remove"
 - `4071e0f` — "Session 56: wire voice diagnostics into fleet event log (blob corrupt, timeout, generate fail, playback fail, fallback tracking)"
 - `5eea816` — "Session 56: promo-mixer ffmpeg pipeline, continuous music transitions (no dead air), Promos genre commercial system"
 - **ROLLBACK POINT**: `bbf3d56` — state before this session's pushes. Use if any Session 56 changes cause problems on homebase.

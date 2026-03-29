@@ -2368,6 +2368,10 @@ export default function DJBooth() {
           return;
         }
 
+        // Apply rotation immediately so any DJ reorders during the async transition land on top
+        setRotation(newRotation);
+        rotationRef.current = newRotation;
+
         const _skipTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
 
@@ -2451,13 +2455,14 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         }
 
-        setRotation(newRotation);
-        rotationRef.current = newRotation;
-        currentDancerIndexRef.current = newIdx;
+        const finalRot = rotationRef.current;
+        const finalIdx = finalRot.indexOf(nextDancer.id);
+        const resolvedIdx = finalIdx !== -1 ? finalIdx : 0;
+        currentDancerIndexRef.current = resolvedIdx;
         currentSongNumberRef.current = 1;
-        setCurrentDancerIndex(newIdx);
+        setCurrentDancerIndex(resolvedIdx);
         setCurrentSongNumber(1);
-        await updateStageState(newIdx, newRotation);
+        await updateStageState(resolvedIdx, finalRot);
       }
     } catch (error) {
       console.error('❌ HandleSkip error, falling back to random track:', error);
@@ -2948,6 +2953,10 @@ export default function DJBooth() {
           return;
         }
 
+        // Apply rotation immediately so any DJ reorders during the async transition land on top
+        setRotation(newRotation);
+        rotationRef.current = newRotation;
+
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
@@ -3031,13 +3040,14 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         }
 
-        setRotation(newRotation);
-        rotationRef.current = newRotation;
-        currentDancerIndexRef.current = newIdx;
+        const finalRot = rotationRef.current;
+        const finalIdx = finalRot.indexOf(nextDancer.id);
+        const resolvedIdx = finalIdx !== -1 ? finalIdx : 0;
+        currentDancerIndexRef.current = resolvedIdx;
         currentSongNumberRef.current = 1;
-        setCurrentDancerIndex(newIdx);
+        setCurrentDancerIndex(resolvedIdx);
         setCurrentSongNumber(1);
-        await updateStageState(newIdx, newRotation);
+        await updateStageState(resolvedIdx, finalRot);
       }
     } catch (error) {
       console.error('❌ HandleTrackEnd error, falling back to random track:', error);
