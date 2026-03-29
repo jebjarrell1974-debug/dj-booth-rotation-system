@@ -31,6 +31,7 @@ import fleetRoutes from './fleet-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music } from './r2sync.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
+import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos } from './promo-mixer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -668,10 +669,40 @@ app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
       const voiceoverPath = getVoiceoverFilePath(cache_key);
       if (voiceoverPath) uploadVoiceover(cache_key, voiceoverPath, club_name || null).catch(() => {});
     }
+    if ((type === 'promo' || type === 'manual') && result.fileName) {
+      const voiceoverPath = getVoiceoverFilePath(cache_key);
+      if (voiceoverPath) {
+        processPromo(cache_key, voiceoverPath, dancer_name || cache_key).catch(err => {
+          console.error('Auto promo mix failed:', err.message);
+        });
+      }
+    }
   } catch (err) {
     console.error('Failed to save voiceover:', err.message);
     res.status(500).json({ error: 'Failed to save voiceover' });
   }
+});
+
+app.get('/api/voiceovers/mix-status', authenticate, requireDJ, (req, res) => {
+  const { cacheKey } = req.query;
+  if (cacheKey) return res.json(getMixStatus(cacheKey) || { status: 'unknown' });
+  res.json(getAllMixStatuses());
+});
+
+app.post('/api/voiceovers/mix-promo/:cacheKey', authenticate, requireDJ, (req, res) => {
+  const { cacheKey } = req.params;
+  const voiceoverPath = getVoiceoverFilePath(cacheKey);
+  if (!voiceoverPath) return res.status(404).json({ error: 'Voiceover not found' });
+  const voiceover = getVoiceover(cacheKey);
+  processPromo(cacheKey, voiceoverPath, voiceover?.dancer_name || cacheKey).catch(() => {});
+  res.json({ ok: true, status: 'processing' });
+});
+
+app.post('/api/voiceovers/convert-all-promos', authenticate, requireDJ, (req, res) => {
+  res.json({ ok: true, message: 'Conversion started in background' });
+  convertAllExistingPromos(listVoiceovers, getVoiceoverFilePath).catch(err => {
+    console.error('Bulk promo conversion failed:', err.message);
+  });
 });
 
 app.delete('/api/voiceovers/dancer/:dancerName', authenticate, requireDJ, (req, res) => {

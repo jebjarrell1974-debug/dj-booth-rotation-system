@@ -118,12 +118,45 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 55 — March 28, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 56 — March 29, 2026) — READ THIS FIRST
 
 ### Latest GitHub commits this session:
-- `e794a2` — "Fix: use explicit djSavedSongsRef to survive dancer transitions (handles partial saves, cooldown-agnostic)"
-- `c5042e9` — "Add fleet audio diagnostics: event log, transition timing, pre-pick tracking, watchdog reporting, FleetDashboard panel"
-- `c0b6d6f` — "Fix fleet voiceover count, smart Telegram alerts, dead air parallel fix (outro+duck parallel with track selection)"
+- `aa635fc` — "Add pre-mixed audio system and improve music transitions" (Replit checkpoint)
+- `0e1d2a7` — "Add automated audio mixing for promotional content" (Replit checkpoint)
+- **ROLLBACK POINT**: `aa635fc3630400970a0f6e29f657d9840b7dce04` — state before promo mixer but after all Session 55 fixes. Use this if promo-mixer or transition changes cause problems.
+
+### What was built this session (Session 56):
+
+**1. Pre-mixed promo MP3 system — `server/promo-mixer.js` (new file):**
+- `processPromo(cacheKey, voiceFilePath, promoName)` — ffmpeg mixes ElevenLabs voice + random Promo Beds track → single MP3 saved to `MUSIC_PATH/Promos/cacheKey.mp3`
+- Mix formula: 5s full-volume bed intro | voice starts at 5s with bed ducked to 12% | 5s outro | 2s fade out
+- Filter chain: `apad` → `atrim` → per-frame `volume` enable expression → `afade` → `adelay` voice → `amix normalize=0`
+- `convertAllExistingPromos(listVoiceovers, getVoiceoverFilePath)` — batch convert all existing promos, skips already-done
+- `getMixStatus(cacheKey)` / `getAllMixStatuses()` — in-memory Map for status tracking (persists until server restart)
+- Guard: `if (mixStatus.get(cacheKey)?.status === 'processing') return;` — no double-mix on rapid saves
+
+**2. server/index.js changes:**
+- Import: `import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos } from './promo-mixer.js';`
+- Auto-trigger after `POST /api/voiceovers` save: if type is `promo` or `manual`, calls `processPromo()` in background
+- New endpoints:
+  - `GET /api/voiceovers/mix-status?cacheKey=X` — single or all mix statuses
+  - `POST /api/voiceovers/mix-promo/:cacheKey` — manually trigger mix for one promo
+  - `POST /api/voiceovers/convert-all-promos` — batch convert all existing promos (fires and returns immediately)
+
+**3. DJBooth.jsx — continuous music during transitions:**
+- `commercialModeRef = useRef(null)` — tracks 'new' or 'old' commercial mode so caller knows whether to restart dancer track
+- **`playCommercialIfDue` new-mode**: checks `GET /api/music/tracks?genre=Promos` first. If Promos genre has tracks, picks one via shuffle queue, fetches audio, plays via `playAnnouncement({ autoDuck: false })` — awaits completion. Sets `commercialModeRef.current = 'new'`. Falls through to old system if no Promos tracks.
+- **`playCommercialIfDue` old-mode**: sets `commercialModeRef.current = 'old'` then runs existing Promo Beds + voice overlay system unchanged.
+- **`handleTrackEnd` new sequence**: `playTrack(nextTrack)` fires IMMEDIATELY (no more dead air gap) → `duck()` → `Promise.all([outroPromise, waitForDuck()])` → outro plays over ducked music → `unduck()` → commercial → if `commercialModeRef='old'`: restart dancer track → `duck()` → intro → `unduck()`
+- **`handleSkip` new sequence**: identical to handleTrackEnd above
+- `transition_complete` is now logged right after `playTrack` returns (when music starts), not after all announcements
+
+**Structural verification:**
+- `playPrefetchedAnnouncement(null)` is safe — guards `if (!audioUrl)` at line 1593
+- `outroPromise` starts BEFORE `playTrack` so TTS fetches in parallel with track loading
+- Old-mode commercial replaces dancer track with Promo Bed; new-mode commercial plays over dancer track (already ducked)
+- Error `catch` blocks still call `unduck()` in both handleTrackEnd and handleSkip
+- 148/148 tests pass
 
 ### PENDING TO-DO (remaining — Pi-side only, no code changes needed):
 

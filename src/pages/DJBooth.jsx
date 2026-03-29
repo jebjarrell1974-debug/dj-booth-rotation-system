@@ -156,6 +156,7 @@ export default function DJBooth() {
   const commercialCounterRef = useRef(0);
   const playingCommercialRef = useRef(false);
   const commercialEndResolverRef = useRef(null);
+  const commercialModeRef = useRef(null);
   const promoShuffleRef = useRef([]);
   const [availablePromos, setAvailablePromos] = useState([]);
   const [promoQueue, setPromoQueue] = useState([]);
@@ -1837,6 +1838,57 @@ export default function DJBooth() {
     try {
       const token = localStorage.getItem('djbooth_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const promoTrackRes = await fetch(`/api/music/tracks?genre=${encodeURIComponent('Promos')}&limit=200`, { headers });
+      if (promoTrackRes.ok) {
+        const promoTrackData = await promoTrackRes.json();
+        const promoTracks = promoTrackData.tracks || [];
+        if (promoTracks.length > 0) {
+          const promoTrackNames = promoTracks.map(t => t.name).sort();
+          const pQueue = promoShuffleRef.current;
+          const pQueueValid = pQueue.length > 0 && pQueue.every(k => promoTrackNames.includes(k));
+          if (!pQueueValid) {
+            const shuffled = [...promoTrackNames];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            promoShuffleRef.current = shuffled;
+          }
+          const nextName = promoShuffleRef.current.shift() || promoTrackNames[0];
+          setPromoQueue([...promoShuffleRef.current]);
+          const promoTrack = promoTracks.find(t => t.name === nextName) || promoTracks[0];
+          const promoAudioRes = await fetch(`/api/music/stream/${promoTrack.id}`, { headers });
+          if (promoAudioRes.ok) {
+            const promoBlob = await promoAudioRes.blob();
+            const promoUrl = URL.createObjectURL(promoBlob);
+            if (!audioEngineRef.current) { URL.revokeObjectURL(promoUrl); return false; }
+            commercialModeRef.current = 'new';
+            playingCommercialRef.current = true;
+            lastAudioActivityRef.current = Date.now();
+            const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
+            const skipPromise = new Promise(resolve => {
+              commercialEndResolverRef.current = () => resolve();
+            });
+            try {
+              console.log(`📺 Pre-mixed promo: "${promoTrack.name}"`);
+              await Promise.race([
+                audioEngineRef.current?.playAnnouncement(promoUrl, { autoDuck: false }),
+                skipPromise
+              ]);
+            } finally {
+              clearInterval(keepAlive);
+              playingCommercialRef.current = false;
+              commercialEndResolverRef.current = null;
+              lastAudioActivityRef.current = Date.now();
+              setTimeout(() => URL.revokeObjectURL(promoUrl), 5000);
+            }
+            return true;
+          }
+        }
+      }
+
+      commercialModeRef.current = 'old';
       const res = await fetch('/api/voiceovers', { headers });
       if (!res.ok) return false;
       const all = await res.json();
@@ -2316,7 +2368,6 @@ export default function DJBooth() {
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
 
         const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
-        if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
@@ -2336,8 +2387,7 @@ export default function DJBooth() {
                   console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
                   return [];
                 }) : Promise.resolve([])
-          ]),
-          announcementsEnabled ? waitForDuck() : Promise.resolve()
+          ])
         ]);
         let nextTrack = freshTracks?.[0];
 
@@ -2350,18 +2400,6 @@ export default function DJBooth() {
         }
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
-
-        if (announcementsEnabled) {
-          const outroUrl = await outroPromise;
-          await playPrefetchedAnnouncement(outroUrl);
-          audioEngineRef.current?.unduck();
-        }
-
-        const commercialPlayed = await playCommercialIfDue();
-        if (commercialPlayed) {
-          transitionStartTimeRef.current = Date.now();
-          lastAudioActivityRef.current = Date.now();
-        }
 
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
@@ -2378,6 +2416,27 @@ export default function DJBooth() {
         logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip' });
 
         if (announcementsEnabled) {
+          audioEngineRef.current?.duck();
+          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+          await playPrefetchedAnnouncement(outroUrl);
+          audioEngineRef.current?.unduck();
+        }
+
+        const commercialPlayed = await playCommercialIfDue();
+        if (commercialPlayed) {
+          transitionStartTimeRef.current = Date.now();
+          lastAudioActivityRef.current = Date.now();
+          if (commercialModeRef.current === 'old') {
+            if (nextTrack && nextTrack.url) {
+              const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+              if (!trackOk) await playFallbackTrack(true);
+            } else {
+              await playFallbackTrack(true);
+            }
+          }
+        }
+
+        if (announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
@@ -2387,7 +2446,7 @@ export default function DJBooth() {
           }
           audioEngineRef.current?.unduck();
         }
-        
+
         setRotation(newRotation);
         rotationRef.current = newRotation;
         currentDancerIndexRef.current = newIdx;
@@ -2889,7 +2948,6 @@ export default function DJBooth() {
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
         const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
-        if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
@@ -2909,8 +2967,7 @@ export default function DJBooth() {
                   console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
                   return [];
                 }) : Promise.resolve([])
-          ]),
-          announcementsEnabled ? waitForDuck() : Promise.resolve()
+          ])
         ]);
         let nextTrack = freshTracks?.[0];
 
@@ -2923,18 +2980,6 @@ export default function DJBooth() {
         }
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
-
-        if (announcementsEnabled) {
-          const outroUrl = await outroPromise;
-          await playPrefetchedAnnouncement(outroUrl);
-          audioEngineRef.current?.unduck();
-        }
-
-        const commercialPlayed = await playCommercialIfDue();
-        if (commercialPlayed) {
-          transitionStartTimeRef.current = Date.now();
-          lastAudioActivityRef.current = Date.now();
-        }
 
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
@@ -2951,6 +2996,27 @@ export default function DJBooth() {
         logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end' });
 
         if (announcementsEnabled) {
+          audioEngineRef.current?.duck();
+          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+          await playPrefetchedAnnouncement(outroUrl);
+          audioEngineRef.current?.unduck();
+        }
+
+        const commercialPlayed = await playCommercialIfDue();
+        if (commercialPlayed) {
+          transitionStartTimeRef.current = Date.now();
+          lastAudioActivityRef.current = Date.now();
+          if (commercialModeRef.current === 'old') {
+            if (nextTrack && nextTrack.url) {
+              const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+              if (!trackOk) await playFallbackTrack(true);
+            } else {
+              await playFallbackTrack(true);
+            }
+          }
+        }
+
+        if (announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
@@ -2960,7 +3026,7 @@ export default function DJBooth() {
           }
           audioEngineRef.current?.unduck();
         }
-        
+
         setRotation(newRotation);
         rotationRef.current = newRotation;
         currentDancerIndexRef.current = newIdx;

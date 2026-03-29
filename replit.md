@@ -77,11 +77,17 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - **currentDancer/currentSong null bug fixed**: `getExtraData()` in server/index.js now populates these fields from `liveBoothState`. They were always null before.
 - **FleetDashboard Audio Diagnostics panel**: Per-device card shows rotation/audio/voice status badges, last transition duration (color-coded), cache hit rate, dead air watchdog alerts, and scrollable 20-entry event log.
 
+### Session 56 (March 29, 2026) — promo mixer + continuous music
+- **Pre-mixed promo MP3 system** (`server/promo-mixer.js`): ffmpeg mixes ElevenLabs voice + random Promo Beds track → single MP3 saved to `MUSIC_PATH/Promos/` (5s full bed intro | voice over ducked bed at 12% | 5s outro + 2s fade out). Auto-triggered on every promo/manual voiceover save. Manual endpoints: `POST /api/voiceovers/mix-promo/:cacheKey`, `POST /api/voiceovers/convert-all-promos`, `GET /api/voiceovers/mix-status`.
+- **Continuous music during dancer transitions**: `handleTrackEnd` and `handleSkip` now start the new dancer's track IMMEDIATELY (no dead air), then duck and play outro/intro/commercial over the live music. Track starts → transition_complete logged → duck → outro over music → unduck → commercial → intro over music → unduck.
+- **`playCommercialIfDue` two-mode system**: checks `Promos` genre first — if tracks exist, plays the pre-mixed MP3 as an announcement (`autoDuck: false`, music already ducked) via `commercialModeRef='new'`. Falls back to legacy voice-over-bed system (`commercialModeRef='old'`). Old mode restarts the dancer track after commercial finishes.
+- **`commercialModeRef`** added to track which commercial mode fired so callers know whether to restart the dancer track.
+
 ### PENDING TO-DO (next session):
 1. Fix Telegram alerts (broken since homebase migration)
 2. Smart Telegram alerts: fire on dead air, slow transitions, low cache hit rate — with full context
-3. Dead air parallel fix: move `duck()` call before `Promise.all([getDancerTracks, outro prefetch])` — eliminates sequential wait
-4. Use `preloadedTrackRef` in transitions: it pre-fetches the next track but is NEVER consumed — transitions ignore it and call the API anyway
+3. Use `preloadedTrackRef` in transitions: it pre-fetches the next track but is NEVER consumed — transitions ignore it and call the API anyway
+4. Convert all existing promos to MP3 via `POST /api/voiceovers/convert-all-promos` on homebase (run once after deploy)
 
 ## Recent Session Fixes (Sessions 48–49)
 - **Bug 1**: `onDancerDragReorder` callback added to `RotationPlaylistManager`; fires when pos-0 changes during active rotation; DJBooth resets indices to 0 and calls `handleSkip` after 100ms state flush
