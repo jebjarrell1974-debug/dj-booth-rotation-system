@@ -249,7 +249,13 @@ export default function RotationPlaylistManager({
     if (!isRotationActive || !localRotation || localRotation.length === 0) return;
     const currentId = String(localRotation[0]);
     if (prevCurrentDancerIdRef.current && prevCurrentDancerIdRef.current !== currentId) {
-      djOverridesRef.current.delete(prevCurrentDancerIdRef.current);
+      const finishedId = prevCurrentDancerIdRef.current;
+      djOverridesRef.current.delete(finishedId);
+      setSongAssignments(prev => {
+        const updated = { ...prev };
+        delete updated[finishedId];
+        return updated;
+      });
     }
     prevCurrentDancerIdRef.current = currentId;
   }, [localRotation, isRotationActive]);
