@@ -127,6 +127,7 @@ export default function RotationPlaylistManager({
   announcementsEnabled,
   onAnnouncementsToggle,
   onSkipDancer,
+  onSkipCurrentDancer,
   onDancerDragReorder,
   currentDancerIndex,
   commercialCounter = 0,
@@ -805,6 +806,7 @@ export default function RotationPlaylistManager({
 
   const lastSaveTimeRef = useRef(0);
   const lastSkipDancerTimeRef = useRef(0);
+  const lastSkipCurrentDancerTimeRef = useRef(0);
   const handleSave = async () => {
     const now = Date.now();
     if (now - lastSaveTimeRef.current < 2000) return;
@@ -1206,6 +1208,23 @@ export default function RotationPlaylistManager({
                                   {selectedDancerId === dancer.id && ' — tap songs to add'}
                                 </p>
                               </div>
+                              {isRotationActive && index === currentDancerIndex && localRotation.length > 1 && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-11 h-11 text-orange-400 hover:text-orange-200 hover:bg-orange-900/30 flex-shrink-0"
+                                  title="Skip to next dancer (ends her set, resets songs, she goes to bottom)"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const now = Date.now();
+                                    if (now - lastSkipCurrentDancerTimeRef.current < 2000) return;
+                                    lastSkipCurrentDancerTimeRef.current = now;
+                                    onSkipCurrentDancer?.();
+                                  }}
+                                >
+                                  <SkipForward className="w-5 h-5" />
+                                </Button>
+                              )}
                               {isRotationActive && index !== currentDancerIndex && localRotation.length > 1 && (
                                 <Button
                                   size="icon"

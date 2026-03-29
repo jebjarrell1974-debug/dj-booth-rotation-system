@@ -471,6 +471,13 @@ This runs before the `Promise.all([getDancerTracks(nextDancer), getDancerTracks(
 - RotationDisplay polls `/api/stage/current` which reads `_stageState` (in-memory, only updated by `POST /api/stage/sync`). `onSaveAll` already chains through `localEntities.Stage.update → syncStageToServer` but that's slow/async.
 - Fix: added a direct fire-and-forget `POST /api/stage/sync` at the top of `onSaveAll` in DJBooth.jsx, immediately after setting `rotationRef.current = newRotation`. Display now updates within 1 second of pressing Save All instead of waiting for the DB mutation chain.
 
+**Promos folder excluded from R2 sync** (`92755d3`):
+- Promos are venue-specific (mixed locally via ffmpeg from ElevenLabs voice + Promo Beds). They must NOT sync across units — a Pony Evansville promo should never play at Pony Bama.
+- Each Pi creates and manages its own `Promos/` folder entirely locally.
+- `syncMusicFromR2`: skips `Promos/` downloads; also protects local `Promos/` files from being purged (purge step now excludes `Promos/` from toDelete list).
+- `syncMusicToR2`: skips `Promos/` uploads; orphan-purge step also skips `Promos/` so homebase never deletes venue promos from R2 if any exist there.
+- The batch-convert task (`POST /api/voiceovers/convert-all-promos`) should be run on EACH Pi individually, NOT on homebase. Homebase has no access to venue-specific promo audio files.
+
 **Dancer-add race condition during AI announcements** (`23531bc`) — 4 locations fixed:
 - Root cause: `addToRotation` called `setRotation(newRotation)` but never updated `rotationRef.current`. All transition end-of-async code reads the ref, so added dancers were invisible to display/DB saves.
 - **Fix 1**: `addToRotation` now sets `rotationRef.current = newRotation` alongside `setRotation`.

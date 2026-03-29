@@ -2221,7 +2221,16 @@ export default function DJBooth() {
           transitionInProgressRef.current = false;
           return;
         }
-        
+
+        // Sync crowd display to the current dancer BEFORE announcing.
+        // Without this, RotationDisplay keeps showing the previously removed dancer.
+        updateStageState(idx, rot);
+        fetch('/api/stage/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rotation_order: rot, current_dancer_index: idx, is_active: true })
+        }).catch(() => {});
+
         if (announcementsEnabled) {
           const announcementType = songNum === 0 ? 'intro' : 'round2';
           const announcementPromise = prefetchAnnouncement(announcementType, dancer.name, null, newSongNum);
@@ -3309,7 +3318,12 @@ export default function DJBooth() {
     const removedIdx = rotation.indexOf(dancerId);
     const newRotation = rotation.filter(id => id !== dancerId);
     if (removedIdx !== -1 && removedIdx <= currentDancerIndex && newRotation.length > 0) {
-      const newIdx = (currentDancerIndex - 1 + newRotation.length) % newRotation.length;
+      // If we removed the dancer currently on stage, stay at the same position index
+      // (it now points to the next dancer). If we removed a dancer before the current
+      // one, shift down by 1 to keep the same dancer on stage.
+      const newIdx = removedIdx === currentDancerIndex
+        ? Math.min(removedIdx, newRotation.length - 1)
+        : currentDancerIndex - 1;
       setCurrentDancerIndex(newIdx);
       currentDancerIndexRef.current = newIdx;
     }
@@ -4116,6 +4130,16 @@ export default function DJBooth() {
                 availablePromos={availablePromos}
                 promoQueue={promoQueue}
                 onSwapPromo={swapPromoAtSlot}
+                onSkipCurrentDancer={() => {
+                  if (!isRotationActiveRef.current) return;
+                  if (rotationRef.current.length <= 1) return;
+                  // Force song number past any set size so handleSkip takes the end-of-set
+                  // path — it flips rotation, resets her songs, plays break songs if queued,
+                  // and gives the next dancer a full intro.
+                  setCurrentSongNumber(999);
+                  currentSongNumberRef.current = 999;
+                  handleSkipRef.current?.();
+                }}
                 onSkipDancer={(dancerId) => {
                   if (!isRotationActive) return;
                   const rot = [...rotationRef.current];
@@ -4125,10 +4149,7 @@ export default function DJBooth() {
                   const currentIdx = currentDancerIndexRef.current;
                   if (currentIdx < 0 || currentIdx >= rot.length) return;
                   const currentDancerId = rot[currentIdx];
-                  if (dancerId === currentDancerId) {
-                    toast('Use the Skip button above to skip the current entertainer', { icon: '⏭️' });
-                    return;
-                  }
+                  if (dancerId === currentDancerId) return;
                   rot.splice(skipIdx, 1);
                   rot.push(dancerId);
                   let newCurrentIdx = 0;
