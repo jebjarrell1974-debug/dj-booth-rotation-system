@@ -2291,7 +2291,7 @@ export default function DJBooth() {
         if (breakSongs.length > 0) {
           console.log('🎵 HandleSkip: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
 
-          const flippedRotation = [...rot];
+          const flippedRotation = [...rotationRef.current];
           const [finishedId] = flippedRotation.splice(idx, 1);
           flippedRotation.push(finishedId);
           setRotation(flippedRotation);
@@ -2721,13 +2721,13 @@ export default function DJBooth() {
           audioEngineRef.current?.unduck();
         }
 
-        setRotation(newRotation);
-        rotationRef.current = newRotation;
+        const liveRot = rotationRef.current;
+        setRotation(liveRot);
         currentDancerIndexRef.current = newIdx;
         currentSongNumberRef.current = 1;
         setCurrentDancerIndex(newIdx);
         setCurrentSongNumber(1);
-        await updateStageState(newIdx, newRotation);
+        await updateStageState(newIdx, liveRot);
       } catch (err) {
         console.error('❌ HandleTrackEnd (post-interstitial) error:', err);
         audioEngineRef.current?.unduck();
@@ -2879,7 +2879,7 @@ export default function DJBooth() {
         if (breakSongs.length > 0) {
           console.log('🎵 HandleTrackEnd: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
           
-          const flippedRotation = [...rot];
+          const flippedRotation = [...rotationRef.current];
           const [finishedId] = flippedRotation.splice(idx, 1);
           flippedRotation.push(finishedId);
           setRotation(flippedRotation);
@@ -3262,6 +3262,7 @@ export default function DJBooth() {
     if (!rotation.includes(dancerId)) {
       const newRotation = [...rotation, dancerId];
       setRotation(newRotation);
+      rotationRef.current = newRotation;
 
       const dancer = dancers.find(d => d.id === dancerId);
       if (dancer && announcementRef.current?.preCacheDancer) {
@@ -3990,6 +3991,17 @@ export default function DJBooth() {
                   }
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
+                  const _saveIdx = (() => {
+                    if (!isRotationActive) return currentDancerIndexRef.current;
+                    const perf = rotationRef.current[currentDancerIndexRef.current];
+                    const ni = newRotation.indexOf(perf);
+                    return ni >= 0 ? ni : currentDancerIndexRef.current;
+                  })();
+                  fetch('/api/stage/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rotation_order: newRotation, current_dancer_index: _saveIdx, is_active: true })
+                  }).catch(() => {});
                   interstitialSongsRef.current = interstitials;
                   setInterstitialSongsState(interstitials);
                   setInterstitialRemoteVersion(v => v + 1);

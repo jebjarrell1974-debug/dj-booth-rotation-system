@@ -118,13 +118,41 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 56 — March 29, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 57 — March 29, 2026) — READ THIS FIRST
 
 ### Latest GitHub commits this session:
+- `1341dca` — "break bubble tap-to-add: select break slot to route library taps to addInterstitialSong"
+- `b7263fd` — "auto-refresh dancer songs on rotation flip: clear assignments so cooldown songs are replaced"
+- `fe0a8f2` — "lock viewport zoom: add user-scalable=no to prevent accidental kiosk zoom"
+- **ROLLBACK POINT**: `b7263fd2` — last stable commit of this session.
+
+### What was built this session (Session 57):
+
+**1. Break slot tap-to-add — `src/components/dj/RotationPlaylistManager.jsx`:**
+- Added `selectedBreakKey` state (mirrors `selectedDancerId` pattern exactly)
+- Break bubble now has a tappable header row (violet "Break" label) — tap to select/deselect
+- When a break slot is selected: border turns cyan, header highlights, "tap songs to add" hint appears
+- Library track taps route to `addInterstitialSong(selectedBreakKey, trackName)` when break selected
+- Selecting a break slot clears dancer selection and vice versa — only one active at a time
+- Drag-to-drop for break slots unchanged and still works
+- `handleLibraryTrackClick` moved to after `addInterstitialSong` definition (was causing temporal dead zone ReferenceError on first load)
+- Toast updated: "Tap an entertainer or break slot to select it"
+
+**2. Auto-refresh dancer songs on rotation flip — `src/components/dj/RotationPlaylistManager.jsx`:**
+- Root cause: when a dancer finished their set and dropped to the bottom, `djOverridesRef` was cleared but `songAssignments` kept the old (now-on-cooldown) songs. The auto-assign logic saw songs present and skipped reassignment.
+- Fix: in the `localRotation` effect that clears `djOverridesRef`, also call `setSongAssignments` to delete the finished dancer's slot. Auto-assign then picks fresh non-cooldown songs from their playlist immediately.
+- Effect: dancers at the bottom of rotation always show fresh, non-orange songs after their set.
+
+**3. Viewport zoom lock — `index.html`:**
+- Added `maximum-scale=1.0, user-scalable=no` to viewport meta tag
+- Prevents Ctrl+=/Ctrl+- and pinch-zoom from accidentally shrinking/growing kiosk UI
+- Root cause on Pi 003: accidental browser zoom caused right-side content (X and skip buttons) to be cut off. Ctrl+0 resets immediately; this prevents recurrence.
+
+### Session 56 commits (earlier same day, different chat):
 - `0132946` — "Fix: pulling current dancer skips next dancer — adjust currentDancerIndex on remove"
-- `4071e0f` — "Session 56: wire voice diagnostics into fleet event log (blob corrupt, timeout, generate fail, playback fail, fallback tracking)"
-- `5eea816` — "Session 56: promo-mixer ffmpeg pipeline, continuous music transitions (no dead air), Promos genre commercial system"
-- **ROLLBACK POINT**: `bbf3d56` — state before this session's pushes. Use if any Session 56 changes cause problems on homebase.
+- `4071e0f` — "Session 56: wire voice diagnostics into fleet event log"
+- `5eea816` — "Session 56: promo-mixer ffmpeg pipeline, continuous music transitions, Promos genre commercial system"
+- **ROLLBACK POINT for Session 56**: `bbf3d56`
 
 ### What was built this session (Session 56):
 
