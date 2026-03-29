@@ -689,11 +689,15 @@ export default function DJBooth() {
           break;
         case 'removeDancerFromRotation':
           if (cmd.payload.dancerId) {
-            setRotation(prev => {
-              const updated = prev.filter(id => id !== cmd.payload.dancerId);
-              rotationRef.current = updated;
-              return updated;
-            });
+            const _removedIdx = rotationRef.current.indexOf(cmd.payload.dancerId);
+            const _newRot = rotationRef.current.filter(id => id !== cmd.payload.dancerId);
+            if (_removedIdx !== -1 && _removedIdx <= currentDancerIndexRef.current && _newRot.length > 0) {
+              const _newIdx = (currentDancerIndexRef.current - 1 + _newRot.length) % _newRot.length;
+              currentDancerIndexRef.current = _newIdx;
+              setCurrentDancerIndex(_newIdx);
+            }
+            rotationRef.current = _newRot;
+            setRotation(_newRot);
           }
           break;
         case 'addDancerToRotation':
@@ -3285,8 +3289,15 @@ export default function DJBooth() {
   stopRotationRef.current = stopRotation;
 
   const removeFromRotation = (dancerId) => {
-    const dancer = dancers.find(d => d.id === dancerId);
-    setRotation(rotation.filter(id => id !== dancerId));
+    const removedIdx = rotation.indexOf(dancerId);
+    const newRotation = rotation.filter(id => id !== dancerId);
+    if (removedIdx !== -1 && removedIdx <= currentDancerIndex && newRotation.length > 0) {
+      const newIdx = (currentDancerIndex - 1 + newRotation.length) % newRotation.length;
+      setCurrentDancerIndex(newIdx);
+      currentDancerIndexRef.current = newIdx;
+    }
+    rotationRef.current = newRotation;
+    setRotation(newRotation);
   };
 
   const moveUp = (index) => {

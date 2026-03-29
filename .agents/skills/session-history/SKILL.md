@@ -121,8 +121,9 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 ## CURRENT STATUS (as of Session 56 — March 29, 2026) — READ THIS FIRST
 
 ### Latest GitHub commits this session:
+- `4071e0f` — "Session 56: wire voice diagnostics into fleet event log (blob corrupt, timeout, generate fail, playback fail, fallback tracking)"
 - `5eea816` — "Session 56: promo-mixer ffmpeg pipeline, continuous music transitions (no dead air), Promos genre commercial system"
-- **ROLLBACK POINT**: `bbf3d56` — state immediately before this session's GitHub push. Use `git revert` to this SHA if promo-mixer or transition changes cause problems on homebase.
+- **ROLLBACK POINT**: `bbf3d56` — state before this session's pushes. Use if any Session 56 changes cause problems on homebase.
 
 ### What was built this session (Session 56):
 
@@ -149,6 +150,21 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 - **`handleTrackEnd` new sequence**: `playTrack(nextTrack)` fires IMMEDIATELY (no more dead air gap) → `duck()` → `Promise.all([outroPromise, waitForDuck()])` → outro plays over ducked music → `unduck()` → commercial → if `commercialModeRef='old'`: restart dancer track → `duck()` → intro → `unduck()`
 - **`handleSkip` new sequence**: identical to handleTrackEnd above
 - `transition_complete` is now logged right after `playTrack` returns (when music starts), not after all announcements
+
+**4. Voice diagnostics wired into fleet event log — `src/components/dj/AnnouncementSystem.jsx`, `src/pages/DJBooth.jsx`, `src/pages/FleetDashboard.jsx`:**
+- Added `onVoiceDiag` prop to `AnnouncementSystem` (destructured, added to both `useCallback` dep arrays)
+- Both `<AnnouncementSystem>` usages in `DJBooth.jsx` now pass `onVoiceDiag={logDiag}` — events flow into the same rolling 20-entry `diagLog` that already goes to the fleet dashboard
+- 7 instrumentation points added in `AnnouncementSystem.jsx`:
+  - `voice_blob_invalid` — ElevenLabs returned audio that failed `ctx.decodeAudioData()` after 3 attempts (likely root cause of garbled/backwards speech — corrupt MP3 blob). Logs `{ dancer, voiceType, blobSize }`
+  - `voice_blob_retry` — Same validation failure but on attempt 1 or 2 (recovered). Logs `{ dancer, voiceType, attempt, blobSize }`
+  - `voice_timeout` — `AbortController` 30s timeout fired on ElevenLabs API call (the "hangs"). Detected via `genError.name === 'AbortError'`. Logs `{ dancer, voiceType }`
+  - `voice_generate_fail` — API threw any other error (rate limit, auth, network). Logs `{ dancer, voiceType, error }`
+  - `voice_play_fail` — Browser had audio URL but playback threw; auto-purges cache + regenerates. Logs `{ dancer, voiceType, error }`
+  - `voice_play_recovered` — Purge + regenerate succeeded. Logs `{ dancer, voiceType }`
+  - `voice_play_dead` — Purge + regenerate also failed, voice silently skipped. Logs `{ dancer, voiceType, error }`
+  - `voice_skipped` — Outer catch (all recovery exhausted). Logs `{ dancer, voiceType, error }`
+  - `voice_fallback_generic` — Last-resort pre-recorded generic voiceover used. Logs `{ dancer, voiceType }`
+- `FleetDashboard.jsx` event log updated: new color groups (red = voice errors, yellow = recovered/skipped, orange = generic fallback) and human-readable labels for all 9 new event types
 
 **Structural verification:**
 - `playPrefetchedAnnouncement(null)` is safe — guards `if (!audioUrl)` at line 1593
