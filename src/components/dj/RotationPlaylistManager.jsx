@@ -168,6 +168,7 @@ export default function RotationPlaylistManager({
     } catch { return {}; }
   });
   const [selectedDancerId, setSelectedDancerId] = useState(null);
+  const [selectedBreakKey, setSelectedBreakKey] = useState(null);
   const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
   const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
   const [skippedCommercials, setSkippedCommercials] = useState(() => {
@@ -510,15 +511,6 @@ export default function RotationPlaylistManager({
       return updated;
     });
   }, []);
-  
-  const handleLibraryTrackClick = useCallback((trackName) => {
-    const targetId = selectedDancerId || (rotationDancers.length === 1 ? rotationDancers[0]?.id : null);
-    if (!targetId) {
-      toast('Tap an entertainer name first to select them', { icon: '👆' });
-      return;
-    }
-    addSongToDancer(targetId, trackName);
-  }, [selectedDancerId, rotationDancers, addSongToDancer]);
 
   const handleDragEnd = (result) => {
     const { source, destination, type } = result;
@@ -747,6 +739,19 @@ export default function RotationPlaylistManager({
       return { ...prev, [breakKey]: current };
     });
   }, []);
+
+  const handleLibraryTrackClick = useCallback((trackName) => {
+    if (selectedBreakKey) {
+      addInterstitialSong(selectedBreakKey, trackName);
+      return;
+    }
+    const targetId = selectedDancerId || (rotationDancers.length === 1 ? rotationDancers[0]?.id : null);
+    if (!targetId) {
+      toast('Tap an entertainer or break slot to select it', { icon: '👆' });
+      return;
+    }
+    addSongToDancer(targetId, trackName);
+  }, [selectedBreakKey, selectedDancerId, rotationDancers, addSongToDancer, addInterstitialSong]);
 
   const removeInterstitialSong = useCallback((breakKey, songIndex) => {
     setInterstitialSongs(prev => {
@@ -1171,7 +1176,7 @@ export default function RotationPlaylistManager({
                                   ? 'border-[#00d4ff] bg-[#00d4ff]/10'
                                   : 'border-[#1e293b] hover:bg-[#1a1a35]'
                               }`}
-                              onClick={() => setSelectedDancerId(selectedDancerId === dancer.id ? null : dancer.id)}
+                              onClick={() => { setSelectedDancerId(selectedDancerId === dancer.id ? null : dancer.id); setSelectedBreakKey(null); }}
                             >
                               <div
                                 {...dragProvided.dragHandleProps}
@@ -1301,51 +1306,70 @@ export default function RotationPlaylistManager({
                             <div
                               ref={breakProvided.innerRef}
                               {...breakProvided.droppableProps}
-                              className={`mx-2 my-1 rounded-lg transition-all ${
-                                breakSongs.length > 0 || breakSnapshot.isDraggingOver
-                                  ? 'border border-dashed p-2 ' + (breakSnapshot.isDraggingOver ? 'border-[#00d4ff]/60 bg-[#00d4ff]/5' : 'border-violet-500/40 bg-violet-900/10')
-                                  : 'border border-dashed border-[#1e293b]/50 p-1'
+                              className={`mx-2 my-1 rounded-lg transition-all border ${
+                                selectedBreakKey === breakKey
+                                  ? 'border-[#00d4ff] bg-[#00d4ff]/5 ring-1 ring-[#00d4ff]/20'
+                                  : breakSnapshot.isDraggingOver
+                                    ? 'border-dashed border-[#00d4ff]/60 bg-[#00d4ff]/5'
+                                    : breakSongs.length > 0
+                                      ? 'border-dashed border-violet-500/40 bg-violet-900/10'
+                                      : 'border-dashed border-[#1e293b]/50'
                               }`}
                             >
-                              {breakSongs.length > 0 ? (
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-1 px-1 mb-1">
-                                    <Music2 className="w-3 h-3 text-violet-400" />
-                                    <span className="text-[10px] text-violet-400 uppercase font-semibold tracking-wider">Between Sets</span>
+                              <div
+                                className={`flex items-center gap-1.5 px-2 py-1.5 cursor-pointer rounded-t-lg transition-colors ${
+                                  selectedBreakKey === breakKey ? 'bg-[#00d4ff]/10' : 'hover:bg-white/5'
+                                }`}
+                                onClick={() => {
+                                  setSelectedBreakKey(selectedBreakKey === breakKey ? null : breakKey);
+                                  setSelectedDancerId(null);
+                                }}
+                              >
+                                <Music2 className={`w-3 h-3 flex-shrink-0 ${selectedBreakKey === breakKey ? 'text-[#00d4ff]' : 'text-violet-400'}`} />
+                                <span className={`text-[10px] uppercase font-semibold tracking-wider flex-1 ${selectedBreakKey === breakKey ? 'text-[#00d4ff]' : 'text-violet-400'}`}>
+                                  Break{breakSongs.length > 0 ? ` — ${breakSongs.length} song${breakSongs.length !== 1 ? 's' : ''}` : ''}
+                                </span>
+                                {selectedBreakKey === breakKey && (
+                                  <span className="text-[10px] text-[#00d4ff]/70">tap songs to add</span>
+                                )}
+                              </div>
+                              <div className="px-2 pb-2">
+                                {breakSongs.length > 0 ? (
+                                  <div className="space-y-1 pt-1">
+                                    {breakSongs.map((songName, songIdx) => (
+                                      <Draggable key={`breakitem-${breakKey}-${songIdx}`} draggableId={`breakitem-${breakKey}-${songIdx}-${songName}`} index={songIdx}>
+                                        {(itemProv, itemSnap) => (
+                                          <div
+                                            ref={itemProv.innerRef}
+                                            {...itemProv.draggableProps}
+                                            {...itemProv.dragHandleProps}
+                                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing bg-violet-900/20 border-violet-500/20 ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
+                                          >
+                                            <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                                            <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                                            <span className="text-sm truncate flex-1 text-violet-300">{songName}</span>
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); removeInterstitialSong(breakKey, songIdx); }}
+                                              className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                            >
+                                              <X className="w-5 h-5" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))}
                                   </div>
-                                  {breakSongs.map((songName, songIdx) => (
-                                    <Draggable key={`breakitem-${breakKey}-${songIdx}`} draggableId={`breakitem-${breakKey}-${songIdx}-${songName}`} index={songIdx}>
-                                      {(itemProv, itemSnap) => (
-                                    <div
-                                      ref={itemProv.innerRef}
-                                      {...itemProv.draggableProps}
-                                      {...itemProv.dragHandleProps}
-                                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing bg-violet-900/20 border-violet-500/20 ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
-                                    >
-                                      <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                                      <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                      <span className="text-sm truncate flex-1 text-violet-300">{songName}</span>
-                                      <button
-                                        onClick={() => removeInterstitialSong(breakKey, songIdx)}
-                                        className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
-                                      >
-                                        <X className="w-5 h-5" />
-                                      </button>
-                                    </div>
-                                      )}
-                                    </Draggable>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className={`flex items-center justify-center transition-colors rounded ${
-                                  breakSnapshot.isDraggingOver ? 'h-[36px]' : 'h-[20px]'
-                                }`}>
-                                  <p className="text-[10px] text-gray-600">
-                                    {breakSnapshot.isDraggingOver ? 'Drop song here' : '· · ·'}
-                                  </p>
-                                </div>
-                              )}
-                              {breakProvided.placeholder}
+                                ) : (
+                                  <div className={`flex items-center justify-center transition-colors rounded ${
+                                    breakSnapshot.isDraggingOver ? 'h-[36px]' : selectedBreakKey === breakKey ? 'h-[28px]' : 'h-[8px]'
+                                  }`}>
+                                    <p className="text-[10px] text-gray-600">
+                                      {breakSnapshot.isDraggingOver ? 'Drop song here' : selectedBreakKey === breakKey ? 'tap a song from the library' : ''}
+                                    </p>
+                                  </div>
+                                )}
+                                {breakProvided.placeholder}
+                              </div>
                             </div>
                           )}
                         </Droppable>
