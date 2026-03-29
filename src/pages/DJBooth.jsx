@@ -2371,6 +2371,9 @@ export default function DJBooth() {
         // Apply rotation immediately so any DJ reorders during the async transition land on top
         setRotation(newRotation);
         rotationRef.current = newRotation;
+        const finishedIdx = newRotation.length - 1;
+        setCurrentDancerIndex(finishedIdx);
+        currentDancerIndexRef.current = finishedIdx;
 
         const _skipTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
@@ -2956,6 +2959,9 @@ export default function DJBooth() {
         // Apply rotation immediately so any DJ reorders during the async transition land on top
         setRotation(newRotation);
         rotationRef.current = newRotation;
+        const finishedIdx = newRotation.length - 1;
+        setCurrentDancerIndex(finishedIdx);
+        currentDancerIndexRef.current = finishedIdx;
 
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
