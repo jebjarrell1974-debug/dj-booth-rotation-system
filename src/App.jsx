@@ -168,6 +168,8 @@ function KioskLockManager() {
     return (
       <div
         onClick={resetTimer}
+        onPointerDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
         style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(8,8,26,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
       >
         <div style={{ textAlign: 'center', padding: '2rem' }}>
