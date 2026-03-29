@@ -342,7 +342,9 @@ export default function VirtualKeyboard() {
         style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
         onPointerDown={(e) => {
           e.preventDefault();
-          clearTimeout(hideTimerRef.current);
+          if (activeInputRef.current) activeInputRef.current.blur();
+          setAnim(false);
+          setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
         }}
       />
       <div
