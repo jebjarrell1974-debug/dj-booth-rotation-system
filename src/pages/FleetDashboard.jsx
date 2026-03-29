@@ -483,7 +483,13 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
                       const isMiss = entry.type === 'prepick_miss';
                       const isFallback = entry.type.includes('fallback');
                       const isComplete = entry.type === 'transition_complete';
-                      const color = isWatchdog ? 'text-red-400' : isMiss ? 'text-yellow-400' : isFallback ? 'text-orange-400' : isComplete ? 'text-cyan-500/80' : 'text-gray-600';
+                      const isVoiceError = ['voice_blob_invalid','voice_timeout','voice_generate_fail','voice_play_fail','voice_play_dead'].includes(entry.type);
+                      const isVoiceWarn = ['voice_blob_retry','voice_play_recovered','voice_skipped'].includes(entry.type);
+                      const isVoiceFallback = entry.type === 'voice_fallback_generic';
+                      const color = isWatchdog || isVoiceError ? 'text-red-400' : isMiss || isVoiceWarn ? 'text-yellow-400' : isFallback || isVoiceFallback ? 'text-orange-400' : isComplete ? 'text-cyan-500/80' : 'text-gray-600';
+                      const vt = entry.voiceType || '';
+                      const vd = entry.dancer || '';
+                      const ve = entry.error ? `: ${entry.error}` : '';
                       const labels = {
                         transition_start: `▶ ${entry.from || '?'} → ${entry.to || '?'} [${entry.trigger || ''}]`,
                         transition_complete: `✓ Done ${(entry.durationMs/1000).toFixed(2)}s — ${entry.dancer || ''}`,
@@ -492,6 +498,15 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
                         track_play: `♪ "${entry.track || ''}" / ${entry.dancer || ''} gap:${((entry.gapMs||0)/1000).toFixed(2)}s`,
                         track_play_fallback: `⚠ Fallback — ${entry.dancer || ''}: ${entry.reason || ''}`,
                         watchdog_fired: `🚨 Dead air ${((entry.silentMs||0)/1000).toFixed(1)}s — ${entry.dancer || ''}: "${entry.track || ''}"`,
+                        voice_blob_invalid: `🔇 Corrupt audio blob — ${vd} ${vt} (${entry.blobSize||0}b)`,
+                        voice_blob_retry: `⚠ Blob retry ${entry.attempt||'?'}/3 — ${vd} ${vt} (${entry.blobSize||0}b)`,
+                        voice_timeout: `⏱ ElevenLabs timeout — ${vd} ${vt}`,
+                        voice_generate_fail: `✕ Voice gen failed — ${vd} ${vt}${ve}`,
+                        voice_play_fail: `✕ Playback failed — ${vd} ${vt}${ve}`,
+                        voice_play_recovered: `↺ Recovered after purge — ${vd} ${vt}`,
+                        voice_play_dead: `🚨 Voice dead — ${vd} ${vt}${ve}`,
+                        voice_skipped: `— Voice skipped — ${vd} ${vt}${ve}`,
+                        voice_fallback_generic: `↓ Generic fallback used — ${vd} ${vt}`,
                       };
                       const label = labels[entry.type] || `${entry.type}`;
                       return (

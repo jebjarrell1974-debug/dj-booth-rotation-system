@@ -3424,6 +3424,7 @@ export default function DJBooth() {
             elevenLabsApiKey={elevenLabsKey}
             openaiApiKey={openaiKey}
             hideUI={true}
+            onVoiceDiag={logDiag}
           />
         </>
       )}
@@ -4213,6 +4214,7 @@ export default function DJBooth() {
                   elevenLabsApiKey={elevenLabsKey}
                   openaiApiKey={openaiKey}
                   hideUI={false}
+                  onVoiceDiag={logDiag}
                 />
                 <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6 flex-1">
                   <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />

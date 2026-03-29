@@ -121,9 +121,8 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 ## CURRENT STATUS (as of Session 56 — March 29, 2026) — READ THIS FIRST
 
 ### Latest GitHub commits this session:
-- `aa635fc` — "Add pre-mixed audio system and improve music transitions" (Replit checkpoint)
-- `0e1d2a7` — "Add automated audio mixing for promotional content" (Replit checkpoint)
-- **ROLLBACK POINT**: `aa635fc3630400970a0f6e29f657d9840b7dce04` — state before promo mixer but after all Session 55 fixes. Use this if promo-mixer or transition changes cause problems.
+- `5eea816` — "Session 56: promo-mixer ffmpeg pipeline, continuous music transitions (no dead air), Promos genre commercial system"
+- **ROLLBACK POINT**: `bbf3d56` — state immediately before this session's GitHub push. Use `git revert` to this SHA if promo-mixer or transition changes cause problems on homebase.
 
 ### What was built this session (Session 56):
 

@@ -158,7 +158,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     onPlay,
     elevenLabsApiKey,
     openaiApiKey,
-    hideUI = false
+    hideUI = false,
+    onVoiceDiag,
   } = props;
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -650,8 +651,12 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       let audioBlob = await generateAudio(script);
       for (let attempt = 1; attempt <= 3; attempt++) {
         if (await validateAudioBlob(audioBlob)) break;
-        if (attempt === 3) throw new Error('Generated audio failed decode validation after 3 attempts');
+        if (attempt === 3) {
+          onVoiceDiag?.('voice_blob_invalid', { dancer: dancerName, voiceType: type, blobSize: audioBlob?.size || 0 });
+          throw new Error('Generated audio failed decode validation after 3 attempts');
+        }
         console.warn(`⚠️ Audio decode validation failed (attempt ${attempt}/3) for ${key}, regenerating...`);
+        onVoiceDiag?.('voice_blob_retry', { dancer: dancerName, voiceType: type, attempt, blobSize: audioBlob?.size || 0 });
         audioBlob = await generateAudio(script);
       }
 
@@ -667,6 +672,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     } catch (genError) {
       setGeneratingType(null);
       failedGenerationsRef.current.add(failKey);
+      const isTimeout = genError.name === 'AbortError' || genError.message?.toLowerCase().includes('abort');
+      onVoiceDiag?.(isTimeout ? 'voice_timeout' : 'voice_generate_fail', { dancer: dancerName, voiceType: type, error: (genError.message || '').substring(0, 80) });
       console.warn(`⚠️ Could not generate ${type} for ${dancerName}: ${genError.message}, trying fallbacks... (will skip retries this session)`);
       if (dancerName !== GENERIC_DANCER_NAME) {
         const anyVariation = await findCachedAtAnyVariation(type, dancerName, nextDancerName);
@@ -689,12 +696,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       const genericRecording = await checkGenericRecording(type);
       if (genericRecording) {
         console.log(`🎤 Last-resort generic pre-recorded ${type} voiceover used`);
+        onVoiceDiag?.('voice_fallback_generic', { dancer: dancerName, voiceType: type });
         return { url: URL.createObjectURL(genericRecording), fromCache: true };
       }
       console.error(`❌ No announcement available for ${type}: ${genError.message}`);
       throw genError;
     }
-  }, [generateScript, generateAudio, findCachedAtAnyVariation, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording, checkServerCacheMeta]);
+  }, [generateScript, generateAudio, findCachedAtAnyVariation, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording, checkServerCacheMeta, onVoiceDiag]);
 
   const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
     try {
@@ -708,6 +716,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       } catch (playError) {
         const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${CURRENT_VOICE_VERSION}`;
         console.warn(`⚠️ Playback failed for ${cacheKey} — purging corrupted entry and regenerating...`, playError.message);
+        onVoiceDiag?.('voice_play_fail', { dancer: dancerName, voiceType: type, error: (playError.message || '').substring(0, 80) });
         await deleteFromIndexedDB(cacheKey);
         try {
           await fetch(`/api/voiceovers/${encodeURIComponent(cacheKey)}`, { method: 'DELETE', headers: getAuthHeaders() });
@@ -716,15 +725,18 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           const fresh = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
           await onPlay?.(fresh.url, audioOptions);
           console.log(`📢 AnnouncementSystem: Playback complete (recovered after cache purge)`);
+          onVoiceDiag?.('voice_play_recovered', { dancer: dancerName, voiceType: type });
         } catch (retryError) {
           console.error(`❌ Playback still failed after regeneration — skipping:`, retryError.message);
+          onVoiceDiag?.('voice_play_dead', { dancer: dancerName, voiceType: type, error: (retryError.message || '').substring(0, 80) });
         }
       }
     } catch (error) {
       console.error(`❌ AnnouncementSystem Error (silent fallback):`, error.message);
       console.warn(`Announcement skipped: ${error.message} — music continues uninterrupted`);
+      onVoiceDiag?.('voice_skipped', { dancer: dancerName, voiceType: type, error: (error.message || '').substring(0, 80) });
     }
-  }, [getOrGenerateAnnouncement, getNextVariationNum, onPlay]);
+  }, [getOrGenerateAnnouncement, getNextVariationNum, onPlay, onVoiceDiag]);
 
   const preCacheDancer = useCallback(async (dancerName) => {
     const config = getApiConfig();
