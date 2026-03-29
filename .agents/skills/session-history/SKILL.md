@@ -465,6 +465,19 @@ This runs before the `Promise.all([getDancerTracks(nextDancer), getDancerTracks(
 - **DJBooth.jsx**: Module-level `auditEvent(action, details)` fire-and-forget helper. Called on: `skip_song` (after debounce in handleSkip), `break_mode_on` / `break_mode_off` (in onBreakSongsPerSetChange, only on toggle change). Never await — never blocks audio.
 - **Cleanup**: `setInterval(() => cleanOldAuditLog(30), ...)` added to server startup. `isStaffPinTaken()` prevents duplicate PINs. Master PIN itself can't be used as a staff PIN.
 
+### Session 58 — Mar 29, 2026 (commit `23531bc`)
+
+**Save All immediately refreshes crowd RotationDisplay** (`6a948c4`):
+- RotationDisplay polls `/api/stage/current` which reads `_stageState` (in-memory, only updated by `POST /api/stage/sync`). `onSaveAll` already chains through `localEntities.Stage.update → syncStageToServer` but that's slow/async.
+- Fix: added a direct fire-and-forget `POST /api/stage/sync` at the top of `onSaveAll` in DJBooth.jsx, immediately after setting `rotationRef.current = newRotation`. Display now updates within 1 second of pressing Save All instead of waiting for the DB mutation chain.
+
+**Dancer-add race condition during AI announcements** (`23531bc`) — 4 locations fixed:
+- Root cause: `addToRotation` called `setRotation(newRotation)` but never updated `rotationRef.current`. All transition end-of-async code reads the ref, so added dancers were invisible to display/DB saves.
+- **Fix 1**: `addToRotation` now sets `rotationRef.current = newRotation` alongside `setRotation`.
+- **Fix 2**: Post-interstitial path (handleTrackEnd, after break songs complete) was calling `setRotation(newRotation)` AFTER the intro announcement — stale snapshot erased DJ additions made during the announcement. Changed to read `rotationRef.current` (live) after announcement finishes.
+- **Fix 3**: handleSkip break path — auto-select fetch (`/api/music/select`, up to 5s) ran before the rotation flip. Flip used `[...rot]` (captured pre-fetch) so DJ additions during the fetch were dropped. Changed `flippedRotation` to build from `[...rotationRef.current]`.
+- **Fix 4**: handleTrackEnd break path — same pattern as Fix 3, same fix applied.
+
 ### Session 48 — What was fixed (all on GitHub, neonaidj001 partially updated)
 - **Open Display button** (`8053c79`): Server now writes `/tmp/djbooth-display-trigger` instead of trying to spawn Chromium directly. Button shows toast feedback.
 - **labwc autostart watcher loop** (Pi-side only, not code): neonaidj001 autostart file was missing the watcher loop. Rewrote `~/.config/labwc/autostart` with full block (pkill swayidle/swaylock + wlr-randr + Chromium launch + watcher loop). **neonaidj003 needs same fix before Monday.**

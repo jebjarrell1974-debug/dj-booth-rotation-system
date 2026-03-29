@@ -355,6 +355,7 @@ export async function syncMusicFromR2(musicDir) {
   console.log(`☁️ R2 music sync: ${remoteFiles.length} files in cloud, checking local...`);
 
   for (const file of remoteFiles) {
+    if (file.path.startsWith('Promos/')) { skipped++; continue; }
     const localPath = join(musicDir, file.path);
     let force = false;
     if (existsSync(localPath)) {
@@ -399,7 +400,7 @@ export async function syncMusicFromR2(musicDir) {
     }
 
     const localFiles = walkLocal(musicDir);
-    const toDelete = localFiles.filter(relPath => !r2PathSet.has(relPath));
+    const toDelete = localFiles.filter(relPath => !r2PathSet.has(relPath) && !relPath.startsWith('Promos/'));
 
     if (toDelete.length > 0) {
       let dbMod;
@@ -457,6 +458,7 @@ export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
   console.log(`☁️ R2 music upload: ${localFiles.length} local files, ${remoteFiles.length} remote files`);
 
   for (const relPath of localFiles) {
+    if (relPath.startsWith('Promos/')) { skipped++; continue; }
     const localPath = join(musicDir, relPath);
     const localSize = statSync(localPath).size;
 
@@ -491,7 +493,7 @@ export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
 
   // Homebase rewrite: delete R2 files not in local library
   if (purgeOrphans && localFiles.length > 0) {
-    const toDelete = remoteFiles.filter(f => !localSet.has(f.path));
+    const toDelete = remoteFiles.filter(f => !localSet.has(f.path) && !f.path.startsWith('Promos/'));
     if (toDelete.length > 0) {
       console.log(`☁️ R2 purge: removing ${toDelete.length} R2 file(s) not in homebase library...`);
       for (const f of toDelete) {
