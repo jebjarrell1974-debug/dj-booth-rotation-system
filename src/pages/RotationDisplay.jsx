@@ -141,13 +141,12 @@ export default function RotationDisplay() {
   const breakSongIndex = displayData?.breakSongIndex ?? null;
   const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
 
-  // During break: show ALL dancers (including the one who just performed, at the end)
-  // During active: show all except current (they're shown at top)
-  const maxNext = isBreak
-    ? validRotation.length
-    : validRotation.length - 1;
+  // During break: current dancer (index 0 = next up) is NOT shown at top (top shows "Break Song")
+  // so include her at position 0 of the "Up Next" list.
+  // During active: current dancer IS shown at top, so skip her (start at offset 1).
+  const startOffset = isBreak ? 0 : 1;
   const nextDancers = [];
-  for (let i = 1; i <= maxNext; i++) {
+  for (let i = startOffset; i < validRotation.length; i++) {
     const nextIndex = (currentIndex + i) % validRotation.length;
     const dancer = dancers.find(d => d.id === validRotation[nextIndex]);
     if (dancer) nextDancers.push(dancer);

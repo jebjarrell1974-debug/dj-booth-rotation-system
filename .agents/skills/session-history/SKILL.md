@@ -16,10 +16,11 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 
 | Unit | Username | Tailscale IP | Role | Club | Notes |
 |---|---|---|---|---|---|
-| Homebase | `neonaidj` | `100.109.73.27` | Fleet server + DJ booth | Homebase | NEW HP Compaq 8200 Elite (Mar 2026). Old Pi homebase retired (was `100.95.238.71`). |
-| neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Bama | Deploying Tuesday. Music path: `/home/neonaidj001/djbooth/music/` |
-| neonaidj002 | `neonaidj002` | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
-| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | Deploying Monday. Had 4 crashes Mar 10 — stable since |
+| Homebase | `neonaidj` | `100.109.73.27` | Fleet server + DJ booth | Homebase | HP Compaq 8200 Elite (Mar 2026). |
+| neonaidj001 | `neonaidj001` | `100.115.212.34` | DJ booth | Pony Bama | Music path: `/home/neonaidj001/djbooth/music/` |
+| neonaidj002 | `neonaidj002` | `100.84.191.94` | DJ booth | Unassigned | |
+| neonaidj003 | `neonaidj003` | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | Stable. |
+| neonaidj004 | `homebase` | `100.95.238.71` | DJ booth | THE PONY PENSECOLA | Converted from old Pi homebase (Mar 2026). Username stays `homebase`. Music path: `/media/homebase/music` (1TB microSD). Tailscale hostname: `neonaidj004`. |
 
 **Fleet .env rules:**
 - Homebase: `FLEET_SERVER_URL=http://localhost:3001` (reports to itself)
@@ -470,6 +471,13 @@ This runs before the `Promise.all([getDancerTracks(nextDancer), getDancerTracks(
 **Save All immediately refreshes crowd RotationDisplay** (`6a948c4`):
 - RotationDisplay polls `/api/stage/current` which reads `_stageState` (in-memory, only updated by `POST /api/stage/sync`). `onSaveAll` already chains through `localEntities.Stage.update → syncStageToServer` but that's slow/async.
 - Fix: added a direct fire-and-forget `POST /api/stage/sync` at the top of `onSaveAll` in DJBooth.jsx, immediately after setting `rotationRef.current = newRotation`. Display now updates within 1 second of pressing Save All instead of waiting for the DB mutation chain.
+
+**Skip Dancer button + rotation display fixes** (`db6ddbc`):
+- New orange SkipForward button appears on the active dancer's card in RotationPlaylistManager, only while rotation is running and only on the CURRENT dancer (index === currentDancerIndex). Yellow SkipForward on all other cards is unchanged.
+- Pressing the orange button: sets currentSongNumber to 999, calls handleSkip → end-of-set path triggers → she moves to bottom of rotation, song count resets to 0, break songs play if queued, next dancer gets full intro.
+- Top Skip button is completely untouched (still skips songs within a set).
+- `removeFromRotation` index bug fixed: when removing the current dancer (index 0), old code did `(0-1+n)%n = n-1` (wrapping to last dancer). Fixed to `Math.min(removedIdx, newRotation.length-1)` when removing the current dancer, `currentDancerIndex - 1` when removing a dancer before the current one.
+- `handleSkip` mid-set path: added `updateStageState(idx, rot)` + fire-and-forget `POST /api/stage/sync` before announcement so crowd display updates immediately instead of staying on the removed/skipped dancer.
 
 **Promos folder excluded from R2 sync** (`92755d3`):
 - Promos are venue-specific (mixed locally via ffmpeg from ElevenLabs voice + Promo Beds). They must NOT sync across units — a Pony Evansville promo should never play at Pony Bama.
