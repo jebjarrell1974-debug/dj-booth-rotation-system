@@ -1379,12 +1379,12 @@ if (!MUSIC_PATH) {
   for (const candidate of candidates) {
     if (existsSync(candidate) && statSync(candidate).isDirectory()) {
       MUSIC_PATH = candidate;
-      setSetting('music_path', candidate);
       console.log(`🎵 Auto-detected music folder: ${candidate}`);
       break;
     }
   }
 }
+if (MUSIC_PATH) setSetting('music_path', MUSIC_PATH);
 
 app.get('/api/settings/music-path', authenticate, requireDJ, (req, res) => {
   res.json({
