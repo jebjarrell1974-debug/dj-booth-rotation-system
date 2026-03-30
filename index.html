@@ -16,6 +16,32 @@
         <style>@keyframes _s{to{transform:rotate(360deg)}}</style>
       </div>
     </div>
+    <script>
+      // Block browser keyboard shortcuts that can disrupt kiosk operation
+      document.addEventListener('keydown', function(e) {
+        const ctrl = e.ctrlKey || e.metaKey;
+        const shift = e.shiftKey;
+        const key = e.key.toLowerCase();
+        // Block: Ctrl+H (history), Ctrl+T (new tab), Ctrl+W (close tab),
+        //        Ctrl+N (new window), Ctrl+L (address bar), Ctrl+J (downloads),
+        //        Ctrl+U (view source), Ctrl+P (print), Ctrl+S (save),
+        //        Ctrl+F (find), Ctrl+G (find next),
+        //        Ctrl+Shift+I/J/C (dev tools), F12 (dev tools),
+        //        Alt+Left/Right (back/forward navigation)
+        if (ctrl && ['h','t','w','n','l','j','u','p','s','f','g'].includes(key)) {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+        if (ctrl && shift && ['i','j','c'].includes(key)) {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+        if (e.key === 'F12') {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+        if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+      }, true);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

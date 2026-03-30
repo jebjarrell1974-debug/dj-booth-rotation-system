@@ -119,12 +119,32 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 58 — March 30, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 59 — March 30, 2026) — READ THIS FIRST
 
 ### Latest GitHub commits this session:
-- `348edf5` — "Session 58: house announcements, promo management UI, commercial playTrack refactor"
-- `9825a6a` — "Fix: clear stale Chromium lock files before every browser launch"
-- **ROLLBACK POINT**: `9825a6a`
+- `3340987` — "Restore promo/commercial creation form to announcements tab"
+- `d880ef3` — "Make announcements tab fully scrollable as one page"
+- `b1f4085` — "Fix: write music path to DB on startup so promo mixer can find it"
+- **ROLLBACK POINT**: `b1f4085`
+
+### What was built this session (Session 59):
+
+**1. ManualAnnouncementPlayer restored — `src/pages/DJBooth.jsx`:**
+- Re-added import and component back to announcements tab below HouseAnnouncementPanel
+- Was accidentally removed in Session 58 when HouseAnnouncementPanel was added
+
+**2. Announcements tab made fully scrollable:**
+- Outer container changed to `h-full overflow-y-auto` with inner `flex flex-col gap-6 pb-6`
+- All three sections (AnnouncementSystem, HouseAnnouncementPanel, ManualAnnouncementPlayer) scroll as one continuous page
+
+**3. Promo mixer music path fix — `server/index.js`:**
+- Root cause: `promo-mixer.js` calls `getSetting('music_path')` from DB. On all Pis, `MUSIC_PATH` comes from env var and was NEVER written to the DB setting — only auto-detected paths were written. `getSetting` returned null → "Music path not configured" → silent mix failure.
+- Fix: after resolving `MUSIC_PATH` (from env or auto-detect), always call `setSetting('music_path', MUSIC_PATH)` so the DB is always in sync.
+- Confirmed via Pi 004 journalctl: `📺 Promo mix failed [...]: Music path not configured`
+- 001 and 003 mixed successfully because their music path was saved through the config page UI (which calls setSetting directly). Pi 004 never had it saved that way.
+- Pi 004 audio DAC: idle tone present when no music playing — user replacing the DAC hardware.
+
+### CURRENT STATUS (as of Session 58 — March 30, 2026)
 
 ### What was built this session (Session 58):
 
