@@ -122,7 +122,8 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 ## CURRENT STATUS (as of Session 58 — March 30, 2026) — READ THIS FIRST
 
 ### Latest GitHub commit this session:
-- **ROLLBACK POINT**: `9326ccf` (Replit checkpoint) — "Add promo management and house announcement features"
+- `348edf5` — "Session 58: house announcements, promo management UI, commercial playTrack refactor"
+- **ROLLBACK POINT**: `348edf5`
 
 ### What was built this session (Session 58):
 

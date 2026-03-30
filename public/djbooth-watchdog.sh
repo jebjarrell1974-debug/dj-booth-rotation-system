@@ -30,6 +30,7 @@ while true; do
         }
       else
         echo "$(date): Chrome not running, launching"
+        rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
         bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
       fi
       SERVER_WAS_DOWN=false

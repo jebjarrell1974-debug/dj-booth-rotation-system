@@ -412,6 +412,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo "Closing browser before restart..."
     pkill -f "chromium" 2>/dev/null || pkill -f "chrome" 2>/dev/null || true
     sleep 2
+    rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
   else
     echo "Homebase mode — skipping browser kill"
   fi
