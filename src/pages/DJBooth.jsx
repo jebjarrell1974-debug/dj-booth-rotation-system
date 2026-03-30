@@ -38,6 +38,7 @@ import PlaylistEditor from '@/components/dj/PlaylistEditor';
 import AnnouncementSystem from '@/components/dj/AnnouncementSystem';
 import RotationPlaylistManager from '@/components/dj/RotationPlaylistManager';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
+import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
 import RemoteView from '@/components/dj/RemoteView';
 import DJOptions from '@/components/dj/DJOptions';
 
@@ -4280,8 +4281,11 @@ export default function DJBooth() {
                   hideUI={false}
                   onVoiceDiag={logDiag}
                 />
-                <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/20 p-4 flex-1 min-h-0 overflow-hidden">
+                <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/20 p-4 flex-shrink-0 overflow-hidden">
                   <HouseAnnouncementPanel onPlay={handleAnnouncementPlay} />
+                </div>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />
                 </div>
               </div>
             )}

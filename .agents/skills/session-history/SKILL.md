@@ -121,9 +121,10 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ## CURRENT STATUS (as of Session 58 — March 30, 2026) — READ THIS FIRST
 
-### Latest GitHub commit this session:
+### Latest GitHub commits this session:
 - `348edf5` — "Session 58: house announcements, promo management UI, commercial playTrack refactor"
-- **ROLLBACK POINT**: `348edf5`
+- `9825a6a` — "Fix: clear stale Chromium lock files before every browser launch"
+- **ROLLBACK POINT**: `9825a6a`
 
 ### What was built this session (Session 58):
 
