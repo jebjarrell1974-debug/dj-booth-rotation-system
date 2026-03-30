@@ -19,6 +19,10 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -30,6 +34,17 @@ outputType = "webview"
 task = "shell.exec"
 args = "cd /home/runner/workspace && PORT=3001 node server/index.js & sleep 2 && node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5000"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "test"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd /home/runner/workspace && node --experimental-vm-modules node_modules/.bin/jest --testTimeout=15000 2>&1 | tail -20"
+
+[workflows.workflow.metadata]
+isValidation = true
 
 [[ports]]
 localPort = 3001

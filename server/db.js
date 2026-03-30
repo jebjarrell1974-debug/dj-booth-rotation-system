@@ -1156,4 +1156,32 @@ export function cleanOldAuditLog(daysToKeep = 30) {
   db.prepare(`DELETE FROM audit_log WHERE occurred_at < datetime('now', 'localtime', ?)`).run(`-${daysToKeep} days`);
 }
 
+export function listAllPromoTracks() {
+  return readDb.prepare(
+    "SELECT id, name, path, blocked, blocked_at FROM music_tracks WHERE genre = 'Promos' ORDER BY name"
+  ).all();
+}
+
+export function setPromoTrackBlockedById(id, blocked) {
+  if (blocked) {
+    db.prepare("UPDATE music_tracks SET blocked = 1, blocked_at = datetime('now', 'localtime') WHERE id = ?").run(id);
+  } else {
+    db.prepare("UPDATE music_tracks SET blocked = 0, blocked_at = NULL WHERE id = ?").run(id);
+  }
+}
+
+export function deletePromoTrackById(id) {
+  const row = readDb.prepare('SELECT path FROM music_tracks WHERE id = ?').get(id);
+  if (row) {
+    try { if (existsSync(row.path)) unlinkSync(row.path); } catch (e) {}
+    db.prepare('DELETE FROM music_tracks WHERE id = ?').run(id);
+  }
+}
+
+export function listHouseAnnouncements() {
+  return readDb.prepare(
+    'SELECT cache_key, dancer_name as name, script, created_at FROM voiceovers WHERE type = ? AND created_at >= ? ORDER BY dancer_name ASC'
+  ).all('house', VOICEOVER_VALID_AFTER);
+}
+
 export default db;

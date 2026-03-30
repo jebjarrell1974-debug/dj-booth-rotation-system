@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { boothApi } from '@/api/serverApi';
 import DJOptions from '@/components/dj/DJOptions';
+import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
 import { getApiConfig } from '@/components/apiConfig';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
@@ -8,7 +9,7 @@ import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Search, Shuffle, Zap,
   ChevronDown, ChevronUp, RefreshCw, Ban, Send, Loader2,
-  PlayCircle, StopCircle,
+  PlayCircle, StopCircle, Megaphone,
 } from 'lucide-react';
 
 const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
@@ -839,6 +840,16 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           </div>
         )}
 
+        {/* ─────────── ANNOUNCE TAB ─────────── */}
+        {tab === 'announce' && (
+          <div className="h-full p-3 overflow-hidden">
+            <HouseAnnouncementPanel
+              isRemote={true}
+              onRemotePlay={(cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey })}
+            />
+          </div>
+        )}
+
         {/* ─────────── OPTIONS TAB ─────────── */}
         {tab === 'options' && (
           <div className="h-full overflow-y-auto p-3">
@@ -858,6 +869,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           { id: 'live', icon: Zap, label: 'Live' },
           { id: 'rotation', icon: Users, label: 'Rotation' },
           { id: 'promos', icon: Radio, label: 'Promos' },
+          { id: 'announce', icon: Megaphone, label: 'Announce' },
           { id: 'options', icon: SlidersHorizontal, label: 'Options' },
         ].map(({ id, icon: Icon, label }) => (
           <button

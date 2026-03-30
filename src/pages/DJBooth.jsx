@@ -37,7 +37,7 @@ import StageRotation from '@/components/dj/StageRotation';
 import PlaylistEditor from '@/components/dj/PlaylistEditor';
 import AnnouncementSystem from '@/components/dj/AnnouncementSystem';
 import RotationPlaylistManager from '@/components/dj/RotationPlaylistManager';
-import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
+import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import RemoteView from '@/components/dj/RemoteView';
 import DJOptions from '@/components/dj/DJOptions';
 
@@ -869,6 +869,21 @@ export default function DJBooth() {
                 console.log('🎵 Resolved URLs for manually assigned tracks');
               }
             })();
+          }
+          break;
+        case 'playHouseAnnouncement':
+          if (cmd.payload.cacheKey) {
+            const _haToken = localStorage.getItem('djbooth_token');
+            const _haHdrs = _haToken ? { Authorization: `Bearer ${_haToken}` } : {};
+            fetch(`/api/voiceovers/audio/${encodeURIComponent(cmd.payload.cacheKey)}`, { headers: _haHdrs })
+              .then(r => r.ok ? r.blob() : null)
+              .then(blob => {
+                if (!blob) return;
+                const blobUrl = URL.createObjectURL(blob);
+                audioEngineRef.current?.playAnnouncement(blobUrl, { autoDuck: true });
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+              })
+              .catch(err => console.error('playHouseAnnouncement failed:', err));
           }
           break;
         default:
@@ -1862,33 +1877,26 @@ export default function DJBooth() {
           const nextName = promoShuffleRef.current.shift() || promoTrackNames[0];
           setPromoQueue([...promoShuffleRef.current]);
           const promoTrack = promoTracks.find(t => t.name === nextName) || promoTracks[0];
-          const promoAudioRes = await fetch(`/api/music/stream/${promoTrack.id}`, { headers });
-          if (promoAudioRes.ok) {
-            const promoBlob = await promoAudioRes.blob();
-            const promoUrl = URL.createObjectURL(promoBlob);
-            if (!audioEngineRef.current) { URL.revokeObjectURL(promoUrl); return false; }
-            commercialModeRef.current = 'new';
-            playingCommercialRef.current = true;
+          if (!audioEngineRef.current) return false;
+          const promoStreamUrl = `/api/music/stream/${promoTrack.id}`;
+          commercialModeRef.current = 'new';
+          playingCommercialRef.current = true;
+          lastAudioActivityRef.current = Date.now();
+          const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
+          const commercialDone = new Promise(resolve => {
+            commercialEndResolverRef.current = () => resolve();
+          });
+          try {
+            console.log(`📺 Pre-mixed promo (as track): "${promoTrack.name}"`);
+            await playTrack(promoStreamUrl, false, promoTrack.name, 'Promos');
+            await commercialDone;
+          } finally {
+            clearInterval(keepAlive);
+            playingCommercialRef.current = false;
+            commercialEndResolverRef.current = null;
             lastAudioActivityRef.current = Date.now();
-            const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
-            const skipPromise = new Promise(resolve => {
-              commercialEndResolverRef.current = () => resolve();
-            });
-            try {
-              console.log(`📺 Pre-mixed promo: "${promoTrack.name}"`);
-              await Promise.race([
-                audioEngineRef.current?.playAnnouncement(promoUrl, { autoDuck: false }),
-                skipPromise
-              ]);
-            } finally {
-              clearInterval(keepAlive);
-              playingCommercialRef.current = false;
-              commercialEndResolverRef.current = null;
-              lastAudioActivityRef.current = Date.now();
-              setTimeout(() => URL.revokeObjectURL(promoUrl), 5000);
-            }
-            return true;
           }
+          return true;
         }
       }
 
@@ -2446,13 +2454,11 @@ export default function DJBooth() {
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
-          if (commercialModeRef.current === 'old') {
-            if (nextTrack && nextTrack.url) {
-              const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-              if (!trackOk) await playFallbackTrack(true);
-            } else {
-              await playFallbackTrack(true);
-            }
+          if (nextTrack && nextTrack.url) {
+            const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+            if (!trackOk) await playFallbackTrack(true);
+          } else {
+            await playFallbackTrack(true);
           }
         }
 
@@ -3034,13 +3040,11 @@ export default function DJBooth() {
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
-          if (commercialModeRef.current === 'old') {
-            if (nextTrack && nextTrack.url) {
-              const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-              if (!trackOk) await playFallbackTrack(true);
-            } else {
-              await playFallbackTrack(true);
-            }
+          if (nextTrack && nextTrack.url) {
+            const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+            if (!trackOk) await playFallbackTrack(true);
+          } else {
+            await playFallbackTrack(true);
           }
         }
 
@@ -4276,8 +4280,8 @@ export default function DJBooth() {
                   hideUI={false}
                   onVoiceDiag={logDiag}
                 />
-                <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-6 flex-1">
-                  <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />
+                <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/20 p-4 flex-1 min-h-0 overflow-hidden">
+                  <HouseAnnouncementPanel onPlay={handleAnnouncementPlay} />
                 </div>
               </div>
             )}

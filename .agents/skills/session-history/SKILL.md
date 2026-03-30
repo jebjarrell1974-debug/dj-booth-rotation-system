@@ -119,7 +119,57 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 57 — March 29, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 58 — March 30, 2026) — READ THIS FIRST
+
+### Latest GitHub commit this session:
+- **ROLLBACK POINT**: `9326ccf` (Replit checkpoint) — "Add promo management and house announcement features"
+
+### What was built this session (Session 58):
+
+**1. Commercial architecture refactor — `src/pages/DJBooth.jsx`:**
+- `playCommercialIfDue` new-mode now uses `playTrack()` on the main deck (not `playAnnouncement`), then awaits the existing `commercialEndResolverRef` promise-blocking mechanism
+- `handleTrackEnd` post-commercial restart simplified — removed `commercialModeRef === 'old'` guard; always restarts dancer track with crossfade after commercial resolves
+
+**2. Promo intro extended — `server/promo-mixer.js`:**
+- `introSec` bumped from 5 → 9 seconds (full-volume bed intro before voice starts)
+
+**3. DB helpers + server API endpoints — `server/db.js` + `server/index.js`:**
+- `listAllPromoTracks()` — returns all `music_tracks` with `genre='Promos'` (including blocked ones)
+- `setPromoTrackBlockedById(id, blocked)` — toggles `blocked` field on a promo track
+- `deletePromoTrackById(id)` — deletes promo track record + its MP3 file from disk
+- `listHouseAnnouncements()` — returns voiceovers with `type='house'`
+- `GET /api/house-announcements` — list house announcement voiceovers
+- `GET /api/promos` — list all promo tracks (all blocked states)
+- `PUT /api/promos/:id/blocked` — toggle blocked `{ blocked: true/false }`
+- `DELETE /api/promos/:id` — delete promo track + file
+
+**4. HouseAnnouncementPanel — `src/components/dj/HouseAnnouncementPanel.jsx` (new file):**
+- Quick-fire announcement buttons with ElevenLabs TTS generation
+- Duck/play via `autoDuck: true`, delete button per announcement
+- Preset defaults: No Touching, No Photos, Tip Your Entertainers, Welcome
+- Stored as voiceovers with `type='house'`; audio served via `/api/voiceovers/audio/:cacheKey`
+
+**5. DJBooth.jsx — announcements tab:**
+- Replaced `ManualAnnouncementPlayer` with `HouseAnnouncementPanel`
+- Added `playHouseAnnouncement` case to `executeCommand` (fetches blob, plays with `autoDuck:true`)
+
+**6. RemoteView.jsx — Announce tab:**
+- Added `HouseAnnouncementPanel` import + `Megaphone` icon
+- Added Announce tab content section (house panel UI)
+- Added `{ id: 'announce', icon: Megaphone, label: 'Announce' }` to bottom nav tab bar (between Promos and Options)
+
+**7. VoiceStudio.jsx — promo management UI:**
+- `promoTracks` state + `loadPromoTracks()` fetch from `/api/promos`
+- Auto-loads when Promos tab is opened
+- Promo list shows above "New Promo Request" button when tracks exist
+- Each promo: cyan toggle switch (active ↔ blocked) + red trash delete button
+- Refresh icon to reload list manually
+- `handlePromoToggle()` calls `PUT /api/promos/:id/blocked`
+- `handlePromoDelete()` confirms then calls `DELETE /api/promos/:id`
+
+---
+
+## CURRENT STATUS (as of Session 57 — March 29, 2026)
 
 ### Latest GitHub commits this session:
 - `1341dca` — "break bubble tap-to-add: select break slot to route library taps to addInterstitialSong"

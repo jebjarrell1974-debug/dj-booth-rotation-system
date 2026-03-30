@@ -176,6 +176,9 @@ export default function VoiceStudio() {
   const [promoIntroSfx, setPromoIntroSfx] = useState('none');
   const [promoOutroSfx, setPromoOutroSfx] = useState('none');
   const [promoBeds, setPromoBeds] = useState([]);
+  const [promoTracks, setPromoTracks] = useState([]);
+  const [promoTracksLoading, setPromoTracksLoading] = useState(false);
+  const [togglingPromo, setTogglingPromo] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -204,6 +207,43 @@ export default function VoiceStudio() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const loadPromoTracks = useCallback(async () => {
+    setPromoTracksLoading(true);
+    try {
+      const res = await fetch('/api/promos', { headers: getAuthHeaders() });
+      if (res.ok) setPromoTracks(await res.json());
+    } catch {}
+    setPromoTracksLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'promos') loadPromoTracks();
+  }, [activeTab, loadPromoTracks]);
+
+  const handlePromoToggle = useCallback(async (track) => {
+    setTogglingPromo(track.id);
+    try {
+      await fetch(`/api/promos/${track.id}/blocked`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocked: !track.blocked }),
+      });
+      await loadPromoTracks();
+    } catch {}
+    setTogglingPromo(null);
+  }, [loadPromoTracks]);
+
+  const handlePromoDelete = useCallback(async (track) => {
+    if (!window.confirm(`Delete promo "${track.name}"? This cannot be undone.`)) return;
+    try {
+      await fetch(`/api/promos/${track.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      await loadPromoTracks();
+    } catch {}
+  }, [loadPromoTracks]);
 
   useEffect(() => {
     async function detectMics() {
@@ -790,6 +830,34 @@ export default function VoiceStudio() {
             <div className="bg-[#0d0d1f] border border-purple-500/20 rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-amber-400">{transitionQueue.filter(i => !i.isRecorded).length}</p>
               <p className="text-xs text-gray-500">Remaining</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'promos' && promoTracks.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 uppercase tracking-wider">Mixed Promos in Rotation</span>
+              <button onClick={loadPromoTracks} className="text-gray-600 hover:text-gray-400">
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {promoTracks.map(track => (
+                <div key={track.id} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border ${track.blocked ? 'border-[#1e293b] bg-[#08081a] opacity-50' : 'border-[#1e293b] bg-[#0d0d1f]'}`}>
+                  <button
+                    onClick={() => handlePromoToggle(track)}
+                    disabled={togglingPromo === track.id}
+                    className={`w-10 h-5 rounded-full flex-shrink-0 relative transition-colors ${track.blocked ? 'bg-gray-700' : 'bg-[#00d4ff]'}`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${track.blocked ? 'left-0.5' : 'left-5'}`} />
+                  </button>
+                  <span className="flex-1 text-sm text-white truncate">{track.name.replace(/_/g, ' ')}</span>
+                  <button onClick={() => handlePromoDelete(track)} className="text-red-500 hover:text-red-400 p-1">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -21,7 +21,8 @@ import {
   exportDancers, importDancers, saveClientSettings, getClientSettings,
   getLufsStats, bulkUpdateTrackAnalysis, getTracksNeedingAnyAnalysis,
   createStaffAccount, listStaffAccounts, deleteStaffAccount, getStaffAccountByPin, isStaffPinTaken,
-  createAuditEntry, getAuditLog, getAuditLogCsv, cleanOldAuditLog
+  createAuditEntry, getAuditLog, getAuditLogCsv, cleanOldAuditLog,
+  listAllPromoTracks, setPromoTrackBlockedById, deletePromoTrackById, listHouseAnnouncements
 } from './db.js';
 import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
 import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
@@ -715,6 +716,29 @@ app.delete('/api/voiceovers/dancer/:dancerName', authenticate, requireDJ, (req, 
 
 app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {
   deleteVoiceover(req.params.cacheKey);
+  res.json({ ok: true });
+});
+
+app.get('/api/house-announcements', authenticate, (req, res) => {
+  res.json(listHouseAnnouncements());
+});
+
+app.get('/api/promos', authenticate, (req, res) => {
+  res.json(listAllPromoTracks());
+});
+
+app.put('/api/promos/:id/blocked', authenticate, requireDJ, (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  const blocked = req.body.blocked !== false;
+  setPromoTrackBlockedById(id, blocked);
+  res.json({ ok: true });
+});
+
+app.delete('/api/promos/:id', authenticate, requireDJ, (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  deletePromoTrackById(id);
   res.json({ ok: true });
 });
 

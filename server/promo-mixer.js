@@ -48,7 +48,7 @@ function runFfmpeg(args) {
 
 export async function mixPromoFile(voiceFilePath, bedFilePath, outputPath) {
   const voiceDur = await getAudioDuration(voiceFilePath);
-  const introSec = 5;
+  const introSec = 9;
   const outroSec = 5;
   const fadeSec = 2;
   const totalDur = introSec + voiceDur + outroSec;
