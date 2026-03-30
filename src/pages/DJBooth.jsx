@@ -4270,21 +4270,21 @@ export default function DJBooth() {
             )}
             
             {!remoteMode && activeTab === 'announcements' && (
-              <div className="h-full flex flex-col gap-6 overflow-auto">
-                <AnnouncementSystem
-                  dancers={dancers}
-                  rotation={rotation}
-                  currentDancerIndex={currentDancerIndex}
-                  onPlay={handleAnnouncementPlay}
-                  elevenLabsApiKey={elevenLabsKey}
-                  openaiApiKey={openaiKey}
-                  hideUI={false}
-                  onVoiceDiag={logDiag}
-                />
-                <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/20 p-4 flex-shrink-0 overflow-hidden">
-                  <HouseAnnouncementPanel onPlay={handleAnnouncementPlay} />
-                </div>
-                <div className="flex-1 min-h-0 overflow-auto">
+              <div className="h-full overflow-y-auto">
+                <div className="flex flex-col gap-6 pb-6">
+                  <AnnouncementSystem
+                    dancers={dancers}
+                    rotation={rotation}
+                    currentDancerIndex={currentDancerIndex}
+                    onPlay={handleAnnouncementPlay}
+                    elevenLabsApiKey={elevenLabsKey}
+                    openaiApiKey={openaiKey}
+                    hideUI={false}
+                    onVoiceDiag={logDiag}
+                  />
+                  <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/20 p-4">
+                    <HouseAnnouncementPanel onPlay={handleAnnouncementPlay} />
+                  </div>
                   <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />
                 </div>
               </div>
