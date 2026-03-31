@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { getMusicTracks, getSetting } from './db.js';
 import { scanMusicFolder } from './musicScanner.js';
+import { trackError } from './error-tracker.js';
 
 const mixStatus = new Map();
 
@@ -112,6 +113,7 @@ export async function processPromo(cacheKey, voiceFilePath, promoName) {
   } catch (err) {
     console.error(`📺 Promo mix failed [${cacheKey}]:`, err.message);
     mixStatus.set(cacheKey, { status: 'error', error: err.message });
+    trackError('promo_mix_failed', err.message, { component: 'promo-mixer', extra: { cacheKey, promoName } });
     throw err;
   }
 }

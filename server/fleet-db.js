@@ -166,6 +166,49 @@ try {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_play_history_dedup ON fleet_play_history(device_id, track_name, played_at)");
 } catch {}
 
+// Migrate fleet_error_logs to add context columns if not present
+for (const col of ['type', 'current_dancer', 'current_song', 'rotation_active', 'extra']) {
+  try { db.exec(`ALTER TABLE fleet_error_logs ADD COLUMN ${col} TEXT DEFAULT ''`); } catch {}
+}
+
+export function storeFleetError(deviceId, error) {
+  try {
+    db.prepare(`
+      INSERT INTO fleet_error_logs (device_id, timestamp, level, type, message, component, current_dancer, current_song, rotation_active, extra)
+      VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      deviceId,
+      error.ts || Date.now(),
+      error.type || 'unknown',
+      error.message || '',
+      error.component || '',
+      error.currentDancer || '',
+      error.currentSong || '',
+      error.rotationActive ? '1' : '0',
+      error.extra ? JSON.stringify(error.extra) : ''
+    );
+    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    db.prepare('DELETE FROM fleet_error_logs WHERE timestamp < ?').run(cutoff);
+  } catch (err) {
+    console.error('storeFleetError failed:', err.message);
+  }
+}
+
+export function getFleetErrors(deviceId = null, limit = 200) {
+  try {
+    if (deviceId) {
+      return db.prepare(
+        'SELECT * FROM fleet_error_logs WHERE device_id = ? ORDER BY timestamp DESC LIMIT ?'
+      ).all(deviceId, limit);
+    }
+    return db.prepare(
+      'SELECT * FROM fleet_error_logs ORDER BY timestamp DESC LIMIT ?'
+    ).all(limit);
+  } catch {
+    return [];
+  }
+}
+
 function generateApiKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let key = 'fleet_';

@@ -1,5 +1,5 @@
 import db from './db.js';
-import { listDancerBackups } from './fleet-db.js';
+import { listDancerBackups, storeFleetError, getFleetErrors } from './fleet-db.js';
 import { existsSync, readFileSync } from 'fs';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -204,8 +204,88 @@ async function registerHeartbeat(deviceId, data) {
     );
   }
 
+  // --- Server-side error alerts (from error-tracker on each Pi) ---
+  if (data.serverErrors && Array.isArray(data.serverErrors) && data.serverErrors.length > 0) {
+    const dev = devices.get(effectiveId);
+    for (const err of data.serverErrors) {
+      storeFleetError(effectiveId, err);
+    }
+    if (canSendAlert(effectiveId, 'server_error')) {
+      const sample = data.serverErrors[0];
+      const count = data.serverErrors.length;
+      const dancerCtx = sample.currentDancer ? `\nDancer: ${sample.currentDancer}` : '';
+      const songCtx = sample.currentSong ? `\nTrack: ${sample.currentSong}` : '';
+      sendTelegram(
+        `🔴 <b>SERVER ERROR${count > 1 ? ` (×${count})` : ''}</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Type: <code>${sample.type}</code>\n` +
+        `${sample.message}` +
+        dancerCtx + songCtx
+      );
+    }
+  }
+
   if (isTelegramConfigured() && existing && !wasOffline) {
     const dev = devices.get(effectiveId);
+
+    // --- Voice failure alerts (from diagLog audio events) ---
+    const VOICE_FAIL_EVENTS = new Set([
+      'voice_timeout', 'voice_generate_fail', 'voice_blob_invalid',
+      'voice_error', 'voice_failed', 'elevenlabs_error', 'tts_failed',
+    ]);
+    const diagLog = data.diagLog || [];
+    const existingDiagLog = existing.diagLog || [];
+    const newDiagEntries = diagLog.length > existingDiagLog.length
+      ? diagLog.slice(existingDiagLog.length)
+      : [];
+    const voiceFails = newDiagEntries.filter(e =>
+      VOICE_FAIL_EVENTS.has(e?.event || e?.type || '') ||
+      (e?.level === 'error' && String(e?.message || '').toLowerCase().includes('voice'))
+    );
+    if (voiceFails.length > 0 && canSendAlert(effectiveId, 'voice_fail')) {
+      const sample = voiceFails[0];
+      const dancerCtx = sample.dancer || sample.dancerName ? `\nDancer: ${sample.dancer || sample.dancerName}` : '';
+      sendTelegram(
+        `🎤 <b>VOICE FAILURE</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Event: <code>${sample.event || sample.type || 'unknown'}</code>\n` +
+        `${sample.message || sample.msg || ''}` +
+        dancerCtx
+      );
+    }
+
+    // --- CPU temperature alert (>80°C) ---
+    const cpuTemp = parseFloat(data.cpuTemp);
+    if (!isNaN(cpuTemp) && cpuTemp > 80 && canSendAlert(effectiveId, 'cpu_temp')) {
+      sendTelegram(
+        `🌡 <b>HIGH CPU TEMP</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Temperature: ${cpuTemp}°C`
+      );
+    }
+
+    // --- Low disk space alert (<10% free) ---
+    if (data.diskTotal && data.diskFree) {
+      const diskFreePct = (data.diskFree / data.diskTotal) * 100;
+      if (diskFreePct < 10 && canSendAlert(effectiveId, 'low_disk')) {
+        const freeGb = (data.diskFree / 1073741824).toFixed(1);
+        sendTelegram(
+          `💾 <b>LOW DISK SPACE</b>\n` +
+          `<b>${dev.name}</b> (${dev.clubName})\n` +
+          `Only ${diskFreePct.toFixed(1)}% free (${freeGb} GB remaining)`
+        );
+      }
+    }
+
+    // --- High RAM usage alert (>90%) ---
+    const memPct = data.memPct ?? data.memPercent ?? null;
+    if (memPct !== null && memPct > 90 && canSendAlert(effectiveId, 'high_ram')) {
+      sendTelegram(
+        `🧠 <b>HIGH RAM USAGE</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Memory at ${memPct}%`
+      );
+    }
 
     if (data.lastWatchdogAt && data.lastWatchdogAt !== existing.lastWatchdogAt &&
         (data.lastWatchdogSilentMs || 0) > 2000 && canSendAlert(effectiveId, 'dead_air')) {
@@ -387,6 +467,12 @@ function setupFleetMonitorRoutes(app) {
     if (!pendingCommands.has(deviceId)) pendingCommands.set(deviceId, []);
     pendingCommands.get(deviceId).push({ command: action, timestamp: Date.now() });
     res.json({ ok: true, queued: action });
+  });
+
+  app.get('/api/monitor/errors', (req, res) => {
+    const { deviceId, limit } = req.query;
+    const errors = getFleetErrors(deviceId || null, parseInt(limit) || 200);
+    res.json({ ok: true, errors, count: errors.length });
   });
 
   app.post('/api/monitor/restore-dancers/:deviceId', async (req, res) => {

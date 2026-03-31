@@ -33,6 +33,7 @@ import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversTo
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos } from './promo-mixer.js';
+import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -680,6 +681,7 @@ app.post('/api/voiceovers', authenticate, requireDJ, (req, res) => {
     }
   } catch (err) {
     console.error('Failed to save voiceover:', err.message);
+    trackError('voiceover_save_failed', err.message, { component: 'voiceover', extra: { cache_key, type, dancer_name } });
     res.status(500).json({ error: 'Failed to save voiceover' });
   }
 });
@@ -2034,6 +2036,7 @@ async function initR2Sync() {
     updateBootStep('voiceoverSync', 'error', err.message);
     updateBootStep('voiceoverUpload', 'error', err.message);
     console.error('☁️ R2 voiceover sync error:', err.message);
+    trackError('r2_voiceover_sync_failed', err.message, { component: 'r2sync' });
   }
   try {
     if (MUSIC_PATH) {
@@ -2063,6 +2066,7 @@ async function initR2Sync() {
     updateBootStep('musicSync', 'error', err.message);
     updateBootStep('musicUpload', 'error', err.message);
     console.error('☁️ R2 music sync error:', err.message);
+    trackError('r2_music_sync_failed', err.message, { component: 'r2sync' });
   } finally {
     bootStatus.ready = true;
   }
@@ -2125,6 +2129,7 @@ if (isDirectRun) {
         lastWatchdogSilentMs: liveBoothState.lastWatchdogSilentMs ?? null,
         lastWatchdogDancer: liveBoothState.lastWatchdogDancer ?? null,
         lastWatchdogTrack: liveBoothState.lastWatchdogTrack ?? null,
+        serverErrors: getAndClearErrors(),
       };
     });
     initR2Sync().catch(err => {

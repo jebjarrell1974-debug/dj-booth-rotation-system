@@ -272,6 +272,7 @@ async function sendHeartbeat(extraData = {}) {
     lastWatchdogSilentMs: extraData.lastWatchdogSilentMs ?? null,
     lastWatchdogDancer: extraData.lastWatchdogDancer ?? null,
     lastWatchdogTrack: extraData.lastWatchdogTrack ?? null,
+    serverErrors: extraData.serverErrors || [],
   };
 
   try {
