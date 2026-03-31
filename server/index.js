@@ -1315,6 +1315,11 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
     lastWatchdogDancer: state.lastWatchdogDancer ?? null,
     lastWatchdogTrack: state.lastWatchdogTrack ?? null,
   };
+  updateSystemState({
+    currentDancer: liveBoothState.currentDancerName,
+    currentSong: liveBoothState.currentTrack,
+    rotationActive: liveBoothState.isRotationActive,
+  });
   broadcastSSE('boothState', { state: liveBoothState });
   res.json({ ok: true });
 });
