@@ -268,14 +268,13 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4 flex flex-col" style={{ minHeight: '160px' }}>
+      <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4">
         <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
           Promos & Announcements ({announcements.length})
         </h3>
 
-        <ScrollArea className="flex-1" style={{ maxHeight: '240px' }}>
-          <div className="space-y-2">
-            {announcements.length === 0 ? (
+        <div className="space-y-2">
+          {announcements.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Radio className="w-10 h-10 mx-auto mb-2 text-gray-700" />
                 <p className="text-sm">No promos or announcements yet</p>
@@ -321,7 +320,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
               ))
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
 
       <div className="bg-[#151528] rounded-lg border border-[#7c3aed]/40 p-4">
