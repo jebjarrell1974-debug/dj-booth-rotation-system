@@ -90,6 +90,22 @@ export default function DJBooth() {
   // Rotation state
   const [rotation, setRotation] = useState([]);
   const [currentDancerIndex, setCurrentDancerIndex] = useState(0);
+
+  // In VIP state — dancers temporarily removed from rotation
+  const [dancerVipMap, setDancerVipMap] = useState(() => {
+    try {
+      const raw = localStorage.getItem('neonaidj_vip_map');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const now = Date.now();
+        return Object.fromEntries(Object.entries(parsed).filter(([, v]) => !v.expiresAt || v.expiresAt > now));
+      }
+    } catch {}
+    return {};
+  });
+  const dancerVipMapRef = useRef({});
+  const pendingVipRef = useRef({});
+  const [pendingVipState, setPendingVipState] = useState({});
   const [currentSongNumber, setCurrentSongNumber] = useState(1);
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
@@ -601,6 +617,82 @@ export default function DJBooth() {
 
   useEffect(() => { rotationRef.current = rotation; }, [rotation]);
   useEffect(() => { dancersRef.current = dancers; }, [dancers]);
+  useEffect(() => { dancerVipMapRef.current = dancerVipMap; }, [dancerVipMap]);
+
+  // Refs so early callbacks/effects can call functions defined later without TDZ
+  const updateStageStateRef = useRef(null);
+  const getDancerTracksRef = useRef(null);
+
+  // Send a dancer to In VIP — removes from rotation, stores with timer
+  const sendDancerToVip = useCallback((dancerId, durationMs) => {
+    const isOnStage = rotationRef.current[currentDancerIndexRef.current] === dancerId && isRotationActiveRef.current;
+    if (isOnStage) {
+      pendingVipRef.current = { ...pendingVipRef.current, [dancerId]: durationMs };
+      setPendingVipState({ ...pendingVipRef.current });
+      const dancer = dancersRef.current.find(d => d.id === dancerId);
+      toast(`${dancer?.name || 'Entertainer'} going to VIP after this set`, { icon: '👑' });
+    } else {
+      const expiresAt = Date.now() + durationMs;
+      const newMap = { ...dancerVipMapRef.current, [dancerId]: { expiresAt, duration: durationMs } };
+      dancerVipMapRef.current = newMap;
+      setDancerVipMap(newMap);
+      try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
+      const rot = rotationRef.current;
+      const currentId = rot[currentDancerIndexRef.current];
+      const newRot = rot.filter(id => id !== dancerId);
+      const adjustedIdx = Math.max(0, newRot.indexOf(currentId));
+      setRotation(newRot);
+      rotationRef.current = newRot;
+      setCurrentDancerIndex(adjustedIdx);
+      currentDancerIndexRef.current = adjustedIdx;
+      if (isRotationActiveRef.current) updateStageStateRef.current?.(adjustedIdx, newRot);
+      const dancer = dancersRef.current.find(d => d.id === dancerId);
+      toast(`${dancer?.name || 'Entertainer'} sent to VIP`, { icon: '👑' });
+    }
+  }, []);
+
+  // Release a dancer from In VIP early — adds to bottom of rotation
+  const releaseDancerFromVip = useCallback((dancerId) => {
+    const newMap = { ...dancerVipMapRef.current };
+    delete newMap[dancerId];
+    delete pendingVipRef.current[dancerId];
+    setPendingVipState({ ...pendingVipRef.current });
+    dancerVipMapRef.current = newMap;
+    setDancerVipMap(newMap);
+    try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
+    const newRot = [...rotationRef.current, dancerId];
+    setRotation(newRot);
+    rotationRef.current = newRot;
+    if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
+    const dancer = dancersRef.current.find(d => d.id === dancerId);
+    toast(`${dancer?.name || 'Entertainer'} released from VIP`, { icon: '✅' });
+  }, []);
+
+  // Auto-expire VIP timers — check every 15 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const map = dancerVipMapRef.current;
+      const expired = Object.entries(map).filter(([, v]) => v.expiresAt && v.expiresAt <= now);
+      if (expired.length === 0) return;
+      const newMap = { ...map };
+      const newRot = [...rotationRef.current];
+      for (const [id] of expired) {
+        delete newMap[id];
+        newRot.push(id);
+        const dancer = dancersRef.current.find(d => d.id === id);
+        console.log('👑 VIP expired — returning to rotation:', dancer?.name);
+        toast(`${dancer?.name || 'Entertainer'} returned from VIP`, { icon: '✅' });
+      }
+      dancerVipMapRef.current = newMap;
+      setDancerVipMap(newMap);
+      setRotation(newRot);
+      rotationRef.current = newRot;
+      try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
+      if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const lastCommandIdRef = useRef(0);
   const commandSseRef = useRef(null);
@@ -973,6 +1065,7 @@ export default function DJBooth() {
           promoQueue: promoQueue,
           availablePromos: availablePromos.map(p => ({ cache_key: p.cache_key, dancer_name: p.dancer_name })),
           skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),  // kept for remote rotation display
+          dancerVipMap,
           volume,
           voiceGain,
           trackTime: currentTimeRef.current || 0,
@@ -992,7 +1085,7 @@ export default function DJBooth() {
     broadcast();
     const interval = setInterval(broadcast, 2000);
     return () => clearInterval(interval);
-  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos, activeBreakInfo]);
+  }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos, activeBreakInfo, dancerVipMap]);
 
   // Background pre-pick: when the current dancer's LAST song starts, quietly fetch that
   // dancer's next-rotation songs in the background so the transition critical path
@@ -1009,7 +1102,7 @@ export default function DJBooth() {
     if (bgPrePickRef.current?.dancerId === dancerId) return;
     const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
     console.log(`🎵 BgPrePick: Starting for ${dancer.name} (last song of set)`);
-    const promise = getDancerTracks(dancer, playingTrackExclude, true)
+    const promise = getDancerTracksRef.current(dancer, playingTrackExclude, true)
       .then(tracks => {
         if (bgPrePickRef.current?.dancerId === dancerId) {
           bgPrePickRef.current.tracks = tracks;
@@ -1022,7 +1115,7 @@ export default function DJBooth() {
         return [];
       });
     bgPrePickRef.current = { dancerId, promise, tracks: null };
-  }, [isRotationActive, currentSongNumber, songsPerSet, getDancerTracks]);
+  }, [isRotationActive, currentSongNumber, songsPerSet]);
 
   useEffect(() => {
     if (!activeStage) return;
@@ -1569,6 +1662,7 @@ export default function DJBooth() {
     console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has no playlist — returning empty`);
     return [];
   }, [tracks]);
+  getDancerTracksRef.current = getDancerTracks;
 
   const restoredSongsRef = useRef(false);
   useEffect(() => {
@@ -1677,6 +1771,7 @@ export default function DJBooth() {
       queryClient.invalidateQueries({ queryKey: ['stages'] });
     }
   }, [activeStage, rotation, updateStageMutation, queryClient]);
+  updateStageStateRef.current = updateStageState;
 
   saveRotationRef.current = async (newRot) => {
     try {
@@ -2405,7 +2500,22 @@ export default function DJBooth() {
 
         const newRotation = [...rot];
         const [finishedDancerId] = newRotation.splice(idx, 1);
-        newRotation.push(finishedDancerId);
+        // Check if this dancer is pending VIP — if so, send to holding instead of bottom of rotation
+        const vipDuration = pendingVipRef.current[finishedDancerId];
+        if (vipDuration) {
+          delete pendingVipRef.current[finishedDancerId];
+          setPendingVipState({ ...pendingVipRef.current });
+          const expiresAt = Date.now() + vipDuration;
+          const newVipMap = { ...dancerVipMapRef.current, [finishedDancerId]: { expiresAt, duration: vipDuration } };
+          dancerVipMapRef.current = newVipMap;
+          setDancerVipMap(newVipMap);
+          try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newVipMap)); } catch {}
+          const vipDancer = dnc.find(d => d.id === finishedDancerId);
+          console.log('👑 HandleSkip: dancer going to VIP holding:', vipDancer?.name);
+          toast(`${vipDancer?.name || 'Entertainer'} is now In VIP`, { icon: '👑' });
+        } else {
+          newRotation.push(finishedDancerId);
+        }
         
         const newIdx = 0;
         const nextDancer = dnc.find(d => d.id === newRotation[newIdx]);
@@ -2995,7 +3105,22 @@ export default function DJBooth() {
 
         const newRotation = [...rot];
         const [finishedDancerId] = newRotation.splice(idx, 1);
-        newRotation.push(finishedDancerId);
+        // Check if this dancer is pending VIP — if so, send to holding instead of bottom of rotation
+        const vipDurationTE = pendingVipRef.current[finishedDancerId];
+        if (vipDurationTE) {
+          delete pendingVipRef.current[finishedDancerId];
+          setPendingVipState({ ...pendingVipRef.current });
+          const expiresAt = Date.now() + vipDurationTE;
+          const newVipMap = { ...dancerVipMapRef.current, [finishedDancerId]: { expiresAt, duration: vipDurationTE } };
+          dancerVipMapRef.current = newVipMap;
+          setDancerVipMap(newVipMap);
+          try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newVipMap)); } catch {}
+          const vipDancer = dnc.find(d => d.id === finishedDancerId);
+          console.log('👑 HandleTrackEnd: dancer going to VIP holding:', vipDancer?.name);
+          toast(`${vipDancer?.name || 'Entertainer'} is now In VIP`, { icon: '👑' });
+        } else {
+          newRotation.push(finishedDancerId);
+        }
         
         const newIdx = 0;
         const nextDancer = dnc.find(d => d.id === newRotation[newIdx]);
@@ -3921,10 +4046,38 @@ export default function DJBooth() {
                   </div>
                 )}
                 
+                {Object.keys(liveBoothState?.dancerVipMap || {}).length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-xs font-semibold text-yellow-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <span>👑</span> In VIP ({Object.keys(liveBoothState.dancerVipMap).length})
+                    </h4>
+                    <div className="space-y-2">
+                      {Object.entries(liveBoothState.dancerVipMap).map(([dancerId, vipEntry]) => {
+                        const dancer = dancers.find(d => d.id === parseInt(dancerId) || d.id === dancerId);
+                        if (!dancer) return null;
+                        const msLeft = vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0;
+                        const minsLeft = Math.floor(msLeft / 60000);
+                        const secsLeft = Math.floor((msLeft % 60000) / 1000);
+                        return (
+                          <div key={dancerId} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-yellow-500/30 bg-yellow-900/10">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                              {dancer.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-white">{dancer.name}</p>
+                              <p className="text-xs text-yellow-400">Returns in {minsLeft}:{String(secsLeft).padStart(2,'0')}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="border-t border-[#1e293b] pt-4">
                   <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Add to Rotation</h4>
                   <div className="space-y-1">
-                    {dancers.filter(d => d.is_active && !(liveBoothState?.rotation || []).includes(d.id)).map(dancer => (
+                    {dancers.filter(d => d.is_active && !(liveBoothState?.rotation || []).includes(d.id) && !Object.keys(liveBoothState?.dancerVipMap || {}).includes(String(d.id))).map(dancer => (
                       <button
                         key={dancer.id}
                         onClick={() => boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id })}
@@ -4223,6 +4376,10 @@ export default function DJBooth() {
                   toast(`Now playing: ${incomingDancer?.name || 'Entertainer'}`, { icon: '🔀' });
                   setTimeout(() => handleSkipRef.current?.(), 100);
                 }}
+                dancerVipMap={dancerVipMap}
+                pendingVipMap={pendingVipState}
+                onSendToVip={sendDancerToVip}
+                onReleaseFromVip={releaseDancerFromVip}
                 currentSongNumber={currentSongNumber}
                 currentTrack={currentTrack}
                 breakSongsPerSet={breakSongsPerSet}
