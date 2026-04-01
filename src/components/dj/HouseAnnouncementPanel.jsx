@@ -176,7 +176,7 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
   const missingDefaults = DEFAULT_ANNOUNCEMENTS.filter(d => !existingNames.has(d.name));
 
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           <Megaphone className="w-4 h-4 text-amber-400" />
@@ -217,7 +217,7 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+      <div className="space-y-2">
         {announcements.length === 0 && !adding && (
           <div className="text-center py-6 text-gray-600 text-sm">
             <Megaphone className="w-8 h-8 mx-auto mb-2 opacity-30" />

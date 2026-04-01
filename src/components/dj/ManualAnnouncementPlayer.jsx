@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Play, Trash2, Mic, Radio, Send, CheckCircle, Clock, CalendarDays, MapPin, FileText, Zap, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiConfig } from '@/components/apiConfig';
@@ -267,7 +266,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
   const completedRequests = promoRequests.filter(r => r.status === 'recorded');
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="bg-[#151528] rounded-lg border border-[#1e293b] p-4">
         <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
           Promos & Announcements ({announcements.length})
