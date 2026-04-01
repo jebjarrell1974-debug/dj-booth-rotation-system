@@ -133,6 +133,7 @@ export default function DJBooth() {
   const prePickMissesRef = useRef(0);
   const lastTransitionMsRef = useRef(null);
   const lastWatchdogRef = useRef(null);
+  const bgPrePickRef = useRef(null);
   const rotationPendingRef = useRef(false);
   const [rotationPending, setRotationPending] = useState(false);
   const [preCachingForStart, setPreCachingForStart] = useState(false);
@@ -993,6 +994,36 @@ export default function DJBooth() {
     return () => clearInterval(interval);
   }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos, activeBreakInfo]);
 
+  // Background pre-pick: when the current dancer's LAST song starts, quietly fetch that
+  // dancer's next-rotation songs in the background so the transition critical path
+  // only needs the upcoming dancer's tracks — not two concurrent network calls.
+  useEffect(() => {
+    if (!isRotationActive || currentSongNumber !== songsPerSet || songsPerSet < 1) return;
+    const rot = rotationRef.current;
+    const dnc = dancersRef.current;
+    const idx = currentDancerIndexRef.current;
+    const dancerId = rot[idx];
+    if (!dancerId) return;
+    const dancer = dnc.find(d => d.id === dancerId);
+    if (!dancer) return;
+    if (bgPrePickRef.current?.dancerId === dancerId) return;
+    const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
+    console.log(`🎵 BgPrePick: Starting for ${dancer.name} (last song of set)`);
+    const promise = getDancerTracks(dancer, playingTrackExclude, true)
+      .then(tracks => {
+        if (bgPrePickRef.current?.dancerId === dancerId) {
+          bgPrePickRef.current.tracks = tracks;
+          console.log(`🎵 BgPrePick: Ready for ${dancer.name}: [${tracks.map(t => t.name).join(', ')}]`);
+        }
+        return tracks;
+      })
+      .catch(e => {
+        console.warn(`⚠️ BgPrePick: Failed for ${dancer.name}:`, e.message);
+        return [];
+      });
+    bgPrePickRef.current = { dancerId, promise, tracks: null };
+  }, [isRotationActive, currentSongNumber, songsPerSet, getDancerTracks]);
+
   useEffect(() => {
     if (!activeStage) return;
     const saved = activeStage.rotation_order;
@@ -1450,7 +1481,7 @@ export default function DJBooth() {
     } catch { return null; }
   }, []);
 
-  const getDancerTracks = useCallback(async (dancer, additionalExcludes = [], skipAssigned = false) => {
+  const getDancerTracks = useCallback(async (dancer, additionalExcludes = [], skipAssigned = false, timeoutMs = 5000) => {
     const count = songsPerSetRef.current;
     const opts = djOptionsRef.current;
     const isFoldersOnly = opts?.musicMode === 'folders_only';
@@ -1490,7 +1521,7 @@ export default function DJBooth() {
           genres: activeGenres,
           dancerPlaylist: rawPlaylist
         }),
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
 
       if (res.ok) {
@@ -2407,16 +2438,20 @@ export default function DJBooth() {
         const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
-        const [[freshTracks, prePicked]] = await Promise.all([
-          Promise.all([
-            (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
-            djSavedValid
-              ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
-              : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
-                  console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
-                  return [];
-                }) : Promise.resolve([])
-          ])
+        const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
+        bgPrePickRef.current = null;
+        const [freshTracks, prePicked] = await Promise.all([
+          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          djSavedValid
+            ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
+            : finishedDancer
+              ? bgPick
+                ? (console.log(`🎵 Pre-pick for ${finishedDancer.name}: using background pre-pick`), bgPick.promise.catch(() => []))
+                : getDancerTracks(finishedDancer, playingTrackExclude, true, 1500).catch(e => {
+                    console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+                    return [];
+                  })
+              : Promise.resolve([])
         ]);
         let nextTrack = freshTracks?.[0];
 
@@ -2993,16 +3028,20 @@ export default function DJBooth() {
         const existingTracks = scratchSongs[newRotation[newIdx]];
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
-        const [[freshTracks, prePicked]] = await Promise.all([
-          Promise.all([
-            (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
-            djSavedValid
-              ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
-              : finishedDancer ? getDancerTracks(finishedDancer, playingTrackExclude, true).catch(e => {
-                  console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
-                  return [];
-                }) : Promise.resolve([])
-          ])
+        const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
+        bgPrePickRef.current = null;
+        const [freshTracks, prePicked] = await Promise.all([
+          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          djSavedValid
+            ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
+            : finishedDancer
+              ? bgPick
+                ? (console.log(`🎵 Pre-pick for ${finishedDancer.name}: using background pre-pick`), bgPick.promise.catch(() => []))
+                : getDancerTracks(finishedDancer, playingTrackExclude, true, 1500).catch(e => {
+                    console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
+                    return [];
+                  })
+              : Promise.resolve([])
         ]);
         let nextTrack = freshTracks?.[0];
 

@@ -318,7 +318,6 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
                 </div>
               ))
             )}
-          </div>
         </div>
       </div>
 
