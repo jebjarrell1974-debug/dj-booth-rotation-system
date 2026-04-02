@@ -653,18 +653,20 @@ export default function DJBooth() {
 
   // Release a dancer from In VIP early — adds to bottom of rotation
   const releaseDancerFromVip = useCallback((dancerId) => {
+    const id = String(dancerId);
     const newMap = { ...dancerVipMapRef.current };
-    delete newMap[dancerId];
-    delete pendingVipRef.current[dancerId];
+    delete newMap[id];
+    delete pendingVipRef.current[id];
     setPendingVipState({ ...pendingVipRef.current });
     dancerVipMapRef.current = newMap;
-    setDancerVipMap(newMap);
+    setDancerVipMap({ ...newMap });
     try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
-    const newRot = [...rotationRef.current, dancerId];
+    const idTyped = parseInt(id) || id;
+    const newRot = [...rotationRef.current, idTyped];
     setRotation(newRot);
     rotationRef.current = newRot;
     if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
-    const dancer = dancersRef.current.find(d => d.id === dancerId);
+    const dancer = dancersRef.current.find(d => String(d.id) === id);
     toast(`${dancer?.name || 'Entertainer'} released from VIP`, { icon: '✅' });
   }, []);
 

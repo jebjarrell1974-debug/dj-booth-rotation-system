@@ -1628,7 +1628,7 @@ export default function RotationPlaylistManager({
                       size="sm"
                       variant="ghost"
                       className="text-xs text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 flex items-center gap-1 flex-shrink-0 h-7 px-2"
-                      onClick={() => onReleaseFromVip?.(parseInt(dancerId) || dancerId)}
+                      onClick={() => onReleaseFromVip?.(dancerId)}
                     >
                       <RotateCcw className="w-3 h-3" />
                       Release

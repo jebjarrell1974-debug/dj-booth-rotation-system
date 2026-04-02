@@ -120,6 +120,14 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
 
 const CURRENT_VOICE_VERSION = 'V11';
 
+const hashPhonetic = (str) => {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h, 33) ^ str.charCodeAt(i);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0').slice(0, 8);
+};
+
 const cleanupStaleIDBEntries = async () => {
   try {
     const db = await openDB();
@@ -417,16 +425,23 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     });
   }, [elevenLabsApiKey]);
 
-  const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${CURRENT_VOICE_VERSION}`;
+  const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1, phonetic = null) => {
+    const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}${ph}-var${varNum}-${CURRENT_VOICE_VERSION}`;
   };
 
   const getLegacyL4Key = (type, dancerName, nextDancerName = null) => {
     return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-${CURRENT_VOICE_VERSION}`;
   };
 
+  const getKeyForDancer = (type, dancerName, nextDancerName = null, varNum = 1) => {
+    const d = (dancers || []).find(dn => dn.name === dancerName);
+    const phonetic = d?.phonetic_name || null;
+    return getAnnouncementKey(type, dancerName, nextDancerName, varNum, phonetic);
+  };
+
   const getCacheKey = (type, dancerName, nextDancerName = null, varNum = 1) => {
-    return getAnnouncementKey(type, dancerName, nextDancerName, varNum);
+    return getKeyForDancer(type, dancerName, nextDancerName, varNum);
   };
 
   const saveToServer = useCallback(async (cacheKey, audioBlob, script, type, dancerName, energyLevel) => {
@@ -504,7 +519,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
   const findCachedAtAnyVariation = useCallback(async (type, dancerName, nextDancerName) => {
     const keysToCheck = [
-      ...Array.from({ length: NUM_VARIATIONS }, (_, i) => getAnnouncementKey(type, dancerName, nextDancerName, i + 1)),
+      ...Array.from({ length: NUM_VARIATIONS }, (_, i) => getKeyForDancer(type, dancerName, nextDancerName, i + 1)),
       getLegacyL4Key(type, dancerName, nextDancerName),
     ];
     for (const altKey of keysToCheck) {
@@ -591,7 +606,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, []);
 
   const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, varNum = 1, roundNumber = 1) => {
-    const key = getAnnouncementKey(type, dancerName, nextDancerName, varNum);
+    const key = getKeyForDancer(type, dancerName, nextDancerName, varNum);
 
     const customBlob = await checkCustomRecording(dancerName, type);
     if (customBlob) {
