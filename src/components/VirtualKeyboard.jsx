@@ -5,9 +5,10 @@ const NUMERIC_MODES = ['numeric', 'decimal', 'tel'];
 
 function isNumericInput(el) {
   if (!el) return false;
+  const origMode = el.dataset.vkbdOrigMode || el.inputMode;
   return (
     NUMERIC_TYPES.includes(el.type) ||
-    NUMERIC_MODES.includes(el.inputMode) ||
+    NUMERIC_MODES.includes(origMode) ||
     el.dataset.keyboard === 'numeric'
   );
 }
@@ -218,6 +219,19 @@ function KeyRow({ keys, onPress, caps }) {
 const KBD_HEIGHT_QWERTY = (KEY_H + GAP) * 4 + PAD_H * 2 + 8;
 const KBD_HEIGHT_NUM = (KEY_H + GAP) * 5 + PAD_H * 2 + 8;
 
+const SKIP_TYPES = new Set(['range','checkbox','radio','file','submit','button','reset','hidden','color']);
+
+function suppressOSKeyboard(root) {
+  (root.querySelectorAll ? root.querySelectorAll('input, textarea') : []).forEach(el => {
+    if (SKIP_TYPES.has(el.type)) return;
+    if (el.readOnly || el.disabled) return;
+    if (!el.dataset.vkbdOrigMode) {
+      el.dataset.vkbdOrigMode = el.getAttribute('inputmode') || '';
+    }
+    el.setAttribute('inputmode', 'none');
+  });
+}
+
 export default function VirtualKeyboard() {
   const [visible, setVisible] = useState(false);
   const [mode, setMode] = useState('lower');
@@ -226,6 +240,25 @@ export default function VirtualKeyboard() {
   const activeInputRef = useRef(null);
   const hideTimerRef = useRef(null);
   const scrollTimerRef = useRef(null);
+
+  useEffect(() => {
+    suppressOSKeyboard(document.body);
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          const tag = node.tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA') {
+            suppressOSKeyboard(document.body);
+          } else if (node.querySelectorAll) {
+            suppressOSKeyboard(node);
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   const kbdHeight = numpad ? KBD_HEIGHT_NUM : KBD_HEIGHT_QWERTY;
 
