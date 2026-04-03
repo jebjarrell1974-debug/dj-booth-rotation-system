@@ -511,6 +511,25 @@ app.put('/api/config', authenticate, requireDJ, (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/openai/chat', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Missing Authorization header' });
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+      },
+      body: JSON.stringify(req.body),
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'OpenAI proxy error', detail: err.message });
+  }
+});
+
 app.get('/api/dancers', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (token) {

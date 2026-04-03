@@ -287,7 +287,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 30000);
         try {
-          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          const res = await fetch('/api/openai/chat', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

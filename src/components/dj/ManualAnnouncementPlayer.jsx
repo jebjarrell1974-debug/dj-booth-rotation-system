@@ -118,7 +118,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
     if (openaiKey && scriptModel !== 'auto') {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      const res = await fetch('/api/openai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

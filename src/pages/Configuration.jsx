@@ -299,7 +299,7 @@ export default function Configuration() {
 
           let rawResponse;
           if (cfg.scriptModel && cfg.scriptModel !== 'auto' && cfg.openaiApiKey) {
-            const oaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+            const oaiRes = await fetch('/api/openai/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.openaiApiKey}` },
               body: JSON.stringify({

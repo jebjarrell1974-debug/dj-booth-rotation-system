@@ -241,7 +241,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       const openaiKey = config.openaiApiKey || '';
       const scriptModel = config.scriptModel || 'gpt-4.1';
       if (openaiKey && scriptModel !== 'auto') {
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        const res = await fetch('/api/openai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
           body: JSON.stringify({ model: scriptModel, messages: [{ role: 'user', content: prompt }], temperature: 0.9, max_tokens: 300 }),
