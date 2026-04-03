@@ -4,7 +4,7 @@
  * playSoundboardEffect(soundId, audioCtx, gain)
  *   soundId   : string key for the effect
  *   audioCtx  : Web Audio AudioContext (caller manages lifecycle)
- *   gain      : final output level (voiceGain × boost, typically 0.5–3.0)
+ *   gain      : final output level (musicVolume × boost, typically 0.5–3.0)
  */
 
 const NOTE = (midi) => 440 * Math.pow(2, (midi - 69) / 12);

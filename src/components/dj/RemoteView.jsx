@@ -945,7 +945,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   { id: 'laser',     emoji: '⚡', label: 'Laser'      },
                 ].map(({ id, emoji, label }) => (
                   <button key={id}
-                    onPointerDown={() => boothApi.sendCommand('playSound', { soundId: id, gain: currentVoiceGain * soundBoost })}
+                    onPointerDown={() => boothApi.sendCommand('playSound', { soundId: id, gain: (liveBoothState?.volume ?? 0.8) * soundBoost })}
                     className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#00d4ff]/20 active:bg-[#00d4ff]/15 active:border-[#00d4ff]/60 active:scale-95 transition-transform select-none">
                     <span className="text-2xl leading-none">{emoji}</span>
                     <span className="text-xs text-gray-400 leading-tight text-center">{label}</span>
@@ -971,7 +971,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                   { id: 'itslit',       emoji: '🔥', label: "It's Lit"   },
                 ].map(({ id, emoji, label }) => (
                   <button key={id}
-                    onPointerDown={() => boothApi.sendCommand('playSound', { soundId: id, gain: currentVoiceGain * soundBoost })}
+                    onPointerDown={() => boothApi.sendCommand('playSound', { soundId: id, gain: (liveBoothState?.volume ?? 0.8) * soundBoost })}
                     className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#a855f7]/20 active:bg-[#a855f7]/15 active:border-[#a855f7]/60 active:scale-95 transition-transform select-none">
                     <span className="text-2xl leading-none">{emoji}</span>
                     <span className="text-xs text-gray-400 leading-tight text-center">{label}</span>

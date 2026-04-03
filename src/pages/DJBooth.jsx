@@ -4538,7 +4538,7 @@ export default function DJBooth() {
                         onPointerDown={() => {
                           const AC = window.AudioContext || window.webkitAudioContext;
                           if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') soundboardCtxRef.current = new AC();
-                          playSoundboardEffect(id, soundboardCtxRef.current, voiceGain * sfxBoost);
+                          playSoundboardEffect(id, soundboardCtxRef.current, volume * sfxBoost);
                         }}
                         className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#00d4ff]/20 active:bg-[#00d4ff]/15 active:border-[#00d4ff]/60 active:scale-95 transition-transform select-none">
                         <span className="text-2xl leading-none">{emoji}</span>
@@ -4568,7 +4568,7 @@ export default function DJBooth() {
                         onPointerDown={() => {
                           const AC = window.AudioContext || window.webkitAudioContext;
                           if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') soundboardCtxRef.current = new AC();
-                          playSoundboardEffect(id, soundboardCtxRef.current, voiceGain * sfxBoost);
+                          playSoundboardEffect(id, soundboardCtxRef.current, volume * sfxBoost);
                         }}
                         className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#a855f7]/20 active:bg-[#a855f7]/15 active:border-[#a855f7]/60 active:scale-95 transition-transform select-none">
                         <span className="text-2xl leading-none">{emoji}</span>
