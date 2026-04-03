@@ -9,7 +9,7 @@ import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Search, Shuffle, Zap,
   ChevronDown, ChevronUp, RefreshCw, Ban, Send, Loader2,
-  PlayCircle, StopCircle, Megaphone,
+  PlayCircle, StopCircle, Megaphone, Crown, Drum,
 } from 'lucide-react';
 
 const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
@@ -27,6 +27,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [songEdits, setSongEdits] = useState({});
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [expandedDancer, setExpandedDancer] = useState(null);
+  const [vipPickerFor, setVipPickerFor] = useState(null);
+  const [soundBoost, setSoundBoost] = useState(1.0);
 
   const [libSearch, setLibSearch] = useState('');
   const [libGenre, setLibGenre] = useState('');
@@ -74,6 +76,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const trackTime = liveBoothState?.trackTime || 0;
   const trackDuration = liveBoothState?.trackDuration || 0;
   const trackTimeAt = liveBoothState?.trackTimeAt || 0;
+  const dancerVipMap = liveBoothState?.dancerVipMap || {};
 
   const currentDancer = dancers?.find(d => d.id === rotationList[currentDancerIndex]);
   const rotationDancers = rotationList.map(id => dancers?.find(d => d.id === id)).filter(Boolean);
@@ -504,9 +507,10 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                     const isOnStage = idx === currentDancerIndex && isRotationActive;
                     const dancerSongs = getSongs(dancer.id);
                     const upcomingSongs = isOnStage ? dancerSongs.slice(currentSongNumber) : dancerSongs;
+                    const showVipPicker = vipPickerFor === dancer.id;
                     return (
-                      <div key={dancer.id} className={`rounded-xl border p-3 ${isOnStage ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40' : 'bg-[#0d0d1f] border-[#1e293b]'}`}>
-                        <div className="flex items-center gap-2">
+                      <div key={dancer.id} className={`rounded-xl border ${isOnStage ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40' : 'bg-[#0d0d1f] border-[#1e293b]'}`}>
+                        <div className="flex items-center gap-2 p-3">
                           <div className={`text-base font-bold w-5 text-center flex-shrink-0 ${isOnStage ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isOnStage ? '▶' : idx + 1}</div>
                           <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                             {dancer.name?.charAt(0).toUpperCase()}
@@ -518,6 +522,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             )}
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
+                            <button
+                              onClick={() => setVipPickerFor(showVipPicker ? null : dancer.id)}
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center ${showVipPicker ? 'bg-yellow-500/25 border border-yellow-500/50' : 'bg-yellow-500/10 border border-yellow-500/20'} active:bg-yellow-500/30`}>
+                              <Crown className="w-5 h-5 text-yellow-400" />
+                            </button>
                             <button onClick={() => boothApi.sendCommand('moveInRotation', { dancerId: dancer.id, direction: 'up' })} disabled={idx === 0}
                               className="w-12 h-12 rounded-xl bg-[#1e293b] flex items-center justify-center text-gray-400 active:bg-[#2e2e5a] disabled:opacity-20">
                               <ChevronUp className="w-5 h-5" />
@@ -532,9 +541,59 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             </button>
                           </div>
                         </div>
+                        {showVipPicker && (
+                          <div className="px-3 pb-3 flex items-center gap-2">
+                            <span className="text-xs text-yellow-400 flex-shrink-0">VIP duration:</span>
+                            {[{ label: '15m', ms: 15 * 60 * 1000 }, { label: '30m', ms: 30 * 60 * 1000 }, { label: '1h', ms: 60 * 60 * 1000 }].map(({ label, ms }) => (
+                              <button key={label}
+                                onClick={() => { boothApi.sendCommand('sendToVip', { dancerId: dancer.id, durationMs: ms }); setVipPickerFor(null); }}
+                                className="flex-1 h-10 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-base font-bold active:bg-yellow-500/30">
+                                {label}
+                              </button>
+                            ))}
+                            <button onClick={() => setVipPickerFor(null)}
+                              className="flex-1 h-10 rounded-xl bg-[#1e293b] text-gray-400 text-base active:bg-[#2e2e5a]">
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
+
+                  {Object.keys(dancerVipMap).length > 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Crown className="w-3 h-3 text-yellow-400" />
+                        <span className="text-xs text-yellow-400 uppercase tracking-wider">In VIP ({Object.keys(dancerVipMap).length})</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
+                          const vipDancer = dancers?.find(d => String(d.id) === String(dancerId));
+                          if (!vipDancer) return null;
+                          const msLeft = vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0;
+                          const minsLeft = Math.floor(msLeft / 60000);
+                          const secsLeft = Math.floor((msLeft % 60000) / 1000);
+                          return (
+                            <div key={dancerId} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-yellow-500/30 bg-yellow-900/10">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: vipDancer.color || '#00d4ff' }}>
+                                {vipDancer.name?.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-base font-semibold text-white">{vipDancer.name}</div>
+                                <div className="text-xs text-yellow-400">Returns in {minsLeft}:{String(secsLeft).padStart(2, '0')}</div>
+                              </div>
+                              <button
+                                onClick={() => boothApi.sendCommand('releaseFromVip', { dancerId: vipDancer.id })}
+                                className="px-3 h-10 rounded-xl bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-semibold active:bg-green-500/25 flex-shrink-0">
+                                Release
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Add to rotation */}
@@ -850,6 +909,80 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           </div>
         )}
 
+        {/* ─────────── SOUNDS TAB ─────────── */}
+        {tab === 'sounds' && (
+          <div className="h-full overflow-y-auto px-3 py-3 space-y-4">
+
+            {/* Boost selector */}
+            <div className="flex-shrink-0">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs text-gray-500 uppercase tracking-wider flex-1">SFX Level — matches Voice Volume × boost</span>
+              </div>
+              <div className="flex gap-2">
+                {[{ label: '1×', val: 1.0 }, { label: '1.5×', val: 1.5 }, { label: '2×', val: 2.0 }].map(({ label, val }) => (
+                  <button key={val} onClick={() => setSoundBoost(val)}
+                    className={`flex-1 h-11 rounded-xl font-bold text-base ${soundBoost === val ? 'bg-[#00d4ff] text-black' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Classic FX */}
+            <div>
+              <div className="text-xs text-[#00d4ff] uppercase tracking-wider mb-2">Classic FX</div>
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { id: 'airhorn',   emoji: '📯', label: 'Air Horn'   },
+                  { id: 'scratch',   emoji: '💿', label: 'Scratch'    },
+                  { id: 'rewind',    emoji: '⏪', label: 'Rewind'     },
+                  { id: 'bassdrop',  emoji: '💥', label: 'Bass Drop'  },
+                  { id: 'foghorn',   emoji: '🚢', label: 'Foghorn'    },
+                  { id: 'vinylstop', emoji: '⏹', label: 'Vinyl Stop' },
+                  { id: 'siren',     emoji: '🚨', label: 'Siren'      },
+                  { id: 'woo',       emoji: '👑', label: 'Woo!'       },
+                  { id: 'crowdcheer',emoji: '📢', label: 'Crowd'      },
+                  { id: 'laser',     emoji: '⚡', label: 'Laser'      },
+                ].map(({ id, emoji, label }) => (
+                  <button key={id}
+                    onPointerDown={() => boothApi.sendCommand('playSound', { soundId: id, gain: currentVoiceGain * soundBoost })}
+                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#00d4ff]/20 active:bg-[#00d4ff]/15 active:border-[#00d4ff]/60 active:scale-95 transition-transform select-none">
+                    <span className="text-2xl leading-none">{emoji}</span>
+                    <span className="text-xs text-gray-400 leading-tight text-center">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Viral Bites */}
+            <div>
+              <div className="text-xs text-[#a855f7] uppercase tracking-wider mb-2">Viral Bites</div>
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { id: 'bruh',         emoji: '😐', label: 'Bruh'       },
+                  { id: 'vineboom',     emoji: '💣', label: 'Vine Boom'  },
+                  { id: 'johncena',     emoji: '🎺', label: 'John Cena'  },
+                  { id: 'ohyeah',       emoji: '😎', label: 'Oh Yeah'    },
+                  { id: 'sadtrombone',  emoji: '😢', label: 'Sad Bone'   },
+                  { id: 'getout',       emoji: '🚪', label: 'Get Out!'   },
+                  { id: 'boomshakalaka',emoji: '🏀', label: 'Boomshaka'  },
+                  { id: 'mlghorn',      emoji: '🎮', label: 'MLG Horn'   },
+                  { id: 'spongebob',    emoji: '🧽', label: 'SpongeBob'  },
+                  { id: 'itslit',       emoji: '🔥', label: "It's Lit"   },
+                ].map(({ id, emoji, label }) => (
+                  <button key={id}
+                    onPointerDown={() => boothApi.sendCommand('playSound', { soundId: id, gain: currentVoiceGain * soundBoost })}
+                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#a855f7]/20 active:bg-[#a855f7]/15 active:border-[#a855f7]/60 active:scale-95 transition-transform select-none">
+                    <span className="text-2xl leading-none">{emoji}</span>
+                    <span className="text-xs text-gray-400 leading-tight text-center">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        )}
+
         {/* ─────────── OPTIONS TAB ─────────── */}
         {tab === 'options' && (
           <div className="h-full overflow-y-auto p-3">
@@ -870,6 +1003,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           { id: 'rotation', icon: Users, label: 'Rotation' },
           { id: 'promos', icon: Radio, label: 'Promos' },
           { id: 'announce', icon: Megaphone, label: 'Announce' },
+          { id: 'sounds', icon: Drum, label: 'SFX' },
           { id: 'options', icon: SlidersHorizontal, label: 'Options' },
         ].map(({ id, icon: Icon, label }) => (
           <button

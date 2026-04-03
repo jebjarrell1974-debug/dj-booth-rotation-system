@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { createPageUrl } from '@/utils';
+import { playSoundboardEffect } from '@/utils/soundboard';
 import { getApiConfig, saveApiConfig, loadApiConfig } from '@/components/apiConfig';
 import { toast } from 'sonner';
 import { 
@@ -179,6 +180,9 @@ export default function DJBooth() {
   const [availablePromos, setAvailablePromos] = useState([]);
   const [promoQueue, setPromoQueue] = useState([]);
   const swapPromoRef = useRef(null);
+  const sendDancerToVipRef = useRef(null);
+  const releaseDancerFromVipRef = useRef(null);
+  const soundboardCtxRef = useRef(null);
   
   const DUCK_SETTLE_MS = 300;
   const SONG_OVERLAP_DELAY_MS = 2000;
@@ -669,6 +673,8 @@ export default function DJBooth() {
     const dancer = dancersRef.current.find(d => String(d.id) === id);
     toast(`${dancer?.name || 'Entertainer'} released from VIP`, { icon: '✅' });
   }, []);
+  sendDancerToVipRef.current = sendDancerToVip;
+  releaseDancerFromVipRef.current = releaseDancerFromVip;
 
   // Auto-expire VIP timers — check every 15 seconds
   useEffect(() => {
@@ -928,6 +934,36 @@ export default function DJBooth() {
                 console.warn('⚠️ Remote deactivate failed:', err.message);
               }
             })();
+          }
+          break;
+        case 'playSound':
+          if (cmd.payload.soundId) {
+            (async () => {
+              try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') {
+                  soundboardCtxRef.current = new AC();
+                }
+                if (soundboardCtxRef.current.state === 'suspended') {
+                  await soundboardCtxRef.current.resume();
+                }
+                const gain = Math.max(0, Math.min(5, cmd.payload.gain ?? 1.0));
+                playSoundboardEffect(cmd.payload.soundId, soundboardCtxRef.current, gain);
+                console.log('🎛️ Soundboard:', cmd.payload.soundId, 'gain:', gain.toFixed(2));
+              } catch (err) {
+                console.warn('🎛️ Soundboard play failed:', err.message);
+              }
+            })();
+          }
+          break;
+        case 'sendToVip':
+          if (cmd.payload.dancerId != null && cmd.payload.durationMs) {
+            sendDancerToVipRef.current?.(cmd.payload.dancerId, cmd.payload.durationMs);
+          }
+          break;
+        case 'releaseFromVip':
+          if (cmd.payload.dancerId != null) {
+            releaseDancerFromVipRef.current?.(cmd.payload.dancerId);
           }
           break;
         case 'updateSongAssignments':
