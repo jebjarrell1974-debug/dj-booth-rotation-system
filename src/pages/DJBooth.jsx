@@ -689,8 +689,11 @@ export default function DJBooth() {
       const newRot = [...rotationRef.current];
       for (const [id] of expired) {
         delete newMap[id];
-        newRot.push(id);
-        const dancer = dancersRef.current.find(d => d.id === id);
+        const idTyped = parseInt(id) || id;
+        if (!newRot.some(r => String(r) === id)) {
+          newRot.push(idTyped);
+        }
+        const dancer = dancersRef.current.find(d => String(d.id) === id);
         console.log('👑 VIP expired — returning to rotation:', dancer?.name);
         toast(`${dancer?.name || 'Entertainer'} returned from VIP`, { icon: '✅' });
       }
