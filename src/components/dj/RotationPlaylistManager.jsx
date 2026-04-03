@@ -1035,7 +1035,7 @@ export default function RotationPlaylistManager({
 
         <div className="w-1/2 flex flex-col">
           <div className="p-4 border-b border-[#1e293b]">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <div>
                 <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
                   Rotation
@@ -1044,7 +1044,8 @@ export default function RotationPlaylistManager({
                   {rotationDancers.length} entertainers &bull; drag to reorder
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+            </div>
+            <div className="flex items-center gap-2 flex-wrap mb-1">
                 <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
                   {[1, 2, 3].map(n => (
                     <button
@@ -1114,7 +1115,6 @@ export default function RotationPlaylistManager({
                     Queued...
                   </Button>
                 )}
-              </div>
             </div>
             
           </div>
