@@ -667,8 +667,7 @@ export default function DJBooth() {
     dancerVipMapRef.current = newMap;
     setDancerVipMap({ ...newMap });
     try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
-    const idTyped = parseInt(id) || id;
-    const newRot = [...rotationRef.current, idTyped];
+    const newRot = [...rotationRef.current, id];
     setRotation(newRot);
     rotationRef.current = newRot;
     if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
@@ -689,9 +688,8 @@ export default function DJBooth() {
       const newRot = [...rotationRef.current];
       for (const [id] of expired) {
         delete newMap[id];
-        const idTyped = parseInt(id) || id;
         if (!newRot.some(r => String(r) === id)) {
-          newRot.push(idTyped);
+          newRot.push(id);
         }
         const dancer = dancersRef.current.find(d => String(d.id) === id);
         console.log('👑 VIP expired — returning to rotation:', dancer?.name);
@@ -2570,18 +2568,10 @@ export default function DJBooth() {
           return;
         }
 
-        // Merge any dancers added to the live ref concurrently (VIP release / auto-expire)
-        // before we overwrite it — otherwise those dancers are permanently lost.
-        const _skipLiveRot = rotationRef.current;
-        const _skipNewIds = new Set(newRotation.map(id => String(id)));
-        const _skipConcurrent = _skipLiveRot.filter(id => !_skipNewIds.has(String(id)));
-        if (_skipConcurrent.length > 0) {
-          console.log('🔄 HandleSkip: merging', _skipConcurrent.length, 'concurrent VIP return(s) into rotation');
-          newRotation.push(..._skipConcurrent);
-        }
-        const finishedIdx = newRotation.length - 1 - _skipConcurrent.length;
-        setRotation([...newRotation]);
-        rotationRef.current = [...newRotation];
+        // Apply rotation immediately so any DJ reorders during the async transition land on top
+        setRotation(newRotation);
+        rotationRef.current = newRotation;
+        const finishedIdx = newRotation.length - 1;
         setCurrentDancerIndex(finishedIdx);
         currentDancerIndexRef.current = finishedIdx;
 
@@ -3183,18 +3173,10 @@ export default function DJBooth() {
           return;
         }
 
-        // Merge any dancers added to the live ref concurrently (VIP release / auto-expire)
-        // before we overwrite it — otherwise those dancers are permanently lost.
-        const _teLiveRot = rotationRef.current;
-        const _teNewIds = new Set(newRotation.map(id => String(id)));
-        const _teConcurrent = _teLiveRot.filter(id => !_teNewIds.has(String(id)));
-        if (_teConcurrent.length > 0) {
-          console.log('🔄 HandleTrackEnd: merging', _teConcurrent.length, 'concurrent VIP return(s) into rotation');
-          newRotation.push(..._teConcurrent);
-        }
-        const finishedIdx = newRotation.length - 1 - _teConcurrent.length;
-        setRotation([...newRotation]);
-        rotationRef.current = [...newRotation];
+        // Apply rotation immediately so any DJ reorders during the async transition land on top
+        setRotation(newRotation);
+        rotationRef.current = newRotation;
+        const finishedIdx = newRotation.length - 1;
         setCurrentDancerIndex(finishedIdx);
         currentDancerIndexRef.current = finishedIdx;
 
