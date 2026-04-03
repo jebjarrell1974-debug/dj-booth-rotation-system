@@ -2591,7 +2591,7 @@ export default function DJBooth() {
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          (() => { const _ev = existingTracks && existingTracks.filter(t => t?.url).length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer
@@ -3196,7 +3196,7 @@ export default function DJBooth() {
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _cd2 = songCooldownRef.current || {}; const _n2 = Date.now(); const _ev = existingTracks && existingTracks.length >= songsPerSetRef.current && existingTracks.every(t => !_cd2[t.name] || ((_n2 - _cd2[t.name]) >= COOLDOWN_MS)); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          (() => { const _ev = existingTracks && existingTracks.filter(t => t?.url).length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer
