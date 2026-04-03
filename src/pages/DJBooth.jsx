@@ -27,7 +27,8 @@ import {
   X,
   SlidersHorizontal,
   HelpCircle,
-  Ban
+  Ban,
+  Drum
 } from 'lucide-react';
 import AudioEngine from '@/components/dj/AudioEngine';
 import MusicLibrary from '@/components/dj/MusicLibrary';
@@ -412,6 +413,7 @@ export default function DJBooth() {
   const [selectedDancer, setSelectedDancer] = useState(null);
   const [editingPlaylist, setEditingPlaylist] = useState(null);
   const [activeTab, setActiveTab] = useState('rotation');
+  const [sfxBoost, setSfxBoost] = useState(1.0);
   const [voiceId, setVoiceId] = useState('');
   
   // Configuration (from config file)
@@ -3840,71 +3842,6 @@ export default function DJBooth() {
           </div>
           
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Tab Navigation */}
-            <div className="flex items-center gap-1 bg-[#0d0d1f] rounded-lg p-1 border border-[#151528]">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setActiveTab('rotation')}
-                className={`${activeTab === 'rotation' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-              >
-                <Layers className="w-4 h-4 mr-1" />
-                Rotation
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setActiveTab('dancers')}
-                className={`${activeTab === 'dancers' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-              >
-                <Users className="w-4 h-4 mr-1" />
-                Entertainers
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setActiveTab('options')}
-                className={`${activeTab === 'options' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-              >
-                <SlidersHorizontal className="w-4 h-4 mr-1" />
-                Options
-              </Button>
-              {!remoteMode && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setActiveTab('announcements')}
-                  className={`${activeTab === 'announcements' ? 'bg-[#00d4ff] text-black' : 'text-gray-400 hover:text-white'}`}
-                >
-                  <Mic className="w-4 h-4 mr-1" />
-                  Announcements
-                </Button>
-              )}
-              {isHomebase && (
-                <Link to="/VoiceStudio">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-gray-400 hover:text-white"
-                    title="Voice Studio"
-                  >
-                    <Mic className="w-4 h-4 mr-1" />
-                    Voice Studio
-                  </Button>
-                </Link>
-              )}
-              <Link to={createPageUrl('Help')}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-gray-400 hover:text-white"
-                  title="Help"
-                >
-                  <HelpCircle className="w-4 h-4 mr-1" />
-                  Help
-                </Button>
-              </Link>
-            </div>
             
             {!remoteMode && (
               <Button
@@ -4008,6 +3945,48 @@ export default function DJBooth() {
 
       {/* Main Content */}
       <div className="flex flex-1 min-h-0">
+
+        {/* Left Sidebar Navigation */}
+        <div className="w-16 flex flex-col bg-[#0a0a1a] border-r border-[#151528] py-2 gap-0.5 items-center flex-shrink-0">
+          {[
+            { id: 'rotation',      icon: Layers,           label: 'Rotation',  always: true  },
+            { id: 'dancers',       icon: Users,            label: 'Roster',    always: true  },
+            { id: 'options',       icon: SlidersHorizontal,label: 'Options',   always: true  },
+            { id: 'announcements', icon: Mic,              label: 'Announce',  kiosk: true   },
+            { id: 'sfx',           icon: Drum,             label: 'SFX',       kiosk: true   },
+          ].filter(t => t.always || (!remoteMode && t.kiosk)).map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`w-14 h-14 flex flex-col items-center justify-center rounded-xl gap-1 transition-colors ${
+                activeTab === id
+                  ? 'bg-[#00d4ff]/15 text-[#00d4ff]'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-[#151528]'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-[9px] font-medium leading-tight">{label}</span>
+            </button>
+          ))}
+
+          <div className="flex-1" />
+
+          {isHomebase && (
+            <Link to="/VoiceStudio">
+              <button className="w-14 h-14 flex flex-col items-center justify-center rounded-xl gap-1 text-gray-500 hover:text-gray-300 hover:bg-[#151528] transition-colors">
+                <Mic className="w-5 h-5" />
+                <span className="text-[9px] font-medium leading-tight">Studio</span>
+              </button>
+            </Link>
+          )}
+          <Link to={createPageUrl('Help')}>
+            <button className="w-14 h-14 flex flex-col items-center justify-center rounded-xl gap-1 text-gray-500 hover:text-gray-300 hover:bg-[#151528] transition-colors">
+              <HelpCircle className="w-5 h-5" />
+              <span className="text-[9px] font-medium leading-tight">Help</span>
+            </button>
+          </Link>
+        </div>
+
         {/* Main Area - Full Screen */}
         <div className="flex-1 relative min-h-0">
           {/* Content Area */}
@@ -4520,6 +4499,83 @@ export default function DJBooth() {
                     <HouseAnnouncementPanel onPlay={handleAnnouncementPlay} />
                   </div>
                   <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />
+                </div>
+              </div>
+            )}
+
+            {!remoteMode && activeTab === 'sfx' && (
+              <div className="h-full overflow-y-auto px-2 py-3 space-y-4">
+                {/* Boost selector */}
+                <div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">SFX Level — Voice Volume × boost</div>
+                  <div className="flex gap-2">
+                    {[{ label: '1×', val: 1.0 }, { label: '1.5×', val: 1.5 }, { label: '2×', val: 2.0 }].map(({ label, val }) => (
+                      <button key={val} onClick={() => setSfxBoost(val)}
+                        className={`flex-1 h-12 rounded-xl font-bold text-base transition-colors ${sfxBoost === val ? 'bg-[#00d4ff] text-black' : 'bg-[#1e293b] text-gray-400 hover:bg-[#2e2e5a]'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Classic FX */}
+                <div>
+                  <div className="text-xs text-[#00d4ff] uppercase tracking-wider mb-2">Classic FX</div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {[
+                      { id: 'airhorn',    emoji: '📯', label: 'Air Horn'   },
+                      { id: 'scratch',    emoji: '💿', label: 'Scratch'    },
+                      { id: 'rewind',     emoji: '⏪', label: 'Rewind'     },
+                      { id: 'bassdrop',   emoji: '💥', label: 'Bass Drop'  },
+                      { id: 'foghorn',    emoji: '🚢', label: 'Foghorn'    },
+                      { id: 'vinylstop',  emoji: '⏹', label: 'Vinyl Stop' },
+                      { id: 'siren',      emoji: '🚨', label: 'Siren'      },
+                      { id: 'woo',        emoji: '👑', label: 'Woo!'       },
+                      { id: 'crowdcheer', emoji: '📢', label: 'Crowd'      },
+                      { id: 'laser',      emoji: '⚡', label: 'Laser'      },
+                    ].map(({ id, emoji, label }) => (
+                      <button key={id}
+                        onPointerDown={() => {
+                          const AC = window.AudioContext || window.webkitAudioContext;
+                          if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') soundboardCtxRef.current = new AC();
+                          playSoundboardEffect(id, soundboardCtxRef.current, voiceGain * sfxBoost);
+                        }}
+                        className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#00d4ff]/20 active:bg-[#00d4ff]/15 active:border-[#00d4ff]/60 active:scale-95 transition-transform select-none">
+                        <span className="text-2xl leading-none">{emoji}</span>
+                        <span className="text-xs text-gray-400 leading-tight text-center">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Viral Bites */}
+                <div>
+                  <div className="text-xs text-[#a855f7] uppercase tracking-wider mb-2">Viral Bites</div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {[
+                      { id: 'bruh',          emoji: '😐', label: 'Bruh'      },
+                      { id: 'vineboom',      emoji: '💣', label: 'Vine Boom' },
+                      { id: 'johncena',      emoji: '🎺', label: 'John Cena' },
+                      { id: 'ohyeah',        emoji: '😎', label: 'Oh Yeah'   },
+                      { id: 'sadtrombone',   emoji: '😢', label: 'Sad Bone'  },
+                      { id: 'getout',        emoji: '🚪', label: 'Get Out!'  },
+                      { id: 'boomshakalaka', emoji: '🏀', label: 'Boomshaka' },
+                      { id: 'mlghorn',       emoji: '🎮', label: 'MLG Horn'  },
+                      { id: 'spongebob',     emoji: '🧽', label: 'SpongeBob' },
+                      { id: 'itslit',        emoji: '🔥', label: "It's Lit"  },
+                    ].map(({ id, emoji, label }) => (
+                      <button key={id}
+                        onPointerDown={() => {
+                          const AC = window.AudioContext || window.webkitAudioContext;
+                          if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') soundboardCtxRef.current = new AC();
+                          playSoundboardEffect(id, soundboardCtxRef.current, voiceGain * sfxBoost);
+                        }}
+                        className="flex flex-col items-center justify-center gap-1 h-20 rounded-2xl bg-[#0d0d1f] border border-[#a855f7]/20 active:bg-[#a855f7]/15 active:border-[#a855f7]/60 active:scale-95 transition-transform select-none">
+                        <span className="text-2xl leading-none">{emoji}</span>
+                        <span className="text-xs text-gray-400 leading-tight text-center">{label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
