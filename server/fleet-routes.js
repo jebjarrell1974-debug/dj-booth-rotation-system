@@ -404,7 +404,20 @@ router.get('/dashboard/overview', authenticateFleetAdmin, (req, res) => {
         currentDancer: live.currentDancer || null,
         currentSong: live.currentSong || null,
         lastUpdateTime: live.lastUpdateTime || null,
+        lastUpdateCommit: live.lastUpdateCommit || null,
         recentLogs: live.recentLogs || [],
+        diagLog: live.diagLog || [],
+        isRotationActive: live.isRotationActive || false,
+        isPlaying: live.isPlaying || false,
+        announcementsEnabled: live.announcementsEnabled !== false,
+        songsPerSet: live.songsPerSet || 3,
+        prePickHits: live.prePickHits || 0,
+        prePickMisses: live.prePickMisses || 0,
+        lastTransitionMs: live.lastTransitionMs ?? null,
+        lastWatchdogAt: live.lastWatchdogAt ?? null,
+        lastWatchdogSilentMs: live.lastWatchdogSilentMs ?? null,
+        lastWatchdogDancer: live.lastWatchdogDancer ?? null,
+        lastWatchdogTrack: live.lastWatchdogTrack ?? null,
       };
     })
   };

@@ -3,7 +3,7 @@ import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFileSync } from 'fs';
-import { spawn as spawnProcess } from 'child_process';
+import { spawn as spawnProcess, execSync as execSyncChild } from 'child_process';
 import { networkInterfaces, hostname } from 'os';
 import {
   getSetting, setSetting, hashPin, verifyPin,
@@ -175,13 +175,30 @@ app.get('/__health', (req, res) => {
   res.status(200).send('OK');
 });
 
-app.get('/api/update/version', (req, res) => {
-  let sha = 'unknown', timestamp = null, prebuilt = false;
+function getCommitSha() {
+  // Try git first (most accurate on homebase)
+  try {
+    const sha = execSyncChild('git rev-parse HEAD', { encoding: 'utf8', timeout: 3000 }).trim();
+    if (sha && sha.length >= 40) return sha;
+  } catch {}
+  // Fall back to stamp file written by update script
   try {
     const stampFile = `${process.env.HOME}/.djbooth-last-update`;
     if (existsSync(stampFile)) {
-      const [s, t] = readFileSync(stampFile, 'utf8').trim().split('|');
-      sha = s || 'unknown';
+      const s = readFileSync(stampFile, 'utf8').trim().split('|')[0];
+      if (s && s !== 'unknown' && s.length >= 7) return s;
+    }
+  } catch {}
+  return 'unknown';
+}
+
+app.get('/api/update/version', (req, res) => {
+  let timestamp = null, prebuilt = false;
+  const sha = getCommitSha();
+  try {
+    const stampFile = `${process.env.HOME}/.djbooth-last-update`;
+    if (existsSync(stampFile)) {
+      const [, t] = readFileSync(stampFile, 'utf8').trim().split('|');
       timestamp = parseInt(t, 10) || null;
     }
   } catch {}
@@ -195,11 +212,7 @@ app.get('/api/update/bundle', (req, res) => {
   if (!existsSync(distDir)) {
     return res.status(503).json({ error: 'No pre-built dist/ available — Pi must build from source via GitHub' });
   }
-  let sha = 'unknown';
-  try {
-    const stampFile = `${process.env.HOME}/.djbooth-last-update`;
-    if (existsSync(stampFile)) sha = readFileSync(stampFile, 'utf8').trim().split('|')[0] || 'unknown';
-  } catch {}
+  const sha = getCommitSha();
   const includes = ['server', 'dist', 'public', 'package.json', 'package-lock.json',
     'vite.config.js', 'tailwind.config.js', 'postcss.config.js', 'index.html']
     .filter(f => existsSync(join(appDir, f)));

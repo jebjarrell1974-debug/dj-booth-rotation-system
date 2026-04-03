@@ -130,9 +130,10 @@ function getLastSuccessfulUpdate() {
       const raw = readFileSync(stampFile, 'utf8').trim();
       const [sha, tsStr] = raw.split('|');
       const ts = parseInt(tsStr, 10);
+      const validSha = sha && sha !== 'unknown' && sha.length >= 7 ? sha.slice(0, 7) : null;
       return {
         lastUpdateTime: isNaN(ts) ? null : ts,
-        lastUpdateCommit: sha ? sha.slice(0, 7) : null,
+        lastUpdateCommit: validSha,
       };
     }
   } catch {}

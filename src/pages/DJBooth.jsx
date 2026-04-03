@@ -2570,10 +2570,18 @@ export default function DJBooth() {
           return;
         }
 
-        // Apply rotation immediately so any DJ reorders during the async transition land on top
-        setRotation(newRotation);
-        rotationRef.current = newRotation;
-        const finishedIdx = newRotation.length - 1;
+        // Merge any dancers added to the live ref concurrently (VIP release / auto-expire)
+        // before we overwrite it — otherwise those dancers are permanently lost.
+        const _skipLiveRot = rotationRef.current;
+        const _skipNewIds = new Set(newRotation.map(id => String(id)));
+        const _skipConcurrent = _skipLiveRot.filter(id => !_skipNewIds.has(String(id)));
+        if (_skipConcurrent.length > 0) {
+          console.log('🔄 HandleSkip: merging', _skipConcurrent.length, 'concurrent VIP return(s) into rotation');
+          newRotation.push(..._skipConcurrent);
+        }
+        const finishedIdx = newRotation.length - 1 - _skipConcurrent.length;
+        setRotation([...newRotation]);
+        rotationRef.current = [...newRotation];
         setCurrentDancerIndex(finishedIdx);
         currentDancerIndexRef.current = finishedIdx;
 
@@ -3175,10 +3183,18 @@ export default function DJBooth() {
           return;
         }
 
-        // Apply rotation immediately so any DJ reorders during the async transition land on top
-        setRotation(newRotation);
-        rotationRef.current = newRotation;
-        const finishedIdx = newRotation.length - 1;
+        // Merge any dancers added to the live ref concurrently (VIP release / auto-expire)
+        // before we overwrite it — otherwise those dancers are permanently lost.
+        const _teLiveRot = rotationRef.current;
+        const _teNewIds = new Set(newRotation.map(id => String(id)));
+        const _teConcurrent = _teLiveRot.filter(id => !_teNewIds.has(String(id)));
+        if (_teConcurrent.length > 0) {
+          console.log('🔄 HandleTrackEnd: merging', _teConcurrent.length, 'concurrent VIP return(s) into rotation');
+          newRotation.push(..._teConcurrent);
+        }
+        const finishedIdx = newRotation.length - 1 - _teConcurrent.length;
+        setRotation([...newRotation]);
+        rotationRef.current = [...newRotation];
         setCurrentDancerIndex(finishedIdx);
         currentDancerIndexRef.current = finishedIdx;
 

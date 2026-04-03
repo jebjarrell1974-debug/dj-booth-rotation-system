@@ -83,7 +83,6 @@ function HealthSparkline({ data, field, color = '#00d4ff', height = 40, unit = '
 
 function DeviceDetailModal({ device, onClose }) {
   const [heartbeats, setHeartbeats] = useState([]);
-  const [logs, setLogs] = useState([]);
   const [activeSubTab, setActiveSubTab] = useState('health');
   const [loading, setLoading] = useState(true);
   const [playHistory, setPlayHistory] = useState([]);
@@ -91,15 +90,15 @@ function DeviceDetailModal({ device, onClose }) {
   const [selectedDate, setSelectedDate] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  const diagLog = device.diagLog || [];
+  const recentLogs = device.recentLogs || [];
+  const totalLogCount = diagLog.length + recentLogs.length;
+
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      fleetAdmin.getHeartbeats(device.device_id, 50).catch(() => []),
-      fleetAdmin.getDeviceLogs(device.device_id, 100).catch(() => []),
-    ]).then(([hb, lg]) => {
-      setHeartbeats(hb);
-      setLogs(lg);
-    }).finally(() => setLoading(false));
+    fleetAdmin.getHeartbeats(device.device_id, 50).catch(() => [])
+      .then(hb => setHeartbeats(hb))
+      .finally(() => setLoading(false));
   }, [device.device_id]);
 
   useEffect(() => {
@@ -116,8 +115,6 @@ function DeviceDetailModal({ device, onClose }) {
 
   const isOnline = device.status === 'online';
   const latestHb = heartbeats[0];
-
-  const levelColors = { error: 'text-red-400 bg-red-500/10', warn: 'text-yellow-400 bg-yellow-500/10', info: 'text-blue-400 bg-blue-500/10' };
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -186,7 +183,7 @@ function DeviceDetailModal({ device, onClose }) {
           {['health', 'history', 'logs'].map(tab => (
             <button key={tab} onClick={() => setActiveSubTab(tab)}
               className={`flex-1 px-3 py-1.5 rounded text-sm ${activeSubTab === tab ? 'bg-[#00d4ff]/20 text-[#00d4ff]' : 'text-gray-400 hover:text-white'}`}>
-              {tab === 'health' ? 'Health' : tab === 'history' ? 'Play History' : `Logs (${logs.length})`}
+              {tab === 'health' ? 'Health' : tab === 'history' ? 'Play History' : `Events (${totalLogCount})`}
             </button>
           ))}
         </div>
@@ -259,20 +256,71 @@ function DeviceDetailModal({ device, onClose }) {
               )}
             </div>
           ) : (
-            <div className="space-y-1">
-              {logs.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No errors logged</p>
-              ) : logs.map(log => (
-                <div key={log.id} className="text-xs font-mono bg-[#08081a] rounded px-3 py-2 border border-[#1e293b]/50">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500">{formatDate(log.timestamp)}</span>
-                    <span className={`uppercase font-bold px-1.5 py-0.5 rounded text-[10px] ${levelColors[log.level] || 'text-gray-400 bg-gray-500/10'}`}>{log.level}</span>
-                    {log.component && <span className="text-purple-400">[{log.component}]</span>}
-                  </div>
-                  <p className="text-gray-300 mt-1 whitespace-pre-wrap break-all">{log.message}</p>
-                  {log.stack && <p className="text-gray-600 mt-1 whitespace-pre-wrap text-[10px]">{log.stack}</p>}
-                </div>
-              ))}
+            <div className="space-y-3">
+              {totalLogCount === 0 ? (
+                <p className="text-gray-500 text-center py-8">No events logged this session</p>
+              ) : (
+                <>
+                  {diagLog.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-cyan-500" /> DJ Events ({diagLog.length})
+                      </p>
+                      <div className="space-y-0.5 bg-black/30 rounded p-2">
+                        {diagLog.map((entry, i) => {
+                          const time = new Date(entry.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                          const isWatchdog = entry.type === 'watchdog_fired';
+                          const isMiss = entry.type === 'prepick_miss';
+                          const isFallback = entry.type.includes('fallback');
+                          const isComplete = entry.type === 'transition_complete';
+                          const isVoiceError = ['voice_blob_invalid','voice_timeout','voice_generate_fail','voice_play_fail','voice_play_dead'].includes(entry.type);
+                          const isVoiceWarn = ['voice_blob_retry','voice_play_recovered','voice_skipped'].includes(entry.type);
+                          const color = isWatchdog || isVoiceError ? 'text-red-400' : isMiss || isVoiceWarn ? 'text-yellow-400' : isFallback ? 'text-orange-400' : isComplete ? 'text-cyan-500/80' : 'text-gray-400';
+                          const vt = entry.voiceType || '';
+                          const vd = entry.dancer || '';
+                          const ve = entry.error ? `: ${entry.error}` : '';
+                          const labels = {
+                            transition_start: `▶ ${entry.from || '?'} → ${entry.to || '?'} [${entry.trigger || ''}]`,
+                            transition_complete: `✓ Done ${((entry.durationMs||0)/1000).toFixed(2)}s — ${entry.dancer || ''}`,
+                            prepick_hit: `✓ Cache hit — ${entry.dancer || ''}`,
+                            prepick_miss: `⚠ Cache miss — ${entry.dancer || ''} (API call)`,
+                            track_play: `♪ "${entry.track || ''}" / ${entry.dancer || ''} gap:${((entry.gapMs||0)/1000).toFixed(2)}s`,
+                            track_play_fallback: `⚠ Fallback — ${entry.dancer || ''}: ${entry.reason || ''}`,
+                            watchdog_fired: `🚨 Dead air ${((entry.silentMs||0)/1000).toFixed(1)}s — ${entry.dancer || ''}: "${entry.track || ''}"`,
+                            voice_blob_invalid: `🔇 Corrupt blob — ${vd} ${vt} (${entry.blobSize||0}b)`,
+                            voice_blob_retry: `⚠ Blob retry ${entry.attempt||'?'}/3 — ${vd} ${vt}`,
+                            voice_timeout: `⏱ ElevenLabs timeout — ${vd} ${vt}`,
+                            voice_generate_fail: `✕ Voice gen failed — ${vd} ${vt}${ve}`,
+                            voice_play_fail: `✕ Playback failed — ${vd} ${vt}${ve}`,
+                            voice_play_recovered: `↺ Recovered — ${vd} ${vt}`,
+                            voice_play_dead: `🚨 Voice dead — ${vd} ${vt}${ve}`,
+                            voice_skipped: `— Voice skipped — ${vd} ${vt}${ve}`,
+                            voice_fallback_generic: `↓ Generic fallback — ${vd} ${vt}`,
+                          };
+                          const label = labels[entry.type] || entry.type;
+                          return (
+                            <div key={i} className={`text-[10px] font-mono ${color} leading-relaxed`}>
+                              <span className="text-gray-600 mr-1.5">{time}</span>{label}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {recentLogs.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-yellow-500" /> Service Logs ({recentLogs.length})
+                      </p>
+                      <div className="bg-black/40 rounded p-2 space-y-0.5 max-h-48 overflow-y-auto">
+                        {recentLogs.map((line, i) => (
+                          <div key={i} className={`text-[10px] font-mono ${line.toLowerCase().includes('error') ? 'text-red-400' : 'text-yellow-400/70'}`}>{line}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
