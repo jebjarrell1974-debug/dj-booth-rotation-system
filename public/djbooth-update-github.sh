@@ -204,7 +204,7 @@ npm install --no-audit --no-fund 2>&1 | tail -3
 if [ "$USE_HOMEBASE_BUNDLE" = "true" ] && [ -d "$APP_DIR/dist" ]; then
   echo "  Frontend pre-built by homebase — skipping vite build (saves ~3-5 min)"
 else
-  npx vite build 2>&1 | tail -3
+  ./node_modules/.bin/vite build 2>&1 | tail -3
 fi
 npm prune --production 2>&1 | tail -1
 
