@@ -90,7 +90,10 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
     }
   };
 
+  const LENGTH_WORD_LIMITS = { '15s': 40, '30s': 75, '45s': 110, '60s': 140 };
+
   const buildPromoPrompt = (form) => {
+    const maxWords = LENGTH_WORD_LIMITS[form.length] || 75;
     const parts = [
       `You are a professional strip club DJ creating a promo voiceover script.`,
       `Write a ${form.length || '30s'} promo with a ${(form.vibe || 'Hype').toLowerCase()} vibe.`,
@@ -104,9 +107,30 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       `Write the script as flowing spoken text — exactly what would be read over the mic.`,
       `No labels, brackets, stage directions, or explanations. Just the spoken words.`,
       `Use commas for breath pauses, ellipsis for drawn-out pauses.`,
-      `Keep it punchy, engaging, and club-appropriate.`
+      `Keep it punchy, engaging, and club-appropriate.`,
+      `Maximum ${maxWords} words. End with a complete sentence followed by a period.`
     );
     return parts.join('\n');
+  };
+
+  const splitScriptIntoChunks = (script, targetWords = 40) => {
+    const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];
+    const chunks = [];
+    let current = [];
+    let wordCount = 0;
+    for (const sentence of sentences) {
+      const words = sentence.trim().split(/\s+/).length;
+      if (wordCount + words > targetWords && current.length > 0) {
+        chunks.push(current.join(' ').trim());
+        current = [sentence.trim()];
+        wordCount = words;
+      } else {
+        current.push(sentence.trim());
+        wordCount += words;
+      }
+    }
+    if (current.length > 0) chunks.push(current.join(' ').trim());
+    return chunks.filter(c => c.length > 0);
   };
 
   const generatePromoScript = async (form) => {
@@ -228,12 +252,30 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       toast.loading('Generating script...', { id: toastId });
       const script = await generatePromoScript(promoForm);
 
-      toast.loading('Recording voice...', { id: toastId });
-      const audioBlob = await generatePromoAudio(script);
+      const scriptChunks = splitScriptIntoChunks(script);
+      const chunkBase64s = [];
+      for (let i = 0; i < scriptChunks.length; i++) {
+        toast.loading(`Recording voice (part ${i + 1} of ${scriptChunks.length})...`, { id: toastId });
+        const audioBlob = await generatePromoAudio(scriptChunks[i]);
+        chunkBase64s.push(await blobToBase64(audioBlob));
+      }
+
+      let audio_base64;
+      if (chunkBase64s.length === 1) {
+        audio_base64 = chunkBase64s[0];
+      } else {
+        toast.loading('Stitching audio parts...', { id: toastId });
+        const stitchRes = await fetch('/api/voiceovers/stitch-chunks', {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chunks: chunkBase64s }),
+        });
+        if (!stitchRes.ok) throw new Error('Failed to stitch audio parts');
+        ({ audio_base64 } = await stitchRes.json());
+      }
 
       toast.loading('Saving promo...', { id: toastId });
       const cacheKey = `promo-auto-${Date.now()}-${promoForm.event_name.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      const audio_base64 = await blobToBase64(audioBlob);
       const saveRes = await fetch('/api/voiceovers', {
         method: 'POST',
         headers: {

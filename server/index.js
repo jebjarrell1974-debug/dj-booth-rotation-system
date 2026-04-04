@@ -2,7 +2,7 @@ import express from 'express';
 import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFileSync } from 'fs';
+import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { spawn as spawnProcess, execSync as execSyncChild } from 'child_process';
 import { networkInterfaces, hostname } from 'os';
 import {
@@ -32,7 +32,7 @@ import fleetRoutes from './fleet-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music } from './r2sync.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
-import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos } from './promo-mixer.js';
+import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos, runFfmpeg, getAudioDuration } from './promo-mixer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -731,6 +731,42 @@ app.post('/api/voiceovers/mix-promo/:cacheKey', authenticate, requireDJ, (req, r
   const voiceover = getVoiceover(cacheKey);
   processPromo(cacheKey, voiceoverPath, voiceover?.dancer_name || cacheKey).catch(() => {});
   res.json({ ok: true, status: 'processing' });
+});
+
+app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, res) => {
+  const { chunks } = req.body;
+  if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
+    return res.status(400).json({ error: 'chunks array required' });
+  }
+  const tmpDir = `/tmp/promo-stitch-${Date.now()}`;
+  mkdirSync(tmpDir, { recursive: true });
+  try {
+    const trimmedFiles = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkPath = join(tmpDir, `chunk-${i}.mp3`);
+      const trimmedPath = join(tmpDir, `trimmed-${i}.mp3`);
+      writeFileSync(chunkPath, Buffer.from(chunks[i], 'base64'));
+      const dur = await getAudioDuration(chunkPath);
+      const trimEnd = Math.max(0.5, dur - 0.2);
+      await runFfmpeg(['-y', '-i', chunkPath, '-t', String(trimEnd), '-b:a', '192k', '-ar', '44100', trimmedPath]);
+      trimmedFiles.push(trimmedPath);
+    }
+    if (trimmedFiles.length === 1) {
+      const audio_base64 = readFileSync(trimmedFiles[0]).toString('base64');
+      return res.json({ audio_base64 });
+    }
+    const concatList = join(tmpDir, 'concat.txt');
+    writeFileSync(concatList, trimmedFiles.map(f => `file '${f}'`).join('\n'));
+    const outputPath = join(tmpDir, 'output.mp3');
+    await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', outputPath]);
+    const audio_base64 = readFileSync(outputPath).toString('base64');
+    res.json({ audio_base64 });
+  } catch (err) {
+    console.error('Stitch chunks failed:', err.message);
+    res.status(500).json({ error: 'Failed to stitch audio chunks' });
+  } finally {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
 });
 
 app.post('/api/voiceovers/convert-all-promos', authenticate, requireDJ, (req, res) => {

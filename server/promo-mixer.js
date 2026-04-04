@@ -15,7 +15,7 @@ export function getAllMixStatuses() {
   return Object.fromEntries(mixStatus);
 }
 
-function getAudioDuration(filePath) {
+export function getAudioDuration(filePath) {
   return new Promise((resolve, reject) => {
     const proc = spawn('ffprobe', [
       '-v', 'error',
@@ -34,7 +34,7 @@ function getAudioDuration(filePath) {
   });
 }
 
-function runFfmpeg(args) {
+export function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
