@@ -87,6 +87,26 @@ const validateAudioBlob = async (blob) => {
   }
 };
 
+const splitScriptIntoChunks = (script, targetWords = 40) => {
+  const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];
+  const chunks = [];
+  let current = [];
+  let wordCount = 0;
+  for (const sentence of sentences) {
+    const words = sentence.trim().split(/\s+/).length;
+    if (wordCount + words > targetWords && current.length > 0) {
+      chunks.push(current.join(' ').trim());
+      current = [sentence.trim()];
+      wordCount = words;
+    } else {
+      current.push(sentence.trim());
+      wordCount += words;
+    }
+  }
+  if (current.length > 0) chunks.push(current.join(' ').trim());
+  return chunks.filter(c => c.length > 0);
+};
+
 const blobToBase64 = (blob) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -671,17 +691,25 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       setGeneratingType(type);
       const script = await generateScript(type, dancerName, nextDancerName, roundNumber, varNum);
 
-      let audioBlob = await generateAudio(script);
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        if (await validateAudioBlob(audioBlob)) break;
-        if (attempt === 3) {
-          onVoiceDiag?.('voice_blob_invalid', { dancer: dancerName, voiceType: type, blobSize: audioBlob?.size || 0 });
-          throw new Error('Generated audio failed decode validation after 3 attempts');
-        }
-        console.warn(`⚠️ Audio decode validation failed (attempt ${attempt}/3) for ${key}, regenerating...`);
-        onVoiceDiag?.('voice_blob_retry', { dancer: dancerName, voiceType: type, attempt, blobSize: audioBlob?.size || 0 });
-        audioBlob = await generateAudio(script);
+      // Chunk-and-stitch via server FFmpeg — prevents ElevenLabs corrupt blob artifacts (backwards/garbled audio)
+      const scriptChunks = splitScriptIntoChunks(script);
+      console.log(`🎙️ Generating ${scriptChunks.length} chunk(s) for ${key}...`);
+      const chunkBase64s = [];
+      for (let i = 0; i < scriptChunks.length; i++) {
+        const chunkBlob = await generateAudio(scriptChunks[i]);
+        chunkBase64s.push(await blobToBase64(chunkBlob));
       }
+      const stitchRes = await fetch('/api/voiceovers/stitch-chunks', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chunks: chunkBase64s }),
+      });
+      if (!stitchRes.ok) throw new Error(`Stitch failed: ${stitchRes.status}`);
+      const { audio_base64 } = await stitchRes.json();
+      const rawBytes = atob(audio_base64);
+      const byteArr = new Uint8Array(rawBytes.length);
+      for (let i = 0; i < rawBytes.length; i++) byteArr[i] = rawBytes.charCodeAt(i);
+      const audioBlob = new Blob([byteArr], { type: 'audio/mpeg' });
 
       await cacheToIndexedDB(key, audioBlob);
       await saveToServer(key, audioBlob, script, type, dancerName, LOCKED_LEVEL);
