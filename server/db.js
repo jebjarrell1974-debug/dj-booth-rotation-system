@@ -815,16 +815,21 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     }
     console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh, ${cooldownTracks.length} on-cooldown`);
 
-    // No playlist tracks exist in the DB at all — fall back to random library
+    // No playlist tracks exist in the DB at all — only legitimate reason to use random library
     if (freshTracks.length === 0 && cooldownTracks.length === 0) {
       console.warn(`⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library`);
       return getRandomTracks(count, [...excludeSet], genres);
     }
 
-    // All playlist songs on cooldown — fall back to genre folders instead of replaying recently-heard songs
+    // Sort cooldown tracks oldest-played-first so least-recently-heard goes first
+    cooldownTracks.sort((a, b) => (a.lastPlayed || '').localeCompare(b.lastPlayed || ''));
+
+    // All fresh playlist songs exhausted — use cooldown tracks (oldest played first)
+    // NEVER pull random library songs when a dancer has a playlist
     if (freshTracks.length === 0) {
-      console.warn(`⚠️ selectTracksForSet: all ${cooldownTracks.length} playlist song(s) on 4-hour cooldown — falling back to genre folders`);
-      return getRandomTracks(count, [...excludeSet], genres);
+      const result = cooldownTracks.slice(0, count);
+      console.warn(`⚠️ selectTracksForSet: all playlist songs on cooldown — using ${result.length} least-recently-played: [${result.map(t => t.name).join(' | ')}]`);
+      return result;
     }
 
     // Shuffle fresh tracks for variety
@@ -833,12 +838,14 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
       [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
     }
 
-    // Fewer fresh playlist songs than needed — fill remaining slots from genre folders
+    // Fewer fresh playlist songs than needed — fill remaining from cooldown tracks (oldest first)
+    // NEVER pull random library songs when a dancer has a playlist
     if (freshTracks.length < count) {
-      const fillerExclude = [...excludeSet, ...freshTracks.map(t => t.name)];
-      const filler = getRandomTracks(count - freshTracks.length, fillerExclude, genres);
-      const result = [...freshTracks, ...filler];
-      console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh playlist + ${filler.length} genre filler → [${result.map(t => t.name).join(' | ')}]`);
+      const needed = count - freshTracks.length;
+      const freshNames = new Set(freshTracks.map(t => t.name));
+      const cooldownFiller = cooldownTracks.filter(t => !freshNames.has(t.name)).slice(0, needed);
+      const result = [...freshTracks, ...cooldownFiller];
+      console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh + ${cooldownFiller.length} cooldown fill → [${result.map(t => t.name).join(' | ')}]`);
       return result;
     }
 
