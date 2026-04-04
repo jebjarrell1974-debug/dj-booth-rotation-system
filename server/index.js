@@ -22,14 +22,16 @@ import {
   getLufsStats, bulkUpdateTrackAnalysis, getTracksNeedingAnyAnalysis,
   createStaffAccount, listStaffAccounts, deleteStaffAccount, getStaffAccountByPin, isStaffPinTaken,
   createAuditEntry, getAuditLog, getAuditLogCsv, cleanOldAuditLog,
-  listAllPromoTracks, setPromoTrackBlockedById, deletePromoTrackById, listHouseAnnouncements
+  listAllPromoTracks, setPromoTrackBlockedById, deletePromoTrackById, listHouseAnnouncements,
+  listSoundboardSounds, saveSoundboardSound, getSoundboardSoundFilePath, renameSoundboardSound, deleteSoundboardSound,
+  upsertSoundboardSoundFromSync, deleteSoundboardSoundByFileName, getSoundboardDirPath
 } from './db.js';
 import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
 import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
-import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music } from './r2sync.js';
+import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music, uploadSoundboardFile, deleteSoundboardFileFromR2, syncSoundboardToR2, syncSoundboardFromR2 } from './r2sync.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos, runFfmpeg, getAudioDuration } from './promo-mixer.js';
@@ -791,6 +793,79 @@ app.delete('/api/voiceovers/:cacheKey', authenticate, requireDJ, (req, res) => {
 
 app.get('/api/house-announcements', authenticate, (req, res) => {
   res.json(listHouseAnnouncements());
+});
+
+app.get('/api/soundboard', authenticate, requireDJ, (req, res) => {
+  res.json(listSoundboardSounds());
+});
+
+app.get('/api/soundboard/audio/:id', authenticate, (req, res) => {
+  const filePath = getSoundboardSoundFilePath(parseInt(req.params.id));
+  if (!filePath) return res.status(404).json({ error: 'Sound not found' });
+  res.set('Content-Type', 'audio/mpeg');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(filePath);
+});
+
+app.post('/api/soundboard/upload', authenticate, requireDJ, async (req, res) => {
+  const { name, audio_base64, ext } = req.body;
+  if (!name || !audio_base64) return res.status(400).json({ error: 'name and audio_base64 required' });
+  try {
+    const audioBuffer = Buffer.from(audio_base64, 'base64');
+    const result = saveSoundboardSound(name.trim(), audioBuffer, ext || 'mp3');
+    res.json({ ok: true, ...result });
+    if (isR2Configured()) {
+      const sbDir = getSoundboardDirPath();
+      const allSounds = listSoundboardSounds();
+      syncSoundboardToR2(allSounds, sbDir).catch(() => {});
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/soundboard/fetch-url', authenticate, requireDJ, async (req, res) => {
+  const { name, url } = req.body;
+  if (!name || !url) return res.status(400).json({ error: 'name and url required' });
+  try {
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!response.ok) return res.status(400).json({ error: `Failed to fetch URL: ${response.status}` });
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = Buffer.from(arrayBuffer);
+    const ext = url.match(/\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i)?.[1] || 'mp3';
+    const result = saveSoundboardSound(name.trim(), audioBuffer, ext.toLowerCase());
+    res.json({ ok: true, ...result });
+    if (isR2Configured()) {
+      const sbDir = getSoundboardDirPath();
+      const allSounds = listSoundboardSounds();
+      syncSoundboardToR2(allSounds, sbDir).catch(() => {});
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/soundboard/:id', authenticate, requireDJ, async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  renameSoundboardSound(parseInt(req.params.id), name.trim());
+  res.json({ ok: true });
+  if (isR2Configured()) {
+    const sbDir = getSoundboardDirPath();
+    const allSounds = listSoundboardSounds();
+    syncSoundboardToR2(allSounds, sbDir).catch(() => {});
+  }
+});
+
+app.delete('/api/soundboard/:id', authenticate, requireDJ, async (req, res) => {
+  const fileName = deleteSoundboardSound(parseInt(req.params.id));
+  res.json({ ok: true });
+  if (isR2Configured() && fileName) {
+    const sbDir = getSoundboardDirPath();
+    const allSounds = listSoundboardSounds();
+    deleteSoundboardFileFromR2(fileName).catch(() => {});
+    syncSoundboardToR2(allSounds, sbDir).catch(() => {});
+  }
 });
 
 app.get('/api/promos', authenticate, (req, res) => {
@@ -2140,6 +2215,32 @@ async function initR2Sync() {
     updateBootStep('musicUpload', 'error', err.message);
     console.error('☁️ R2 music sync error:', err.message);
     trackError('r2_music_sync_failed', err.message, { component: 'r2sync' });
+  }
+
+  try {
+    const sbDir = getSoundboardDirPath();
+    if (process.env.IS_HOMEBASE === 'true') {
+      const allSounds = listSoundboardSounds();
+      if (allSounds.length > 0) {
+        const sbResult = await syncSoundboardToR2(allSounds, sbDir);
+        console.log(`☁️ Soundboard upload: ${sbResult.uploaded} uploaded, ${sbResult.skipped} already in cloud`);
+      }
+    } else {
+      const sbResult = await syncSoundboardFromR2(sbDir);
+      console.log(`☁️ Soundboard sync: ${sbResult.downloaded} new, ${sbResult.skipped} already local, ${sbResult.purged} purged`);
+      for (const sound of sbResult.sounds) {
+        upsertSoundboardSoundFromSync(sound.name, sound.file_name);
+      }
+      const localFileNames = new Set(sbResult.sounds.map(s => s.file_name));
+      const localSounds = listSoundboardSounds();
+      for (const s of localSounds) {
+        if (!localFileNames.has(s.file_name)) {
+          deleteSoundboardSoundByFileName(s.file_name);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('☁️ R2 soundboard sync error:', err.message);
   } finally {
     bootStatus.ready = true;
   }

@@ -43,6 +43,7 @@ import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
 import RemoteView from '@/components/dj/RemoteView';
 import DJOptions from '@/components/dj/DJOptions';
+import CustomSoundboard from '@/components/dj/CustomSoundboard';
 
 const DEFAULT_SONGS_PER_SET = 2;
 
@@ -4595,6 +4596,9 @@ export default function DJBooth() {
                     ))}
                   </div>
                 </div>
+
+                {/* Custom Sounds */}
+                <CustomSoundboard volume={volume} sfxBoost={sfxBoost} />
               </div>
             )}
           </div>

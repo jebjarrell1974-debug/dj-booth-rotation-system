@@ -512,6 +512,168 @@ export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
   return { uploaded, skipped, errors, purged };
 }
 
+// ─── Soundboard R2 Sync ───────────────────────────────────────────────────────
+
+const SOUNDBOARD_MANIFEST_KEY = 'soundboard/manifest.json';
+
+async function getSoundboardManifest() {
+  const client = getClient();
+  if (!client) return [];
+  try {
+    const res = await client.send(new GetObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: SOUNDBOARD_MANIFEST_KEY,
+    }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch (err) {
+    if (err.name === 'NoSuchKey') return [];
+    console.error('☁️ R2: Failed to read soundboard manifest:', err.message);
+    return [];
+  }
+}
+
+async function putSoundboardManifest(sounds) {
+  const client = getClient();
+  if (!client) return;
+  try {
+    await client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: SOUNDBOARD_MANIFEST_KEY,
+      Body: JSON.stringify(sounds),
+      ContentType: 'application/json',
+    }));
+  } catch (err) {
+    console.error('☁️ R2: Failed to write soundboard manifest:', err.message);
+  }
+}
+
+export async function uploadSoundboardFile(filePath, fileName, name) {
+  const client = getClient();
+  if (!client) return false;
+  try {
+    const fileBuffer = readFileSync(filePath);
+    const ext = extname(fileName).toLowerCase();
+    const contentType = {
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+      '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac',
+    }[ext] || 'audio/mpeg';
+    await client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `soundboard/${fileName}`,
+      Body: fileBuffer,
+      ContentType: contentType,
+      Metadata: { soundName: name },
+    }));
+    console.log(`☁️ R2: Uploaded soundboard/${fileName}`);
+    return true;
+  } catch (err) {
+    console.error(`☁️ R2: Failed to upload soundboard/${fileName}: ${err.message}`);
+    return false;
+  }
+}
+
+export async function deleteSoundboardFileFromR2(fileName) {
+  const client = getClient();
+  if (!client) return;
+  try {
+    await client.send(new DeleteObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `soundboard/${fileName}`,
+    }));
+    console.log(`☁️ R2: Deleted soundboard/${fileName}`);
+  } catch (err) {
+    console.error(`☁️ R2: Failed to delete soundboard/${fileName}: ${err.message}`);
+  }
+}
+
+export async function syncSoundboardToR2(sounds, soundboardDir) {
+  const client = getClient();
+  if (!client) return { uploaded: 0, skipped: 0, errors: 0 };
+  let uploaded = 0, skipped = 0, errors = 0;
+
+  for (const sound of sounds) {
+    const filePath = join(soundboardDir, sound.file_name);
+    if (!existsSync(filePath)) { errors++; continue; }
+    try {
+      const key = `soundboard/${sound.file_name}`;
+      let needsUpload = true;
+      try {
+        const head = await client.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+        const localSize = statSync(filePath).size;
+        if (head.ContentLength === localSize) needsUpload = false;
+      } catch {}
+      if (!needsUpload) { skipped++; continue; }
+      await uploadSoundboardFile(filePath, sound.file_name, sound.name);
+      uploaded++;
+    } catch (err) {
+      console.error(`☁️ R2: soundboard upload error ${sound.file_name}: ${err.message}`);
+      errors++;
+    }
+  }
+
+  await putSoundboardManifest(sounds.map(s => ({ name: s.name, file_name: s.file_name })));
+  console.log(`☁️ R2 soundboard upload: ${uploaded} uploaded, ${skipped} already remote, ${errors} errors`);
+  return { uploaded, skipped, errors };
+}
+
+export async function syncSoundboardFromR2(soundboardDir) {
+  const client = getClient();
+  if (!client) return { downloaded: 0, skipped: 0, errors: 0, purged: 0, sounds: [] };
+
+  if (!existsSync(soundboardDir)) mkdirSync(soundboardDir, { recursive: true });
+
+  const manifest = await getSoundboardManifest();
+  let downloaded = 0, skipped = 0, errors = 0, purged = 0;
+
+  const manifestFileNames = new Set(manifest.map(s => s.file_name));
+
+  for (const sound of manifest) {
+    const localPath = join(soundboardDir, sound.file_name);
+    if (existsSync(localPath)) {
+      try {
+        const key = `soundboard/${sound.file_name}`;
+        const head = await client.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+        const localSize = statSync(localPath).size;
+        if (head.ContentLength === localSize) { skipped++; continue; }
+      } catch {}
+    }
+    try {
+      const res = await client.send(new GetObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: `soundboard/${sound.file_name}`,
+      }));
+      const ws = createWriteStream(localPath);
+      await pipeline(res.Body, ws);
+      downloaded++;
+      console.log(`☁️ R2: Downloaded soundboard/${sound.file_name}`);
+    } catch (err) {
+      if (err.name !== 'NoSuchKey') {
+        console.error(`☁️ R2: Failed to download soundboard/${sound.file_name}: ${err.message}`);
+      }
+      errors++;
+    }
+  }
+
+  // Purge local files no longer in manifest
+  if (manifest.length > 0 && existsSync(soundboardDir)) {
+    const localFiles = readdirSync(soundboardDir).filter(f => /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(f));
+    for (const f of localFiles) {
+      if (!manifestFileNames.has(f)) {
+        try {
+          unlinkSync(join(soundboardDir, f));
+          purged++;
+          console.log(`🗑️ Soundboard purge: removed ${f} (not in homebase manifest)`);
+        } catch {}
+      }
+    }
+  }
+
+  console.log(`☁️ R2 soundboard sync: ${downloaded} downloaded, ${skipped} already local, ${errors} errors, ${purged} purged`);
+  return { downloaded, skipped, errors, purged, sounds: manifest };
+}
+
 export async function getR2Stats() {
   const client = getClient();
   if (!client) return { configured: false };

@@ -235,6 +235,34 @@ export function getVoiceoverDirPath() {
   return VOICEOVER_DIR;
 }
 
+function getSoundboardDir() {
+  if (process.env.SOUNDBOARD_PATH) {
+    const dir = process.env.SOUNDBOARD_PATH;
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  if (process.env.REPL_ID && process.env.REPLIT_DEPLOYMENT) {
+    const dir = '/home/runner/data/soundboard';
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  if (process.env.DB_PATH) {
+    const dir = join(dirname(process.env.DB_PATH), 'soundboard');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  const dir = join(__dirname, '..', 'soundboard');
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+const SOUNDBOARD_DIR = getSoundboardDir();
+console.log(`🎛️ Soundboard directory: ${SOUNDBOARD_DIR}`);
+
+export function getSoundboardDirPath() {
+  return SOUNDBOARD_DIR;
+}
+
 export function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row ? row.value : null;
@@ -1205,6 +1233,67 @@ export function listHouseAnnouncements() {
   return readDb.prepare(
     'SELECT cache_key, dancer_name as name, script, created_at FROM voiceovers WHERE type = ? AND created_at >= ? ORDER BY dancer_name ASC'
   ).all('house', VOICEOVER_VALID_AFTER);
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS soundboard_sounds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+`);
+
+export function listSoundboardSounds() {
+  return db.prepare('SELECT id, name, file_name, created_at FROM soundboard_sounds ORDER BY created_at ASC').all();
+}
+
+export function saveSoundboardSound(name, audioBuffer, ext = 'mp3') {
+  const fileName = `sfx_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const filePath = join(SOUNDBOARD_DIR, fileName);
+  writeFileSync(filePath, Buffer.from(audioBuffer));
+  const result = db.prepare('INSERT INTO soundboard_sounds (name, file_name) VALUES (?, ?)').run(name, fileName);
+  return { id: result.lastInsertRowid, name, fileName };
+}
+
+export function getSoundboardSoundFilePath(id) {
+  const row = db.prepare('SELECT file_name FROM soundboard_sounds WHERE id = ?').get(id);
+  if (!row) return null;
+  const filePath = join(SOUNDBOARD_DIR, row.file_name);
+  if (!existsSync(filePath)) {
+    db.prepare('DELETE FROM soundboard_sounds WHERE id = ?').run(id);
+    return null;
+  }
+  return filePath;
+}
+
+export function renameSoundboardSound(id, name) {
+  db.prepare('UPDATE soundboard_sounds SET name = ? WHERE id = ?').run(name, id);
+}
+
+export function deleteSoundboardSound(id) {
+  const row = db.prepare('SELECT file_name FROM soundboard_sounds WHERE id = ?').get(id);
+  if (row) {
+    const filePath = join(SOUNDBOARD_DIR, row.file_name);
+    try { if (existsSync(filePath)) unlinkSync(filePath); } catch {}
+    db.prepare('DELETE FROM soundboard_sounds WHERE id = ?').run(id);
+  }
+  return row?.file_name || null;
+}
+
+export function upsertSoundboardSoundFromSync(name, fileName) {
+  const existing = db.prepare('SELECT id FROM soundboard_sounds WHERE file_name = ?').get(fileName);
+  if (existing) {
+    db.prepare('UPDATE soundboard_sounds SET name = ? WHERE id = ?').run(name, existing.id);
+  } else {
+    db.prepare('INSERT INTO soundboard_sounds (name, file_name) VALUES (?, ?)').run(name, fileName);
+  }
+}
+
+export function deleteSoundboardSoundByFileName(fileName) {
+  const filePath = join(SOUNDBOARD_DIR, fileName);
+  try { if (existsSync(filePath)) unlinkSync(filePath); } catch {}
+  db.prepare('DELETE FROM soundboard_sounds WHERE file_name = ?').run(fileName);
 }
 
 export default db;
