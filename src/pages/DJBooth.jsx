@@ -178,6 +178,7 @@ export default function DJBooth() {
   const commercialEndResolverRef = useRef(null);
   const commercialModeRef = useRef(null);
   const promoShuffleRef = useRef([]);
+  const promoQueueFingerprintRef = useRef('');
   const [availablePromos, setAvailablePromos] = useState([]);
   const [promoQueue, setPromoQueue] = useState([]);
   const swapPromoRef = useRef(null);
@@ -2076,8 +2077,9 @@ export default function DJBooth() {
       if (promos.length === 0) return false;
 
       const promoKeys = promos.map(p => p.cache_key).sort();
+      const promoFingerprint = promoKeys.join('|');
       const currentQueue = promoShuffleRef.current;
-      const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key));
+      const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key)) && promoQueueFingerprintRef.current === promoFingerprint;
       if (!queueValid) {
         const shuffled = [...promoKeys];
         for (let i = shuffled.length - 1; i > 0; i--) {
@@ -2085,6 +2087,7 @@ export default function DJBooth() {
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
         promoShuffleRef.current = shuffled;
+        promoQueueFingerprintRef.current = promoFingerprint;
       }
       const nextKey = promoShuffleRef.current.shift();
       setPromoQueue([...promoShuffleRef.current]);
@@ -2194,8 +2197,9 @@ export default function DJBooth() {
       setAvailablePromos(promos);
 
       const promoKeys = promos.map(p => p.cache_key).sort();
+      const promoFingerprint = promoKeys.join('|');
       const currentQueue = promoShuffleRef.current;
-      const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key));
+      const queueValid = currentQueue.length > 0 && currentQueue.every(key => promoKeys.includes(key)) && promoQueueFingerprintRef.current === promoFingerprint;
       if (!queueValid) {
         const shuffled = [...promoKeys];
         for (let i = shuffled.length - 1; i > 0; i--) {
@@ -2203,6 +2207,7 @@ export default function DJBooth() {
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
         promoShuffleRef.current = shuffled;
+        promoQueueFingerprintRef.current = promoFingerprint;
       }
       setPromoQueue([...promoShuffleRef.current]);
     } catch {}
