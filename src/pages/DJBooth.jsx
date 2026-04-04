@@ -2616,6 +2616,12 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
+        if (announcementsEnabled) {
+          audioEngineRef.current?.duck();
+          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+          await playPrefetchedAnnouncement(outroUrl);
+        }
+
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
@@ -2626,16 +2632,14 @@ export default function DJBooth() {
           logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
           await playFallbackTrack(true);
         }
+
+        if (announcementsEnabled) {
+          audioEngineRef.current?.unduck();
+        }
+
         lastAudioActivityRef.current = Date.now();
         lastTransitionMsRef.current = Date.now() - _skipTransStart;
         logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip' });
-
-        if (announcementsEnabled) {
-          audioEngineRef.current?.duck();
-          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
-          await playPrefetchedAnnouncement(outroUrl);
-          audioEngineRef.current?.unduck();
-        }
 
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
@@ -3225,6 +3229,12 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
+        if (announcementsEnabled) {
+          audioEngineRef.current?.duck();
+          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+          await playPrefetchedAnnouncement(outroUrl);
+        }
+
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
@@ -3235,16 +3245,14 @@ export default function DJBooth() {
           logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
           await playFallbackTrack(true);
         }
+
+        if (announcementsEnabled) {
+          audioEngineRef.current?.unduck();
+        }
+
         lastAudioActivityRef.current = Date.now();
         lastTransitionMsRef.current = Date.now() - _teTransStart;
         logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end' });
-
-        if (announcementsEnabled) {
-          audioEngineRef.current?.duck();
-          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
-          await playPrefetchedAnnouncement(outroUrl);
-          audioEngineRef.current?.unduck();
-        }
 
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
