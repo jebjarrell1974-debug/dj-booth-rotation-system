@@ -227,6 +227,10 @@ which aubio >/dev/null 2>&1 || {
   sudo apt-get install -y aubio-tools >/dev/null 2>&1 || true
 }
 
+if rm -f "$HOME/.config/autostart/squeekboard.desktop" 2>/dev/null; then
+  echo "Squeekboard autostart removed (prevents double on-screen keyboard)"
+fi
+
 echo "[display] Configuring labwc display settings..."
 LABWC_DIR="$HOME/.config/labwc"
 mkdir -p "$LABWC_DIR"

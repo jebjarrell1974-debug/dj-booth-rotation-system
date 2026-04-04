@@ -646,6 +646,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     }
 
+    if (dancerName !== GENERIC_DANCER_NAME) {
+      const anyCached = await findCachedAtAnyVariation(type, dancerName, nextDancerName);
+      if (anyCached) {
+        console.log(`✅ Serving cached var for ${dancerName}/${type} (var${varNum} not cached — skipping ElevenLabs call)`);
+        return anyCached;
+      }
+    }
+
     const failKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
     if (failedGenerationsRef.current.has(failKey)) {
       console.log(`⏭️ Skipping generation for ${failKey} — failed earlier this session, using fallback`);

@@ -2854,12 +2854,16 @@ export default function DJBooth() {
         if (nextBreakTrack?.url) {
           console.log('🎵 HandleTrackEnd: Playing next break song:', nextBreakTrack.name);
           lastAudioActivityRef.current = Date.now();
-          const ok = await playTrack(nextBreakTrack.url, true, nextBreakTrack.name, nextBreakTrack.genre);
-          if (!ok) await playFallbackTrack(true);
-          transitionInProgressRef.current = false;
+          try {
+            const ok = await playTrack(nextBreakTrack.url, true, nextBreakTrack.name, nextBreakTrack.genre);
+            if (!ok) await playFallbackTrack(true);
+          } finally {
+            transitionInProgressRef.current = false;
+          }
           return;
         } else {
           console.error('❌ Could not resolve next break song:', nextBreakName);
+          transitionInProgressRef.current = false;
         }
       }
 

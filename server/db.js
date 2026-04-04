@@ -760,9 +760,32 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     }
 
     if (notFoundInDB.length > 0) {
-      console.warn(`⚠️ selectTracksForSet: ${notFoundInDB.length} playlist song(s) NOT found in music_tracks DB: ${notFoundInDB.slice(0, 5).join(' | ')}${notFoundInDB.length > 5 ? ` ... +${notFoundInDB.length - 5} more` : ''}`);
+      console.warn(`⚠️ selectTracksForSet: ${notFoundInDB.length} playlist song(s) NOT found by exact match: ${notFoundInDB.slice(0, 5).join(' | ')}${notFoundInDB.length > 5 ? ` ... +${notFoundInDB.length - 5} more` : ''} — trying case-insensitive fallback`);
+      const stillNotFound = [];
+      for (const trackName of notFoundInDB) {
+        const fuzzyTrack = readDb.prepare(
+          `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
+           FROM music_tracks t
+           WHERE LOWER(t.name) = LOWER(?) AND t.blocked = 0
+           LIMIT 1`
+        ).get(trackName);
+        if (!fuzzyTrack) { stillNotFound.push(trackName); continue; }
+        console.log(`✅ selectTracksForSet: fuzzy matched "${trackName}" → "${fuzzyTrack.name}"`);
+        const onCooldown = readDb.prepare(
+          `SELECT 1 FROM play_history WHERE track_name = ? AND played_at > datetime('now', 'localtime', '-4 hours') LIMIT 1`
+        ).get(fuzzyTrack.name) != null;
+        if (onCooldown) {
+          const lastRow = readDb.prepare(`SELECT MAX(played_at) as lp FROM play_history WHERE track_name = ?`).get(fuzzyTrack.name);
+          cooldownTracks.push({ ...fuzzyTrack, lastPlayed: lastRow?.lp || '' });
+        } else {
+          freshTracks.push(fuzzyTrack);
+        }
+      }
+      if (stillNotFound.length > 0) {
+        console.warn(`⚠️ selectTracksForSet: ${stillNotFound.length} song(s) not found even with fuzzy match: ${stillNotFound.slice(0, 5).join(' | ')}`);
+      }
     }
-    console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh, ${cooldownTracks.length} on-cooldown, ${notFoundInDB.length} not-in-DB`);
+    console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh, ${cooldownTracks.length} on-cooldown`);
 
     // No playlist tracks exist in the DB at all — fall back to random library
     if (freshTracks.length === 0 && cooldownTracks.length === 0) {
