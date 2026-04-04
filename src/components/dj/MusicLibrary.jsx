@@ -195,7 +195,7 @@ export default function MusicLibrary({
       </div>
       
       {musicSource === 'genres' && genres.length > 0 && (
-        <div className="px-3 py-2 border-b border-[#1e293b]">
+        <div className="px-3 py-2 border-b border-[#1e293b] max-h-24 overflow-y-auto">
           <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => setActiveGenre(null)}
