@@ -2053,6 +2053,28 @@ The broadcast useEffect in DJBooth.jsx has a dependency array that controls when
 | `server/bpmAnalyzer.js` | BPM background analysis — ffprobe tag first, aubio fallback, normalizes 70-175 BPM range |
 | `server/lufsAnalyzer.js` | LUFS background analysis — FFmpeg loudnorm, -10 LUFS target |
 
+## Session (current — not yet pushed)
+
+### Three rotation-corruption bugs fixed (device 003 reports)
+
+**Bug 1 — `removeFromRotation` used stale React state during transitions (ROOT CAUSE of Sylvia back-to-back)**
+- `removeFromRotation` read from `rotation` (React state) and `currentDancerIndex` (React state). During an active `handleTrackEnd`/`handleSkip` transition, React state lags behind the refs by up to several seconds of async work. This caused `removeFromRotation` to rebuild the rotation from a stale pre-flip snapshot and overwrite `rotationRef.current` with the wrong order, corrupting `currentDancerIndex` so the next end-of-set transition spliced out the wrong dancer.
+- Fix: rewritten to use `rotationRef.current` and `currentDancerIndexRef.current` throughout.
+- Also added: `removeFromRotation` now clears `pendingVipRef.current[dancerId]` — previously that flag persisted even after the dancer was removed, showing the "VIP pending — she'll enter after her current set" badge on a dancer who was no longer on stage.
+- **File**: `src/pages/DJBooth.jsx`, `removeFromRotation` function (~line 3558)
+
+**Bug 2 — `activeRotationSongs` sync overwrote correct 2-song assignments with stale 1-song pre-picks**
+- When `songsPerSet` was changed via iPad (e.g., 1→2), `rotationSongs` in DJBooth still held 1-song pre-picks for dancers fetched before the change. After any `setRotationSongs` call (triggered by skip, save-all, or end-of-set transition), the `activeRotationSongs` prop updated and the sync in RotationPlaylistManager's `useEffect` at line 295 overwrote all correct 2-song assignments with those stale 1-song arrays. Auto-assign then tried to fill the missing second slot from the genre pool, putting random library tracks in the second slot.
+- Fix: don't overwrite `songAssignments[dancerId]` if the dancer already has `songsPerSet` songs assigned and the incoming data has fewer.
+- **File**: `src/components/dj/RotationPlaylistManager.jsx`, line ~295
+
+**Bug 3 — `handleSkip` within-set check didn't respect `songsPerSet`**
+- `handleTrackEnd` (fixed in Session 57) guards `songNum < songsPerSetRef.current && songNum < dancerSongCount`. `handleSkip` only checked `songNum < dancerSongCountSkip`. If `songsPerSet` had been lowered (e.g., 2→1) but a dancer still had 2 songs in memory, skip would play within-set when it should have rotated.
+- Fix: `if (songNum < songsPerSetRef.current && songNum < dancerSongCountSkip)` — now matches `handleTrackEnd`.
+- **File**: `src/pages/DJBooth.jsx`, `handleSkip` function (~line 2385)
+
+**PENDING**: Push to GitHub + deploy to fleet via `~/djbooth-update.sh` (user must say "push")
+
 ## External Services
 - **ElevenLabs TTS**: Voice announcements (API key stored in browser localStorage per Pi)
 - **OpenAI**: Announcement script generation (API key stored in browser localStorage per Pi)

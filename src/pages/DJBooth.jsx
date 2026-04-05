@@ -2379,7 +2379,7 @@ export default function DJBooth() {
     const dancerSongCountSkip = dancerTracks.length;
 
     try {
-      if (songNum < dancerSongCountSkip) {
+      if (songNum < songsPerSetRef.current && songNum < dancerSongCountSkip) {
         let nextTrack = dancerTracks[songNum];
         const newSongNum = songNum + 1;
         currentSongNumberRef.current = newSongNum;
@@ -3553,15 +3553,27 @@ export default function DJBooth() {
   stopRotationRef.current = stopRotation;
 
   const removeFromRotation = (dancerId) => {
-    const removedIdx = rotation.indexOf(dancerId);
-    const newRotation = rotation.filter(id => id !== dancerId);
-    if (removedIdx !== -1 && removedIdx <= currentDancerIndex && newRotation.length > 0) {
+    // Always use refs — React state can be stale during an active transition,
+    // which would cause us to rebuild the rotation from a stale snapshot and
+    // overwrite the correctly-flipped rotation that handleTrackEnd/handleSkip
+    // just wrote to rotationRef.current.
+    const currentRot = rotationRef.current;
+    const removedIdx = currentRot.indexOf(dancerId);
+    const newRotation = currentRot.filter(id => id !== dancerId);
+
+    // Clear any lingering pending-VIP flag so the UI badge doesn't get stuck.
+    if (pendingVipRef.current[dancerId]) {
+      delete pendingVipRef.current[dancerId];
+      setPendingVipState({ ...pendingVipRef.current });
+    }
+
+    if (removedIdx !== -1 && removedIdx <= currentDancerIndexRef.current && newRotation.length > 0) {
       // If we removed the dancer currently on stage, stay at the same position index
       // (it now points to the next dancer). If we removed a dancer before the current
       // one, shift down by 1 to keep the same dancer on stage.
-      const newIdx = removedIdx === currentDancerIndex
+      const newIdx = removedIdx === currentDancerIndexRef.current
         ? Math.min(removedIdx, newRotation.length - 1)
-        : currentDancerIndex - 1;
+        : currentDancerIndexRef.current - 1;
       setCurrentDancerIndex(newIdx);
       currentDancerIndexRef.current = newIdx;
     }

@@ -292,7 +292,16 @@ export default function RotationPlaylistManager({
         const fromActive = { ...prev };
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
           if (djOverridesRef.current.has(dancerId)) return;
-          if (trackList && trackList.length > 0) fromActive[dancerId] = trackList.map(t => t.name);
+          if (trackList && trackList.length > 0) {
+            const mapped = trackList.map(t => t.name);
+            // Don't downgrade: if the dancer already has the right number of songs assigned
+            // and the incoming pre-pick has fewer (stale from before a songsPerSet change),
+            // keep what we have rather than overwriting with a short array that will then
+            // trigger auto-assign to fill the gap from the genre pool.
+            const existing = prev[dancerId];
+            if (existing && existing.length >= songsPerSet && mapped.length < songsPerSet) return;
+            fromActive[dancerId] = mapped;
+          }
         });
         return fromActive;
       });
