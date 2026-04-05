@@ -2585,6 +2585,7 @@ export default function DJBooth() {
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
 
         const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
+        if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
@@ -2623,7 +2624,6 @@ export default function DJBooth() {
         rotationSongsRef.current = updatedSongs;
 
         if (announcementsEnabled) {
-          audioEngineRef.current?.duck();
           const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
           await playPrefetchedAnnouncement(outroUrl);
         }
@@ -2992,7 +2992,7 @@ export default function DJBooth() {
     const dancerSongCount = dancerTracks.length;
     
     try {
-      if (songNum < dancerSongCount) {
+      if (songNum < songsPerSetRef.current && songNum < dancerSongCount) {
         let nextTrack = dancerTracks[songNum];
         const newSongNum = songNum + 1;
         currentSongNumberRef.current = newSongNum;
@@ -3198,6 +3198,7 @@ export default function DJBooth() {
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
         const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
+        if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
@@ -3236,7 +3237,6 @@ export default function DJBooth() {
         rotationSongsRef.current = updatedSongs;
 
         if (announcementsEnabled) {
-          audioEngineRef.current?.duck();
           const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
           await playPrefetchedAnnouncement(outroUrl);
         }

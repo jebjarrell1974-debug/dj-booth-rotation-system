@@ -46,9 +46,36 @@ description: Complete reference of all decisions, fixes, discoveries, and workin
 - All successful updates on venue Pis were from boot auto-update (systemd), NOT the button
 - Button now uses detached `spawn()` — runs fully independent, can never be killed
 
+**BUGS PENDING INVESTIGATION (pull logs at 6am):**
+
+Pull commands:
+- 001 (Pony Bama): `journalctl -u djbooth --since "2026-04-03 22:00:00" --no-pager`
+- 003 (Evansville): `journalctl -u djbooth --since "2026-04-03 23:00:00" --no-pager`
+- Fleet diag: `http://100.109.73.27:3001/fleet` → master PIN → both units' event logs
+
+**neonaidj001 (Pony Bama) — two issues:**
+1. Break-set stuck: After 2nd break song, rotation didn't advance. Music kept playing. Skip had no effect. User stopped/restarted rotation. Suspected: interstitial handoff promise didn't resolve.
+2. Full crash (Apr 3 ~9:15–9:20pm CDT — came right back): Fleet dashboard confirmed djbooth service uptime was only 4h 23m as of 1:40am = service restarted around 9:15pm CDT tonight. The 200 journal lines we pulled were all from BEFORE the crash (covered only up to ~8:17pm CDT). Most likely trigger: VIP auto-expire bug hitting bad state under 17-dancer rotation. Fix is pushed (commit ba77e83) — pull update at 6am.
+   - POSSIBLE CAUSE: XWayland bridge instability under sustained GPU/WebAudio load (Pis run Wayland/labwc, Chromium uses XWayland compatibility layer)
+   - DO NOT change kiosk launch configuration without thorough research and explicit user approval — affects entire fleet
+
+**neonaidj003 (Evansville) — slow transitions + corrupt voice blob + CRASH:**
+Reported 11:15–11:25 PM Central. Symptoms: intro starts, music ducks near the end, music gets loud again, then voice sounds like gibberish/backwards. Classic `voice_blob_invalid` — ElevenLabs returned a corrupt MP3. Look for `voice_blob_invalid`, `voice_blob_retry`, `voice_timeout` in fleet diag event log for that window.
+ALSO: Full crash ~Apr 3 late night approx 11:50–midnight Central (came right back via watchdog). djbooth service on 003 showed 17h uptime = service stayed up, Chromium crashed only.
+- 003 journal pull: `journalctl -u djbooth --since "2026-04-03 23:40:00" --no-pager`
+- **KNOWN FLEET DISPLAY BUGS on 003**: Voiceovers always shows 0 (display bug, not real — voiceovers ARE syncing correctly). API cost display is inflated from early testing (~$15 real cost since install). Do NOT draw conclusions from these two fields on 003.
+- **Slow transition Telegram alerts were FALSE POSITIVES**: `lastTransitionMs` includes entire outro announcement playback (10–14s of audio). Threshold raised from 3000ms → 25000ms so it only fires on genuinely broken transitions.
+- **Duck-before-prepick fix (Apr 5)**: `duck()` was being called AFTER `getDancerTracks` resolved (~0.5–2s delay). Now called immediately after `outroPromise` is created, so ducking runs in parallel with the pre-pick fetch. Eliminates 0.5–2s of dead silence before the outro starts. Fixed in both `handleSkip` and `handleTrackEnd` dancer-change paths.
+- **2-songs bug on 1-song sets (Apr 5)**: `handleTrackEnd` within-set check was `songNum < dancerSongCount` — compared against number of pre-selected songs, not configured `songsPerSet`. Switching from 2→1 song sets mid-show left 2 pre-selected songs in memory; dancer would play both. Fixed to `songNum < songsPerSetRef.current && songNum < dancerSongCount`.
+
+**FLEET LOG BUG (always empty — never worked):**
+The Logs tab on the fleet dashboard always shows 0 / "No errors logged" on all units. Voice diagnostic events (`voice_blob_invalid`, `voice_timeout`, etc.) and transition events are never appearing there. This is not a data loss issue — the pipeline from `AnnouncementSystem.jsx` → `onVoiceDiag` → `logDiag` → heartbeat payload → fleet server → fleet dashboard display is broken somewhere. Need to trace the full chain and fix. Do NOT tell the user "check the fleet event log" until this is confirmed working.
+
 **FUTURE TODO (approved, not yet built):**
 - Fix #5: Pre-build dist/ on homebase, ship compiled output to venue Pis instead of
   running `vite build` on the Pi. Add show-active guard to block updates mid-show.
+- **Soundboard real audio files**: Synthesized sounds are too harsh. User will supply real audio files. Replace Web Audio API synthesis in `src/utils/soundboard.js` with actual file playback. Wire into existing `playSound` command + kiosk SFX tab. (Session 60 — do tomorrow)
+- **Spanish house announcements**: Add Spanish versions of the house announcements (No Touching, No Photos, Tip Your Entertainers, Welcome, etc.) to HouseAnnouncementPanel. Both English AND Spanish should be available and playable. Does NOT include entertainer intros/outros or commercials — those come later when Spanish-venue contracts are in place. Scheduled for next session.
 
 ## Architecture Summary
 
