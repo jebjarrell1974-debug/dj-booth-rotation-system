@@ -15,9 +15,13 @@ const getAuthHeaders = () => {
 
 const DEFAULT_ANNOUNCEMENTS = [
   { name: 'No Touching', script: 'Hey gentlemen, just a reminder — no touching the entertainers. Keep your hands to yourselves and enjoy the show.' },
+  { name: 'No Touching 🇪🇸', script: 'Caballeros, un recordatorio — no toquen a las artistas. Mantengan las manos para ustedes mismos y disfruten del espectáculo.' },
   { name: 'No Photos', script: 'Attention in the club — absolutely no photos or videos of the entertainers. Put your phones away and be present in the moment.' },
+  { name: 'No Fotos 🇪🇸', script: 'Atención en el club — absolutamente no se permiten fotos ni videos de las artistas. Guarden sus teléfonos y disfruten el momento.' },
   { name: 'Tip Your Entertainers', script: 'Gentlemen, if you are enjoying the show, show your appreciation — tip your entertainers. They work hard for you every night.' },
+  { name: 'Propinas 🇪🇸', script: 'Caballeros, si están disfrutando el show, muestren su apreciación — denle propina a las artistas. Ellas trabajan duro para ustedes cada noche.' },
   { name: 'Welcome', script: 'Welcome to the club gentlemen! We have an incredible lineup of entertainers tonight. Sit back, relax, and enjoy the show.' },
+  { name: 'Bienvenidos 🇪🇸', script: 'Bienvenidos al club, caballeros. Tenemos una increíble selección de artistas esta noche. Relájense y disfruten del show.' },
 ];
 
 export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRemotePlay }) {
