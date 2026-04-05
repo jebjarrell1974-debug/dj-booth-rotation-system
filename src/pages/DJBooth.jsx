@@ -4495,6 +4495,10 @@ export default function DJBooth() {
                     setEditingPlaylist(dancer);
                   }}
                   selectedDancerId={selectedDancer?.id}
+                  dancerVipMap={dancerVipMap}
+                  pendingVipState={pendingVipState}
+                  onSendToVip={sendDancerToVip}
+                  onReleaseFromVip={releaseDancerFromVip}
                 />
               </div>
             )}

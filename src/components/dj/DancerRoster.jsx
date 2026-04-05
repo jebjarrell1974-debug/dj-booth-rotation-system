@@ -50,7 +50,11 @@ export default function DancerRoster({
   onEditDancer, 
   onDeleteDancer,
   onEditPlaylist,
-  selectedDancerId 
+  selectedDancerId,
+  dancerVipMap = {},
+  pendingVipState = {},
+  onSendToVip,
+  onReleaseFromVip
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newDancerName, setNewDancerName] = useState('');
@@ -64,6 +68,7 @@ export default function DancerRoster({
   const [deletePin, setDeletePin] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [vipPickerDancerId, setVipPickerDancerId] = useState(null);
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -248,7 +253,11 @@ export default function DancerRoster({
                 <span>{dancer.playlist?.length || 0} songs</span>
               </div>
 
-              {rotation.includes(dancer.id) ? (
+              {dancerVipMap[String(dancer.id)] || pendingVipState[String(dancer.id)] ? (
+                <div className="w-full mb-2 h-10 flex items-center justify-center text-xs text-yellow-600 border border-yellow-700/20 rounded-md bg-yellow-900/10">
+                  👑 VIP
+                </div>
+              ) : rotation.includes(dancer.id) ? (
                 <Button
                   size="sm"
                   className="w-full mb-2 h-10 text-xs bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/50"
@@ -275,7 +284,58 @@ export default function DancerRoster({
                   Add to Rotation
                 </Button>
               )}
-              
+
+              {vipPickerDancerId === dancer.id ? (
+                <div className="w-full mb-2">
+                  <p className="text-[10px] text-yellow-400 text-center mb-1">VIP timeout duration:</p>
+                  <div className="grid grid-cols-4 gap-1 mb-1">
+                    {[15, 30, 45, 60].map(mins => (
+                      <button
+                        key={mins}
+                        className="text-[10px] py-1 rounded bg-yellow-900/40 hover:bg-yellow-700/60 text-yellow-300 border border-yellow-700/50 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSendToVip?.(dancer.id, mins * 60 * 1000);
+                          setVipPickerDancerId(null);
+                        }}
+                      >
+                        {mins}m
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="w-full text-[10px] py-1 rounded text-gray-500 hover:text-gray-300 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setVipPickerDancerId(null); }}
+                  >
+                    cancel
+                  </button>
+                </div>
+              ) : dancerVipMap[String(dancer.id)] ? (
+                <button
+                  className="w-full mb-2 flex items-center justify-center gap-1 py-1.5 rounded-md bg-yellow-900/30 hover:bg-yellow-800/50 border border-yellow-600/40 text-yellow-400 text-xs font-medium transition-colors"
+                  title="Tap to release from VIP"
+                  onClick={(e) => { e.stopPropagation(); onReleaseFromVip?.(String(dancer.id)); }}
+                >
+                  <span>👑</span> In VIP — release
+                </button>
+              ) : pendingVipState[String(dancer.id)] ? (
+                <button
+                  className="w-full mb-2 flex items-center justify-center gap-1 py-1.5 rounded-md bg-yellow-900/20 hover:bg-yellow-800/30 border border-yellow-700/30 text-yellow-600 text-xs transition-colors"
+                  title="VIP queued after this set — tap to cancel"
+                  onClick={(e) => { e.stopPropagation(); onReleaseFromVip?.(String(dancer.id)); }}
+                >
+                  <span>👑</span> After set — cancel
+                </button>
+              ) : (
+                <button
+                  className="w-full mb-2 flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#1e293b] hover:bg-[#2e2e4a] border border-[#2e3a4e] text-gray-400 hover:text-yellow-400 text-xs transition-colors"
+                  title="Send to VIP timeout"
+                  onClick={(e) => { e.stopPropagation(); setVipPickerDancerId(dancer.id); }}
+                >
+                  <span>👑</span> VIP Timeout
+                </button>
+              )}
+
               <div className="flex items-center gap-1">
                 <Button
                   size="icon"
