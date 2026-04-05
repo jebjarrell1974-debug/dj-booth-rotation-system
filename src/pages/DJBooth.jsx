@@ -3194,6 +3194,16 @@ export default function DJBooth() {
         setCurrentDancerIndex(finishedIdx);
         currentDancerIndexRef.current = finishedIdx;
 
+        // Sync crowd display to the new rotation BEFORE announcing.
+        // Without this, RotationDisplay keeps showing the finished dancer at the top
+        // (stale DB state) until updateStageState fires at the very end of the transition.
+        updateStageState(newIdx, newRotation);
+        fetch('/api/stage/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rotation_order: newRotation, current_dancer_index: newIdx, is_active: true })
+        }).catch(() => {});
+
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
