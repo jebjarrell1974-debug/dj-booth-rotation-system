@@ -48,6 +48,14 @@ function getIsPlaying() {
   }
 }
 
+function getDiagLog() {
+  try {
+    return JSON.parse(localStorage.getItem('djbooth_diag_log') || '[]');
+  } catch {
+    return [];
+  }
+}
+
 async function fetchServerMetrics() {
   try {
     const res = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
@@ -74,6 +82,7 @@ async function collectHealthData() {
     uptime_seconds: getUptimeSeconds(),
     active_dancers: getActiveDancerCount(),
     is_playing: getIsPlaying(),
+    diagLog: getDiagLog(),
     cpu_percent: 0,
     connection_count: typeof navigator.connection !== 'undefined' ?
       (navigator.connection.downlink || 0) : 0,

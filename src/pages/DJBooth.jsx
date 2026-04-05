@@ -200,6 +200,7 @@ export default function DJBooth() {
   const logDiag = (type, data = {}) => {
     const entry = { ts: Date.now(), type, ...data };
     diagLogRef.current = [entry, ...diagLogRef.current].slice(0, 20);
+    try { localStorage.setItem('djbooth_diag_log', JSON.stringify(diagLogRef.current)); } catch {}
   };
   
   const fisherYatesShuffle = (arr) => {

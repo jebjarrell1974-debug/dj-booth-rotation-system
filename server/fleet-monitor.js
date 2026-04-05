@@ -501,4 +501,17 @@ function setupFleetMonitorRoutes(app) {
   });
 }
 
-export { setupFleetMonitorRoutes, startMonitoring, stopMonitoring, sendTelegram, isTelegramConfigured, getFleetStatus };
+function updateDeviceLiveData(deviceId, data) {
+  const dev = devices.get(deviceId);
+  if (!dev) return;
+  if (data.diagLog !== undefined) dev.diagLog = data.diagLog;
+  if (data.recentLogs !== undefined) dev.recentLogs = data.recentLogs;
+  if (data.prePickHits !== undefined) dev.prePickHits = data.prePickHits;
+  if (data.prePickMisses !== undefined) dev.prePickMisses = data.prePickMisses;
+  if (data.lastTransitionMs !== undefined) dev.lastTransitionMs = data.lastTransitionMs;
+  if (data.isRotationActive !== undefined) dev.isRotationActive = data.isRotationActive;
+  if (data.isPlaying !== undefined) dev.isPlaying = data.isPlaying;
+  if (data.activeEntertainers !== undefined) dev.activeEntertainers = data.activeEntertainers;
+}
+
+export { setupFleetMonitorRoutes, startMonitoring, stopMonitoring, sendTelegram, isTelegramConfigured, getFleetStatus, updateDeviceLiveData };

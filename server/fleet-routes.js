@@ -17,7 +17,7 @@ import {
   getDancerBackup, listDancerBackups
 } from './fleet-db.js';
 import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms, getTrackAnalysisByFilenames } from './db.js';
-import { getFleetStatus } from './fleet-monitor.js';
+import { getFleetStatus, updateDeviceLiveData } from './fleet-monitor.js';
 
 const router = express.Router();
 
@@ -86,6 +86,7 @@ router.delete('/devices/:deviceId', authenticateFleetAdmin, (req, res) => {
 router.post('/heartbeat', authenticateDeviceMiddleware, (req, res) => {
   try {
     recordHeartbeat(req.device.device_id, req.body);
+    updateDeviceLiveData(req.device.device_id, req.body);
 
     if (req.body.dancer_names && Array.isArray(req.body.dancer_names)) {
       for (const name of req.body.dancer_names) {
