@@ -61,15 +61,20 @@ export default function RotationDisplay() {
   }, []);
 
   useEffect(() => {
-    const handler = () => {
+    const readVal = () => {
       const stored = localStorage.getItem('djbooth_display_countdown');
-      setShowCountdown(stored === null ? true : stored === 'true');
+      return stored === null ? true : stored === 'true';
     };
+    const handler = () => setShowCountdown(readVal());
     window.addEventListener('djbooth_display_countdown_changed', handler);
     window.addEventListener('storage', handler);
+    // Polling fallback — catches changes when cross-window storage events
+    // don't fire (Chromium kiosk with separate processes)
+    const poll = setInterval(() => setShowCountdown(readVal()), 1500);
     return () => {
       window.removeEventListener('djbooth_display_countdown_changed', handler);
       window.removeEventListener('storage', handler);
+      clearInterval(poll);
     };
   }, []);
 
