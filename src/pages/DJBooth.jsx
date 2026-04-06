@@ -1131,11 +1131,11 @@ export default function DJBooth() {
     return () => clearInterval(interval);
   }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos, activeBreakInfo, dancerVipMap]);
 
-  // Background pre-pick: when the current dancer's LAST song starts, quietly fetch that
-  // dancer's next-rotation songs in the background so the transition critical path
-  // only needs the upcoming dancer's tracks — not two concurrent network calls.
+  // Background pre-pick: when the current dancer's SECOND-TO-LAST song starts (or last song
+  // for 1-song sets), quietly fetch the next dancer's tracks in the background so the
+  // transition critical path has a full extra song's worth of time to complete the fetch.
   useEffect(() => {
-    if (!isRotationActive || currentSongNumber !== songsPerSet || songsPerSet < 1) return;
+    if (!isRotationActive || currentSongNumber < Math.max(1, songsPerSet - 1) || songsPerSet < 1) return;
     const rot = rotationRef.current;
     const dnc = dancersRef.current;
     const idx = currentDancerIndexRef.current;
@@ -1145,7 +1145,7 @@ export default function DJBooth() {
     if (!dancer) return;
     if (bgPrePickRef.current?.dancerId === dancerId) return;
     const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
-    console.log(`🎵 BgPrePick: Starting for ${dancer.name} (last song of set)`);
+    console.log(`🎵 BgPrePick: Starting for ${dancer.name} (song ${currentSongNumber} of ${songsPerSet} — early pre-pick)`);
     const promise = getDancerTracksRef.current(dancer, playingTrackExclude, true)
       .then(tracks => {
         if (bgPrePickRef.current?.dancerId === dancerId) {
