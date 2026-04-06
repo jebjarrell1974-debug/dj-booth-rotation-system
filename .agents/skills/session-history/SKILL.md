@@ -146,7 +146,46 @@ This clears stale pre-picks so `beginRotation` always calls `getDancerTracks` fr
 
 ---
 
-## CURRENT STATUS (as of Session 59 — March 30, 2026) — READ THIS FIRST
+## CURRENT STATUS (as of Session 60 — April 6, 2026) — READ THIS FIRST
+
+### Latest GitHub commits this session:
+- `f665ac0` — "Session 60: Add 4 Spanish bilingual house announcement defaults"
+- `f1cffb8` — "Session 60: Fix fleet event log pipeline (diagLog → heartbeat → updateDeviceLiveData → fleet dashboard)"
+- `d57958c` — "Session 60: Pre-pick early trigger fix (fire at max(1, songsPerSet-1) to eliminate dead air)"
+- Day Shift Mode — COMPLETED (not yet pushed — awaiting user push approval)
+
+### What was built this session (Session 60):
+
+**1. Spanish bilingual house announcements — `src/components/dj/HouseAnnouncementPanel.jsx`:**
+- Added 4 Spanish defaults: No Touching 🇪🇸, No Fotos 🇪🇸, Propinas 🇪🇸, Bienvenidos 🇪🇸
+- Appear as quick-add buttons alongside English versions
+- Pushed as commit `f665ac0`
+
+**2. Fleet event log pipeline fix — `src/lib/systemHealth.js`, `server/fleet-monitor.js`:**
+- `diagLog` now flows: DJBooth → localStorage → systemHealth.js heartbeat payload → `/api/fleet/heartbeat` → `updateDeviceLiveData()` (new fleet-monitor.js export) → in-memory devices map → fleet dashboard
+- `updateDeviceLiveData` exported from fleet-monitor.js and imported in fleet-routes.js heartbeat handler
+- Pushed as commit `f1cffb8`
+
+**3. Pre-pick early trigger fix — `src/pages/DJBooth.jsx`:**
+- Background pre-pick now fires at song `max(1, songsPerSet-1)` instead of `songsPerSet`
+- Gives a full extra song's time for the async fetch to complete, eliminating 1–2s dead air between dancers
+- Pushed as commit `d57958c`
+
+**4. Day Shift Mode — COMPLETE (not pushed):**
+- **Spec**: Entertainers with personal playlists → unaffected. Entertainers WITHOUT playlists + all break/interstitial songs → use Day Shift genre pool during the configured time window. Auto-reverts to Music Selection Mode outside the window.
+- **`isDayShiftActive(dayShift)`** — module-level pure function in `DJBooth.jsx`. Handles same-day and overnight (e.g., 10pm–2am) time windows correctly.
+- **`getDancerTracks`** injection (~line 1663): uses Day Shift genres when active + dancer has no personal playlist
+- **3 break song injection points** in `DJBooth.jsx` (~lines 2480, 2859, 3103): each uses Day Shift genres when active
+- **`DJOptions.jsx` card**: Sun ☀️ icon (amber/yellow color), toggle, time-from/time-to pickers, multi-select genre dropdown (All/None shortcuts, count badges), description text. Sits between Display Screen Timer and Music Selection Mode cards.
+- **Storage**: `djOptions.dayShift = { enabled, startTime, endTime, genres[] }` — saved via `djOptionsApi.update()` like all other options, persisted in DB.
+
+### Day Shift Mode — Key Design Decisions:
+- `isDayShiftActive` is a pure module-level function (not inside component) so it can be called from async handlers without closure staleness
+- Break song spots use locally-scoped variables (`_dsSkip`, `_dsCool`, `_dsTE`) to avoid naming collisions
+- Genre dropdown in DJOptions uses IIFE `{(() => { ... })()}` pattern to keep local state helpers inline without polluting the component's top-level scope
+- When Day Shift is disabled or has no genres configured, falls back silently to `djOptions.activeGenres` as before — zero behavior change for existing setups
+
+## CURRENT STATUS (as of Session 59 — March 30, 2026)
 
 ### Latest GitHub commits this session:
 - `3340987` — "Restore promo/commercial creation form to announcements tab"
@@ -2073,7 +2112,7 @@ The broadcast useEffect in DJBooth.jsx has a dependency array that controls when
 - Fix: `if (songNum < songsPerSetRef.current && songNum < dancerSongCountSkip)` — now matches `handleTrackEnd`.
 - **File**: `src/pages/DJBooth.jsx`, `handleSkip` function (~line 2385)
 
-**PENDING**: Push to GitHub + deploy to fleet via `~/djbooth-update.sh` (user must say "push")
+**Pushed**: commit `634ffed` — deploy to fleet via `~/djbooth-update.sh` when ready
 
 ## External Services
 - **ElevenLabs TTS**: Voice announcements (API key stored in browser localStorage per Pi)

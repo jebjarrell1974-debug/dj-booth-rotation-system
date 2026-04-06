@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor, Clock, Sun } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -21,6 +21,8 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
     const stored = localStorage.getItem('djbooth_display_countdown');
     return stored === null ? true : stored === 'true';
   });
+  const [dayShiftDropdownOpen, setDayShiftDropdownOpen] = useState(false);
+  const dayShiftDropdownRef = useRef(null);
 
   useEffect(() => {
     if (!commercialSyncedRef.current && externalCommercialFreq != null) {
@@ -77,6 +79,9 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
       }
       if (commercialRef.current && !commercialRef.current.contains(e.target)) {
         setCommercialDropdownOpen(false);
+      }
+      if (dayShiftDropdownRef.current && !dayShiftDropdownRef.current.contains(e.target)) {
+        setDayShiftDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -183,6 +188,114 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
             />
           </div>
         </div>
+
+        {/* Day Shift Mode */}
+        {(() => {
+          const dayShift = djOptions?.dayShift || {};
+          const dayShiftEnabled = !!dayShift.enabled;
+          const dayShiftStart = dayShift.startTime || '12:00';
+          const dayShiftEnd = dayShift.endTime || '20:00';
+          const dayShiftGenres = dayShift.genres || [];
+          const saveDayShift = (updates) => saveOptions({ dayShift: { ...dayShift, ...updates } });
+          const toggleDsGenre = (name) => {
+            const next = dayShiftGenres.includes(name)
+              ? dayShiftGenres.filter(g => g !== name)
+              : [...dayShiftGenres, name];
+            saveDayShift({ genres: next });
+          };
+          return (
+            <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sun className="w-4 h-4 text-[#fbbf24]" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#fbbf24] uppercase tracking-wider">Day Shift Mode</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Override music genres during daytime hours</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={dayShiftEnabled}
+                  onCheckedChange={(val) => saveDayShift({ enabled: val })}
+                />
+              </div>
+
+              {dayShiftEnabled && (
+                <div className="mt-4 space-y-4">
+                  {/* Time window */}
+                  <div className="flex items-center gap-3">
+                    <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <div className="flex items-center gap-2 flex-1">
+                      <label className="text-xs text-gray-400 w-10">From</label>
+                      <input
+                        type="time"
+                        value={dayShiftStart}
+                        onChange={(e) => saveDayShift({ startTime: e.target.value })}
+                        className="bg-[#151528] border border-[#2e2e5a] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#fbbf24]"
+                      />
+                      <label className="text-xs text-gray-400 w-4">to</label>
+                      <input
+                        type="time"
+                        value={dayShiftEnd}
+                        onChange={(e) => saveDayShift({ endTime: e.target.value })}
+                        className="bg-[#151528] border border-[#2e2e5a] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#fbbf24]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Genre picker */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-gray-400">Day Shift genres (break songs + dancers without playlists)</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => saveDayShift({ genres: genres.map(g => g.name) })} className="text-xs text-[#fbbf24]/70 hover:text-[#fbbf24]">All</button>
+                        <span className="text-gray-600 text-xs">·</span>
+                        <button onClick={() => saveDayShift({ genres: [] })} className="text-xs text-gray-500 hover:text-gray-300">None</button>
+                      </div>
+                    </div>
+                    <div ref={dayShiftDropdownRef} className="relative">
+                      <button
+                        onClick={() => setDayShiftDropdownOpen(!dayShiftDropdownOpen)}
+                        className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-[#151528] border border-[#2e2e5a] rounded-xl text-sm text-left"
+                      >
+                        <span className="text-gray-300 truncate">
+                          {dayShiftGenres.length === 0
+                            ? 'Select genres…'
+                            : dayShiftGenres.length === genres.length
+                            ? 'All genres'
+                            : dayShiftGenres.join(', ')}
+                        </span>
+                        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${dayShiftDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {dayShiftDropdownOpen && (
+                        <div className="absolute z-50 left-0 right-0 mt-1 bg-[#0d0d1f] border border-[#2e2e5a] rounded-xl shadow-xl max-h-48 overflow-auto">
+                          {genres.map(g => (
+                            <button
+                              key={g.name}
+                              onClick={() => toggleDsGenre(g.name)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[#151528] border-b border-[#1e293b] last:border-b-0 transition-colors"
+                            >
+                              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                dayShiftGenres.includes(g.name) ? 'bg-[#fbbf24] border-[#fbbf24]' : 'border-gray-600'
+                              }`}>
+                                {dayShiftGenres.includes(g.name) && <Check className="w-2.5 h-2.5 text-black" />}
+                              </div>
+                              <span className="text-sm text-gray-300">{g.name}</span>
+                              <span className="text-xs text-gray-500 ml-auto">{g.count} songs</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    During the active window, break songs and entertainers without personal playlists will pull from the Day Shift genres above. Outside the window, Music Selection Mode applies as normal.
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Music Selection Mode</h3>

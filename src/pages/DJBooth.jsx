@@ -57,6 +57,20 @@ function auditEvent(action, details) {
   }).catch(() => {});
 }
 
+function isDayShiftActive(dayShift) {
+  if (!dayShift?.enabled || !dayShift?.startTime || !dayShift?.endTime) return false;
+  const now = new Date();
+  const [startH, startM] = dayShift.startTime.split(':').map(Number);
+  const [endH, endM] = dayShift.endTime.split(':').map(Number);
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const startMins = startH * 60 + startM;
+  const endMins = endH * 60 + endM;
+  if (startMins <= endMins) {
+    return nowMins >= startMins && nowMins < endMins;
+  }
+  return nowMins >= startMins || nowMins < endMins;
+}
+
 export default function DJBooth() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -1641,8 +1655,14 @@ export default function DJBooth() {
     const excludeNames = [...new Set([...assignedNames, ...additionalExcludes])];
     console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} — ${assignedNames.length} assigned + ${additionalExcludes.length} batch excluded (server handles cooldowns)`);
 
-    const activeGenres = opts?.activeGenres?.length > 0 ? opts.activeGenres : [];
     const rawPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
+
+    const dayShift = opts?.dayShift;
+    const dayShiftOn = isDayShiftActive(dayShift);
+    const dayShiftGenres = dayShift?.genres || [];
+    const activeGenres = (dayShiftOn && dayShiftGenres.length > 0 && rawPlaylist.length === 0)
+      ? dayShiftGenres
+      : (opts?.activeGenres?.length > 0 ? opts.activeGenres : []);
 
     try {
       const token = localStorage.getItem('djbooth_token');
@@ -2454,7 +2474,12 @@ export default function DJBooth() {
               .map(([name]) => name);
             const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
             const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
-            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const _dsSkip = djOptionsRef.current?.dayShift;
+            const _dsSkipOn = isDayShiftActive(_dsSkip);
+            const _dsSkipGenres = _dsSkip?.genres || [];
+            const activeGenres = (_dsSkipOn && _dsSkipGenres.length > 0)
+              ? _dsSkipGenres
+              : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
             const res = await fetch('/api/music/select', {
               method: 'POST',
               headers,
@@ -2828,7 +2853,12 @@ export default function DJBooth() {
             const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
             const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
             const excludeAll = [...new Set([...cooldownNames, ...assignedNames, ...allBreakNames])];
-            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const _dsCool = djOptionsRef.current?.dayShift;
+            const _dsCoolOn = isDayShiftActive(_dsCool);
+            const _dsCoolGenres = _dsCool?.genres || [];
+            const activeGenres = (_dsCoolOn && _dsCoolGenres.length > 0)
+              ? _dsCoolGenres
+              : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
             const res = await fetch('/api/music/select', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -3067,7 +3097,12 @@ export default function DJBooth() {
               .map(([name]) => name);
             const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
             const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
-            const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
+            const _dsTE = djOptionsRef.current?.dayShift;
+            const _dsTEOn = isDayShiftActive(_dsTE);
+            const _dsTEGenres = _dsTE?.genres || [];
+            const activeGenres = (_dsTEOn && _dsTEGenres.length > 0)
+              ? _dsTEGenres
+              : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
             const res = await fetch('/api/music/select', {
               method: 'POST',
               headers,
