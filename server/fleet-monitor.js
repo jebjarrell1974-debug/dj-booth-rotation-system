@@ -299,7 +299,7 @@ async function registerHeartbeat(deviceId, data) {
     }
 
     if (data.lastTransitionMs != null && data.lastTransitionMs !== existing.lastTransitionMs &&
-        data.lastTransitionMs > 3000 && canSendAlert(effectiveId, 'slow_transition')) {
+        data.lastTransitionMs > 25000 && canSendAlert(effectiveId, 'slow_transition')) {
       sendTelegram(
         `⏱ <b>SLOW TRANSITION</b>\n` +
         `<b>${dev.name}</b> (${dev.clubName})\n` +
