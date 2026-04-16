@@ -145,14 +145,73 @@ gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing' 2>/dev/null || true
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing' 2>/dev/null || true
 
-# Enable GNOME auto-login so unit boots straight to desktop
-sudo sed -i '/^\[daemon\]/a AutomaticLoginEnable=True\nAutomaticLogin='"$UNIT_USER" /etc/gdm3/daemon.conf 2>/dev/null || \
+# Force X11 session (required for xrandr display rotation on second screen)
 sudo tee /etc/gdm3/daemon.conf > /dev/null << GDMEOF
 [daemon]
 AutomaticLoginEnable=True
 AutomaticLogin=$UNIT_USER
+WaylandEnable=false
 GDMEOF
-echo "GNOME auto-login configured"
+echo "GNOME auto-login + X11 session configured"
+
+# Install xrandr for second display (crowd rotation screen) management
+sudo apt install -y x11-xserver-utils 2>/dev/null || true
+
+# Write second display launcher script
+cat > "$UNIT_HOME/djbooth-rotation-display.sh" << 'RDEOF'
+#!/bin/bash
+sleep 20
+SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+if [ -n "$SECOND" ]; then
+  DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+fi
+rm -rf /tmp/chromium-rotation
+chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
+  --noerrdialogs --disable-session-crashed-bubble \
+  --autoplay-policy=no-user-gesture-required \
+  http://localhost:3001/RotationDisplay
+RDEOF
+chmod +x "$UNIT_HOME/djbooth-rotation-display.sh"
+
+# Write display trigger watcher script (server calls this to relaunch crowd display)
+cat > "$UNIT_HOME/djbooth-display-watcher.sh" << 'DWEOF'
+#!/bin/bash
+while true; do
+  if [ -f /tmp/djbooth-display-trigger ]; then
+    rm -f /tmp/djbooth-display-trigger
+    pkill -f "RotationChromium" 2>/dev/null || true
+    sleep 1
+    SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+    [ -n "$SECOND" ] && DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+    rm -rf /tmp/chromium-rotation
+    chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
+      --noerrdialogs --disable-session-crashed-bubble \
+      --autoplay-policy=no-user-gesture-required \
+      http://localhost:3001/RotationDisplay &
+    disown
+  fi
+  sleep 2
+done
+DWEOF
+chmod +x "$UNIT_HOME/djbooth-display-watcher.sh"
+
+# GNOME autostart for both second display scripts
+cat > "$HOME/.config/autostart/djbooth-rotation-display.desktop" << RDEOF
+[Desktop Entry]
+Type=Application
+Name=DJ Rotation Display
+Exec=$UNIT_HOME/djbooth-rotation-display.sh
+X-GNOME-Autostart-enabled=true
+RDEOF
+
+cat > "$HOME/.config/autostart/djbooth-display-watcher.desktop" << DWEOF
+[Desktop Entry]
+Type=Application
+Name=DJ Display Watcher
+Exec=$UNIT_HOME/djbooth-display-watcher.sh
+X-GNOME-Autostart-enabled=true
+DWEOF
+echo "Second display (crowd rotation screen) configured"
 
 echo "[9/11] Setting up passwordless sudo..."
 NOPASSWD_FILE="/etc/sudoers.d/010_${UNIT_USER}-nopasswd"

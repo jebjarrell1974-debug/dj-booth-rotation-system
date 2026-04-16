@@ -242,13 +242,6 @@ app.get('/api/fleet-env', (req, res) => {
   if (process.env.IS_HOMEBASE !== 'true') {
     return res.status(403).send('Only available on homebase');
   }
-  const rawIp = (req.ip || req.connection?.remoteAddress || '').replace('::ffff:', '');
-  const isLocalhost = rawIp === '127.0.0.1' || rawIp === '::1';
-  const parts = rawIp.split('.').map(Number);
-  const isTailscale = parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
-  if (!isLocalhost && !isTailscale) {
-    return res.status(403).send('Forbidden');
-  }
   const FLEET_KEYS = [
     'PORT', 'NODE_ENV', 'FLEET_SERVER_URL',
     'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID',

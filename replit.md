@@ -1,7 +1,7 @@
 # NEON AI DJ — Nightclub Entertainment Operations Network
 
 ## Overview
-NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent Disc Jockey) is a React-based application for automating dancer rotations, managing music playback, and generating dynamic voice announcements in nightclubs. It is designed as a robust, low-power solution for hardware like the Raspberry Pi, aiming to streamline club operations and enhance the atmosphere through intelligent automation and responsive design. Key capabilities include seamless music transitions, automated set management, engaging announcements tailored to club hours and event types, and a fleet management system for centralized control, remote monitoring, updates, and content synchronization across multiple deployed units.
+NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent Disc Jockey) is a React-based application for automating dancer rotations, managing music playback, and generating dynamic voice announcements in nightclubs. It is designed for x86 mini PC hardware (Dell OptiPlex, Beelink Mini S12) running Debian Linux, aiming to streamline club operations and enhance the atmosphere through intelligent automation and responsive design. Key capabilities include seamless music transitions, automated set management, engaging announcements tailored to club hours and event types, and a fleet management system for centralized control, remote monitoring, updates, and content synchronization across multiple deployed units.
 
 The system aims to provide an AI DJ that never sleeps, offering human-sounding voice announcements, built-in redundancy for continuous operation even offline, and a comprehensive fleet management dashboard for multi-location businesses. It includes an iPad remote control, a commercial playback system with auto-generated promos, and per-unit API cost tracking. The project envisions a reliable, autonomous entertainment system built for demanding nightclub environments.
 
@@ -12,7 +12,7 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 | Homebase | `100.109.73.27` | Fleet server only (no audio output) | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026) |
 | neonaidj001 | `100.115.212.34` | DJ booth | Pony Bama | SSH: `neonaidj001@100.115.212.34` — 25,209 tracks, active |
 | neonaidj002 | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
-| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | **HiFiBerry DAC+ DEAD** (Apr 11 2026) — music re-downloading from R2 (was ~6,500/25,000 tracks as of Apr 11 evening, will complete overnight). 53 dancer playlists confirmed intact in DB. Pending hardware replacement. SSH: `neonaidj003@100.81.90.125` |
+| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | **Replacing with Dell OptiPlex 7010 Micro (Apr 2026)** — old Pi had dead HiFiBerry DAC+. New unit running Debian 13 x86, setup in progress. USB audio dongle pending arrival. SSH: `neonaidj003@100.81.90.125` (will update IP after Tailscale join) |
 | neonaidj004 | `100.95.238.71` | DJ booth | THE PONY PENSACOLA | Placeholder Pi — pending hardware upgrade to x86 mini PC |
 
 **Fleet dashboard**: `http://100.109.73.27:3001/fleet`
