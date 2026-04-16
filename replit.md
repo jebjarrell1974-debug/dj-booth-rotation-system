@@ -5,17 +5,53 @@ NEON AI DJ (Nightclub Entertainment Operations Network — Automated Intelligent
 
 The system aims to provide an AI DJ that never sleeps, offering human-sounding voice announcements, built-in redundancy for continuous operation even offline, and a comprehensive fleet management dashboard for multi-location businesses. It includes an iPad remote control, a commercial playback system with auto-generated promos, and per-unit API cost tracking. The project envisions a reliable, autonomous entertainment system built for demanding nightclub environments.
 
-## Fleet Devices (4 active — scaling to 50+ within 6 months)
+## Fleet Devices (5 active — scaling to 50+ within 6 months)
 
 | Unit | Tailscale IP | Role | Club | Status |
 |---|---|---|---|---|
-| Homebase | `100.109.73.27` | Fleet server + DJ booth | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026) |
-| neonaidj001 | `100.115.212.34` | DJ booth | Pony Bama | SSH: `neonaidj001@100.115.212.34` |
+| Homebase | `100.109.73.27` | Fleet server only (no audio output) | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026) |
+| neonaidj001 | `100.115.212.34` | DJ booth | Pony Bama | SSH: `neonaidj001@100.115.212.34` — 25,209 tracks, active |
 | neonaidj002 | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
-| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | Stable since Mar 10 crashes |
+| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | **HiFiBerry DAC+ DEAD** (Apr 11 2026) — music re-downloading from R2 (was ~6,500/25,000 tracks as of Apr 11 evening, will complete overnight). 53 dancer playlists confirmed intact in DB. Pending hardware replacement. SSH: `neonaidj003@100.81.90.125` |
+| neonaidj004 | `100.95.238.71` | DJ booth | THE PONY PENSACOLA | Placeholder Pi — pending hardware upgrade to x86 mini PC |
 
 **Fleet dashboard**: `http://100.109.73.27:3001/fleet`
 **Update pipeline**: `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` to bypass homebase and pull direct from GitHub.
+
+**IMPORTANT — Homebase dead air alerts**: Homebase (HP Compaq) has no audio output and never will. "Dead air logged" warnings from homebase in the fleet dashboard are expected and can be ignored permanently.
+
+**IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2 (lines 381–423). This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. If R2 has fewer files than a Pi's local storage, the sync will purge local files on restart. **Never restart a fleet Pi's service if R2 has recently been partially cleared.** Pending: add a safeguard that skips the purge if R2 has >20% fewer files than local storage.
+
+## Hardware Upgrade Plan — x86 Mini PC (GMKtec G3 PRO)
+
+**Target hardware**: GMKtec Nucbox G3 PRO
+- CPU: Intel Core i3-10110U (2C/4T, 4.1 GHz boost) — NOTE: this is i3-10110U, NOT the N100 discussed earlier
+- RAM: 16GB DDR4 dual-channel
+- Storage: 512GB M.2 SATA SSD + NVMe expansion slot
+- Ports: USB 3.2 ×4, HDMI ×2 (4K@60Hz), 3.5mm audio jack
+- Network: WiFi 6, 2.5GbE Ethernet, Bluetooth 5.2
+- OS: Ships with Windows 11 Pro — **install Debian 12 Bookworm**
+
+**Audio for x86 units**: Use a **USB audio dongle** (e.g. UGREEN USB Audio Adapter ~$15-20). Do NOT rely on the built-in 3.5mm jack for club use — motherboard audio picks up electrical noise and can cause ground loop hum through the venue PA. USB audio is physically isolated, plug-and-play on Linux, and trivially replaceable.
+
+**App compatibility on x86 Debian**:
+- Node.js server, SQLite, R2 sync, all API routes — ✅ zero changes
+- React frontend, AudioEngine, Chrome kiosk — ✅ zero changes
+- Systemd service setup — ✅ identical commands
+- Tailscale VPN — ✅ same install script
+- CPU temperature (`/sys/class/thermal/thermal_zone0/temp`) — ✅ works on x86 Linux
+- FFmpeg/LUFS analysis — ✅ actually faster on x86 than Pi ARM
+- `chromium` package name — ✅ same on Debian x86
+- `djbooth-update.sh` update script — ✅ works on any Debian Linux
+- **Kiosk display setup** — ⚠️ needs minor update: current script configures `labwc` (Pi 5 Wayland compositor). x86 Debian uses a standard desktop environment. The `pi-setup.sh` script's display/autostart section needs to be updated for x86 before first deployment.
+- `wlr-randr` screen rotation — ⚠️ Pi-specific, skip on x86 unless display needs rotation
+
+**Setup process for new x86 unit**:
+1. Install Debian 12 Bookworm (wipe Windows)
+2. Run modified `pi-setup.sh` (will be updated when hardware arrives)
+3. Install Tailscale, connect to fleet
+4. Plug in USB audio dongle, set as default ALSA device
+5. Run `~/djbooth-update.sh` to pull latest code and configure kiosk
 
 ## User Preferences
 - Nightclub dark theme with neon cyan accent (#00d4ff) and blue secondary (#2563eb)
