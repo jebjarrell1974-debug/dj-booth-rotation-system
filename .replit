@@ -1,70 +1,36 @@
-modules = ["nodejs-20", "python-3.11", "postgresql-16"]
-[nix]
-channel = "stable-25_05"
-packages = ["unzip"]
+modules = ["nodejs-24"]
 
-[agent]
-expertMode = true
-integrations = ["github:1.0.0"]
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
 
 [workflows]
 runButton = "Project"
 
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start application"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "test"
-
-[[workflows.workflow]]
-name = "Start application"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd /home/runner/workspace && PORT=3001 node server/index.js & sleep 2 && node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5000"
-waitForPort = 5000
-
-[[workflows.workflow]]
-name = "test"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd /home/runner/workspace && node --experimental-vm-modules node_modules/.bin/jest --testTimeout=15000 2>&1 | tail -20"
-
-[workflows.workflow.metadata]
-isValidation = true
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
 
 [[ports]]
-localPort = 3001
-externalPort = 3001
+localPort = 8080
+externalPort = 8080
 
 [[ports]]
-localPort = 5000
+localPort = 8081
 externalPort = 80
 
 [[ports]]
-localPort = 5001
-externalPort = 3002
-
-[deployment]
-deploymentTarget = "autoscale"
-run = ["node", "prod-server.cjs"]
-build = ["echo", "skip"]
-
+localPort = 18593
+externalPort = 3000
 
 [userenv]
 
-[userenv.production]
-NODE_ENV = "production"
+[userenv.shared]

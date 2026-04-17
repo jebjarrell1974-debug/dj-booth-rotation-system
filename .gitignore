@@ -1,32 +1,68 @@
-#env
-.env
-.env.*
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
+# compiled output
 dist
-*.db
-voiceovers/
-dist-ssr
-*.local
+tmp
+out-tsc
+*.tsbuildinfo
+.expo
+.expo-shared
 
-# Editor directories and files
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
 .vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
 !.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-.env
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Replit
+.cache/
+.local/
+
+# SQLite databases — never commit these, they bloat git history fast
+*.db
+*.db-shm
+*.db-wal
+
+# Music, voiceovers, soundboard — stored in R2, not git
+artifacts/api-server/music/
+artifacts/api-server/voiceovers/
+artifacts/api-server/soundboard/
+**/music/*.mp3
+**/voiceovers/*.mp3
+**/soundboard/*.mp3
+
+# Build artifacts
+artifacts/*/dist/
+
+# Attached assets (screenshots, uploads)
+attached_assets/

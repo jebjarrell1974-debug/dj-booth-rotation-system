@@ -1,0 +1,517 @@
+import db from './db.js';
+import { listDancerBackups, storeFleetError, getFleetErrors } from './fleet-db.js';
+import { existsSync, readFileSync } from 'fs';
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000;
+const CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+const devices = new Map();
+const pendingCommands = new Map();
+let checkInterval = null;
+
+const alertCooldowns = new Map();
+const ALERT_COOLDOWN_MS = 10 * 60 * 1000;
+
+function canSendAlert(deviceId, alertType) {
+  const key = `${deviceId}:${alertType}`;
+  const last = alertCooldowns.get(key) || 0;
+  if (Date.now() - last < ALERT_COOLDOWN_MS) return false;
+  alertCooldowns.set(key, Date.now());
+  return true;
+}
+
+function isTelegramConfigured() {
+  return !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
+}
+
+async function sendTelegram(message) {
+  if (!isTelegramConfigured()) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: 'HTML',
+      }),
+    });
+  } catch (err) {
+    console.error('Telegram send error:', err.message);
+  }
+}
+
+function ensureDeviceInDb(deviceId, data) {
+  try {
+    const existing = db.prepare('SELECT device_id FROM fleet_devices WHERE device_id = ? COLLATE NOCASE OR device_name = ? COLLATE NOCASE').get(deviceId, deviceId);
+    if (!existing) {
+      const apiKey = 'auto_' + deviceId + '_' + Date.now().toString(36);
+      db.prepare(`
+        INSERT INTO fleet_devices (device_id, device_name, club_name, api_key, status, last_heartbeat)
+        VALUES (?, ?, ?, ?, 'online', ?)
+      `).run(deviceId, data.name || deviceId, data.clubName || '', apiKey, Date.now());
+      console.log(`📋 Auto-registered fleet device: ${deviceId}`);
+    }
+  } catch (err) {
+    console.error('Fleet DB auto-register error:', err.message);
+  }
+}
+
+function recordHeartbeatInDb(deviceId, data) {
+  try {
+    const now = Date.now();
+    db.prepare('UPDATE fleet_devices SET last_heartbeat = ?, status = ?, app_version = ?, club_name = ? WHERE device_id = ?')
+      .run(now, 'online', data.version || '1.0.0', data.clubName || '', deviceId);
+
+    const diskPercent = (data.diskTotal && data.diskFree)
+      ? Math.round(((data.diskTotal - data.diskFree) / data.diskTotal) * 100)
+      : 0;
+
+    const memPercent = data.memPct || data.memPercent || 0;
+    const cpuPercent = data.cpuPercent || 0;
+
+    db.prepare(`
+      INSERT INTO fleet_heartbeats (device_id, timestamp, app_version, cpu_percent, memory_percent, disk_percent, cpu_temp, uptime_seconds, active_dancers, is_playing)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      deviceId, now,
+      data.version || '1.0.0',
+      cpuPercent,
+      memPercent,
+      diskPercent,
+      data.cpuTemp ? parseFloat(data.cpuTemp) : 0,
+      data.uptime || 0,
+      data.activeEntertainers || 0,
+      0
+    );
+
+    const cutoff = now - (7 * 24 * 60 * 60 * 1000);
+    db.prepare('DELETE FROM fleet_heartbeats WHERE timestamp < ?').run(cutoff);
+  } catch (err) {
+    console.error('Fleet DB heartbeat error:', err.message);
+  }
+}
+
+async function registerHeartbeat(deviceId, data) {
+  deviceId = (deviceId || '').toLowerCase().trim();
+  if (!deviceId) return;
+
+  // If no direct match, check if a registered device's name matches this deviceId.
+  // This merges the heartbeat into the existing registered entry instead of creating a duplicate.
+  let effectiveId = deviceId;
+  if (!devices.has(deviceId)) {
+    for (const [key, dev] of devices) {
+      if (dev.name && dev.name.toLowerCase() === deviceId) {
+        effectiveId = key;
+        break;
+      }
+    }
+  }
+
+  const now = Date.now();
+  const existing = devices.get(effectiveId);
+  const wasOffline = existing?.status === 'offline';
+
+  devices.set(effectiveId, {
+    deviceId: effectiveId,
+    name: existing?.name || data.name || deviceId,
+    clubName: data.clubName || 'Unknown',
+    ip: data.ip || '',
+    tailscaleIp: data.tailscaleIp || '',
+    cpuTemp: data.cpuTemp || null,
+    diskFree: data.diskFree || null,
+    diskTotal: data.diskTotal || null,
+    uptime: data.uptime || null,
+    appRunning: data.appRunning !== false,
+    trackCount: data.trackCount || 0,
+    voiceoverCount: data.voiceoverCount || 0,
+    currentDancer: data.currentDancer || null,
+    currentSong: data.currentSong || null,
+    version: data.version || null,
+    lastHeartbeat: now,
+    status: 'online',
+    lastError: data.lastError || null,
+    apiCosts: data.apiCosts || null,
+    memFree: data.memFree || null,
+    memTotal: data.memTotal || null,
+    memPct: data.memPct || null,
+    serviceUptime: data.serviceUptime || null,
+    lastUpdateTime: data.lastUpdateTime || null,
+    lastUpdateCommit: data.lastUpdateCommit || null,
+    activeEntertainers: data.activeEntertainers || 0,
+    errorCount: data.errorCount || 0,
+    network: data.network || null,
+    recentLogs: data.recentLogs || [],
+    isRotationActive: data.isRotationActive || false,
+    isPlaying: data.isPlaying || false,
+    announcementsEnabled: data.announcementsEnabled !== false,
+    songsPerSet: data.songsPerSet || 3,
+    diagLog: data.diagLog || [],
+    prePickHits: data.prePickHits || 0,
+    prePickMisses: data.prePickMisses || 0,
+    lastTransitionMs: data.lastTransitionMs ?? null,
+    lastWatchdogAt: data.lastWatchdogAt ?? null,
+    lastWatchdogSilentMs: data.lastWatchdogSilentMs ?? null,
+    lastWatchdogDancer: data.lastWatchdogDancer ?? null,
+    lastWatchdogTrack: data.lastWatchdogTrack ?? null,
+  });
+
+  if (data.dancer_names && Array.isArray(data.dancer_names)) {
+    try {
+      const { upsertDancerRoster } = await import('./fleet-db.js');
+      for (const name of data.dancer_names) {
+        if (name && typeof name === 'string') {
+          upsertDancerRoster(name.trim(), effectiveId);
+        }
+      }
+    } catch {}
+  }
+
+  if (data.recentPlays && Array.isArray(data.recentPlays) && data.recentPlays.length > 0) {
+    try {
+      const { storePlayHistory } = await import('./fleet-db.js');
+      storePlayHistory(effectiveId, data.recentPlays);
+    } catch (err) {
+      console.error('Fleet play history store error:', err.message);
+    }
+  }
+
+  if (data.dancerBackup && Array.isArray(data.dancerBackup.dancers) && data.dancerBackup.dancers.length > 0) {
+    try {
+      const { saveDancerBackup } = await import('./fleet-db.js');
+      saveDancerBackup(
+        effectiveId,
+        JSON.stringify(data.dancerBackup.dancers),
+        JSON.stringify(data.dancerBackup.settings || {})
+      );
+    } catch (err) {
+      console.error('Fleet dancer backup error:', err.message);
+    }
+  }
+
+  ensureDeviceInDb(effectiveId, data);
+  recordHeartbeatInDb(effectiveId, data);
+
+  if (wasOffline) {
+    const dev = devices.get(effectiveId);
+    const downtime = existing ? Math.round((now - existing.lastHeartbeat) / 60000) : 0;
+    sendTelegram(
+      `✅ <b>RECOVERED</b>\n` +
+      `<b>${dev.name}</b> (${dev.clubName})\n` +
+      `Back online after ${downtime} min`
+    );
+  }
+
+  // --- Server-side error alerts (from error-tracker on each Pi) ---
+  if (data.serverErrors && Array.isArray(data.serverErrors) && data.serverErrors.length > 0) {
+    const dev = devices.get(effectiveId);
+    for (const err of data.serverErrors) {
+      storeFleetError(effectiveId, err);
+    }
+    if (canSendAlert(effectiveId, 'server_error')) {
+      const sample = data.serverErrors[0];
+      const count = data.serverErrors.length;
+      const dancerCtx = sample.currentDancer ? `\nDancer: ${sample.currentDancer}` : '';
+      const songCtx = sample.currentSong ? `\nTrack: ${sample.currentSong}` : '';
+      sendTelegram(
+        `🔴 <b>SERVER ERROR${count > 1 ? ` (×${count})` : ''}</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Type: <code>${sample.type}</code>\n` +
+        `${sample.message}` +
+        dancerCtx + songCtx
+      );
+    }
+  }
+
+  if (isTelegramConfigured() && existing && !wasOffline) {
+    const dev = devices.get(effectiveId);
+
+    // --- Voice failure alerts (from diagLog audio events) ---
+    const VOICE_FAIL_EVENTS = new Set([
+      'voice_timeout', 'voice_generate_fail', 'voice_blob_invalid',
+      'voice_error', 'voice_failed', 'elevenlabs_error', 'tts_failed',
+    ]);
+    const diagLog = data.diagLog || [];
+    const existingDiagLog = existing.diagLog || [];
+    const newDiagEntries = diagLog.length > existingDiagLog.length
+      ? diagLog.slice(existingDiagLog.length)
+      : [];
+    const voiceFails = newDiagEntries.filter(e =>
+      VOICE_FAIL_EVENTS.has(e?.event || e?.type || '') ||
+      (e?.level === 'error' && String(e?.message || '').toLowerCase().includes('voice'))
+    );
+    if (voiceFails.length > 0 && canSendAlert(effectiveId, 'voice_fail')) {
+      const sample = voiceFails[0];
+      const dancerCtx = sample.dancer || sample.dancerName ? `\nDancer: ${sample.dancer || sample.dancerName}` : '';
+      sendTelegram(
+        `🎤 <b>VOICE FAILURE</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Event: <code>${sample.event || sample.type || 'unknown'}</code>\n` +
+        `${sample.message || sample.msg || ''}` +
+        dancerCtx
+      );
+    }
+
+    // --- CPU temperature alert (>80°C) ---
+    const cpuTemp = parseFloat(data.cpuTemp);
+    if (!isNaN(cpuTemp) && cpuTemp > 80 && canSendAlert(effectiveId, 'cpu_temp')) {
+      sendTelegram(
+        `🌡 <b>HIGH CPU TEMP</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Temperature: ${cpuTemp}°C`
+      );
+    }
+
+    // --- Low disk space alert (<10% free) ---
+    if (data.diskTotal && data.diskFree) {
+      const diskFreePct = (data.diskFree / data.diskTotal) * 100;
+      if (diskFreePct < 10 && canSendAlert(effectiveId, 'low_disk')) {
+        const freeGb = (data.diskFree / 1073741824).toFixed(1);
+        sendTelegram(
+          `💾 <b>LOW DISK SPACE</b>\n` +
+          `<b>${dev.name}</b> (${dev.clubName})\n` +
+          `Only ${diskFreePct.toFixed(1)}% free (${freeGb} GB remaining)`
+        );
+      }
+    }
+
+    // --- High RAM usage alert (>90%) ---
+    const memPct = data.memPct ?? data.memPercent ?? null;
+    if (memPct !== null && memPct > 90 && canSendAlert(effectiveId, 'high_ram')) {
+      sendTelegram(
+        `🧠 <b>HIGH RAM USAGE</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Memory at ${memPct}%`
+      );
+    }
+
+    if (data.lastWatchdogAt && data.lastWatchdogAt !== existing.lastWatchdogAt &&
+        (data.lastWatchdogSilentMs || 0) > 2000 && canSendAlert(effectiveId, 'dead_air')) {
+      sendTelegram(
+        `🔇 <b>DEAD AIR</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `${((data.lastWatchdogSilentMs || 0) / 1000).toFixed(1)}s silence detected\n` +
+        `Dancer: ${data.lastWatchdogDancer || 'unknown'}\n` +
+        `Track: ${data.lastWatchdogTrack || 'unknown'}`
+      );
+    }
+
+    if (data.lastTransitionMs != null && data.lastTransitionMs !== existing.lastTransitionMs &&
+        data.lastTransitionMs > 25000 && canSendAlert(effectiveId, 'slow_transition')) {
+      sendTelegram(
+        `⏱ <b>SLOW TRANSITION</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Transition took ${(data.lastTransitionMs / 1000).toFixed(1)}s`
+      );
+    }
+
+    const totalPicks = (data.prePickHits || 0) + (data.prePickMisses || 0);
+    if (totalPicks >= 5) {
+      const missRate = (data.prePickMisses || 0) / totalPicks;
+      if (missRate > 0.5 && canSendAlert(effectiveId, 'low_cache_rate')) {
+        sendTelegram(
+          `📉 <b>LOW CACHE RATE</b>\n` +
+          `<b>${dev.name}</b> (${dev.clubName})\n` +
+          `${Math.round(missRate * 100)}% pre-pick misses (${data.prePickMisses}/${totalPicks})\n` +
+          `Dead air risk is elevated`
+        );
+      }
+    }
+  }
+}
+
+function checkDevices() {
+  const now = Date.now();
+  for (const [id, dev] of devices) {
+    if (dev.status === 'online' && (now - dev.lastHeartbeat) > HEARTBEAT_TIMEOUT_MS) {
+      dev.status = 'offline';
+      try {
+        db.prepare("UPDATE fleet_devices SET status = 'offline' WHERE device_id = ?").run(id);
+      } catch {}
+      const lastSeen = Math.round((now - dev.lastHeartbeat) / 60000);
+      sendTelegram(
+        `🔴 <b>ALERT</b>\n` +
+        `<b>${dev.name}</b> (${dev.clubName})\n` +
+        `Offline — last heartbeat ${lastSeen} min ago`
+      );
+    }
+  }
+}
+
+function getFleetStatus() {
+  const result = [];
+  let backupSummary = [];
+  try {
+    backupSummary = listDancerBackups();
+  } catch {}
+  const backupByDevice = {};
+  for (const b of backupSummary) backupByDevice[b.device_id] = b;
+
+  for (const [, dev] of devices) {
+    const ago = Math.round((Date.now() - dev.lastHeartbeat) / 1000);
+    const backup = backupByDevice[dev.deviceId] || null;
+    result.push({ ...dev, secondsAgo: ago, dancerBackup: backup });
+  }
+  return result;
+}
+
+function loadDevicesFromDb() {
+  try {
+    const rows = db.prepare('SELECT * FROM fleet_devices').all();
+    const now = Date.now();
+    for (const row of rows) {
+      if (!devices.has(row.device_id)) {
+        const lastHb = row.last_heartbeat || (now - HEARTBEAT_TIMEOUT_MS - 60000);
+        devices.set(row.device_id, {
+          deviceId: row.device_id,
+          name: row.device_name || row.device_id,
+          clubName: row.club_name || 'Unknown',
+          ip: '',
+          tailscaleIp: '',
+          cpuTemp: null,
+          diskFree: null,
+          diskTotal: null,
+          uptime: null,
+          appRunning: false,
+          trackCount: 0,
+          voiceoverCount: 0,
+          currentDancer: null,
+          currentSong: null,
+          version: null,
+          lastHeartbeat: lastHb,
+          status: (now - lastHb) > HEARTBEAT_TIMEOUT_MS ? 'offline' : row.status || 'offline',
+          lastError: null,
+        });
+      }
+    }
+    if (rows.length > 0) {
+      console.log(`📋 Loaded ${rows.length} fleet device(s) from database`);
+    }
+  } catch (err) {
+    console.error('Fleet DB load error:', err.message);
+  }
+}
+
+function startMonitoring() {
+  if (checkInterval) return;
+  loadDevicesFromDb();
+  checkInterval = setInterval(checkDevices, CHECK_INTERVAL_MS);
+  if (isTelegramConfigured()) {
+    console.log('📱 Telegram fleet monitoring active');
+  } else {
+    console.log('ℹ️ Telegram not configured — fleet monitoring without alerts');
+  }
+}
+
+function stopMonitoring() {
+  if (checkInterval) {
+    clearInterval(checkInterval);
+    checkInterval = null;
+  }
+}
+
+function setupFleetMonitorRoutes(app) {
+  app.post('/api/monitor/heartbeat', async (req, res) => {
+    const { deviceId, ...data } = req.body;
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+    await registerHeartbeat(deviceId, data);
+    const pending = pendingCommands.get(deviceId);
+    if (pending && pending.length > 0) {
+      const cmds = [...pending];
+      pendingCommands.delete(deviceId);
+      return res.json({ ok: true, timestamp: Date.now(), commands: cmds });
+    }
+    res.json({ ok: true, timestamp: Date.now() });
+  });
+
+  app.get('/api/monitor/status', (req, res) => {
+    let currentCommitSha = null;
+    try {
+      const stampFile = process.env.HOME
+        ? `${process.env.HOME}/.djbooth-last-update`
+        : `/home/${process.env.USER || 'homebase'}/.djbooth-last-update`;
+      if (existsSync(stampFile)) {
+        const raw = readFileSync(stampFile, 'utf8').trim();
+        const [sha] = raw.split('|');
+        if (sha && sha.length >= 7) currentCommitSha = sha.slice(0, 7);
+      }
+    } catch {}
+    res.json({ devices: getFleetStatus(), telegramActive: isTelegramConfigured(), currentCommitSha });
+  });
+
+  app.post('/api/monitor/test-telegram', async (req, res) => {
+    if (!isTelegramConfigured()) {
+      return res.status(400).json({ error: 'Telegram not configured' });
+    }
+    await sendTelegram('🧪 <b>Test Alert</b>\nNEON AI DJ fleet monitoring is active!');
+    res.json({ ok: true, message: 'Test message sent' });
+  });
+
+  app.post('/api/monitor/broadcast', async (req, res) => {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'message required' });
+    await sendTelegram(`📢 <b>Broadcast</b>\n${message}`);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/monitor/command/:deviceId/:action', (req, res) => {
+    const { deviceId, action } = req.params;
+    const { pin } = req.body || {};
+    if (!deviceId || !action) return res.status(400).json({ error: 'deviceId and action required' });
+    const masterPin = process.env.MASTER_PIN || '36669';
+    if (pin !== masterPin) return res.status(403).json({ error: 'Invalid PIN' });
+    const validCommands = ['update', 'restart', 'sync', 'reboot'];
+    if (!validCommands.includes(action)) return res.status(400).json({ error: 'Invalid command' });
+    if (!pendingCommands.has(deviceId)) pendingCommands.set(deviceId, []);
+    pendingCommands.get(deviceId).push({ command: action, timestamp: Date.now() });
+    res.json({ ok: true, queued: action });
+  });
+
+  app.get('/api/monitor/errors', (req, res) => {
+    const { deviceId, limit } = req.query;
+    const errors = getFleetErrors(deviceId || null, parseInt(limit) || 200);
+    res.json({ ok: true, errors, count: errors.length });
+  });
+
+  app.post('/api/monitor/restore-dancers/:deviceId', async (req, res) => {
+    const { deviceId } = req.params;
+    const { pin } = req.body || {};
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+    const masterPin = process.env.MASTER_PIN || '36669';
+    if (pin !== masterPin) return res.status(403).json({ error: 'Invalid PIN' });
+    try {
+      const { getDancerBackup } = await import('./fleet-db.js');
+      const backup = getDancerBackup(deviceId);
+      if (!backup) return res.status(404).json({ error: 'No backup found for this device' });
+      if (!pendingCommands.has(deviceId)) pendingCommands.set(deviceId, []);
+      pendingCommands.get(deviceId).push({
+        command: 'restore_dancers',
+        timestamp: Date.now(),
+        data: {
+          dancers: JSON.parse(backup.dancers_json || '[]'),
+          settings: JSON.parse(backup.settings_json || '{}'),
+        },
+      });
+      res.json({ ok: true, queued: 'restore_dancers', dancer_count: backup.dancer_count });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to queue restore: ' + err.message });
+    }
+  });
+}
+
+function updateDeviceLiveData(deviceId, data) {
+  const dev = devices.get(deviceId);
+  if (!dev) return;
+  if (data.diagLog !== undefined) dev.diagLog = data.diagLog;
+  if (data.recentLogs !== undefined) dev.recentLogs = data.recentLogs;
+  if (data.prePickHits !== undefined) dev.prePickHits = data.prePickHits;
+  if (data.prePickMisses !== undefined) dev.prePickMisses = data.prePickMisses;
+  if (data.lastTransitionMs !== undefined) dev.lastTransitionMs = data.lastTransitionMs;
+  if (data.isRotationActive !== undefined) dev.isRotationActive = data.isRotationActive;
+  if (data.isPlaying !== undefined) dev.isPlaying = data.isPlaying;
+  if (data.activeEntertainers !== undefined) dev.activeEntertainers = data.activeEntertainers;
+}
+
+export { setupFleetMonitorRoutes, startMonitoring, stopMonitoring, sendTelegram, isTelegramConfigured, getFleetStatus, updateDeviceLiveData };

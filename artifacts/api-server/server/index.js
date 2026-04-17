@@ -2171,24 +2171,32 @@ async function initR2Sync() {
     return;
   }
   console.log('☁️ R2 cloud sync enabled — starting background sync...');
+  const voiceoverDir = getVoiceoverDirPath();
+  const currentClub = getSetting('club_name') || '';
   try {
-    const voiceoverDir = getVoiceoverDirPath();
-    const currentClub = getSetting('club_name') || '';
     updateBootStep('voiceoverSync', 'running', 'Downloading...');
     const voResult = await syncVoiceoversFromR2(voiceoverDir, currentClub);
     updateBootStep('voiceoverSync', 'done', `${voResult.downloaded} new, ${voResult.skipped} cached`);
     console.log(`☁️ Voiceover sync: ${voResult.downloaded} new, ${voResult.skipped} cached`);
-
-    updateBootStep('voiceoverUpload', 'running', 'Uploading...');
-    const voUpResult = await syncVoiceoversToR2(voiceoverDir);
-    updateBootStep('voiceoverUpload', 'done', `${voUpResult.uploaded} shared to cloud`);
-    console.log(`☁️ Voiceover upload: ${voUpResult.uploaded} shared to cloud`);
   } catch (err) {
     updateBootStep('voiceoverSync', 'error', err.message);
-    updateBootStep('voiceoverUpload', 'error', err.message);
     console.error('☁️ R2 voiceover sync error:', err.message);
     trackError('r2_voiceover_sync_failed', err.message, { component: 'r2sync' });
   }
+
+  // Voiceover upload runs in background — non-blocking so music sync can start immediately.
+  // Sharing locally-generated voiceovers back to R2 is not time-critical for boot.
+  updateBootStep('voiceoverUpload', 'running', 'Uploading in background...');
+  syncVoiceoversToR2(voiceoverDir)
+    .then(voUpResult => {
+      updateBootStep('voiceoverUpload', 'done', `${voUpResult.uploaded} shared to cloud`);
+      console.log(`☁️ Voiceover upload: ${voUpResult.uploaded} shared to cloud`);
+    })
+    .catch(err => {
+      updateBootStep('voiceoverUpload', 'error', err.message);
+      console.error('☁️ R2 voiceover upload error:', err.message);
+      trackError('r2_voiceover_upload_failed', err.message, { component: 'r2sync' });
+    });
   try {
     if (MUSIC_PATH) {
       if (process.env.IS_HOMEBASE === 'true') {
