@@ -64,6 +64,24 @@ export const fleetAdmin = {
     return res.json();
   },
 
+  async initiateLicenseCountdown(deviceId, notes = '') {
+    const res = await fleetFetch(`/devices/${deviceId}/license/initiate`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+    return res.json();
+  },
+
+  async restoreLicense(deviceId) {
+    const res = await fleetFetch(`/devices/${deviceId}/license/restore`, { method: 'POST' });
+    return res.json();
+  },
+
+  async generateManualKey(deviceId) {
+    const res = await fleetFetch(`/devices/${deviceId}/license/manual-key`, { method: 'POST' });
+    return res.json();
+  },
+
   async getHeartbeats(deviceId, limit = 100) {
     const res = await fleetFetch(`/heartbeats/${deviceId}?limit=${limit}`);
     return res.json();

@@ -132,7 +132,12 @@ async function sendHeartbeat() {
     });
 
     if (res.ok) {
-      return res.json();
+      const data = await res.json();
+      try {
+        const { ingestHeartbeatLicense } = await import('./license.js');
+        ingestHeartbeatLicense(data?.license);
+      } catch {}
+      return data;
     }
   } catch (err) {
     console.warn('[systemHealth] Heartbeat failed:', err.message);

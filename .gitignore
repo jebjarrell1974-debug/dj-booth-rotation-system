@@ -53,6 +53,10 @@ Thumbs.db
 *.db-shm
 *.db-wal
 
+# License signing keys (private)
+license-keys.json
+**/license-keys.json
+
 # Music, voiceovers, soundboard — stored in R2, not git
 artifacts/api-server/music/
 artifacts/api-server/voiceovers/
