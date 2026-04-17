@@ -111,7 +111,9 @@ fi
 echo "[3/8] Backing up current installation..."
 if [ -f "$APP_DIR/package.json" ]; then
   mkdir -p "$BACKUP_DIR"
-  rsync -a --exclude='music' --exclude='voiceovers' --exclude='node_modules' "$APP_DIR/" "$BACKUP_DIR/"
+  find "$APP_DIR" -maxdepth 1 ! -name "$(basename "$APP_DIR")" \
+    ! -name 'music' ! -name 'voiceovers' ! -name 'node_modules' \
+    -exec cp -a {} "$BACKUP_DIR/" \;
   echo "Backup: $BACKUP_DIR (skipped music/voiceovers/node_modules)"
 else
   echo "No existing installation found, skipping backup"
