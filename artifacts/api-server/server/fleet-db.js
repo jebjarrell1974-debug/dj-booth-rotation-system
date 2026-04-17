@@ -162,6 +162,16 @@ try {
   db.exec("ALTER TABLE fleet_heartbeats ADD COLUMN cpu_temp REAL DEFAULT 0");
 }
 
+for (const [col, ddl] of [
+  ['license_status', "ALTER TABLE fleet_devices ADD COLUMN license_status TEXT DEFAULT 'active'"],
+  ['license_initiated_at', "ALTER TABLE fleet_devices ADD COLUMN license_initiated_at INTEGER DEFAULT 0"],
+  ['license_expires_at', "ALTER TABLE fleet_devices ADD COLUMN license_expires_at INTEGER DEFAULT 0"],
+  ['license_notes', "ALTER TABLE fleet_devices ADD COLUMN license_notes TEXT DEFAULT ''"],
+]) {
+  try { db.prepare(`SELECT ${col} FROM fleet_devices LIMIT 1`).get(); }
+  catch { try { db.exec(ddl); } catch {} }
+}
+
 try {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_play_history_dedup ON fleet_play_history(device_id, track_name, played_at)");
 } catch {}
@@ -256,6 +266,19 @@ export function updateDevice(deviceId, data) {
 
 export function deleteDevice(deviceId) {
   db.prepare('DELETE FROM fleet_devices WHERE device_id = ?').run(deviceId);
+}
+
+export function setDeviceLicense(deviceId, { status, initiatedAt, expiresAt, notes }) {
+  const fields = [];
+  const values = [];
+  if (status !== undefined) { fields.push('license_status = ?'); values.push(status); }
+  if (initiatedAt !== undefined) { fields.push('license_initiated_at = ?'); values.push(initiatedAt); }
+  if (expiresAt !== undefined) { fields.push('license_expires_at = ?'); values.push(expiresAt); }
+  if (notes !== undefined) { fields.push('license_notes = ?'); values.push(notes); }
+  if (fields.length === 0) return getDevice(deviceId);
+  values.push(deviceId);
+  db.prepare(`UPDATE fleet_devices SET ${fields.join(', ')} WHERE device_id = ?`).run(...values);
+  return getDevice(deviceId);
 }
 
 export function recordHeartbeat(deviceId, data) {

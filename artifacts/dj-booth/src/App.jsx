@@ -8,6 +8,8 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { isRemoteMode } from '@/api/serverApi';
 import BootScreen from '@/components/BootScreen';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
+import LicenseSuspended from '@/components/LicenseSuspended';
+import { subscribeLicense, startLicensePolling } from '@/lib/license';
 import Landing from '@/pages/Landing';
 import DJBooth from '@/pages/DJBooth';
 import DancerView from '@/pages/DancerView';
@@ -249,6 +251,24 @@ function AppRoutes() {
   );
 }
 
+function LicenseGate({ children }) {
+  const [state, setState] = useState({ mode: 'free' });
+  const location = useLocation();
+  const isFleetRoute = location.pathname.startsWith('/fleet') ||
+    location.pathname === '/FleetDashboard';
+
+  useEffect(() => {
+    const unsub = subscribeLicense(setState);
+    startLicensePolling(60 * 60 * 1000);
+    return unsub;
+  }, []);
+
+  if (!isFleetRoute && state.mode === 'suspended') {
+    return <LicenseSuspended reason={state.reason} />;
+  }
+  return children;
+}
+
 function App() {
   const skipBoot = window.location.pathname.startsWith('/fleet') || window.location.pathname === '/FleetDashboard' || window.location.pathname === '/RotationDisplay';
   const [bootComplete, setBootComplete] = useState(skipBoot);
@@ -260,7 +280,9 @@ function App() {
         <QueryClientProvider client={queryClientInstance}>
           {!bootComplete && <BootScreen onReady={handleBootReady} />}
           <Router>
-            <AppRoutes />
+            <LicenseGate>
+              <AppRoutes />
+            </LicenseGate>
           </Router>
           <Toaster />
           <SonnerToaster position="top-center" theme="dark" richColors />

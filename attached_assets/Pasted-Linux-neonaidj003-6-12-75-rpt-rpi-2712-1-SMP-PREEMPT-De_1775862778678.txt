@@ -1,0 +1,47 @@
+Linux neonaidj003 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Fri Apr 10 17:40:30 2026 from 100.67.24.8
+neonaidj003@neonaidj003:~ $ cat /etc/systemd/system/djbooth.service | grep -i music
+neonaidj003@neonaidj003:~ $ du -sh ~/music/ 2>/dev/null; du -sh ~/Desktop/ 2>/dev/null; du -sh ~/djbooth/music/ 2>/dev/null; df -h /
+8.0K    /home/neonaidj003/Desktop/
+39G     /home/neonaidj003/djbooth/music/
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  917G  271G  609G  31% /
+neonaidj003@neonaidj003:~ $ sqlite3 ~/djbooth/djbooth.db "SELECT d.name, COUNT(dp.song_id) as assigned_songs FROM dancers d LEFT JOIN dancer_playlists dp ON d.id = dp.dancer_id GROUP BY d.id ORDER BY d.name;"
+-bash: sqlite3: command not found
+neonaidj003@neonaidj003:~ $ sudo apt-get install -y sqlite3 && sqlite3 ~/djbooth/djbooth.db "SELECT d.name, COUNT(dp.song_id) as assigned_songs FROM dancers d LEFT JOIN dancer_playlists dp ON d.id = dp.dancer_id GROUP BY d.id ORDER BY d.name;"
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+The following packages were automatically installed and are no longer required:
+  alacarte gir1.2-gmenu-3.0 gnome-menus gtk-nop
+  libgnome-menu-3-0 linux-headers-6.12.47+rpt-common-rpi
+  linux-headers-6.12.47+rpt-rpi-2712
+  linux-headers-6.12.47+rpt-rpi-v8
+  linux-image-6.12.47+rpt-rpi-2712
+  linux-image-6.12.47+rpt-rpi-v8
+  linux-kbuild-6.12.47+rpt python3-gi-cairo retry
+Use 'sudo apt autoremove' to remove them.
+Suggested packages:
+  sqlite3-doc
+The following NEW packages will be installed:
+  sqlite3
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 373 kB of archives.
+After this operation, 654 kB of additional disk space will be used.
+Get:1 http://deb.debian.org/debian trixie/main arm64 sqlite3 arm64 3.46.1-7+deb13u1 [373 kB]
+Fetched 373 kB in 0s (750 kB/s) 
+Selecting previously unselected package sqlite3.
+(Reading database ... 161691 files and directories currently installed.)
+Preparing to unpack .../sqlite3_3.46.1-7+deb13u1_arm64.deb ...
+Unpacking sqlite3 (3.46.1-7+deb13u1) ...
+Setting up sqlite3 (3.46.1-7+deb13u1) ...
+Processing triggers for man-db (2.13.1-1) ...
+Error: in prepare, no such table: dancer_playlists
+neonaidj003@neonaidj003:~ $ 

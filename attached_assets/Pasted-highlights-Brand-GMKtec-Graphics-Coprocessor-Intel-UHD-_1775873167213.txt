@@ -1,0 +1,14 @@
+highlights
+Brand GMKtec
+Graphics Coprocessor ‎Intel UHD Graphics 1200MHz
+Personal computer design type Mini PC
+Operating System 11 Pro
+CPU Model Celeron
+CPU Speed 4.1 GHz
+G3 PRO: WHY CHOOSE CORE I3-10110U - Better single-core performance: The Core i3-10110U has a higher peak boost clock (4.1 GHz) compared to the Ryzen 3 4300U and the Intel Alder Lake N150 series, making it better for tasks that rely on fast single-core performance (e.g., web browsing, office apps). Better multi-thread performance via Hyper-Threading: the Core i3-10110U offers better performance in multi-threaded workloads compared to the Ryzen 3 4300U, especially for light productivity work and multitasking.
+16GB RAM MEMORY & 512GB SSD STORAGE - GMKtec Nucbox G3 PRO mini pc is prebuilt with 16GB DDR4 RAM SO-DIMM DUAL CHANNEL, you will enjoy a speedier experience with Built-in 512GB M.2 2242 SATA Hard Drive. Our mini desktop pc boots up in seconds, work on multiple browser tabs, software applications and quickly transfers files. There is a secondary expansion storage using M.2 2280 NVMe PCIe slot.
+RICH INTERFACE - Nucbox core i3 mini computer is equipped with USB 3.2*4,up to 5Gbps/S, HDMI(4K@60Hz)×2, 3.5mm Audio Jack. Supports WiFi 6, and Gigabit Ethernet RJ45 2.5GbE network connectivity, Bluetooth 5.2. This Mini PC supports multiple device connection and can be used with servers, monitoring equipment, office equipment, displays, projectors, televisions, etc.
+4K DUAL SCREEN DISPLAY - Mini desktop computer is equipped with upgraded Intel Graphics(max 1000MHz), supports 4K video playback and AV1 decoding, connect the pc with a projector as a home theatre, enjoy a variety of entertainments. Two HDMI 2.0 ports allows you to multi-task efficiently on two 4K@60Hz displays.
+WiFi6 & BT5.2 - Features the latest wireless connectivity with 802.11ax which offers speeds up to 600Mbps. Built-in Bluetooth 5.2 enables you to connect multiple wireless devices such as mice, keyboard, monitoring equipment, printer and monitor. High-speed wireless connection technology, reliable and efficient transmission speed, providing a faster internet experience for browsing and streaming. Small pc supports Wake On LAN, PXE Boot, RTC Wake and Auto Power On, ideal to use as a server.
+2.5GbE LIGHTNING FAST ETHERNET SPEEDS - Intel i226 2.5 Gigabit Ethernet up to 2.5x faster than 1.0GbE Gigabit Ethernet. Compatible with Linux, Proxmox, Firewall Server, Unbuntu, ESXI VMware.
+GMKtec WARRANTY - GMKtec offers a 1-year limited warranty for each mini PC, starting from the date of the purchase. All defects due to design and workmanship are covered. With a professional after sales team always ready to attend to your needs, you can simply relax and enjoy your mini PC.

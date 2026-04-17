@@ -1,0 +1,86 @@
+Linux neonaidj003 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Fri Apr 10 17:24:20 2026 from 100.67.24.8
+neonaidj003@neonaidj003:~ $ aplay -l && echo "---" && amixer && echo "---" && pactl list sinks short && echo "---" && systemctl status djbooth --no-pager && echo "---" && journalctl -u djbooth -n 30 --no-pager
+**** List of PLAYBACK Hardware Devices ****
+card 0: vc4hdmi0 [vc4-hdmi-0], device 0: MAI PCM i2s-hifi-0 [MAI PCM i2s-hifi-0]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+card 1: vc4hdmi1 [vc4-hdmi-1], device 0: MAI PCM i2s-hifi-0 [MAI PCM i2s-hifi-0]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+card 2: sndrpihifiberry [snd_rpi_hifiberry_dacplus], device 0: HiFiBerry DAC+ HiFi pcm512x-hifi-0 [HiFiBerry DAC+ HiFi pcm512x-hifi-0]
+  Subdevices: 0/1
+  Subdevice #0: subdevice #0
+---
+Simple mixer control 'PCM',0
+  Capabilities: pvolume
+  Playback channels: Front Left - Front Right
+  Limits: Playback 0 - 255
+  Mono:
+  Front Left: Playback 255 [100%] [0.00dB]
+  Front Right: Playback 255 [100%] [0.00dB]
+---
+-bash: pactl: command not found
+neonaidj003@neonaidj003:~ $ systemctl status djbooth --no-pager && echo "---" && journalctl -u djbooth -n 30 --no-pager
+● djbooth.service - NEON AI DJ Booth
+     Loaded: loaded (/etc/systemd/system/djbooth.service; enabled; preset: enabled)
+     Active: active (running) since Fri 2026-04-10 17:24:10 CDT; 18min ago
+ Invocation: 2633c12d88684d959fc82f12e992faba
+   Main PID: 1841 (node)
+      Tasks: 13 (limit: 9565)
+        CPU: 3min 45.698s
+     CGroup: /system.slice/djbooth.service
+             ├─1841 /usr/bin/node server/index.js
+             ├─4207 /bin/sh -c "ping -c 3 -W 2 8.8.8.8 2>…
+             └─4208 ping -c 3 -W 2 8.8.8.8
+
+Apr 10 17:39:15 neonaidj003 node[1841]: 💓 Heartbeat se…s)
+Apr 10 17:39:27 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Apr 10 17:39:46 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Apr 10 17:40:05 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Apr 10 17:40:15 neonaidj003 node[1841]: 💓 Heartbeat se…s)
+Apr 10 17:40:30 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Apr 10 17:40:56 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Apr 10 17:41:15 neonaidj003 node[1841]: 💓 Heartbeat se…s)
+Apr 10 17:41:24 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Apr 10 17:41:50 neonaidj003 node[1841]: ☁️ R2 music syn…..
+Hint: Some lines were ellipsized, use -l to show in full.
+---
+Apr 10 17:36:06 neonaidj003 node[1841]: 🎵 selectTracksForSet: 0 fresh, 0 on-cooldown
+Apr 10 17:36:06 neonaidj003 node[1841]: ⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library
+Apr 10 17:36:15 neonaidj003 node[1841]: 💓 Heartbeat sent (346ms, ping 37.856ms, 0 plays)
+Apr 10 17:36:15 neonaidj003 node[1841]: 🎵 selectTracksForSet: playlist mode — 20 songs in playlist, need 1
+Apr 10 17:36:15 neonaidj003 node[1841]: ⚠️ selectTracksForSet: 20 playlist song(s) NOT found by exact match: 2004 - 042 - Ludacris - Splash Waterfalls.mp3 | 1994-030 Janet Jackson - Any Time, Any Place.mp3 | 2003 - 064 - Mya - My Love Is Like---Wo.mp3 | Juvenile - Slow Motion (feat. Soulja Slim).mp3 | The Weeknd - Earned It (Fifty Shades Of Grey).mp3 ... +15 more — trying case-insensitive fallback
+Apr 10 17:36:15 neonaidj003 node[1841]: ⚠️ selectTracksForSet: 20 song(s) not found even with fuzzy match: 2004 - 042 - Ludacris - Splash Waterfalls.mp3 | 1994-030 Janet Jackson - Any Time, Any Place.mp3 | 2003 - 064 - Mya - My Love Is Like---Wo.mp3 | Juvenile - Slow Motion (feat. Soulja Slim).mp3 | The Weeknd - Earned It (Fifty Shades Of Grey).mp3
+Apr 10 17:36:15 neonaidj003 node[1841]: 🎵 selectTracksForSet: 0 fresh, 0 on-cooldown
+Apr 10 17:36:15 neonaidj003 node[1841]: ⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library
+Apr 10 17:36:25 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1400 downloaded so far...
+Apr 10 17:36:45 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1450 downloaded so far...
+Apr 10 17:37:04 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1500 downloaded so far...
+Apr 10 17:37:15 neonaidj003 node[1841]: 💓 Heartbeat sent (284ms, ping 32.688ms, 2 plays)
+Apr 10 17:37:25 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1550 downloaded so far...
+Apr 10 17:37:44 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1600 downloaded so far...
+Apr 10 17:38:05 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1650 downloaded so far...
+Apr 10 17:38:15 neonaidj003 node[1841]: 💓 Heartbeat sent (279ms, ping 37.07ms, 0 plays)
+Apr 10 17:38:27 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1700 downloaded so far...
+Apr 10 17:38:46 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1750 downloaded so far...
+Apr 10 17:39:05 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1800 downloaded so far...
+Apr 10 17:39:11 neonaidj003 node[1841]: 🎵 MusicScanner: Quick check — no changes detected (2953 tracks), skipping full scan
+Apr 10 17:39:15 neonaidj003 node[1841]: 💓 Heartbeat sent (274ms, ping 32.896ms, 0 plays)
+Apr 10 17:39:27 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1850 downloaded so far...
+Apr 10 17:39:46 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1900 downloaded so far...
+Apr 10 17:40:05 neonaidj003 node[1841]: ☁️ R2 music sync progress: 1950 downloaded so far...
+Apr 10 17:40:15 neonaidj003 node[1841]: 💓 Heartbeat sent (270ms, ping 31.911ms, 1 plays)
+Apr 10 17:40:30 neonaidj003 node[1841]: ☁️ R2 music sync progress: 2000 downloaded so far...
+Apr 10 17:40:56 neonaidj003 node[1841]: ☁️ R2 music sync progress: 2050 downloaded so far...
+Apr 10 17:41:15 neonaidj003 node[1841]: 💓 Heartbeat sent (272ms, ping 31.978ms, 0 plays)
+Apr 10 17:41:24 neonaidj003 node[1841]: ☁️ R2 music sync progress: 2100 downloaded so far...
+Apr 10 17:41:50 neonaidj003 node[1841]: ☁️ R2 music sync progress: 2150 downloaded so far...
+neonaidj003@neonaidj003:~ $ 

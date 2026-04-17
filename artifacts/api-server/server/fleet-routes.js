@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import {
   registerDevice, authenticateDevice, listDevices, getDevice, updateDevice, deleteDevice,
+  setDeviceLicense,
   recordHeartbeat, getRecentHeartbeats,
   recordErrorLog, getErrorLogs,
   uploadVoiceover, listVoiceovers, getVoiceoverManifest, getVoiceoverFile, getVoiceoverByNameType,
@@ -18,6 +19,10 @@ import {
 } from './fleet-db.js';
 import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms, getTrackAnalysisByFilenames } from './db.js';
 import { getFleetStatus, updateDeviceLiveData } from './fleet-monitor.js';
+import {
+  getPublicKey, signLicenseToken, buildLicensePayload, generateManualKey,
+  LICENSE_COUNTDOWN_MS, LICENSE_COUNTDOWN_DAYS,
+} from './license.js';
 
 const router = express.Router();
 
@@ -83,6 +88,54 @@ router.delete('/devices/:deviceId', authenticateFleetAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/license/public-key', (req, res) => {
+  try {
+    res.json({ publicKey: getPublicKey() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get public key' });
+  }
+});
+
+router.post('/devices/:deviceId/license/initiate', authenticateFleetAdmin, (req, res) => {
+  const device = getDevice(req.params.deviceId);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const now = Date.now();
+  const expiresAt = now + LICENSE_COUNTDOWN_MS;
+  const updated = setDeviceLicense(req.params.deviceId, {
+    status: 'countdown',
+    initiatedAt: now,
+    expiresAt,
+    notes: req.body?.notes || '',
+  });
+  const { api_key, ...safe } = updated;
+  res.json({ ok: true, device: safe, countdownDays: LICENSE_COUNTDOWN_DAYS, expiresAt });
+});
+
+router.post('/devices/:deviceId/license/restore', authenticateFleetAdmin, (req, res) => {
+  const device = getDevice(req.params.deviceId);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const updated = setDeviceLicense(req.params.deviceId, {
+    status: 'active',
+    initiatedAt: 0,
+    expiresAt: 0,
+    notes: '',
+  });
+  const { api_key, ...safe } = updated;
+  res.json({ ok: true, device: safe });
+});
+
+router.post('/devices/:deviceId/license/manual-key', authenticateFleetAdmin, (req, res) => {
+  const device = getDevice(req.params.deviceId);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  try {
+    const key = generateManualKey(device);
+    const expiresAt = Date.now() + LICENSE_COUNTDOWN_MS;
+    res.json({ ok: true, key, expiresAt, days: LICENSE_COUNTDOWN_DAYS });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate manual key' });
+  }
+});
+
 router.post('/heartbeat', authenticateDeviceMiddleware, (req, res) => {
   try {
     recordHeartbeat(req.device.device_id, req.body);
@@ -97,6 +150,22 @@ router.post('/heartbeat', authenticateDeviceMiddleware, (req, res) => {
     }
 
     const latestUpdate = getLatestUpdate(req.device.device_id);
+
+    let licenseField = null;
+    try {
+      const payload = buildLicensePayload(req.device);
+      if (payload) {
+        licenseField = {
+          publicKey: getPublicKey(),
+          token: signLicenseToken(payload),
+          status: payload.status,
+          expiresAt: payload.expiresAt,
+        };
+      }
+    } catch (err) {
+      console.warn('[fleet] License sign failed:', err.message);
+    }
+
     res.json({
       ok: true,
       serverTime: Date.now(),
@@ -105,7 +174,8 @@ router.post('/heartbeat', authenticateDeviceMiddleware, (req, res) => {
         hour: req.device.sync_hour,
         minute: req.device.sync_minute,
         timezone: req.device.timezone
-      }
+      },
+      license: licenseField,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to record heartbeat' });

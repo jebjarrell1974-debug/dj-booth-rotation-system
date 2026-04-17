@@ -9,7 +9,7 @@ import {
   Upload, Package, Search, Filter, XCircle, 
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
   AlertCircle, Info, DollarSign, Monitor, Users, Download, RotateCcw,
-  Radio, Volume2, VolumeX, Zap
+  Radio, Volume2, VolumeX, Zap, Lock, KeyRound
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -391,7 +391,117 @@ function NetworkBars({ network }) {
   );
 }
 
-function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands }) {
+function LicenseRow({ device, onInitiate, onRestore, onManualKey, pending }) {
+  const status = device.license_status || 'active';
+  const expiresAt = device.license_expires_at || 0;
+  const remainingMs = expiresAt ? expiresAt - Date.now() : 0;
+  const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+
+  let badge;
+  if (status === 'active') {
+    badge = <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-500/10 text-green-400 border border-green-500/30">Licensed</span>;
+  } else if (status === 'countdown') {
+    const isUrgent = remainingDays <= 7;
+    badge = <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${isUrgent ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+      Countdown — {remainingDays}d left
+    </span>;
+  } else if (status === 'suspended') {
+    badge = <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-500/10 text-red-400 border border-red-500/30">Suspended</span>;
+  } else {
+    badge = <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-500/10 text-gray-400 border border-gray-500/30">{status}</span>;
+  }
+
+  return (
+    <div className="px-4 pb-2 border-t border-[#1a1a2e] pt-2">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[11px] text-gray-500 flex items-center gap-1">
+          <Lock className="w-3 h-3 text-cyan-400" /> License
+        </p>
+        {badge}
+      </div>
+      <div className="flex gap-2">
+        {status === 'active' ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onInitiate(device); }}
+            disabled={pending}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-[#1a1a2e] border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/10 active:scale-95 transition-all disabled:opacity-40">
+            <Clock className="w-3 h-3" /> Begin Countdown
+          </button>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRestore(device); }}
+            disabled={pending}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-[#1a1a2e] border border-green-500/20 text-green-400 text-xs font-medium hover:bg-green-500/10 active:scale-95 transition-all disabled:opacity-40">
+            <Check className="w-3 h-3" /> Restore License
+          </button>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onManualKey(device); }}
+          disabled={pending}
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-[#1a1a2e] border border-cyan-500/20 text-cyan-400 text-xs font-medium hover:bg-cyan-500/10 active:scale-95 transition-all disabled:opacity-40">
+            <KeyRound className="w-3 h-3" /> Manual Key
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ManualKeyModal({ device, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [keyData, setKeyData] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancel = false;
+    fleetAdmin.generateManualKey(device.device_id)
+      .then(d => { if (!cancel) { setKeyData(d); setLoading(false); } })
+      .catch(err => { if (!cancel) { setError(err.message || 'Failed'); setLoading(false); } });
+    return () => { cancel = true; };
+  }, [device.device_id]);
+
+  const handleCopy = () => {
+    if (!keyData?.key) return;
+    navigator.clipboard.writeText(keyData.key);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-2xl p-6 max-w-lg w-full" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold text-white mb-1">Manual Activation Key</h2>
+        <p className="text-xs text-gray-400 mb-4">For <span className="text-white">{device.device_name}</span> ({device.club_name || 'no club'})</p>
+        {loading && <div className="text-center py-8 text-gray-500"><RefreshCw className="w-6 h-6 mx-auto animate-spin" /></div>}
+        {error && <div className="text-red-400 text-sm py-4">{error}</div>}
+        {keyData && (
+          <>
+            <div className="bg-[#08081a] border border-[#1e293b] rounded-lg p-3 mb-3">
+              <textarea
+                readOnly
+                value={keyData.key}
+                rows={4}
+                className="w-full bg-transparent text-cyan-400 text-xs font-mono resize-none focus:outline-none"
+                onClick={e => e.target.select()}
+              />
+            </div>
+            <p className="text-[11px] text-gray-500 mb-4">
+              Email or text this key to the venue. They paste it into the activation screen on their kiosk. Valid for {keyData.days} days.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={handleCopy} className="flex-1 flex items-center justify-center gap-2 bg-[#00d4ff] hover:bg-[#00d4ff]/80 text-black font-medium py-2 rounded-lg">
+                {copied ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy Key</>}
+              </button>
+              <button onClick={onClose} className="px-4 py-2 rounded-lg border border-[#1e293b] text-gray-400 hover:bg-[#1a1a2e]">Close</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands, onInitiateLicense, onRestoreLicense, onManualKey, licensePending }) {
   const isOnline = device.status === 'online';
   const timeSince = device.timeSinceHeartbeat;
   const isStale = timeSince && timeSince > 10 * 60 * 1000;
@@ -572,6 +682,14 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
       )}
 
       <div className="px-4 pb-2 text-[11px] text-gray-600">Last seen: {formatTimeAgo(device.last_heartbeat)}</div>
+
+      <LicenseRow
+        device={device}
+        onInitiate={onInitiateLicense}
+        onRestore={onRestoreLicense}
+        onManualKey={onManualKey}
+        pending={licensePending}
+      />
 
       {device.dancerBackup ? (
         <div className="px-4 pb-2 border-t border-[#1a1a2e] pt-2">
@@ -1109,6 +1227,49 @@ export default function FleetDashboard() {
     refresh();
   };
 
+  const [licensePending, setLicensePending] = useState(new Set());
+  const [manualKeyDevice, setManualKeyDevice] = useState(null);
+
+  const setLicBusy = (id, busy) => {
+    setLicensePending(prev => {
+      const next = new Set(prev);
+      if (busy) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const handleInitiateLicense = async (device) => {
+    if (!confirm(`Begin 30-day license countdown for "${device.device_name}"?\n\nThe app will continue working for 30 days, then suspend automatically. You can restore the license at any time before then.`)) return;
+    setLicBusy(device.device_id, true);
+    try {
+      await fleetAdmin.initiateLicenseCountdown(device.device_id);
+      showToast(`Countdown started for ${device.device_name}`, 'success');
+      refresh();
+    } catch (err) {
+      showToast(`Failed: ${err.message}`, 'error');
+    } finally {
+      setLicBusy(device.device_id, false);
+    }
+  };
+
+  const handleRestoreLicense = async (device) => {
+    if (!confirm(`Restore license for "${device.device_name}"?`)) return;
+    setLicBusy(device.device_id, true);
+    try {
+      await fleetAdmin.restoreLicense(device.device_id);
+      showToast(`License restored for ${device.device_name}`, 'success');
+      refresh();
+    } catch (err) {
+      showToast(`Failed: ${err.message}`, 'error');
+    } finally {
+      setLicBusy(device.device_id, false);
+    }
+  };
+
+  const handleManualKey = (device) => {
+    setManualKeyDevice(device);
+  };
+
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
@@ -1327,7 +1488,11 @@ export default function FleetDashboard() {
                   onDelete={handleDeleteDevice}
                   onViewDetail={setViewingDevice}
                   onCommand={handleCommand}
-                  pendingCommands={pendingCmds} />
+                  pendingCommands={pendingCmds}
+                  onInitiateLicense={handleInitiateLicense}
+                  onRestoreLicense={handleRestoreLicense}
+                  onManualKey={handleManualKey}
+                  licensePending={licensePending.has(device.device_id)} />
               ))
             )}
           </div>
@@ -1427,6 +1592,10 @@ export default function FleetDashboard() {
 
         {viewingDevice && (
           <DeviceDetailModal device={viewingDevice} onClose={() => setViewingDevice(null)} />
+        )}
+
+        {manualKeyDevice && (
+          <ManualKeyModal device={manualKeyDevice} onClose={() => setManualKeyDevice(null)} />
         )}
       </div>
 

@@ -1,0 +1,126 @@
+Linux neonaidj003 6.12.74+deb13+1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.74-2 (2026-03-08) x86_64
+
+1 device has a firmware upgrade available.
+Run `fwupdmgr get-upgrades` for more information.
+
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+
+1 device has a firmware upgrade available.
+Run `fwupdmgr get-upgrades` for more information.
+
+Last login: Thu Apr 16 20:01:12 2026 from 100.67.24.8
+neonaidj003@neonaidj003:~$ ls ~/djbooth/music/ | wc -l
+cat ~/djbooth/.env
+8
+PORT=3001
+NODE_ENV=production
+FLEET_SERVER_URL=http://100.109.73.27:3001
+ELEVENLABS_API_KEY=6e6ca8d3c96256409bf197b076d0ede7fae7183d9bc02374d1e2be55fdd71342
+ELEVENLABS_VOICE_ID=8RV9Jl85RVagCJGw9qhY
+R2_ACCOUNT_ID=bb98a67dc31c28d8f39a55429bccb759
+R2_BUCKET_NAME=neonaidj
+R2_ACCESS_KEY_ID=382f7a2d54f77a130eac7e43fccb73fc
+R2_SECRET_ACCESS_KEY=a08a44b3fc51d8fe7751f3120b335c7e63ad28ba1e8067bb3e8eda765dc44f99
+TELEGRAM_BOT_TOKEN=8771923747:AAEu6Nmym30ri1CyWhxSXl62QSvhkacvXVA
+TELEGRAM_CHAT_ID=8567217273
+neonaidj003@neonaidj003:~$ cat ~/.config/autostart/djbooth-kiosk.desktop
+sudo systemctl status djbooth-watchdog
+[Desktop Entry]
+Type=Application
+Name=DJ Booth Kiosk
+Exec=bash -c "sleep 15 && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001"
+X-GNOME-Autostart-enabled=true
+● djbooth-watchdog.service - DJ Booth Browser Watchdog
+     Loaded: loaded (/etc/systemd/system/djbooth-watchdog>
+     Active: active (running) since Thu 2026-04-16 17:43:>
+ Invocation: 5f866176802348cc95b3f55ca6cfed30
+   Main PID: 2882 (bash)
+      Tasks: 2 (limit: 18571)
+     Memory: 1.9M (peak: 4.4M)
+        CPU: 30.959s
+     CGroup: /system.slice/djbooth-watchdog.service
+             ├─ 2882 /bin/bash /home/neonaidj003/djbooth->
+             └─18768 sleep 5
+
+Apr 16 17:43:21 neonaidj003 systemd[1]: Started djbooth-w>
+Apr 16 17:43:21 neonaidj003 bash[2882]: Thu Apr 16 05:43:>
+Apr 16 17:44:54 neonaidj003 bash[2882]: Thu Apr 16 05:44:>
+lines 1-15/15 (END)...skipping...
+● djbooth-watchdog.service - DJ Booth Browser Watchdog
+     Loaded: loaded (/etc/systemd/system/djbooth-watchdog>
+     Active: active (running) since Thu 2026-04-16 17:43:>
+ Invocation: 5f866176802348cc95b3f55ca6cfed30
+   Main PID: 2882 (bash)
+      Tasks: 2 (limit: 18571)
+     Memory: 1.9M (peak: 4.4M)
+        CPU: 30.959s
+     CGroup: /system.slice/djbooth-watchdog.service
+             ├─ 2882 /bin/bash /home/neonaidj003/djbooth->
+             └─18768 sleep 5
+
+Apr 16 17:43:21 neonaidj003 systemd[1]: Started djbooth-w>
+Apr 16 17:43:21 neonaidj003 bash[2882]: Thu Apr 16 05:43:>
+Apr 16 17:44:54 neonaidj003 bash[2882]: Thu Apr 16 05:44:>
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+lines 1-15/15 (END)
+● djbooth-watchdog.service - DJ Booth Browser Watchdog
+     Loaded: loaded (/etc/systemd/system/djbooth-watchdog>
+     Active: active (running) since Thu 2026-04-16 17:43:>
+ Invocation: 5f866176802348cc95b3f55ca6cfed30
+   Main PID: 2882 (bash)
+      Tasks: 2 (limit: 18571)
+     Memory: 1.9M (peak: 4.4M)
+        CPU: 30.959s
+     CGroup: /system.slice/djbooth-watchdog.service
+             ├─ 2882 /bin/bash /home/neonaidj003/djbooth->
+             └─18768 sleep 5
+
+Apr 16 17:43:21 neonaidj003 systemd[1]: Started djbooth-w>
+Apr 16 17:43:21 neonaidj003 bash[2882]: Thu Apr 16 05:43:>
+Apr 16 17:44:54 neonaidj003 bash[2882]: Thu Apr 16 05:44:>
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+
+neonaidj003@neonaidj003:~$ 

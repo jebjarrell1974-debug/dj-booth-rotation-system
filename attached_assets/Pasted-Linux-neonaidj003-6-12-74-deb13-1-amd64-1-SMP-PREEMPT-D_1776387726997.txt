@@ -1,0 +1,145 @@
+Linux neonaidj003 6.12.74+deb13+1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.74-2 (2026-03-08) x86_64
+
+1 device has a firmware upgrade available.
+Run `fwupdmgr get-upgrades` for more information.
+
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+
+1 device has a firmware upgrade available.
+Run `fwupdmgr get-upgrades` for more information.
+
+Last login: Thu Apr 16 17:42:15 2026 from 100.67.24.8
+neonaidj003@neonaidj003:~$ sudo systemctl status djbooth
+● djbooth.service - NEON AI DJ Booth
+     Loaded: loaded (/etc/systemd/system/djbooth.service;>
+     Active: active (running) since Thu 2026-04-16 17:43:>
+ Invocation: 1e66f964bf9e4e9aa68ca0a748906a03
+   Main PID: 1885 (node)
+      Tasks: 11 (limit: 18571)
+     Memory: 806.5M (peak: 829.7M)
+        CPU: 1min 50.653s
+     CGroup: /system.slice/djbooth.service
+             └─1885 /usr/bin/node server/index.js
+
+Apr 16 20:00:36 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:00:41 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:00:46 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:00:51 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:00:56 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:01:01 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:01:06 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:01:08 neonaidj003 node[1885]: 💓 Heartbeat sent>
+Apr 16 20:01:11 neonaidj003 node[1885]: 📥 GET /__health >
+Apr 16 20:01:16 neonaidj003 node[1885]: 📥 GET /__health >
+
+neonaidj003@neonaidj003:~$ ls ~/djbooth-rotation-system/music/ | wc -l
+ls: cannot access '/home/neonaidj003/djbooth-rotation-system/music/': No such file or directory
+0
+neonaidj003@neonaidj003:~$ sudo journalctl -u djbooth -n 100 --no-pager
+Apr 16 19:54:08 neonaidj003 node[1885]: 💓 Heartbeat sent (28ms, ping 8.197ms, 0 plays)
+Apr 16 19:54:09 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:14 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:19 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:24 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:29 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:34 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:39 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:44 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:49 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:54:54 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:00 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:05 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:08 neonaidj003 node[1885]: 💓 Heartbeat sent (22ms, ping 8.187ms, 0 plays)
+Apr 16 19:55:10 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:15 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:20 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:25 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:30 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:35 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:40 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:45 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:50 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:55:55 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:00 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:05 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:08 neonaidj003 node[1885]: 💓 Heartbeat sent (23ms, ping 8.372ms, 0 plays)
+Apr 16 19:56:10 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:15 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:20 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:25 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:30 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:35 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:40 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:45 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:50 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:56:55 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:00 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:05 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:08 neonaidj003 node[1885]: 💓 Heartbeat sent (28ms, ping 8.291ms, 0 plays)
+Apr 16 19:57:10 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:15 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:20 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:25 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:30 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:35 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:40 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:45 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:50 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:57:55 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:00 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:04 neonaidj003 node[1885]: 🎵 MusicScanner: Quick check — no changes detected (8 tracks), skipping full scan
+Apr 16 19:58:05 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:08 neonaidj003 node[1885]: 💓 Heartbeat sent (28ms, ping 8.375ms, 0 plays)
+Apr 16 19:58:10 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:15 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:20 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:25 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:30 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:35 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:40 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:45 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:50 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:58:55 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:00 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:05 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:08 neonaidj003 node[1885]: 💓 Heartbeat sent (28ms, ping 8.167ms, 0 plays)
+Apr 16 19:59:11 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:16 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:21 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:26 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:31 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:36 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:41 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:46 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:51 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 19:59:56 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:01 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:06 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:08 neonaidj003 node[1885]: 💓 Heartbeat sent (25ms, ping 8.097ms, 0 plays)
+Apr 16 20:00:11 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:16 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:21 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:26 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:31 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:36 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:41 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:46 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:51 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:00:56 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:01 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:06 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:08 neonaidj003 node[1885]: 💓 Heartbeat sent (29ms, ping 8.225ms, 0 plays)
+Apr 16 20:01:11 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:16 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:21 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:26 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:31 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:36 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+Apr 16 20:01:41 neonaidj003 node[1885]: 📥 GET /__health from 127.0.0.1
+neonaidj003@neonaidj003:~$ 

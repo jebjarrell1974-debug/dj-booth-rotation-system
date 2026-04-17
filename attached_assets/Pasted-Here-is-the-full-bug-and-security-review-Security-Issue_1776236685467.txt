@@ -1,0 +1,223 @@
+Here is the full bug and security review.
+
+Security Issues
+1. Cryptographically Weak Session Tokens
+server/db.js:431–437
+
+generateToken() uses Math.random(), which is not a CSPRNG. An attacker who observes enough tokens can predict future ones.
+
+
+token += chars[Math.floor(Math.random() * chars.length)];
+Fix: Replace with crypto.randomBytes:
+
+
+import { randomBytes } from 'crypto';
+export function generateToken() {
+  return randomBytes(32).toString('hex'); // 64 hex chars
+}
+Same issue in fleet-db.js:216 (fleet device key generation).
+
+2. Dancer PINs Stored in Plaintext
+server/db.js:363–368, db.js:411–414
+
+createDancer() and updateDancer() store the raw PIN in a pin_plain column alongside the bcrypt hash. Every dancer's PIN is readable in plaintext from the database.
+
+
+db.prepare('INSERT INTO dancers (id, name, color, pin_hash, pin_plain) VALUES (?, ?, ?, ?, ?)')
+  .run(id, name, color || '#e040fb', pinHash, pin);  // ← `pin` is cleartext
+Fix: Drop pin_plain and remove all writes to it. The bcrypt hash is sufficient for authentication.
+
+3. Master PIN Stored in Plaintext in the Database
+server/index.js:170–174, server/db.js:271–273
+
+setSetting('master_pin', pin) stores the master PIN as a raw string in the settings table. Anyone with read access to the SQLite file gets the master PIN immediately.
+
+Fix: Hash the master PIN on write (hashPin(pin)), and compare using verifyPin() on read.
+
+4. /api/fleet-env Exposes All API Keys Without Authentication
+server/index.js:241–261
+
+The endpoint returns ELEVENLABS_API_KEY, OPENAI_API_KEY, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, TELEGRAM_BOT_TOKEN, etc. — in plaintext — to any request from a non-homebase check that passes (only checks IS_HOMEBASE). No authenticate middleware.
+
+Fix: Add authenticate, requireDJ (or require a fleet device key) before the handler.
+
+5. /api/fleet/auto-auth Creates a Full DJ Session with No Credentials
+server/index.js:408–411
+
+
+app.post('/api/fleet/auto-auth', (req, res) => {
+  const token = createSession('dj', null, 'Fleet', 0, 'dj');
+  res.json({ ok: true, token, role: 'dj' });
+});
+Any unauthenticated HTTP client can call this and receive a valid DJ session token with no PIN required.
+
+Fix: Require a fleet device key (x-device-key header) matched against a configured secret, or remove if no longer needed.
+
+6. /api/config/defaults Returns API Keys Without Authentication
+server/index.js:476–503
+
+This endpoint returns openaiApiKey, elevenLabsApiKey, elevenLabsVoiceId, and scriptModel to any unauthenticated caller. API keys pulled from environment variables are included:
+
+
+if (process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
+if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+Fix: Add authenticate, requireDJ.
+
+7. /api/download-bundle and /api/update-bundle Expose Server Codebase Without Authentication
+server/index.js:1913, server/index.js:1984
+
+Both endpoints package and stream the entire server source, dist/, and package.json as a gzip tarball. Neither has any authentication middleware. Anyone who can reach port 3001 gets the full codebase.
+
+Fix: Add authenticate, requireDJ (or at minimum requireMaster).
+
+8. No Rate Limiting on Login Endpoint
+server/index.js:297–345
+
+A 5-digit PIN has only 100,000 combinations. The login endpoint (/api/auth/login) has no throttle, lockout, or delay on failure. Combined with the O(n) bcrypt-per-login behavior described below, this is both a brute-force and denial-of-service vector.
+
+Fix: Add express-rate-limit or similar middleware at POST /api/auth/login, capped per IP.
+
+9. /api/config/save-to-server Has No Authentication
+server/index.js:644–651
+
+
+app.post('/api/config/save-to-server', (req, res) => {
+  saveClientSettings(req.body || {});
+  res.json({ ok: true });
+});
+Any unauthenticated caller can overwrite stored settings like djbooth_openai_key, djbooth_elevenlabs_key, djbooth_elevenlabs_voice_id, etc.
+
+Fix: Add authenticate, requireDJ.
+
+10. Admin Operations Only Check PIN in Request Body
+server/index.js:1220–1234, server/index.js:1302–1326
+
+/api/admin/update, /api/admin/restart, and /api/admin/reboot accept a PIN in the POST body but require no session token. There is also a separate, parallel /api/system/update endpoint at line 1879 that accepts either the master PIN or the legacy DJ PIN to trigger a system update script.
+
+Two separate code paths for the same action means one may diverge in security checks over time. Both bypass the established session middleware entirely.
+
+Fix: Require authenticate, requireMaster on all admin endpoints, then verify the PIN as a second factor if desired.
+
+11. OpenAI Proxy Forwards Any Authorization Header Blindly
+server/index.js:529–546
+
+
+app.post('/api/openai/chat', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Missing Authorization header' });
+  // forwards authHeader directly to OpenAI
+No session validation — this works without a valid DJ session. Any caller who can reach the server can use this as an anonymous OpenAI proxy, charging requests to whatever key they supply.
+
+Fix: Add authenticate middleware to verify a valid session before proxying.
+
+12. Unauthenticated Endpoints That Leak Internal State
+server/index.js:1143, server/index.js:1474, server/index.js:1238, server/index.js:1248
+
+GET /api/playback-errors — returns internal error log (track names, dancer names, reasons) with no auth
+GET /api/booth/display — returns current rotation state with no auth
+POST /api/stage/sync — writes the active rotation state with no auth
+GET /api/stage/current — reads it back with no auth
+POST /api/stage/sync is particularly bad: an unauthenticated caller can corrupt the in-memory _stageState that drives the public display.
+
+Fix: Add authenticate (and requireDJ for the POST) to each.
+
+Logic Errors and Performance Problems
+13. O(n) bcrypt Scan on Every Login
+server/db.js:378–386, server/db.js:1167–1173
+
+getDancerByPin() and getStaffAccountByPin() load the full dancers/staff_accounts table and run bcrypt.compareSync() against every row. bcrypt is intentionally slow (~100ms/comparison). With 20 dancers, login takes ~2 seconds; it also makes the login endpoint cheap to DoS.
+
+Fix: Store a fast lookup key (e.g., a non-reversible deterministic hash like SHA-256(pin + static_pepper)) alongside the bcrypt hash as an index column. Use the fast hash to find the candidate row first, then verify with bcrypt.
+
+14. syncSongs Exceeds SQLite Variable Limit for Large Libraries
+server/db.js:469–480
+
+
+const deleteStmt = db.prepare(
+  'DELETE FROM songs WHERE name NOT IN (' + songNames.map(() => '?').join(',') + ')'
+);
+deleteStmt.run(...songNames);  // spreads array as positional args
+SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999 (older) or 32766 (3.32+). A music library with more than that many songs will throw SqliteError: too many SQL variables. The same pattern also appears in getRandomTracks (allExcluded) and selectTracksForSet (playlist IN-clause).
+
+Fix: For syncSongs, use a temp table or split into chunked deletes. For the track-selection queries, cap the excluded/playlist arrays or use a temp table for the IN filter.
+
+15. Dancer ID Collision Risk
+server/db.js:361
+
+
+const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+Math.random() is not collision-safe and not cryptographically secure. Two rapid dancer-create calls within the same millisecond could theoretically produce the same ID. Use crypto.randomUUID() instead.
+
+16. isPinTaken Check Is Not Atomic — Allows Duplicate PINs Under Concurrent Requests
+server/db.js:352–369
+
+createDancer calls isPinTaken(pin) then separately inserts the new row. There is no database-level uniqueness constraint on pin_hash. Two simultaneous dancer-creation requests with the same PIN can both pass the check and insert, resulting in two dancers sharing a PIN. The dancerByPin lookup then returns whichever bcrypt match comes first, making one dancer inaccessible.
+
+Fix: Wrap the check and insert in a SQLite IMMEDIATE transaction, or add a unique constraint on a fast-hash column.
+
+17. /api/auphonic/process Blocks the Request for Up to 3 Minutes
+server/index.js:956–975
+
+
+while (attempts < maxAttempts) {          // 60 attempts
+  await new Promise(r => setTimeout(r, 3000));  // 3 sec each = 180 sec max
+The entire response is held open while polling Auphonic. If concurrent users trigger this endpoint, it will exhaust the available Node.js async handles and Event Loop responsiveness. The 50mb request body limit means each request can also carry a large audio buffer into memory.
+
+Fix: Return a job ID immediately, poll in the background, and expose a status endpoint. Or set a hard timeout (e.g., 60 seconds) and fail gracefully.
+
+18. getVoiceover Silently Deletes Rows During a Read
+server/db.js:500–512
+
+
+export function getVoiceover(cacheKey) {
+  const row = db.prepare('SELECT ...').get(cacheKey);
+  if (row.created_at < VOICEOVER_VALID_AFTER) {
+    db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(cacheKey);
+    return null;
+  }
+A function named getVoiceover performing a destructive side-effect is a hidden behaviour contract violation. It also uses the write db handle, not readDb. Any call to check whether a voiceover exists (e.g., the /api/voiceovers/check endpoint) will permanently delete old-but-valid files from disk as a side effect of a read.
+
+Fix: Separate expiry cleanup into an explicit cleanExpiredVoiceovers() function run on a timer. getVoiceover should only read.
+
+19. SSE Booth-State Broadcast Includes Full Internal State to All Authenticated Roles
+server/index.js:1425–1468
+
+POST /api/booth/state accepts arbitrary payload from the DJ client and reflects it verbatim to every SSE subscriber — including dancer sessions. Fields like rotationSongs, interstitialSongs, availablePromos, skippedCommercials, diagLog, and pre-pick hit/miss stats are all broadcast. Dancers can trivially learn which songs are queued for other dancers or which commercials are in rotation.
+
+Fix: Apply role-based filtering in broadcastSSE — send the full payload only to DJ-role clients, and a stripped-down display payload to dancer clients.
+
+20. /api/music/stream/:id Path Construction Bug When track.path Is Absolute
+server/index.js:1798–1800
+
+
+const filePath = join(MUSIC_PATH, track.path);
+Node's path.join does not reset at absolute path components (unlike Python's os.path.join). If the music scanner stores absolute paths (e.g. /home/pi/music/song.mp3), then join('/home/pi/music', '/home/pi/music/song.mp3') returns /home/pi/music/home/pi/music/song.mp3 — a path that doesn't exist — causing every stream to 404. If the scanner stores relative paths this is fine, but any future change to path storage would silently break playback.
+
+Fix: Check whether track.path is absolute; if so, use it directly: const filePath = path.isAbsolute(track.path) ? track.path : join(MUSIC_PATH, track.path);
+
+21. CORS Wildcard Allows Any Origin
+server/index.js:76
+
+
+res.header('Access-Control-Allow-Origin', '*');
+All endpoints (including those returning session tokens and API keys) accept cross-origin requests from any domain. If the server is reachable from the internet, a malicious website can make authenticated requests with stored credentials.
+
+Fix: Set CORS to the known app origin only (e.g., http://localhost:5173 in dev, the production domain in prod).
+
+Summary of Highest-Risk Items
+Priority	Issue	Location
+Critical	generateToken() uses Math.random() — tokens are predictable	db.js:431
+Critical	Plaintext PINs stored in pin_plain column	db.js:367, 414
+Critical	/api/fleet-env dumps all API keys unauthenticated	index.js:241
+Critical	/api/fleet/auto-auth grants DJ token with zero credentials	index.js:408
+Critical	/api/config/defaults returns API keys unauthenticated	index.js:476
+Critical	/api/download-bundle + /api/update-bundle expose codebase unauthenticated	index.js:1913, 1984
+High	No login rate limiting — 5-digit PINs brute-forceable	index.js:297
+High	/api/config/save-to-server overwrites stored API keys unauthenticated	index.js:644
+High	Master PIN stored in plaintext in SQLite	db.js:271
+High	Admin endpoints (update/restart/reboot) bypass session auth	index.js:1220, 1302
+Medium	O(n) bcrypt scan on every login — DoS with many dancers	db.js:378
+Medium	syncSongs / track-selection IN-clause crashes with >999 items	db.js:469
+Medium	getVoiceover deletes rows as a side-effect of reads	db.js:500
+Medium	Auphonic endpoint holds HTTP connection for up to 3 minutes	index.js:956
+The three most urgent items to fix are the fleet-env / fleet/auto-auth / config/defaults cluster (live API key exposure to any network-adjacent client), plaintext PIN storage, and weak token generation — all of which can be exploited without any existing credentials.
