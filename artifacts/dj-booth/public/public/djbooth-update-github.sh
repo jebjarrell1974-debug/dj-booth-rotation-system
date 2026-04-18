@@ -153,7 +153,13 @@ if [ -d "${EXTRACTED_DIR}artifacts/api-server/server" ]; then
   DJ_SRC="${EXTRACTED_DIR}artifacts/dj-booth"
   cp -r "${DJ_SRC}/public" "$APP_DIR/" 2>/dev/null || true
   cp "${DJ_SRC}/index.html" "$APP_DIR/" 2>/dev/null || true
-  cp "${DJ_SRC}/vite.config.ts" "$APP_DIR/vite.config.js" 2>/dev/null || true
+  # Use the homebase-specific vite config (no Replit PORT/BASE_PATH requirements)
+  if [ -f "${DJ_SRC}/homebase-vite.config.js" ]; then
+    cp "${DJ_SRC}/homebase-vite.config.js" "$APP_DIR/vite.config.js"
+    echo "  Using homebase-vite.config.js (no Replit env var requirements)"
+  else
+    cp "${DJ_SRC}/vite.config.ts" "$APP_DIR/vite.config.js" 2>/dev/null || true
+  fi
   cp "${DJ_SRC}/tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
   cp "${DJ_SRC}/postcss.config.js" "$APP_DIR/" 2>/dev/null || true
 else
