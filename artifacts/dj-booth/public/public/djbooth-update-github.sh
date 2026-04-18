@@ -241,7 +241,7 @@ elif [ -d "${EXTRACTED_DIR}src" ]; then
 fi
 cd "$APP_DIR"
 
-npm install --no-audit --no-fund 2>&1 | tail -3
+npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -3
 if [ "$USE_HOMEBASE_BUNDLE" = "true" ] && [ -d "$APP_DIR/dist" ]; then
   echo "  Frontend pre-built by homebase — skipping vite build (saves ~3-5 min)"
 else
