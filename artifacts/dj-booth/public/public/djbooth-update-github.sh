@@ -174,9 +174,16 @@ else
   cp "${EXTRACTED_DIR}index.html" "$APP_DIR/" 2>/dev/null || true
 fi
 
-if [ -d "${EXTRACTED_DIR}dist" ]; then
-  cp -r "${EXTRACTED_DIR}dist" "$APP_DIR/"
-  echo "Pre-built frontend installed from homebase"
+# Check for pre-built dist — monorepo path first, then legacy root path
+PREBUILT_DIST=""
+if [ -d "${EXTRACTED_DIR}artifacts/dj-booth/dist" ]; then
+  PREBUILT_DIST="${EXTRACTED_DIR}artifacts/dj-booth/dist"
+elif [ -d "${EXTRACTED_DIR}dist" ]; then
+  PREBUILT_DIST="${EXTRACTED_DIR}dist"
+fi
+if [ -n "$PREBUILT_DIST" ]; then
+  cp -r "$PREBUILT_DIST" "$APP_DIR/"
+  echo "  Pre-built frontend installed (no vite build required)"
 fi
 
 # Self-update: look in both flat and monorepo locations
@@ -242,10 +249,11 @@ fi
 cd "$APP_DIR"
 
 npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -3
-if [ "$USE_HOMEBASE_BUNDLE" = "true" ] && [ -d "$APP_DIR/dist" ]; then
-  echo "  Frontend pre-built by homebase — skipping vite build (saves ~3-5 min)"
+if [ -d "$APP_DIR/dist" ]; then
+  echo "  Pre-built frontend already in place — skipping vite build"
 else
-  ./node_modules/.bin/vite build 2>&1 | tail -3
+  echo "  No pre-built dist found — building from source..."
+  ./node_modules/.bin/vite build 2>&1 | tail -10
 fi
 npm prune --production 2>&1 | tail -1
 
