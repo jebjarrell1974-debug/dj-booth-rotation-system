@@ -141,8 +141,14 @@ if [ -d "${EXTRACTED_DIR}artifacts/api-server/server" ]; then
   echo "  Detected monorepo layout — copying from artifacts/api-server/"
   API_SRC="${EXTRACTED_DIR}artifacts/api-server"
   cp -r "${API_SRC}/server" "$APP_DIR/"
-  cp "${API_SRC}/package.json" "$APP_DIR/"
-  cp "${API_SRC}/package-lock.json" "$APP_DIR/" 2>/dev/null || true
+  # Use homebase-package.json (npm-compatible, no pnpm workspace: refs)
+  if [ -f "${API_SRC}/homebase-package.json" ]; then
+    cp "${API_SRC}/homebase-package.json" "$APP_DIR/package.json"
+    echo "  Using homebase-package.json (npm-compatible)"
+  else
+    cp "${API_SRC}/package.json" "$APP_DIR/"
+  fi
+  rm -f "$APP_DIR/package-lock.json"
   # Public scripts (update, watchdog, etc.) live in dj-booth/public/public/
   DJ_SRC="${EXTRACTED_DIR}artifacts/dj-booth"
   cp -r "${DJ_SRC}/public" "$APP_DIR/" 2>/dev/null || true
