@@ -136,21 +136,46 @@ if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
 fi
 
 echo "[5/8] Copying server and config files..."
-cp -r "${EXTRACTED_DIR}server" "$APP_DIR/"
-cp -r "${EXTRACTED_DIR}public" "$APP_DIR/" 2>/dev/null || true
-cp "${EXTRACTED_DIR}package.json" "$APP_DIR/"
-cp "${EXTRACTED_DIR}package-lock.json" "$APP_DIR/" 2>/dev/null || true
-cp "${EXTRACTED_DIR}vite.config.js" "$APP_DIR/" 2>/dev/null || true
-cp "${EXTRACTED_DIR}tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
-cp "${EXTRACTED_DIR}postcss.config.js" "$APP_DIR/" 2>/dev/null || true
-cp "${EXTRACTED_DIR}index.html" "$APP_DIR/" 2>/dev/null || true
+# Detect monorepo layout (artifacts/api-server/server) vs flat layout (server/)
+if [ -d "${EXTRACTED_DIR}artifacts/api-server/server" ]; then
+  echo "  Detected monorepo layout — copying from artifacts/api-server/"
+  API_SRC="${EXTRACTED_DIR}artifacts/api-server"
+  cp -r "${API_SRC}/server" "$APP_DIR/"
+  cp "${API_SRC}/package.json" "$APP_DIR/"
+  cp "${API_SRC}/package-lock.json" "$APP_DIR/" 2>/dev/null || true
+  # Public scripts (update, watchdog, etc.) live in dj-booth/public/public/
+  DJ_SRC="${EXTRACTED_DIR}artifacts/dj-booth"
+  cp -r "${DJ_SRC}/public" "$APP_DIR/" 2>/dev/null || true
+  cp "${DJ_SRC}/index.html" "$APP_DIR/" 2>/dev/null || true
+  cp "${DJ_SRC}/vite.config.ts" "$APP_DIR/vite.config.js" 2>/dev/null || true
+  cp "${DJ_SRC}/tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
+  cp "${DJ_SRC}/postcss.config.js" "$APP_DIR/" 2>/dev/null || true
+else
+  echo "  Detected flat layout — copying from root"
+  cp -r "${EXTRACTED_DIR}server" "$APP_DIR/"
+  cp -r "${EXTRACTED_DIR}public" "$APP_DIR/" 2>/dev/null || true
+  cp "${EXTRACTED_DIR}package.json" "$APP_DIR/"
+  cp "${EXTRACTED_DIR}package-lock.json" "$APP_DIR/" 2>/dev/null || true
+  cp "${EXTRACTED_DIR}vite.config.js" "$APP_DIR/" 2>/dev/null || true
+  cp "${EXTRACTED_DIR}tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
+  cp "${EXTRACTED_DIR}postcss.config.js" "$APP_DIR/" 2>/dev/null || true
+  cp "${EXTRACTED_DIR}index.html" "$APP_DIR/" 2>/dev/null || true
+fi
+
 if [ -d "${EXTRACTED_DIR}dist" ]; then
   cp -r "${EXTRACTED_DIR}dist" "$APP_DIR/"
   echo "Pre-built frontend installed from homebase"
 fi
 
-if [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
-  cp "${EXTRACTED_DIR}public/djbooth-update-github.sh" "$HOME/djbooth-update.sh"
+# Self-update: look in both flat and monorepo locations
+UPDATE_SCRIPT_SRC=""
+if [ -f "${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh" ]; then
+  UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh"
+elif [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
+  UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}public/djbooth-update-github.sh"
+fi
+if [ -n "$UPDATE_SCRIPT_SRC" ]; then
+  cp "$UPDATE_SCRIPT_SRC" "$HOME/djbooth-update.sh"
   chmod +x "$HOME/djbooth-update.sh"
   echo "Update script self-updated"
   if [ "${DJBOOTH_RESTARTED}" != "1" ]; then
@@ -197,7 +222,9 @@ else
 fi
 
 echo "[6/8] Building frontend..."
-if [ -d "${EXTRACTED_DIR}src" ]; then
+if [ -d "${EXTRACTED_DIR}artifacts/dj-booth/src" ]; then
+  cp -r "${EXTRACTED_DIR}artifacts/dj-booth/src" "$APP_DIR/"
+elif [ -d "${EXTRACTED_DIR}src" ]; then
   cp -r "${EXTRACTED_DIR}src" "$APP_DIR/"
 fi
 cd "$APP_DIR"
