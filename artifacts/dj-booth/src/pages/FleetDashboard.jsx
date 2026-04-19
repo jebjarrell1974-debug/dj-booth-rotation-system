@@ -759,10 +759,10 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
         </button>
         {device.tailscaleIp && isOnline && (
           <a
-            href={`vnc://${device.tailscaleIp}:5901`}
+            href={`nx://${device.tailscaleIp}:4000`}
             onClick={(e) => e.stopPropagation()}
             className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-400 text-[11px] font-medium hover:text-cyan-400 hover:bg-cyan-500/10 transition-all"
-            title={`Remote Desktop — ${device.tailscaleIp}`}>
+            title={`Remote Desktop (NoMachine) — ${device.tailscaleIp}:4000`}>
             <Monitor className="w-3 h-3" /> Remote
           </a>
         )}

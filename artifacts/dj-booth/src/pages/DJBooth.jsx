@@ -3436,8 +3436,13 @@ export default function DJBooth() {
 
         // First: try songs from the current dancer's playlist
         if (wdDancerId && !recovered) {
-          const playlist = (rotationSongsRef.current[wdDancerId] || []).filter(t => t && t.url);
           const cooldowns = songCooldownRef.current || {};
+          const nowMs = Date.now();
+          const playlist = (rotationSongsRef.current[wdDancerId] || []).filter(t => {
+            if (!t || !t.url) return false;
+            const lp = cooldowns[t.name];
+            return !lp || (nowMs - lp) >= COOLDOWN_MS;
+          });
           const sorted = [...playlist].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
           for (const track of sorted.slice(0, 8)) {
             try {
@@ -3499,8 +3504,13 @@ export default function DJBooth() {
 
         // Third: local pool fallback
         if (!recovered) {
-          const validTracks = tracks.filter(t => t && t.url);
           const cooldowns = songCooldownRef.current || {};
+          const nowMs = Date.now();
+          const validTracks = tracks.filter(t => {
+            if (!t || !t.url) return false;
+            const lp = cooldowns[t.name];
+            return !lp || (nowMs - lp) >= COOLDOWN_MS;
+          });
           const shuffled = fisherYatesShuffle(validTracks);
           shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
           for (let i = 0; i < Math.min(5, shuffled.length); i++) {
