@@ -232,6 +232,19 @@ function suppressOSKeyboard(root) {
   });
 }
 
+// Walk up DOM to find the actual scrollable ancestor
+function getScrollParent(el) {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const { overflowY, overflow } = window.getComputedStyle(node);
+    const scrollable = overflowY === 'auto' || overflowY === 'scroll' ||
+                       overflow === 'auto' || overflow === 'scroll';
+    if (scrollable && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return document.documentElement;
+}
+
 export default function VirtualKeyboard() {
   const [visible, setVisible] = useState(false);
   const [mode, setMode] = useState('lower');
@@ -240,6 +253,8 @@ export default function VirtualKeyboard() {
   const activeInputRef = useRef(null);
   const hideTimerRef = useRef(null);
   const scrollTimerRef = useRef(null);
+  const paddedContainerRef = useRef(null);
+  const originalPaddingRef = useRef('');
 
   useEffect(() => {
     suppressOSKeyboard(document.body);
@@ -262,39 +277,73 @@ export default function VirtualKeyboard() {
 
   const kbdHeight = numpad ? KBD_HEIGHT_NUM : KBD_HEIGHT_QWERTY;
 
-  const scrollInputIntoView = useCallback((el) => {
+  const clearContainerPadding = useCallback(() => {
+    if (paddedContainerRef.current) {
+      paddedContainerRef.current.style.paddingBottom = originalPaddingRef.current;
+      paddedContainerRef.current = null;
+      originalPaddingRef.current = '';
+    }
+  }, []);
+
+  const scrollInputIntoView = useCallback((el, kbdH) => {
     clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const viewH = window.innerHeight - kbdHeight - 12;
-      if (rect.bottom > viewH) {
-        const scrollBy = rect.bottom - viewH + 16;
-        window.scrollBy({ top: scrollBy, behavior: 'smooth' });
+
+      // Find the real scrollable parent (not window)
+      const container = getScrollParent(el);
+
+      // Add bottom padding to the container so content can scroll past the keyboard
+      clearContainerPadding();
+      paddedContainerRef.current = container;
+      originalPaddingRef.current = container.style.paddingBottom || '';
+      const existingPad = parseInt(window.getComputedStyle(container).paddingBottom, 10) || 0;
+      const neededPad = kbdH + 24;
+      if (existingPad < neededPad) {
+        container.style.paddingBottom = `${neededPad}px`;
       }
-    }, 60);
-  }, [kbdHeight]);
+
+      // After padding is applied, scroll so the input is visible above the keyboard
+      setTimeout(() => {
+        const rect = el.getBoundingClientRect();
+        const containerRect = container === document.documentElement
+          ? { top: 0, bottom: window.innerHeight }
+          : container.getBoundingClientRect();
+        const visibleBottom = Math.min(containerRect.bottom, window.innerHeight) - kbdH - 20;
+        if (rect.bottom > visibleBottom) {
+          const scrollBy = rect.bottom - visibleBottom + 16;
+          if (container === document.documentElement) {
+            window.scrollBy({ top: scrollBy, behavior: 'smooth' });
+          } else {
+            container.scrollBy({ top: scrollBy, behavior: 'smooth' });
+          }
+        }
+      }, 50);
+    }, 80);
+  }, [clearContainerPadding]);
 
   const show = useCallback((el) => {
     clearTimeout(hideTimerRef.current);
     activeInputRef.current = el;
     const isNum = isNumericInput(el);
+    const kbdH = isNum ? KBD_HEIGHT_NUM : KBD_HEIGHT_QWERTY;
     setNumpad(isNum);
     setMode('lower');
     setVisible(true);
     setTimeout(() => setAnim(true), 10);
-    scrollInputIntoView(el);
+    scrollInputIntoView(el, kbdH);
   }, [scrollInputIntoView]);
 
   const hide = useCallback(() => {
     hideTimerRef.current = setTimeout(() => {
       setAnim(false);
+      clearContainerPadding();
       setTimeout(() => {
         setVisible(false);
         activeInputRef.current = null;
       }, 220);
     }, 120);
-  }, []);
+  }, [clearContainerPadding]);
 
   useEffect(() => {
     const onFocusIn = (e) => {
