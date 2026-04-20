@@ -3,6 +3,8 @@ import { localEntities } from '@/api/localEntities';
 import { useQuery } from '@tanstack/react-query';
 
 const STYLES = `
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 100%; overflow: hidden; }
   @keyframes nameEntrance {
     from { opacity: 0; transform: translateY(-14px) scale(0.96); }
     to   { opacity: 1; transform: translateY(0)     scale(1);    }
@@ -128,7 +130,7 @@ export default function RotationDisplay() {
 
   if (!stageState || stageState.empty || !stageState.is_active || validRotation.length === 0) {
     return (
-      <div className="h-screen bg-[#08081a] flex items-center justify-center">
+      <div style={{ width: '100vw', height: '100vh', background: '#08081a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <style>{STYLES}</style>
         <div className="text-center">
           <h1 className="text-6xl font-bold text-white/90 mb-4">No Active Rotation</h1>
@@ -161,11 +163,11 @@ export default function RotationDisplay() {
   const FIXED_FONT = '1.4rem';
 
   return (
-    <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
+    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#08081a' }}>
       <style>{STYLES}</style>
 
       {/* TOP: Current performer or break — pushed to top, auto height */}
-      <div className="flex flex-col items-center px-8 pt-8 pb-5 border-b border-[#1e293b]">
+      <div className="flex flex-col items-center border-b border-[#1e293b]" style={{ padding: '2vh 4vw 1.5vh', flexShrink: 0 }}>
         {isBreak ? (
           <>
             <p className="stage-label text-lg font-bold tracking-widest uppercase mb-2" style={LABEL_STYLE}>
@@ -229,17 +231,17 @@ export default function RotationDisplay() {
       </div>
 
       {/* BOTTOM: Full rotation list — natural size, fills screen when enough names */}
-      <div className="flex-1 overflow-hidden px-8 pt-4 pb-4">
+      <div style={{ flex: 1, overflow: 'hidden', padding: '1vh 4vw 1vh', minWidth: 0 }}>
         {nextDancers.length > 0 && (
           <p className="stage-label text-xl font-bold tracking-widest uppercase text-center mb-2" style={LABEL_STYLE}>
             {isBreak ? 'Up Next' : 'Next On Stage'}
           </p>
         )}
         {nextDancers.map((dancer) => (
-          <div key={dancer.id} className="text-center">
+          <div key={dancer.id} style={{ textAlign: 'center', width: '100%', overflow: 'hidden' }}>
             <h3
-              className="next-name font-bold text-white uppercase tracking-wider"
-              style={{ fontSize: FIXED_FONT, lineHeight: 1.15 }}
+              className="next-name font-bold text-white uppercase"
+              style={{ fontSize: FIXED_FONT, lineHeight: 1.15, letterSpacing: '0.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
             >
               {dancer.name}
             </h3>
