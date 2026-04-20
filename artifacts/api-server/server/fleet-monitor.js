@@ -245,12 +245,16 @@ async function registerHeartbeat(deviceId, data) {
     if (voiceFails.length > 0 && canSendAlert(effectiveId, 'voice_fail')) {
       const sample = voiceFails[0];
       const dancerCtx = sample.dancer || sample.dancerName ? `\nDancer: ${sample.dancer || sample.dancerName}` : '';
+      const voiceType = sample.voiceType ? `\nType: ${sample.voiceType}` : '';
+      const errDetail = sample.error || sample.message || sample.msg || '';
+      const errLine = errDetail ? `\nReason: <code>${errDetail}</code>` : '';
       sendTelegram(
         `🎤 <b>VOICE FAILURE</b>\n` +
         `<b>${dev.name}</b> (${dev.clubName})\n` +
-        `Event: <code>${sample.event || sample.type || 'unknown'}</code>\n` +
-        `${sample.message || sample.msg || ''}` +
-        dancerCtx
+        `Event: <code>${sample.event || sample.type || 'unknown'}</code>` +
+        dancerCtx +
+        voiceType +
+        errLine
       );
     }
 

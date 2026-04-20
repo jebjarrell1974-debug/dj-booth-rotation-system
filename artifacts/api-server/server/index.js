@@ -755,9 +755,14 @@ app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, r
       const chunkPath = join(tmpDir, `chunk-${i}.mp3`);
       const trimmedPath = join(tmpDir, `trimmed-${i}.mp3`);
       writeFileSync(chunkPath, Buffer.from(chunks[i], 'base64'));
-      const dur = await getAudioDuration(chunkPath);
-      const trimEnd = Math.max(0.5, dur - 0.2);
-      await runFfmpeg(['-y', '-i', chunkPath, '-t', String(trimEnd), '-b:a', '192k', '-ar', '44100', trimmedPath]);
+      // Try to get duration for tail-trim; if ffprobe is missing/fails, skip trim
+      // and just re-encode for consistent format — avoids ENOENT crash.
+      let dur = null;
+      try { dur = await getAudioDuration(chunkPath); } catch {}
+      const ffArgs = ['-y', '-i', chunkPath];
+      if (dur !== null) ffArgs.push('-t', String(Math.max(0.5, dur - 0.2)));
+      ffArgs.push('-b:a', '192k', '-ar', '44100', trimmedPath);
+      await runFfmpeg(ffArgs);
       trimmedFiles.push(trimmedPath);
     }
     if (trimmedFiles.length === 1) {
