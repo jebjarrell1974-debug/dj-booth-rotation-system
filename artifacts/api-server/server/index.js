@@ -767,7 +767,10 @@ app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, r
     const concatList = join(tmpDir, 'concat.txt');
     writeFileSync(concatList, trimmedFiles.map(f => `file '${f}'`).join('\n'));
     const outputPath = join(tmpDir, 'output.mp3');
-    await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', outputPath]);
+    // Re-encode during concat (instead of -c copy) — MP3 frame alignment between
+    // chunks is unreliable, and -c copy fails when headers/frames don't match.
+    await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatList,
+      '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', outputPath]);
     const audio_base64 = readFileSync(outputPath).toString('base64');
     res.json({ audio_base64 });
   } catch (err) {
