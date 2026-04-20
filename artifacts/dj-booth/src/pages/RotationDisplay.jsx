@@ -158,7 +158,7 @@ export default function RotationDisplay() {
   }
 
   const nextCount = nextDancers.length;
-  const FIXED_FONT = '5.5rem';
+  const FIXED_FONT = '1.4rem';
 
   return (
     <div className="h-screen bg-[#08081a] flex flex-col overflow-hidden">
@@ -172,7 +172,7 @@ export default function RotationDisplay() {
               Break
             </p>
             <h1
-              className="current-name text-9xl font-black text-white uppercase tracking-wider text-center leading-tight mb-2"
+              className="current-name text-7xl font-black text-white uppercase tracking-wider text-center leading-tight mb-2"
             >
               Break Song
             </h1>
@@ -202,7 +202,7 @@ export default function RotationDisplay() {
               <div
                 ref={countdownRef}
                 className="font-black font-mono tabular-nums leading-none"
-                style={{ fontSize: '4.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+                style={{ fontSize: '3.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
               />
             )}
           </>
@@ -213,7 +213,7 @@ export default function RotationDisplay() {
             </p>
             <h1
               key={currentDancerId}
-              className="current-name text-9xl font-black text-white uppercase tracking-wider text-center leading-tight"
+              className="current-name font-black text-white uppercase tracking-wider text-center leading-tight" style={{ fontSize: '1.85rem' }}
             >
               {currentDancer ? currentDancer.name : '—'}
             </h1>
@@ -221,7 +221,7 @@ export default function RotationDisplay() {
               <div
                 ref={countdownRef}
                 className="font-black font-mono tabular-nums mt-2 leading-none"
-                style={{ fontSize: '5.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+                style={{ fontSize: '3rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
               />
             )}
           </>
