@@ -160,7 +160,7 @@ export default function RotationDisplay() {
   }
 
   const nextCount = nextDancers.length;
-  const FIXED_FONT = '1.4rem';
+  const FIXED_FONT = '2rem';
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#08081a' }}>
@@ -204,7 +204,7 @@ export default function RotationDisplay() {
               <div
                 ref={countdownRef}
                 className="font-black font-mono tabular-nums leading-none"
-                style={{ fontSize: '3.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+                style={{ fontSize: '5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
               />
             )}
           </>
@@ -215,7 +215,7 @@ export default function RotationDisplay() {
             </p>
             <h1
               key={currentDancerId}
-              className="current-name font-black text-white uppercase tracking-wider text-center leading-tight" style={{ fontSize: '1.85rem' }}
+              className="current-name font-black text-white uppercase tracking-wider text-center leading-tight" style={{ fontSize: '3rem' }}
             >
               {currentDancer ? currentDancer.name : '—'}
             </h1>
@@ -223,7 +223,7 @@ export default function RotationDisplay() {
               <div
                 ref={countdownRef}
                 className="font-black font-mono tabular-nums mt-2 leading-none"
-                style={{ fontSize: '3rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+                style={{ fontSize: '4.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
               />
             )}
           </>
