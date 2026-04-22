@@ -1060,38 +1060,42 @@ export default function RotationPlaylistManager({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
-                  {[1, 2, 3].map(n => (
-                    <button
-                      key={n}
-                      onClick={() => onSongsPerSetChange?.(n)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                        songsPerSet === n
-                          ? 'bg-[#00d4ff] text-black'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <span className="text-xs text-gray-500 px-1">songs</span>
+            <div className="flex flex-col gap-2 mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#00d4ff] uppercase tracking-wider w-16 flex-shrink-0">Songs/Set</span>
+                  <div className="flex items-center gap-1 bg-[#0a1628] rounded-lg border border-[#00d4ff]/40 p-0.5">
+                    {[1, 2, 3].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => onSongsPerSetChange?.(n)}
+                        className={`px-3 py-1.5 rounded-md text-sm font-bold transition-colors ${
+                          songsPerSet === n
+                            ? 'bg-[#00d4ff] text-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
-                  {[0, 1, 2, 3].map(n => (
-                    <button
-                      key={n}
-                      onClick={() => onBreakSongsPerSetChange?.(n)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                        breakSongsPerSet === n
-                          ? 'bg-violet-500 text-white'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <span className="text-xs text-gray-500 px-1">breaks</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-violet-400 uppercase tracking-wider w-16 flex-shrink-0">Breaks/Set</span>
+                  <div className="flex items-center gap-1 bg-[#150d28] rounded-lg border border-violet-500/40 p-0.5">
+                    {[0, 1, 2, 3].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => onBreakSongsPerSetChange?.(n)}
+                        className={`px-3 py-1.5 rounded-md text-sm font-bold transition-colors ${
+                          breakSongsPerSet === n
+                            ? 'bg-violet-500 text-white'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button
                   onClick={() => onAnnouncementsToggle?.(!announcementsEnabled)}
