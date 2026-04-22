@@ -2776,6 +2776,14 @@ export default function DJBooth() {
       });
       if (res.ok) {
         toast.success(`Deactivated: ${trackName}`);
+        // Purge this song from all pre-picked rotation sets so it can't sneak in via the cache
+        const cleaned = {};
+        for (const [dancerId, songs] of Object.entries(rotationSongsRef.current)) {
+          const filtered = (songs || []).filter(t => t?.name !== trackName);
+          cleaned[dancerId] = filtered;
+        }
+        rotationSongsRef.current = cleaned;
+        setRotationSongs(cleaned);
         handleSkipRef.current?.();
       } else {
         const data = await res.json().catch(() => ({}));

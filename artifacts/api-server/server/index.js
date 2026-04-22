@@ -1815,6 +1815,7 @@ app.get('/api/music/ambient', (req, res) => {
 app.get('/api/music/stream/:id', (req, res) => {
   const track = getMusicTrackById(parseInt(req.params.id));
   if (!track || !MUSIC_PATH) return res.status(404).json({ error: 'Track not found' });
+  if (track.blocked) return res.status(403).json({ error: 'Track is deactivated' });
 
   const filePath = join(MUSIC_PATH, track.path);
   if (!existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
