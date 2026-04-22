@@ -379,18 +379,21 @@ export default function RotationPlaylistManager({
         }
 
         const excludeSet = new Set(batchExcludes);
+        const fallbackNow = Date.now();
+        const isOnCooldown = (name) => !!(songCooldowns[name] && (fallbackNow - songCooldowns[name]) < FOUR_HOURS_MS);
         const fallbackPlaylist = dancer?.playlist || [];
         let assigned = [];
         if (!isFoldersOnly && fallbackPlaylist.length > 0) {
           const playlistSet = new Set(fallbackPlaylist);
-          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
+          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name) && !isOnCooldown(t.name));
           assigned = fisherYatesShuffle(playlistTracks).slice(0, songsPerSet).map(t => t.name);
         }
         if (assigned.length < songsPerSet) {
           const genrePool = filterByGenres(tracks, activeGenres);
           const usedSet = new Set([...excludeSet, ...assigned]);
-          const available = genrePool.filter(t => !usedSet.has(t.name));
-          assigned = [...assigned, ...fisherYatesShuffle(available).slice(0, songsPerSet - assigned.length).map(t => t.name)];
+          const fresh = genrePool.filter(t => !usedSet.has(t.name) && !isOnCooldown(t.name));
+          const fill = fresh.length > 0 ? fresh : genrePool.filter(t => !usedSet.has(t.name));
+          assigned = [...assigned, ...fisherYatesShuffle(fill).slice(0, songsPerSet - assigned.length).map(t => t.name)];
         }
         newAssignments[dancerId] = assigned;
         assigned.forEach(n => batchExcludes.push(n));
@@ -726,12 +729,15 @@ export default function RotationPlaylistManager({
       }
 
       const excludeSet = new Set(allAssigned);
+      const rerollNow = Date.now();
+      const notOnCooldown = (name) => !(songCooldowns[name] && (rerollNow - songCooldowns[name]) < FOUR_HOURS_MS);
       const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
       const playlistSet = new Set(dancerPlaylist);
-      const playlistTracks = dancerPlaylist.length > 0
+      const candidatePool = dancerPlaylist.length > 0
         ? allTracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name))
         : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
-      const available = playlistTracks.length > 0 ? playlistTracks : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
+      const freshPool = candidatePool.filter(t => notOnCooldown(t.name));
+      const available = freshPool.length > 0 ? freshPool : candidatePool;
       if (available.length > 0) {
         const pick = available[Math.floor(Math.random() * available.length)];
         djOverridesRef.current.add(dancerId);

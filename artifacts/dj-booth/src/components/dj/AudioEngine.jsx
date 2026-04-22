@@ -942,6 +942,7 @@ const AudioEngine = forwardRef(({
     const saved = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}');
     saved[band] = v;
     localStorage.setItem('neonaidj_music_eq', JSON.stringify(saved));
+    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ neonaidj_music_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
   }, []);
 
   const stopVoice = useCallback(() => {
@@ -966,6 +967,7 @@ const AudioEngine = forwardRef(({
     const saved = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
     saved[band] = v;
     localStorage.setItem('neonaidj_voice_eq', JSON.stringify(saved));
+    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ neonaidj_voice_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -987,6 +989,7 @@ const AudioEngine = forwardRef(({
     setBeatMatch: (enabled) => {
       beatMatchEnabledRef.current = enabled;
       try { localStorage.setItem('neonaidj_beat_match', enabled ? 'true' : 'false'); } catch {}
+      try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ neonaidj_beat_match: enabled ? 'true' : 'false' }) }).catch(() => {}); } catch {}
     },
     getBeatMatchEnabled: () => beatMatchEnabledRef.current,
     isPlaying,

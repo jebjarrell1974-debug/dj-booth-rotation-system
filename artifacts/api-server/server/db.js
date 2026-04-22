@@ -323,6 +323,8 @@ export function saveClientSettings(settings) {
     'djbooth_club_close_hour', 'djbooth_energy_override', 'djbooth_script_model',
     'djbooth_club_specials', 'neonaidj_songs_per_set', 'neonaidj_commercial_freq',
     'djbooth_adult_mode', 'neonaidj_music_mode', 'neonaidj_active_genres',
+    'djbooth_display_countdown', 'djbooth_voice_gain', 'neonaidj_beat_match',
+    'neonaidj_music_eq', 'neonaidj_voice_eq',
   ];
   for (const key of allowed) {
     if (settings[key] !== undefined && settings[key] !== null) {

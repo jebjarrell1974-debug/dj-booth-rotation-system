@@ -170,11 +170,13 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         });
       });
       const genres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+      const rerollDancer = dancers?.find(d => d.id === dancerId);
+      const dancerPlaylist = rerollDancer?.playlist || [];
       const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/music/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ count: 1, excludeNames: [...new Set(allAssigned)], genres, dancerPlaylist: [] }),
+        body: JSON.stringify({ count: 1, excludeNames: [...new Set(allAssigned)], genres, dancerPlaylist }),
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {

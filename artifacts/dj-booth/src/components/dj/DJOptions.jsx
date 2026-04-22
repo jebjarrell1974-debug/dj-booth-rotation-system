@@ -31,6 +31,35 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
     }
   }, [externalCommercialFreq]);
 
+  const saveToServer = (key, value) => {
+    fetch('/api/config/save-to-server', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value }),
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('djbooth_token');
+    if (!token) return;
+    fetch('/api/client-settings', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        if (data.neonaidj_commercial_freq && localStorage.getItem('neonaidj_commercial_freq') == null) {
+          localStorage.setItem('neonaidj_commercial_freq', data.neonaidj_commercial_freq);
+          setCommercialFreq(data.neonaidj_commercial_freq);
+        }
+        if (data.djbooth_display_countdown != null && localStorage.getItem('djbooth_display_countdown') == null) {
+          const val = data.djbooth_display_countdown === 'true';
+          localStorage.setItem('djbooth_display_countdown', data.djbooth_display_countdown);
+          setDisplayCountdown(val);
+          window.dispatchEvent(new Event('djbooth_display_countdown_changed'));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const activeGenres = djOptions?.activeGenres || [];
   const musicMode = djOptions?.musicMode || 'dancer_first';
 
@@ -139,6 +168,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                       onClick={() => {
                         setCommercialFreq(opt.value);
                         localStorage.setItem('neonaidj_commercial_freq', opt.value);
+                        saveToServer('neonaidj_commercial_freq', opt.value);
                         setCommercialDropdownOpen(false);
                         onCommercialFreqChange?.(opt.value);
                       }}
@@ -183,6 +213,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
               onCheckedChange={(val) => {
                 setDisplayCountdown(val);
                 localStorage.setItem('djbooth_display_countdown', String(val));
+                saveToServer('djbooth_display_countdown', String(val));
                 window.dispatchEvent(new Event('djbooth_display_countdown_changed'));
               }}
             />

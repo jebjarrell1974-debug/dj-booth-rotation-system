@@ -853,6 +853,7 @@ export default function DJBooth() {
             setVoiceGain(g);
             audioEngineRef.current?.setVoiceGain(g);
             try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
           }
           break;
         case 'setCommercialFreq':
@@ -2628,12 +2629,20 @@ export default function DJBooth() {
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
         const existingTracks = scratchSongs[newRotation[newIdx]];
+        // Filter stale pre-picks: remove any tracks now inside the 4-hour cooldown window
+        const validPrePicks = existingTracks
+          ? existingTracks.filter(t => {
+              if (!t?.url) return false;
+              const lp = songCooldownRef.current?.[t.name];
+              return !lp || (Date.now() - lp) >= COOLDOWN_MS;
+            })
+          : null;
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _ev = existingTracks && existingTracks.filter(t => t?.url).length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          (() => { const _ev = validPrePicks && validPrePicks.length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer
@@ -3269,12 +3278,20 @@ export default function DJBooth() {
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
         const existingTracks = scratchSongs[newRotation[newIdx]];
+        // Filter stale pre-picks: remove any tracks now inside the 4-hour cooldown window
+        const validPrePicks = existingTracks
+          ? existingTracks.filter(t => {
+              if (!t?.url) return false;
+              const lp = songCooldownRef.current?.[t.name];
+              return !lp || (Date.now() - lp) >= COOLDOWN_MS;
+            })
+          : null;
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _ev = existingTracks && existingTracks.filter(t => t?.url).length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(existingTracks) : getDancerTracks(nextDancer); })(),
+          (() => { const _ev = validPrePicks && validPrePicks.length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer
@@ -3916,6 +3933,7 @@ export default function DJBooth() {
                         setVoiceGain(g);
                         audioEngineRef.current?.setVoiceGain(g);
                         try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
                       }}
                       disabled={Math.round(voiceGain * 100) <= 50}
                       className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
@@ -3931,6 +3949,7 @@ export default function DJBooth() {
                         setVoiceGain(g);
                         audioEngineRef.current?.setVoiceGain(g);
                         try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
+            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
                       }}
                       disabled={Math.round(voiceGain * 100) >= 300}
                       className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"

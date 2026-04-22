@@ -657,6 +657,14 @@ app.post('/api/config/save-to-server', (req, res) => {
   }
 });
 
+app.get('/api/client-settings', authenticate, (req, res) => {
+  try {
+    res.json(getClientSettings());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/songs', authenticate, (req, res) => {
   const songs = listSongs();
   res.json(songs);
