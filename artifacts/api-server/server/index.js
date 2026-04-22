@@ -749,7 +749,7 @@ app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, r
   }
   const tmpDir = `/tmp/promo-stitch-${Date.now()}`;
   mkdirSync(tmpDir, { recursive: true });
-  try {
+  const runStitch = async () => {
     const trimmedFiles = [];
     for (let i = 0; i < chunks.length; i++) {
       const chunkPath = join(tmpDir, `chunk-${i}.mp3`);
@@ -766,8 +766,7 @@ app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, r
       trimmedFiles.push(trimmedPath);
     }
     if (trimmedFiles.length === 1) {
-      const audio_base64 = readFileSync(trimmedFiles[0]).toString('base64');
-      return res.json({ audio_base64 });
+      return readFileSync(trimmedFiles[0]).toString('base64');
     }
     const concatList = join(tmpDir, 'concat.txt');
     writeFileSync(concatList, trimmedFiles.map(f => `file '${f}'`).join('\n'));
@@ -776,10 +775,20 @@ app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, r
     // chunks is unreliable, and -c copy fails when headers/frames don't match.
     await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatList,
       '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', outputPath]);
-    const audio_base64 = readFileSync(outputPath).toString('base64');
+    return readFileSync(outputPath).toString('base64');
+  };
+  try {
+    let audio_base64;
+    try {
+      audio_base64 = await runStitch();
+    } catch (firstErr) {
+      console.warn('Stitch chunks first attempt failed, retrying in 500ms:', firstErr.message);
+      await new Promise(r => setTimeout(r, 500));
+      audio_base64 = await runStitch();
+    }
     res.json({ audio_base64 });
   } catch (err) {
-    console.error('Stitch chunks failed:', err.message);
+    console.error('Stitch chunks failed after retry:', err.message);
     res.status(500).json({ error: 'Failed to stitch audio chunks' });
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}

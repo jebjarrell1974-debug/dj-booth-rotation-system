@@ -121,8 +121,8 @@ export default function DJBooth() {
     return {};
   });
   const dancerVipMapRef = useRef({});
-  const pendingVipRef = useRef({});
-  const [pendingVipState, setPendingVipState] = useState({});
+  const pendingVipRef = useRef((() => { try { const r = localStorage.getItem('neonaidj_pending_vip'); return r ? JSON.parse(r) : {}; } catch { return {}; } })());
+  const [pendingVipState, setPendingVipState] = useState(() => { try { const r = localStorage.getItem('neonaidj_pending_vip'); return r ? JSON.parse(r) : {}; } catch { return {}; } });
   const [currentSongNumber, setCurrentSongNumber] = useState(1);
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
@@ -652,6 +652,7 @@ export default function DJBooth() {
     if (isOnStage) {
       pendingVipRef.current = { ...pendingVipRef.current, [dancerId]: durationMs };
       setPendingVipState({ ...pendingVipRef.current });
+      try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(pendingVipRef.current)); } catch {}
       const dancer = dancersRef.current.find(d => d.id === dancerId);
       toast(`${dancer?.name || 'Entertainer'} going to VIP after this set`, { icon: '👑' });
     } else {
@@ -681,6 +682,7 @@ export default function DJBooth() {
     delete newMap[id];
     delete pendingVipRef.current[id];
     setPendingVipState({ ...pendingVipRef.current });
+    try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(pendingVipRef.current)); } catch {}
     dancerVipMapRef.current = newMap;
     setDancerVipMap({ ...newMap });
     try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
@@ -705,12 +707,18 @@ export default function DJBooth() {
       const newRot = [...rotationRef.current];
       for (const [id] of expired) {
         delete newMap[id];
-        if (!newRot.some(r => String(r) === id)) {
+        const dancer = dancersRef.current.find(d => String(d.id) === id);
+        if (dancer && !newRot.some(r => String(r) === id)) {
           newRot.push(id);
         }
-        const dancer = dancersRef.current.find(d => String(d.id) === id);
-        console.log('👑 VIP expired — returning to rotation:', dancer?.name);
-        toast(`${dancer?.name || 'Entertainer'} returned from VIP`, { icon: '✅' });
+        const rotActive = isRotationActiveRef.current;
+        console.log('👑 VIP expired — returning to rotation:', dancer?.name, rotActive ? '' : '(rotation paused)');
+        toast(
+          rotActive
+            ? `${dancer?.name || 'Entertainer'} returned from VIP`
+            : `${dancer?.name || 'Entertainer'} VIP time ended — added to rotation`,
+          { icon: '✅' }
+        );
       }
       dancerVipMapRef.current = newMap;
       setDancerVipMap(newMap);
@@ -3611,6 +3619,7 @@ export default function DJBooth() {
     if (pendingVipRef.current[dancerId]) {
       delete pendingVipRef.current[dancerId];
       setPendingVipState({ ...pendingVipRef.current });
+      try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(pendingVipRef.current)); } catch {}
     }
 
     if (removedIdx !== -1 && removedIdx <= currentDancerIndexRef.current && newRotation.length > 0) {

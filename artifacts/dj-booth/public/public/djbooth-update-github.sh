@@ -266,6 +266,11 @@ for AFILE in /home/$(whoami)/.config/autostart/*.desktop /etc/xdg/lxsession/LXDE
   fi
 done
 
+which ffmpeg >/dev/null 2>&1 || {
+  echo "Installing ffmpeg for audio processing (voice gen, LUFS, BPM)..."
+  sudo apt-get install -y ffmpeg >/dev/null 2>&1 || true
+}
+
 which xdotool >/dev/null 2>&1 || {
   echo "Installing xdotool for browser auto-refresh..."
   sudo apt-get install -y xdotool >/dev/null 2>&1 || true
@@ -295,11 +300,18 @@ cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
 sleep 20
 SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+POS_X=0
+POS_Y=0
 if [ -n "$SECOND" ]; then
   DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+  sleep 2
+  GEOM=$(DISPLAY=:0 xrandr --query | grep "^${SECOND} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+  POS_X=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)+[0-9]*$/\1/')
+  POS_Y=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)$/\1/')
 fi
 rm -rf /tmp/chromium-rotation
 chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
+  --window-position=${POS_X},${POS_Y} \
   --noerrdialogs --disable-session-crashed-bubble \
   --autoplay-policy=no-user-gesture-required \
   http://localhost:3001/RotationDisplay

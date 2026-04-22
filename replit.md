@@ -18,9 +18,201 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 **Fleet dashboard**: `http://100.109.73.27:3001/fleet`
 **Update pipeline**: `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` to bypass homebase and pull direct from GitHub.
 
-**IMPORTANT — Homebase dead air alerts**: Homebase (HP Compaq) has no audio output and never will. "Dead air logged" warnings from homebase in the fleet dashboard are expected and can be ignored permanently.
+**IMPORTANT — Homebase dead air alerts**: Homebase (HP Compaq) has no audio output and never will. "Dead air logged" warnings from homebase in the fleet dashboard are expected and can be ignored permanently. **FIXED Apr 22 2026**: `fleet-monitor.js` now suppresses dead-air Telegram alerts for any device whose name contains "homebase", so these will no longer spam Telegram.
 
-**IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2 (lines 381–423). This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. If R2 has fewer files than a Pi's local storage, the sync will purge local files on restart. **Never restart a fleet Pi's service if R2 has recently been partially cleared.** Pending: add a safeguard that skips the purge if R2 has >20% fewer files than local storage.
+**IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2. This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. **FIXED Apr 22 2026**: A 20% delta safeguard is now in place — if R2 has >20% fewer files than the local library, the purge is skipped entirely and a warning is logged. Never manually delete from R2 without understanding this logic.
+
+## Dell OptiPlex 7010 Micro — Proven Setup (neonaidj003, THE PONY EVANSVILLE, Apr 2026)
+
+This is the complete reference configuration for the Dell unit that is live and working as of April 20, 2026. Use this as the exact template for every new Dell OptiPlex unit. Everything below has been tested and confirmed working on neonaidj003.
+
+---
+
+### REQUIRED SYSTEM PACKAGES (run on every new unit before starting the app)
+
+This is the single most important step. The app spawns these binaries directly — if they are missing, features fail silently or crash. Install all of them before running the update script or starting the service.
+
+✅ **SAFE MID-VENUE** — apt install does not stop or restart any service. Music continues uninterrupted.
+```bash
+sudo apt update
+sudo apt install -y ffmpeg git chromium x11-xserver-utils xinput aubio-tools curl
+```
+
+| Package | Binary | Used for | Impact if missing |
+|---|---|---|---|
+| `ffmpeg` | `ffmpeg`, `ffprobe` | Voice stitching, promo mixing, LUFS analysis, BPM analysis | **CRITICAL** — voice generation fails entirely (`spawn ffprobe ENOENT`) |
+| `chromium` | `chromium` | Kiosk browser | **CRITICAL** — no display |
+| `x11-xserver-utils` | `xrandr` | Display rotation, remote screen control | Remote display commands fail |
+| `xinput` | `xinput` | Touchscreen mapping to correct screen | Touches register on wrong display |
+| `git` | `git` | Version hash shown in fleet dashboard | Shows "unknown" — non-fatal |
+| `aubio-tools` | `aubio` | BPM detection for tracks without embedded BPM tags | BPM analysis skipped — non-fatal |
+| `curl` | `curl` | Update script downloads from GitHub | Update script fails to download |
+
+**Confirmed missing on neonaidj003 at install time: `ffmpeg`/`ffprobe`** — caused all voice generation to fail with `spawn ffprobe ENOENT`. Fixed by `sudo apt install ffmpeg`.
+
+---
+
+### Bug Fixes Applied Apr 20, 2026 (all in GitHub, pulled by update script)
+
+#### 1. Promo + Dancer Voiceover Stitching Fix
+- **Problem**: "Promo generation failed: Failed to stitch audio parts" and "voice_generate_fail" Telegram alerts — both promos AND dancer voiceovers were failing to generate when the TTS script was more than one chunk long.
+- **Root cause**: `POST /api/voiceovers/stitch-chunks` used ffmpeg `-c copy` to concatenate MP3 chunks. MP3 frame alignment is unreliable between separately-encoded chunks — `-c copy` fails when headers/frames don't match.
+- **Fix**: Changed the final concat step to re-encode with `libmp3lame -b:a 192k -ar 44100` instead of `-c copy`. Each chunk is still individually trimmed/re-encoded first, then the final concat also re-encodes for a clean output.
+- **File**: `artifacts/api-server/server/index.js` (~line 770)
+- **Commit**: `ab05f46`
+
+#### 2. RotationDisplay Font Sizes (Crowd-Facing Screen)
+- **Problem**: With ~15 entertainers in rotation, names were too large and the list overflowed off screen.
+- **Fix**: Reduced font sizes — current performer name: `1.85rem`, rotation list names: `1.4rem` (FIXED_FONT constant), countdown timer: `3rem`.
+- **File**: `artifacts/dj-booth/src/pages/RotationDisplay.jsx`
+- **Commit**: `99fe558`
+
+#### 3. RotationDisplay Right-Side Cutoff on Any Monitor
+- **Problem**: The rotation display was cut off on the right edge. Happened on any monitor that wasn't exactly the build resolution.
+- **Root cause**: Outer container used `h-screen` (height only) without setting width. Browser guessed the width incorrectly. No global box-sizing reset, so padding could push content outside the viewport. Letter-spacing on large names added extra width.
+- **Fix**:
+  - Outer container now uses inline `width: 100vw, height: 100vh, overflow: hidden` instead of Tailwind classes
+  - Added CSS reset in `STYLES`: `*, *::before, *::after { box-sizing: border-box; }` and `html, body { margin: 0; padding: 0; width: 100%; overflow: hidden; }`
+  - Padding changed from fixed `px-8` to viewport-relative `4vw` so it scales with any screen size
+  - Dancer names in the list now have `overflow: hidden, textOverflow: ellipsis, whiteSpace: nowrap` so very long names clip instead of overflowing
+- **File**: `artifacts/dj-booth/src/pages/RotationDisplay.jsx`
+- **Commit**: `f3b3d4c`
+
+#### 5. ffprobe Not Installed → All Voice Generation Fails (Apr 20, 2026)
+- **Problem**: All dancer voiceovers and promos failing with `Stitch chunks failed: spawn ffprobe ENOENT`. Voice generation produced zero audio.
+- **Root cause**: `ffprobe` (part of the `ffmpeg` package) was not installed on the Dell. The stitch-chunks endpoint calls `getAudioDuration()` using `ffprobe` to measure each audio chunk before trimming — when `ffprobe` is missing, the whole endpoint crashes before any audio is produced.
+- **Immediate fix on Dell**: `sudo apt install ffmpeg -y` — safe to run while live, no service restart needed.
+- **Code hardening**: Stitch endpoint now wraps the `getAudioDuration` call in try/catch. If `ffprobe` fails (missing or error), it skips the tail-trim and just re-encodes the chunk for consistent format. Voice generation succeeds even without `ffprobe`, just without the 0.2s tail trim.
+- **Telegram alert fix**: Telegram "VOICE FAILURE" alert now shows the actual error reason (`Reason: spawn ffprobe ENOENT`). Previously the `sample.error` field was captured but not included in the alert message — you only saw "VOICE FAILURE" with no cause.
+- **File**: `artifacts/api-server/server/index.js` (stitch resilience), `artifacts/api-server/server/fleet-monitor.js` (Telegram fix)
+- **Commit**: `b982fe2`
+- **Lesson**: `ffmpeg`/`ffprobe` must be listed in the mandatory install step for every new unit. See REQUIRED SYSTEM PACKAGES above.
+
+#### 4. Virtual Keyboard Covering Input Fields
+- **Problem**: When filling out forms near the bottom of any tab (especially the Promos section), the virtual keyboard slid up over the input field, hiding what you were typing. Could not see the field.
+- **Root cause**: The keyboard's scroll-into-view logic used `window.scrollBy()` — but the DJ Booth uses `overflow-auto` divs inside tabs, not the window, as scroll containers. `window.scrollBy()` had no effect on those containers.
+- **Fix**: Complete rewrite of `scrollInputIntoView` in `VirtualKeyboard.jsx`:
+  - New `getScrollParent()` function walks up the DOM to find the actual scrollable ancestor div
+  - Temporarily adds `paddingBottom` to that container equal to the keyboard height so there's room to scroll
+  - Scrolls the container (not window) so the active input sits above the keyboard with clearance
+  - On keyboard dismiss: removes the added padding and restores the container to its original state
+- **File**: `artifacts/dj-booth/src/components/VirtualKeyboard.jsx`
+- **Commit**: `274b92e`
+
+---
+
+### Display Setup
+- **HDMI-1** = Crowd-facing screen, **portrait orientation** (rotated left). Physical screen is landscape but mounted portrait — Linux rotates the output.
+- **HDMI-2** = DJ-facing screen, **landscape orientation** (normal). This is where the kiosk Chromium window lives.
+- **Touchscreen** = ILITEK USB touchscreen. Find it with `xinput list | grep -i ILITEK`. Must be mapped to HDMI-2 (the DJ screen) so touches register in the right coordinates: `xinput map-to-output <id> HDMI-2`
+- **`~/djbooth-rotation-display.sh`** — script on the Dell that: (1) rotates HDMI-1 left, (2) opens Chromium on HDMI-1 showing `/RotationDisplay`, (3) maps the ILITEK touchscreen to HDMI-2. Run this after every kiosk relaunch or reboot.
+- **`~/relaunch-djbooth.sh`** — manually relaunches the DJ kiosk Chromium on HDMI-2 with the correct flags (see below). Use this if Chromium crashes or needs a forced refresh.
+
+### Kiosk Chromium Launch Flags (CRITICAL — wrong flags = cutoff or wrong screen)
+```
+chromium --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+  --window-position=2160,0 --window-size=1920,1080 --force-device-scale-factor=1 \
+  http://localhost:3001
+```
+- `--window-position=2160,0` — places window on HDMI-2. HDMI-1 in portrait at 1080×1920 means its virtual width is 2160px (HiDPI) so HDMI-2 starts at x=2160. **This value may differ on the next unit — check with `xrandr` and adjust.**
+- `--window-size=1920,1080` — locks window to full 1080p landscape. Without this, Chrome may size itself to the wrong display dimensions.
+- `--force-device-scale-factor=1` — disables DPI scaling. Without this, Chrome may render at 0.5x or 2x and the UI appears huge/tiny.
+- These flags must be in **both** `~/.config/autostart/djbooth-kiosk.desktop` AND `~/relaunch-djbooth.sh` — they need to match exactly.
+
+### If Screens Look Wrong After an Update
+
+**To fix the crowd screen only (wrong rotation, wrong font size, blank):**
+✅ **SAFE MID-VENUE** — only kills and relaunches the crowd screen Chromium (`RotationChromium` class). Music and DJ kiosk are completely unaffected. Crowd screen goes dark for ~5 seconds then comes back.
+```bash
+~/djbooth-rotation-display.sh
+```
+
+**To fix the DJ kiosk screen (or both screens after a full Chromium crash):**
+⛔ **AFTER CLOSE ONLY.** `pkill -f chromium` kills ALL Chromium windows including the DJ kiosk. Music stops for ~15–30 seconds while Chromium relaunches and the app reinitializes.
+```bash
+~/djbooth-rotation-display.sh
+sleep 2
+pkill -f chromium 2>/dev/null || true
+sleep 2
+~/relaunch-djbooth.sh
+```
+
+**How this works:** The crowd screen Chromium is launched with `--class=RotationChromium`. The `~/djbooth-rotation-display.sh` script uses `pkill -f RotationChromium` which only matches that specific window — it does not touch the DJ kiosk Chromium. Confirmed by reading the script on neonaidj003 Apr 20 2026.
+
+### Audio
+- USB DAC with S/PDIF digital optical passthrough → venue mixer
+- **NEVER set software volume above 1.0** — S/PDIF is a digital passthrough; anything above 1.0 clips hard and sounds distorted. The venue mixer's gain knob is the real volume control.
+- Audio managed by **PipeWire**. Use `wpctl`, NOT `pactl` (PulseAudio commands don't work reliably with PipeWire).
+- Set volume: `wpctl status` to find the sink ID, then `wpctl set-volume <sink-id> 1.0`
+
+### On-Screen Keyboard (Important — prevents double keyboard)
+The app has a full built-in virtual keyboard. Do NOT also run a system on-screen keyboard.
+- On first setup, disable system keyboard: 
+```bash
+mkdir -p ~/.config/autostart
+printf '[Desktop Entry]\nHidden=true\n' > ~/.config/autostart/onboard-autostart.desktop
+printf '[Desktop Entry]\nHidden=true\n' > ~/.config/autostart/matchbox-keyboard.desktop
+gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false 2>/dev/null || true
+pkill onboard 2>/dev/null; pkill matchbox-keyboard 2>/dev/null; echo "Done."
+```
+- If two keyboards ever appear again, run the above block.
+
+### Do NOT Install Watchdog
+A watchdog daemon was installed on neonaidj003 earlier and caused a duplicate kiosk crisis — two Chromium windows launched simultaneously and fought each other. The systemd service auto-restart + `~/relaunch-djbooth.sh` is sufficient. Do not install any watchdog/supervisor daemon on these units.
+
+### Update Script
+⛔ **RUN AFTER CLOSE ONLY — NOT SAFE MID-VENUE.** The script restarts the djbooth service and kills Chromium, which stops music for ~10–15 seconds and blacks out both screens during restart.
+```bash
+set -e
+echo "📥 Downloading latest from GitHub..."
+TMP=$(mktemp -d) && cd "$TMP"
+curl -sL https://github.com/jebjarrell1974-debug/dj-booth-rotation-system/archive/refs/heads/main.tar.gz | tar xz
+SRC="$TMP/dj-booth-rotation-system-main"
+APP="$HOME/djbooth"
+echo "💾 Backing up..."
+mkdir -p "$APP/.backup"; TS=$(date +%s)
+cp -r "$APP/artifacts/dj-booth/dist"     "$APP/.backup/dist-$TS"   2>/dev/null || true
+cp -r "$APP/artifacts/api-server/server" "$APP/.backup/server-$TS" 2>/dev/null || true
+echo "🚚 Updating frontend..."
+rm -rf "$APP/artifacts/dj-booth/dist" && cp -r "$SRC/artifacts/dj-booth/dist" "$APP/artifacts/dj-booth/dist"
+echo "🚚 Updating backend..."
+rm -rf "$APP/artifacts/api-server/server" && cp -r "$SRC/artifacts/api-server/server" "$APP/artifacts/api-server/server"
+echo "🔄 Restarting service..."
+sudo systemctl restart djbooth && sleep 4
+echo "🖥️  Reloading kiosk..."
+pkill -f chromium 2>/dev/null || true
+echo "⏳ Waiting for DJ kiosk to come back..."
+sleep 8
+echo "🎪 Restoring crowd screen..."
+~/djbooth-rotation-display.sh &
+echo "✅ DONE"
+sudo systemctl status djbooth --no-pager | head -10
+rm -rf "$TMP"
+```
+**What this does:**
+- Downloads full latest codebase from GitHub as a tarball (no git required)
+- Backs up current `dist/` and `server/` to `~/djbooth/.backup/<timestamp>/` before touching anything
+- Replaces only: frontend build (`dist/`) and backend code (`server/`)
+- Leaves untouched: database, voiceovers, music library, node_modules, configs, API keys
+- Restarts the djbooth systemd service
+- Kills Chromium so the autostart relaunches it with the fresh frontend
+- Interrupts music for ~10–15 seconds — run between sets
+
+**After running this script**, also run `~/djbooth-rotation-display.sh` to restore the crowd screen and touchscreen mapping, since killing Chromium resets them.
+
+### CRITICAL: Frontend Changes Require a Dist Rebuild in Replit First
+The Dell update script does NOT run Vite. It downloads and serves the pre-built `dist/` folder directly from GitHub. If only source files (`artifacts/dj-booth/src/`) are changed in Replit and pushed to GitHub without rebuilding `dist/`, the Dell will still show the old frontend even after running the update script.
+
+**Before any GitHub push that includes frontend changes:**
+1. In Replit: `cd /home/runner/workspace/artifacts/dj-booth && npx vite build --config homebase-vite.config.js`
+2. Push the rebuilt `dist/` to GitHub (see the github-pi-update skill for the exact push script)
+3. Then the Dell update script will pick up the new frontend
+
+Use `homebase-vite.config.js`, NOT `vite.config.ts` — the Replit config requires PORT/BASE_PATH env vars that aren't available during a manual build.
+
+This was the root cause of "I pushed it but the screen didn't change" — the dist was stale.
+
+---
 
 ## Hardware Upgrade Plan — x86 Mini PC (GMKtec G3 PRO)
 
@@ -122,25 +314,263 @@ A fleet management system enables centralized control of multiple Pi units, prov
 ### PENDING TO-DO (next session):
 1. Fix Telegram alerts (broken since homebase migration)
 2. Smart Telegram alerts: fire on dead air, slow transitions, low cache hit rate — with full context
-3. Use `preloadedTrackRef` in transitions: it pre-fetches the next track but is NEVER consumed — transitions ignore it and call the API anyway
-4. Convert all existing promos to MP3 via `POST /api/voiceovers/convert-all-promos` on homebase (run once after deploy)
-5. **iPad Remote full redesign** — users are using the remote more than the main kiosk; needs to be more user-friendly end-to-end. Redesign entire remote experience (layout, touch targets, flow). Do this after "In VIP" feature is complete.
-6. **Voice Settings Tester page** — standalone page (e.g. `/voice-test`) using already-configured ElevenLabs API key + voice ID; shows ~6 preset setting combos (stability/style/speed variations) with a sample DJ script; play buttons to compare side-by-side; no connection to live app/rotation; PIN-protected or obscure URL. Goal: let user audition different ElevenLabs voice settings to find best energy/emotion for club DJ announcing without affecting production. Also consider: lowering stability to ~0.25–0.28 (currently 0.38) for more emotional range; eventually switching to `eleven_v3` when it exits Alpha (same price, supports emotion audio tags like `[excited]`/`[hype]` in scripts).
-6. **ElevenLabs voice clone improvement** — user to re-record clone samples in full DJ hype mode (30–60 min, clean audio, no music, full announcing energy) and add to existing IVC on ElevenLabs. This is the highest-leverage improvement for getting more expressive/emotional delivery from the voice. Can be done directly on elevenlabs.io → Voices → existing clone → Add samples.
+3. **INVESTIGATE: False / stale dead air alerts on neonaidj003** — Telegram repeatedly fires "DEAD AIR — 15.7s silence detected, Dancer: AMETHYST, Track: 1982-288 Van Halen Oh Pretty Woman.mp3" every ~10 minutes (seen 2:34, 2:45, 2:55, 2:59 AM) even though that track has not played for at least an hour. Likely causes: (a) dead air watchdog is comparing against a stale `currentTrack` ref that wasn't cleared after the song ended, so it keeps re-alerting on the same frozen state; (b) the heartbeat is sending a cached/old track name instead of the live one; (c) the dead air alert has no cooldown/dedup so fires repeatedly for the same event. **Do NOT change anything until discussed with user.** They flagged this as informational only for now.
 
-## Recent Session Fixes (Sessions 50–51) — "In VIP" Feature
-- **"In VIP" complete**: Crown button on each rotation card (between skip and remove); VIP duration modal (15m/30m/1h); dancer finishes current set before entering VIP (pendingVipRef tracks pending state, mirrored to pendingVipState for re-renders); auto-expiry returns dancer to rotation bottom after timer; early Release button in both local rotation panel and read-only iPad remote VIP section. localStorage key: `neonaidj_vip_map`.
-- **TDZ bug fixes**: `sendDancerToVip`/`releaseDancerFromVip`/auto-expiry interval referenced `updateStageState` (defined ~1100 lines later) and `bgPrePick` effect referenced `getDancerTracks` similarly — both caused "cannot access before initialization" crashes. Fixed with `updateStageStateRef` and `getDancerTracksRef` (wired after each function definition).
-- **VIP state**: `dancerVipMap` (state + ref + localStorage) tracks active VIP entries; `pendingVipState` (state) mirrors `pendingVipRef` for immediate re-renders; both broadcast to iPad remote. Both `handleSkip` and `handleTrackEnd` intercept pending-VIP dancers and reroute to VIP holding map.
+## Commercial System (Planned)
+- Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks
+- The specials textarea will live in the Commercials section of DJ Options (not yet implemented)
 
-## Recent Session Fixes (Sessions 48–49)
-- **Bug 1**: `onDancerDragReorder` callback added to `RotationPlaylistManager`; fires when pos-0 changes during active rotation; DJBooth resets indices to 0 and calls `handleSkip` after 100ms state flush
-- **Bug 2/3**: `playingInterstitialBreakKeyRef` stored before rotation flip in both `handleSkip` and `handleTrackEnd`; read in all interstitial branches; cleared on break end and `stopRotation`
-- **Bug 4**: `breakSongIndex != null` condition in `RotationDisplay` prevents crowd display flicker on intro / set-start
-- **Bug 5**: Post-rotation cached tracks re-validated against `songCooldownRef`; one stale track invalidates the whole cache
-- **Custom keyboard**: `VirtualKeyboard.jsx` fully rewritten — NEON theme, 56px keys, 3 layouts + numpad, shift auto-resets, slide-up animation; gated to kiosk (not remote, not tablet)
-- **Server cold-start fix**: `liveBoothState` initial object now includes all fields served by `/api/booth/display` (`breakSongIndex: null`, `breakSongsPerSet: 0`, `trackTime: 0`, `trackDuration: 0`, `trackTimeAt: 0`, `volume`, `voiceGain`, `commercialFreq`, `commercialCounter`, `promoQueue`, `availablePromos`, `skippedCommercials`, `interstitialSongs`) — prevents `undefined` fields being silently omitted from JSON before first DJ session posts state
-- **Test harness**: 128/128 passing (`node test/test-harness.mjs`) — covers all 5 bugs, keyboard layouts, text cursor manipulation, double-skip during break, `stopRotation` ref cleanup, and live `/api/booth/display` shape verification
+## Critical Architecture Rules (READ FIRST EVERY SESSION)
+1. **Server State Relay Whitelist**: When adding ANY new field to the Pi→remote broadcast in `DJBooth.jsx`, MUST ALSO add it to the server relay whitelist in `server/index.js` (POST `/api/booth/state` handler ~line 571). The server drops fields not in its whitelist.
+2. **Broadcast Dependency Array**: Any new state variable in the broadcast payload in `DJBooth.jsx` MUST also be added to the useEffect dependency array (~line 822) or changes won't trigger re-broadcasts to the remote.
+3. **AudioEngine.jsx**: NEVER modify audio behavior (crossfade, ducking, volume levels are finalized).
+4. **Server port**: Always 3001. Do NOT change.
+5. **No Suno API**: Music beds from local PROMO BEDS folder only.
+6. **UI says "Entertainer" but code says `dancer`**: Do NOT rename variables.
+7. **Session history**: Always read `.agents/skills/session-history/SKILL.md` at the start of each session for full context of past decisions, fixes, and architecture.
+
+## Session Notes
+
+### Mar 8, 2026 — Session 34 (Commercial Voiceover Bug Fix + Playback Lock)
+
+#### Bug Fix: Commercial voiceovers now bypass AnnouncementSystem
+- **Problem**: `playCommercialIfDue` called DJBooth's `playAnnouncement` wrapper, which: (1) checked `announcementsEnabled` and silently skipped commercials when announcements were off, and (2) passed the blob URL into `getOrGenerateAnnouncement` which treated it as a `type` string and tried to generate audio instead of playing the existing blob
+- **Fix**: Commercials now call `audioEngineRef.current.playAnnouncement(voiceoverUrl, { autoDuck: true })` directly, bypassing the AnnouncementSystem entirely since the voiceover audio is already fetched as a blob URL
+- **Guard**: Added `audioEngineRef.current` null check before commercial playback — returns false (skips commercial) if AudioEngine isn't ready yet
+- **Removed**: `forcePlay` option from DJBooth's `playAnnouncement` wrapper (no longer needed since commercials bypass it entirely)
+- **Files**: `src/pages/DJBooth.jsx`
+- **Commit**: `6f6333e`
+
+#### Bug Fix: Playback lock prevents dual songs on boot
+- **Problem**: On full Pi reboot, two songs would play simultaneously. AudioEngine's `playTrack` had no concurrency guard — two async calls could both load onto separate decks and both end up playing
+- **Root cause**: `playTrack` is async (loadTrack → analyzeTrackLoudness → play). During those awaits, a second call could enter the function, get a different deck, and start playing alongside the first
+- **Fix**: Added `playTrackLockRef` mutex to AudioEngine's `playTrack`. If a track is already being loaded, the second call waits for the first to finish before proceeding. Lock is released on every exit path (success, error, load failure)
+- **No audio behavior changes** — only prevents concurrent track loading
+- **Files**: `src/components/dj/AudioEngine.jsx`
+
+#### Bug Fix: Commercial plays AFTER outro, not before
+- **Problem**: Commercial was playing before the outro voiceover — wrong order. DJ heard "commercial → outro → next dancer" instead of "outro → commercial → next dancer"
+- **Root cause**: In both `handleSkip` and `handleTrackEnd`, `playCommercialIfDue()` was called BEFORE the outro announcement
+- **Fix**: Reordered to: (1) check `isCommercialDue()` first, (2) if commercial coming, play outro with duck/unduck, (3) THEN play commercial, (4) then next track + intro
+- **Non-commercial transitions unchanged**: When no commercial is due, the combined `transition` announcement (outro+intro in one) still plays as before — no double-outro
+- **4 transition points**: 2 fixed (handleSkip direct, handleTrackEnd direct), 1 OK as-is (after break songs — no outro needed), 1 is the definition itself
+- **Files**: `src/pages/DJBooth.jsx`
+- **Commit**: `b7a81a2`
+
+#### Feature: Folder Lock shows actual system-picked songs + tap-to-reroll
+- **Problem**: When Folder Lock was on, rotation panel showed stale playlist songs instead of the actual songs picked from folders
+- **Fix 1**: Added `prevMusicModeRef` effect — when music mode changes (dancer_first ↔ folders_only), clears all non-DJ-overridden song assignments so they get re-picked under the new mode
+- **Fix 2**: Added `rerollSong()` — when Folder Lock is on, tapping any song row (except currently playing) re-rolls it with a new random pick from the locked folders, excluding all other assigned songs
+- **Visual**: Folder Lock songs show a shuffle icon (amber) instead of music icon, with hover highlight. Currently-playing song cannot be re-rolled
+- **Files**: `src/components/dj/RotationPlaylistManager.jsx`
+
+#### Feature: Dirty word filter for dancers
+- Songs with "dirty" (case-insensitive) anywhere in the filename are hidden from dancers
+- **Server**: `getMusicTracks` accepts `excludeDirty` flag, set automatically when session role is `dancer`
+- **Playlist save**: Server strips any dirty songs from dancer playlist on PUT `/api/playlist`
+- **DancerView**: Client-side `addSong` blocks dirty songs as safety net
+- **DJ/Manager**: Full access to all songs including dirty — no filter applied
+- **Files**: `server/db.js`, `server/index.js`, `src/pages/DancerView.jsx`
+- **Commit**: `3a82ec4`
+
+### Mar 8, 2026 — Session 33 (Fleet Play History + Generic Voiceover Fallbacks)
+
+#### Feature: Generic Voiceover Fallbacks (Last Resort)
+- 40 pre-recorded generic voiceovers stored in fleet.db `voice_recordings` table under `__generic__`
+- 10 variations each for: intro, round2, outro, transition
+- **Fallback chain**: AI-generated → cached at different energy level → generic cached → **pre-recorded generic** (last resort)
+- Only used when there's no internet AND nothing was previously generated/cached
+- `checkGenericRecording()` in AnnouncementSystem.jsx cycles through variations round-robin
+- Cached in IndexedDB after first fetch so they work fully offline
+- Generation script: `server/generate-generic-voiceovers.js` (one-time, requires ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID env vars)
+
+#### Feature: Play History in Fleet Dashboard
+- Each Pi now sends recent play history (songs played since last heartbeat) in its heartbeat payload
+- Fleet server stores all play history in `fleet_play_history` table (90-day retention, auto-cleanup)
+- Fleet dashboard device detail modal has new "Play History" tab showing chronological song list
+- Date picker dropdown filters by day, shows song count per date
+- Each entry shows: time, track name, and entertainer name (if assigned)
+- **Pi impact**: Minimal — one extra SQLite query per heartbeat (every 5 min), small JSON payload
+- **Files**: `server/heartbeat-client.js` (getRecentPlayHistory + payload), `server/fleet-monitor.js` (storePlayHistory call), `server/fleet-db.js` (fleet_play_history table + helpers), `server/fleet-routes.js` (GET /play-history/:deviceId), `src/api/fleetApi.js` (getPlayHistory method), `src/pages/FleetDashboard.jsx` (Play History tab in DeviceDetailModal)
+
+### Mar 8, 2026 — Session 32 (Simplified Promo System — Auto-Generate + Promo Beds Playback)
+
+#### Promo Auto-Generation on Form Submit
+- DJ submits promo request form → app now auto-generates a voiceover immediately:
+  1. Builds prompt from form fields (event name, date, time, venue, details, vibe, length)
+  2. Calls OpenAI (configured script model) to generate a spoken script
+  3. Sends script to ElevenLabs TTS using configured voice clone
+  4. Saves audio to voiceovers DB (type='promo') with cache key `promo-auto-{timestamp}-{slug}`
+  5. Still sends the request to Voice Studio for manual recording if desired
+- Progress toasts show each step (Generating script → Recording voice → Saving)
+- File: `src/components/dj/ManualAnnouncementPlayer.jsx`
+
+#### Commercial Playback — Promo Beds + Live Ducking
+- `playCommercialIfDue` completely rewritten in DJBooth.jsx
+- Old approach: played a pre-mixed promo audio file as a single track
+- New approach:
+  1. Fetches random track from `Promo Beds` genre folder (`/api/music/tracks?genre=Promo%20Beds&limit=200`)
+  2. Plays Promo Beds song via `playTrack()` as a normal track
+  3. Waits 9 seconds (intro)
+  4. Plays voiceover via `playAnnouncement()` with `autoDuck: true` — leverages existing AudioEngine duck/unduck
+  5. Waits 9 seconds (outro) after voiceover finishes
+  6. Resolves commercial and transitions to next entertainer
+- `stopVoice()` method added to AudioEngine for skip/pause cleanup during commercials
+- No pre-mixing needed — all live audio layering
+- File: `src/pages/DJBooth.jsx`, `src/components/dj/AudioEngine.jsx`
+
+#### Dead Code Cleanup
+- Removed `resolveCommercialTrack()` from DJBooth.jsx
+- Removed all `[COMMERCIAL]` interstitial handling from break song resolution (4 blocks in handleSkip/handleTrackEnd)
+- Removed `breakHadCommercial` logic
+- Removed `commercialTracks` state and `fetchCommercials` from RotationPlaylistManager
+- Removed "Commercials" music source dropdown option
+- Removed commercials library view JSX (the `musicSource === 'commercials'` section)
+- Removed `[COMMERCIAL]` visual styling in break song list items (amber/gold → all violet now)
+- Removed `hasManualCommercial` auto-commercial suppression check
+- Removed `Tv` icon import from RotationPlaylistManager
+- Upload section previously removed from ManualAnnouncementPlayer (blobToBase64, Upload icon, uploading state, handleFileUpload)
+- Files: `src/pages/DJBooth.jsx`, `src/components/dj/RotationPlaylistManager.jsx`, `src/components/dj/ManualAnnouncementPlayer.jsx`
+
+### Mar 8, 2026 — Session 30 (Song Selection Logic + Autoplay Queue)
+
+#### Song Selection Logic Improvements
+- **Playlist order respected**: Removed `fisherYatesShuffle` on dancer playlists — songs play in assigned order, skipping cooldown songs
+- **Pre-pick on rotation flip**: When a dancer finishes and rotates to bottom, their next songs are picked immediately (async, non-blocking)
+- **Pre-pick on add**: When an entertainer is added to rotation while active, songs are picked right away
+- **3-tier server fallback** in `selectTracksForSet()`: (1) Walk playlist in order, skip cooldown songs → (2) Pick least-recently-played playlist songs even if on cooldown → (3) Random filler from active genres/backup folder
+- **Stale pre-pick guards**: All async pre-picks verify rotation is still active and dancer still in rotation before committing
+- **Files**: `src/pages/DJBooth.jsx` (getDancerTracks, handleSkip, handleTrackEnd, addToRotation), `server/db.js` (selectTracksForSet)
+
+#### Session 31 Changes
+
+##### No Applause/Noise in Voice Scripts
+- Added explicit NEVER DO rules to SYSTEM_PROMPT banning crowd noise requests, applause calls, "give it up", "make some noise", etc.
+- Updated all example scripts (intro, outro, transition) to remove applause/cheering language
+- Also reinforced in per-type instructions: "Do not ask for applause or cheering"
+- Files: `src/utils/energyLevels.js`
+
+##### Skip + Remove Confirmations
+- `handleSkip` now shows `window.confirm('Skip this song?')` before executing
+- `removeFromRotation` now shows `window.confirm('Remove [name] from the rotation?')` before executing
+- Files: `src/pages/DJBooth.jsx`
+
+##### Time-to-Talk Countdown Indicator
+- When voice announcements are disabled and rotation is active, countdown flashes + changes color in last 30s
+- White → yellow at 30s, yellow → red at 15s, with CSS pulse animation (`talkPulse`)
+- Works on both local (`timeDisplayRef`) and remote (`remoteTimeDisplayRef`) timers
+- Added `announcementsEnabledRef` to sync state to ref for timer interval access
+- Files: `src/pages/DJBooth.jsx`, `src/index.css`
+
+##### Song Cooldown Persistence
+- Confirmed: 4-hour cooldown already persists across reboots via SQLite `play_history` table
+- Client loads from localStorage + merges with server `/api/history/cooldowns?hours=4` on startup
+- No code changes needed — verified working (75+ cooldowns loaded after restart in testing)
+
+##### Voiceover 404 Cleanup
+- Added `cleanupStaleIDBEntries()` in `AnnouncementSystem.jsx` that purges old-version cache entries from IndexedDB on load
+- Only keeps entries matching current version tag (`V10`)
+- Files: `src/components/dj/AnnouncementSystem.jsx`
+
+##### Fleet Console Logs
+- `heartbeat-client.js`: Added `getRecentServiceLogs()` — captures last 50 journalctl warning/error lines from `djbooth.service`
+- Included as `recentLogs` in heartbeat payload
+- `fleet-monitor.js`: Stores `recentLogs` in device memory map
+- `fleet-routes.js`: Passes `recentLogs` in dashboard overview response
+- `FleetDashboard.jsx`: Collapsible "Service Logs" section per device card with error/warning color coding
+- Files: `server/heartbeat-client.js`, `server/fleet-monitor.js`, `server/fleet-routes.js`, `src/pages/FleetDashboard.jsx`
+
+##### Club Specials Staggering
+- **Problem**: All club specials were dumped into every outro/transition prompt, making them repetitive and mechanical
+- **Fix**: Specials now stagger randomly — one special per announcement, only every 2nd or 3rd announcement (random), rotating through the list in order
+- **Counter refs**: `specialsAnnouncementCountRef`, `specialsRotationIndexRef`, `specialsNextTriggerRef` in `AnnouncementSystem.jsx`
+- **Prompt updated**: `buildAnnouncementPrompt` in `energyLevels.js` now gets 0 or 1 specials (singular "CLUB SPECIAL" prompt instead of plural)
+- **Caching**: Outros/transitions with specials configured skip IndexedDB cache so staggering works (fresh generation each time)
+- **Files**: `src/components/dj/AnnouncementSystem.jsx` (getStaggeredSpecial, cache bypass), `src/utils/energyLevels.js` (prompt wording)
+
+##### GitHub Push
+- Pushed all Session 31 changes to GitHub: commit `9851155`
+- Includes: club specials staggering, no-applause scripts, skip/remove confirmations, talk-time indicator, voiceover 404 cleanup, fleet console logs
+
+#### Autoplay Queue Feature
+- **New feature**: When no entertainers are in rotation, a cyan "Autoplay Queue" bubble appears showing the next 10 songs
+- **Drag and drop**: DJs can drag songs from the music browser into the queue at any position, reorder within the queue, and remove songs
+- **Auto-fill**: System auto-fills queue to 10 songs from active genres; after DJ-picked songs are played, auto-fill continues
+- **Playback integration**: `handleTrackEnd` uses autoplay queue when rotation is empty — plays queue songs in order with crossfade
+- **Race condition guards**: Fill requests use version tracking and in-flight flag; playback uses mutex to prevent concurrent shifts
+- **Visual design**: Cyan theme matching app accent; first song highlighted with play icon; DJ-picked songs vs auto-filled songs visually distinct
+- **Files**: `src/pages/DJBooth.jsx` (autoplayQueue state, fillAutoplayQueue, playFromAutoplayQueue), `src/components/dj/RotationPlaylistManager.jsx` (autoplay queue bubble UI)
+
+### Mar 6, 2026 — Session 29 (R2 Boot Sync Fix + Entertainer Roster)
+
+#### R2 Boot Music Sync Fix
+- **Problem**: Auto-detect logic (`const defaultMusicPath = join(__dirname, '..', 'music')`) caused Replit to detect the local `./music` folder and download 16GB of music from R2 into Replit on boot
+- **Fix**: Removed auto-detect music path — MUSIC_PATH now only comes from `MUSIC_PATH` env var or the `music_path` setting in the database
+- **Boot sync kept intact**: Both voiceover and music R2 sync still run on every boot as intended — this is correct behavior for Pi units that reboot each morning
+- **Cleanup**: Deleted 16GB of downloaded music files from Replit's `./music/` folder
+- **R2 bucket untouched**: No duplicates were created in R2
+- **File**: `server/index.js` (removed `defaultMusicPath` auto-detect block)
+
+#### Pony Nation Entertainer Roster (62 Entertainers)
+- Added 62 entertainers to `fleet_dancer_roster` table for Voice Studio recording
+- Full list: Amelia, Amber, Amor, Anneliese, Avery, Bianca, Blair, Britney, Cameron, Cleo, Crystal, Dakota, Devin, Eliza, Emma, Enchantres, Erica, Fauna, Fendi, Hanna, Isabella, Jamie, Jasmine, Jalese, Jenn, Jules, Kaylani, Kingsley, Kitten, Kristin, Lacie, Lana, Liliah, Lily, Luna, Malia, Mia, Mieka, Milan, Minnie, Minx, Mohana, Morganna, Nadia, Natalia, Nikki, Rachel, Reese, Regina, River, Sage, Sara, Scarlette, Sierra, Simone, Sin, Stacy, Stunna, Tatiana, Valerie, Venom Rose, Yasmine
+- Each entertainer gets 4 recording slots in Voice Studio: intro, round2, round3, outro (248 total recordings needed)
+- Inserted with `reported_by_devices: ['manual']` since added manually rather than via Pi heartbeat
+
+#### Update Script Fix
+- **Problem**: `djbooth-update.sh` backup step used `cp -r` which copied the entire `djbooth/` folder including 25,000 music files — got stuck for ages
+- **Fix**: Changed to `rsync -a --exclude='music' --exclude='voiceovers' --exclude='node_modules'` — backup now takes seconds
+- **File**: `public/djbooth-update-github.sh` (line 47-48)
+- **First-time fix on Pi**: Must download the new script first with `curl` before running update (old script on Pi still has `cp -r`)
+
+#### Boot Sequence & Sync Architecture
+- **R2 boot sync (voiceovers + music)** runs automatically every time the app starts — this is correct and intentional
+- Pi reboots daily at 8:30 AM → djbooth service starts → R2 sync downloads new voiceovers/music, uploads any locally-created ones
+- **Code updates (GitHub)** are currently manual only — run `~/djbooth-update.sh` via SSH
+- Code updates do NOT run automatically on reboot (user may want this added later)
+
+#### CRITICAL RULES — NEVER BREAK THESE
+- **ALWAYS ask before making ANY changes** — present what you plan to do, wait for approval, then implement
+- **NEVER tell the user to delete files on a Pi** — if disk space is needed, ask what they want to remove
+- **NEVER push files that don't belong on Pis** — no attached_assets, no .local/state, no sample music, no database files
+- **NEVER modify Pi service files, environment variables, or database paths** without explicit user approval
+- **GitHub push must ALWAYS exclude**: attached_assets, .local, music, voiceovers, .db/.db-wal/.db-shm, node_modules, dist, .cache, .config, .upm
+- **API keys are in browser localStorage on each Pi** — code updates should NEVER affect them, but disk corruption can wipe them
+- **Music path on Pony Nation Pi**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
+- **Music is synced to/from R2** — even if files are lost locally, R2 has the backup and will re-download on service restart
+- R2 boot sync (voiceovers + music) runs on every boot — this is intentional for Pi morning reboots
+- Replit should NOT have a music path set — no local music folder needed here
+- **Before any GitHub push**: verify the file list does NOT contain screenshots, music files, database files, or Replit internal state files
+- **Test impact on Pi before pushing**: consider what the update script will do with every change
+
+## System Architecture
+The application uses React 18, Vite, and TailwindCSS for the frontend, with Radix UI primitives and shadcn/ui styling. UI/UX is designed with a dark nightclub theme featuring neon cyan and blue accents, prioritizing low-power device performance. `localStorage` manages entities, while `IndexedDB` provides fast session caching for voiceover audio. State management uses React Query, and routing is handled by React Router v6. Configuration settings are stored in the browser's `localStorage` on each Pi.
+
+Music tracks are indexed server-side in a SQLite `music_tracks` table, supporting various audio formats and genre extraction. A custom dual-deck audio engine manages seamless music playback with equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Beat-matched crossfading adjusts incoming track tempo, and a 3-band EQ is available for music and voice. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours, featuring unique personalities and optional adult innuendo. Announcements are club-locked based on configurable club names.
+
+An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, optimized for low-power devices. Critical state persists to `localStorage` for crash recovery. Features include a 4-hour song cooldown, configurable songs-per-set, interstitial break songs, genre filtering, and a Playback Watchdog for audio recovery. The `DJBooth` component remains mounted persistently to preserve audio engine state. An Autoplay Queue feature manages music when no entertainers are present.
+
+A fleet management system enables centralized control of multiple Pi units, providing device registration, heartbeat monitoring (including hardware health metrics like CPU temp and RAM), error log collection, voiceover sharing, music manifest tracking, app update distribution, and sync coordination via Cloudflare R2. An admin dashboard offers an overview of device health, API cost tracking per unit, a master voiceover library, and sync history. A Pi-side sync client handles scheduled closed-hours synchronization. Voice recording functionality is available via the Voice Studio, featuring a record-preview-save workflow and Auphonic API integration for professional post-processing. System updates are managed via `djbooth-update.sh` with optimized backup procedures.
+
+## Announcement System (Current State — March 2026)
+- **3 announcement types**: intro, round2, outro (transition type removed)
+- **5 variations per type per dancer** (NUM_VARIATIONS = 5)
+- **Energy level is always auto** (time-based, 5-tier system) — manual energy override UI removed
+- **No club name or day-of-week** in voiceover prompts or cache keys — prompts explicitly instruct "do not mention day/club/time"
+- **No club specials** in voiceover prompts — specials are moving to the commercial playback system instead
+- **Cache keys**: `{type}-{dancerName}-L{level}-V{varNum}` — voice version `V11` (changed from V10; bump version again if prompt/voice changes)
+- **Dancer changeover flow**: outro (outgoing) → commercial (if due) → track starts → intro (incoming) — no overlap
+- **Failed generation skip**: `failedGenerationsRef` Set prevents retry storms for the session
+- **Pre-cache**: buffers upcoming dancers with all 3 types × 5 variations each (15 voiceovers per dancer)
+- **Variant selection rules (Session 45)**:
+  - `getNextVariationNum` picks randomly from 1–5, avoiding: last used for that key, cross-transition match (outro→intro or intro→outro), same-set pairing (intro and outro for same dancer's set use different numbers)
+  - Tracks: `lastPlayedTypeVariantRef` (global, per type) + `currentSetIntroVariantRef` (per dancer name)
+- **Corruption guard (Session 45)**:
+  - `validateAudioBlob()` runs `decodeAudioData()` before caching; retries generation up to 3× on failure
+  - `deleteFromIndexedDB()` helper removes bad entries; playback failure auto-purges IDB + server and regenerates once
+- **ElevenLabs credits**: ~180K remaining this billing cycle; key `6e6ca8...71342`, voice ID `8RV9Jl85RVagCJGw9qhY`
+- **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Pi load
+- **Song cooldown**: 6 hours (updated from 4h in Session 44)
 
 ## Commercial System (Planned)
 - Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks

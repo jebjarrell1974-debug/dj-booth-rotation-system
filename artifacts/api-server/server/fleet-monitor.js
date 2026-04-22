@@ -118,6 +118,7 @@ async function registerHeartbeat(deviceId, data) {
     deviceId: effectiveId,
     name: existing?.name || data.name || deviceId,
     clubName: data.clubName || 'Unknown',
+    sessionStartMs: (wasOffline || !existing) ? now : (existing?.sessionStartMs || now),
     ip: data.ip || '',
     tailscaleIp: data.tailscaleIp || '',
     cpuTemp: data.cpuTemp || null,
@@ -291,7 +292,9 @@ async function registerHeartbeat(deviceId, data) {
       );
     }
 
-    if (data.lastWatchdogAt && data.lastWatchdogAt !== existing.lastWatchdogAt &&
+    const isHomebaseDevice = (process.env.HOMEBASE_DEVICE_ID && effectiveId === process.env.HOMEBASE_DEVICE_ID.toLowerCase()) ||
+      dev.name.toLowerCase().includes('homebase');
+    if (!isHomebaseDevice && data.lastWatchdogAt && data.lastWatchdogAt !== existing.lastWatchdogAt &&
         (data.lastWatchdogSilentMs || 0) > 2000 && canSendAlert(effectiveId, 'dead_air')) {
       sendTelegram(
         `🔇 <b>DEAD AIR</b>\n` +
@@ -312,7 +315,8 @@ async function registerHeartbeat(deviceId, data) {
     }
 
     const totalPicks = (data.prePickHits || 0) + (data.prePickMisses || 0);
-    if (totalPicks >= 5) {
+    const warmupComplete = !dev.sessionStartMs || (Date.now() - dev.sessionStartMs) > 5 * 60 * 1000;
+    if (totalPicks >= 5 && warmupComplete) {
       const missRate = (data.prePickMisses || 0) / totalPicks;
       if (missRate > 0.5 && canSendAlert(effectiveId, 'low_cache_rate')) {
         sendTelegram(

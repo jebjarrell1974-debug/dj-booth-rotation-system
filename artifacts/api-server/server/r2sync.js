@@ -432,25 +432,31 @@ export async function syncMusicFromR2(musicDir) {
     }
 
     const localFiles = walkLocal(musicDir);
-    const toDelete = localFiles.filter(relPath => !r2PathSet.has(relPath) && !relPath.startsWith('Promos/'));
 
-    if (toDelete.length > 0) {
-      let dbMod;
-      try { dbMod = await import('./db.js'); } catch {}
-      for (const relPath of toDelete) {
-        const localPath = join(musicDir, relPath);
-        try {
-          unlinkSync(localPath);
-          console.log(`🗑️ R2 sync purge: deleted local file no longer in R2: ${relPath}`);
-          if (dbMod?.deleteMusicTrackByPath) {
-            dbMod.deleteMusicTrackByPath(relPath);
+    // Safety: if R2 has >20% fewer files than local, skip purge to prevent accidental mass deletion
+    if (localFiles.length > 0 && remoteFiles.length < localFiles.length * 0.8) {
+      console.warn(`⚠️ R2 sync purge SKIPPED: R2 has ${remoteFiles.length} files but local has ${localFiles.length} (>20% gap). Manual review required before purging local files.`);
+    } else {
+      const toDelete = localFiles.filter(relPath => !r2PathSet.has(relPath) && !relPath.startsWith('Promos/'));
+
+      if (toDelete.length > 0) {
+        let dbMod;
+        try { dbMod = await import('./db.js'); } catch {}
+        for (const relPath of toDelete) {
+          const localPath = join(musicDir, relPath);
+          try {
+            unlinkSync(localPath);
+            console.log(`🗑️ R2 sync purge: deleted local file no longer in R2: ${relPath}`);
+            if (dbMod?.deleteMusicTrackByPath) {
+              dbMod.deleteMusicTrackByPath(relPath);
+            }
+            purged++;
+          } catch (e) {
+            console.warn(`⚠️ R2 sync purge: could not delete ${relPath}: ${e.message}`);
           }
-          purged++;
-        } catch (e) {
-          console.warn(`⚠️ R2 sync purge: could not delete ${relPath}: ${e.message}`);
         }
+        if (purged > 0) console.log(`🗑️ R2 sync purge complete: ${purged} file(s) removed to match homebase`);
       }
-      if (purged > 0) console.log(`🗑️ R2 sync purge complete: ${purged} file(s) removed to match homebase`);
     }
   }
 
