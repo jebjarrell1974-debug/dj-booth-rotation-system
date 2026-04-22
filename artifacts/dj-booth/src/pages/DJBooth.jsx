@@ -144,6 +144,7 @@ export default function DJBooth() {
   const djSavedSongsRef = useRef({});
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
+  const songsPerSetMountedRef = useRef(false);
   const [breakSongsPerSet, setBreakSongsPerSet] = useState(0);
   const breakSongsPerSetRef = useRef(0);
   const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
@@ -1236,6 +1237,24 @@ export default function DJBooth() {
         if (s.currentSongNumber != null) { setCurrentSongNumber(s.currentSongNumber); currentSongNumberRef.current = s.currentSongNumber; }
       }
     } catch (e) {}
+    const token = localStorage.getItem('djbooth_token');
+    if (token) {
+      fetch('/api/client-settings', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.neonaidj_songs_per_set != null) {
+            const v = parseInt(data.neonaidj_songs_per_set);
+            if (!isNaN(v) && v >= 1) {
+              setSongsPerSet(v);
+              songsPerSetRef.current = v;
+            }
+          }
+          songsPerSetMountedRef.current = true;
+        })
+        .catch(() => { songsPerSetMountedRef.current = true; });
+    } else {
+      songsPerSetMountedRef.current = true;
+    }
   }, []);
 
   useEffect(() => {
@@ -1245,6 +1264,15 @@ export default function DJBooth() {
       songsPerSet,
     }));
   }, [isRotationActive, currentSongNumber, songsPerSet]);
+
+  useEffect(() => {
+    if (!songsPerSetMountedRef.current) return;
+    fetch('/api/config/save-to-server', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ neonaidj_songs_per_set: String(songsPerSet) }),
+    }).catch(() => {});
+  }, [songsPerSet]);
 
   // Mutations
   const createDancerMutation = useMutation({
