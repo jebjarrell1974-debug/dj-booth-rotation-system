@@ -15,6 +15,9 @@ echo "App dir: $APP_DIR"
 echo "Service: $SERVICE_NAME"
 echo ""
 
+echo "[0/6] Ensuring required system packages..."
+apt-get install -y ffmpeg git curl >/dev/null 2>&1 || true
+
 echo "[1/6] Checking for updates..."
 REMOTE_VERSION=$(curl -sf "${CLOUD_URL}/api/version" 2>/dev/null || echo '{}')
 echo "Remote: $REMOTE_VERSION"

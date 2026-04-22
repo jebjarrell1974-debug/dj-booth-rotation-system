@@ -266,6 +266,11 @@ for AFILE in /home/$(whoami)/.config/autostart/*.desktop /etc/xdg/lxsession/LXDE
   fi
 done
 
+which ffmpeg >/dev/null 2>&1 || {
+  echo "Installing ffmpeg for audio processing (voice gen, LUFS, BPM)..."
+  sudo apt-get install -y ffmpeg >/dev/null 2>&1 || true
+}
+
 which xdotool >/dev/null 2>&1 || {
   echo "Installing xdotool for browser auto-refresh..."
   sudo apt-get install -y xdotool >/dev/null 2>&1 || true
