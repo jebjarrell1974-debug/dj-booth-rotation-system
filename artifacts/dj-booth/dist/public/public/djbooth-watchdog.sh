@@ -2,19 +2,6 @@
 HEALTH_URL="http://localhost:3001/__health"
 CHECK_INTERVAL=5
 SERVER_WAS_DOWN=false
-ROTATION_CHECK_COUNTER=0
-ROTATION_CHECK_EVERY=30
-
-launch_rotation_display() {
-  export DISPLAY=:0
-  rm -rf /tmp/chromium-rotation
-  bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
-    --noerrdialogs --disable-session-crashed-bubble \
-    --autoplay-policy=no-user-gesture-required \
-    http://localhost:3001/RotationDisplay" &
-  disown
-  echo "$(date): Rotation display launched"
-}
 
 # Wait for boot to complete before starting to monitor.
 # Prevents race conditions where the watchdog launches a browser
@@ -39,20 +26,12 @@ else
   echo "$(date): Kiosk Chromium already running at startup"
 fi
 
-# Startup rotation display check — ensure crowd-facing display is always running.
-# This catches: failed GNOME autostart, server-restart mid-boot, and post-update reboots.
-if ! pgrep -f "RotationChromium" > /dev/null 2>&1; then
-  echo "$(date): Rotation display not running at startup — launching after server ready"
-  bash -c "until curl -sf $HEALTH_URL > /dev/null 2>&1; do sleep 3; done && \
-    rm -rf /tmp/chromium-rotation && \
-    chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
-    --noerrdialogs --disable-session-crashed-bubble \
-    --autoplay-policy=no-user-gesture-required \
-    http://localhost:3001/RotationDisplay" &
-  disown
-else
-  echo "$(date): Rotation display already running at startup"
-fi
+# NOTE: The crowd-facing rotation display (RotationDisplay) is handled exclusively
+# by the GNOME autostart entry (djbooth-rotation-display.desktop), which calls
+# ~/djbooth-rotation-display.sh. That script does the xrandr rotation, calculates
+# the correct window position, and launches RotationChromium. Do NOT launch it here —
+# launching from a systemd service context races against the GNOME autostart and causes
+# duplicate Chromium windows fighting each other (documented incident Apr 2026).
 
 while true; do
   if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
@@ -74,23 +53,7 @@ while true; do
         bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
       fi
 
-      # Also relaunch the rotation display after server recovery
-      echo "$(date): Server recovered — relaunching rotation display"
-      pkill -f "RotationChromium" 2>/dev/null || true
-      sleep 1
-      launch_rotation_display
-
       SERVER_WAS_DOWN=false
-    fi
-
-    # Periodic rotation display check — every ~30 seconds, ensure it is still running
-    ROTATION_CHECK_COUNTER=$((ROTATION_CHECK_COUNTER + 1))
-    if [ "$ROTATION_CHECK_COUNTER" -ge "$ROTATION_CHECK_EVERY" ]; then
-      ROTATION_CHECK_COUNTER=0
-      if ! pgrep -f "RotationChromium" > /dev/null 2>&1; then
-        echo "$(date): Rotation display not running — relaunching"
-        launch_rotation_display
-      fi
     fi
 
   else

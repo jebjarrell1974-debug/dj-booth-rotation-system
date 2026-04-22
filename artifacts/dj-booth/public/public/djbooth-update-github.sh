@@ -295,6 +295,12 @@ if [ -f /etc/gdm3/daemon.conf ]; then
   fi
 fi
 
+# Disable GNOME auto-maximize so Chromium --window-position flags are not overridden.
+# Without this, GNOME Shell can silently move the Chromium kiosk window to the wrong screen.
+gsettings set org.gnome.mutter auto-maximize false 2>/dev/null || true
+gsettings set org.gnome.mutter edge-tiling false 2>/dev/null || true
+echo "GNOME auto-maximize disabled (prevents window-position override)"
+
 # Write the rotation display launcher script
 cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
@@ -486,20 +492,15 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
     sleep 3
   done
   if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
-    echo "Boot update complete — relaunching rotation display..."
-    # Signal the display watcher (if running via GNOME autostart) to relaunch
+    echo "Boot update complete — server is healthy"
+    # Signal the display watcher to reload the crowd screen.
+    # ~/djbooth-rotation-display.sh (launched by GNOME autostart) is the authoritative
+    # launch path — it does xrandr rotation + correct window positioning from xrandr geometry.
+    # Launching Chromium directly here (without that script) skips the rotation step and
+    # races against the GNOME autostart, causing duplicate windows. Touch the trigger file
+    # instead so the watcher gracefully relaunches via the correct script.
     touch /tmp/djbooth-display-trigger
-    # Also attempt a direct relaunch in case the watcher hasn't started yet
-    export DISPLAY=:0
-    pkill -f "RotationChromium" 2>/dev/null || true
-    sleep 1
-    rm -rf /tmp/chromium-rotation
-    bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
-      --noerrdialogs --disable-session-crashed-bubble \
-      --autoplay-policy=no-user-gesture-required \
-      http://localhost:3001/RotationDisplay" &
-    disown
-    echo "Rotation display launched"
+    echo "Display trigger set — crowd screen will reload via djbooth-display-watcher"
   else
     echo "WARNING: Server did not respond after restart"
   fi

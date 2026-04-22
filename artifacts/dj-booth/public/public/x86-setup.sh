@@ -144,6 +144,8 @@ gsettings set org.gnome.desktop.screensaver idle-activation-enabled false 2>/dev
 gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing' 2>/dev/null || true
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing' 2>/dev/null || true
+gsettings set org.gnome.mutter auto-maximize false 2>/dev/null || true
+gsettings set org.gnome.mutter edge-tiling false 2>/dev/null || true
 
 # Force X11 session (required for xrandr display rotation on second screen)
 sudo tee /etc/gdm3/daemon.conf > /dev/null << GDMEOF
