@@ -486,7 +486,20 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
     sleep 3
   done
   if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
-    echo "Boot update complete — use Open Display button in app to launch rotation screen"
+    echo "Boot update complete — relaunching rotation display..."
+    # Signal the display watcher (if running via GNOME autostart) to relaunch
+    touch /tmp/djbooth-display-trigger
+    # Also attempt a direct relaunch in case the watcher hasn't started yet
+    export DISPLAY=:0
+    pkill -f "RotationChromium" 2>/dev/null || true
+    sleep 1
+    rm -rf /tmp/chromium-rotation
+    bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
+      --noerrdialogs --disable-session-crashed-bubble \
+      --autoplay-policy=no-user-gesture-required \
+      http://localhost:3001/RotationDisplay" &
+    disown
+    echo "Rotation display launched"
   else
     echo "WARNING: Server did not respond after restart"
   fi
