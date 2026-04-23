@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { localEntities } from '@/api/localEntities';
 import { useQuery } from '@tanstack/react-query';
 
@@ -20,10 +20,6 @@ const STYLES = `
   @keyframes breakDotPulse {
     0%, 100% { opacity: 1; box-shadow: 0 0 14px rgba(0,212,255,0.8), 0 0 28px rgba(0,212,255,0.4); }
     50%      { opacity: 0.75; box-shadow: 0 0 8px rgba(0,212,255,0.5), 0 0 16px rgba(0,212,255,0.2); }
-  }
-  @keyframes scrollList {
-    0%   { transform: translateY(0); }
-    100% { transform: translateY(-50%); }
   }
   .current-name {
     animation: nameEntrance 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards,
@@ -51,6 +47,133 @@ const LABEL_STYLE = {
   backgroundClip: 'text'
 };
 
+// Measures a piece of text at a given font size and returns its rendered pixel width.
+function measureText(text, fontSizePx, fontStyle) {
+  const span = document.createElement('span');
+  span.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font-family:inherit;${fontStyle};font-size:${fontSizePx}px`;
+  span.textContent = text;
+  document.body.appendChild(span);
+  const w = span.offsetWidth;
+  document.body.removeChild(span);
+  return w;
+}
+
+// Hook: returns a font-size (in px) that fits `text` within `targetWidthPx`.
+// maxVw caps the size for short names so they don't get absurdly huge.
+function useFitFontSize(text, containerRef, { maxVw = 22, minVw = 6, fillFraction = 0.92, fontStyle = 'font-weight:900;letter-spacing:0.04em;text-transform:uppercase' } = {}) {
+  const [fontSize, setFontSize] = useState(null);
+
+  const recalc = useCallback(() => {
+    if (!containerRef.current || !text) return;
+    const containerW = containerRef.current.offsetWidth;
+    if (!containerW) return;
+    const vwPx = window.innerWidth / 100;
+    const maxPx = maxVw * vwPx;
+    const minPx = minVw * vwPx;
+    const targetW = containerW * fillFraction;
+
+    const widthAtMax = measureText(text, maxPx, fontStyle);
+    if (widthAtMax <= targetW) {
+      setFontSize(maxPx);
+      return;
+    }
+    // Scale down proportionally
+    const scaled = Math.max(minPx, (targetW / widthAtMax) * maxPx);
+    setFontSize(scaled);
+  }, [text, containerRef, maxVw, minVw, fillFraction, fontStyle]);
+
+  useLayoutEffect(() => {
+    recalc();
+  }, [recalc]);
+
+  useEffect(() => {
+    const ro = new ResizeObserver(recalc);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [recalc, containerRef]);
+
+  return fontSize;
+}
+
+// Auto-sizing name component for the current performer
+function FitName({ text, className, style }) {
+  const containerRef = useRef(null);
+  const fontSize = useFitFontSize(text, containerRef, { maxVw: 22, minVw: 6, fillFraction: 0.92 });
+
+  return (
+    <div ref={containerRef} style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <h1
+        className={className}
+        style={{
+          ...style,
+          fontSize: fontSize ? `${fontSize}px` : '15vw',
+          whiteSpace: 'nowrap',
+          lineHeight: 1.05,
+        }}
+      >
+        {text}
+      </h1>
+    </div>
+  );
+}
+
+// Renders all next-up dancer names at a UNIFORM font size — sized so even the
+// longest name fits within 88% of the container width, making the list consistent.
+function FitNextList({ dancers, className, style, maxVw = 10 }) {
+  const containerRef = useRef(null);
+  const [fontSize, setFontSize] = useState(null);
+
+  const longestName = useMemo(
+    () => dancers.reduce((longest, d) => d.name.length > longest.length ? d.name : longest, ''),
+    [dancers]
+  );
+
+  const recalc = useCallback(() => {
+    if (!containerRef.current || !longestName) return;
+    const containerW = containerRef.current.offsetWidth;
+    if (!containerW) return;
+    const vwPx = window.innerWidth / 100;
+    const maxPx = maxVw * vwPx;
+    const minPx = 4 * vwPx;
+    const targetW = containerW * 0.88;
+    const fontStyle = 'font-weight:700;letter-spacing:0.05em;text-transform:uppercase';
+    const widthAtMax = measureText(longestName, maxPx, fontStyle);
+    if (widthAtMax <= targetW) {
+      setFontSize(maxPx);
+    } else {
+      setFontSize(Math.max(minPx, (targetW / widthAtMax) * maxPx));
+    }
+  }, [longestName, maxVw]);
+
+  useLayoutEffect(() => { recalc(); }, [recalc]);
+
+  useEffect(() => {
+    const ro = new ResizeObserver(recalc);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [recalc]);
+
+  return (
+    <div ref={containerRef} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5vh' }}>
+      {dancers.map((dancer) => (
+        <div key={dancer.id} style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <h3
+            className={className}
+            style={{
+              ...style,
+              fontSize: fontSize ? `${fontSize}px` : `${maxVw}vw`,
+              whiteSpace: 'nowrap',
+              lineHeight: 1.15,
+            }}
+          >
+            {dancer.name}
+          </h3>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function RotationDisplay() {
   const [showCountdown, setShowCountdown] = useState(() => {
     const stored = localStorage.getItem('djbooth_display_countdown');
@@ -70,8 +193,6 @@ export default function RotationDisplay() {
     const handler = () => setShowCountdown(readVal());
     window.addEventListener('djbooth_display_countdown_changed', handler);
     window.addEventListener('storage', handler);
-    // Polling fallback — catches changes when cross-window storage events
-    // don't fire (Chromium kiosk with separate processes)
     const poll = setInterval(() => setShowCountdown(readVal()), 1500);
     return () => {
       window.removeEventListener('djbooth_display_countdown_changed', handler);
@@ -132,9 +253,9 @@ export default function RotationDisplay() {
     return (
       <div style={{ width: '100vw', height: '100vh', background: '#08081a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <style>{STYLES}</style>
-        <div className="text-center">
-          <h1 className="text-6xl font-bold text-white/90 mb-4">No Active Rotation</h1>
-          <p className="text-2xl text-white/60">Waiting for DJ to start...</p>
+        <div style={{ textAlign: 'center', padding: '0 6vw' }}>
+          <h1 style={{ fontSize: '12vw', fontWeight: 900, color: 'rgba(255,255,255,0.9)', marginBottom: '4vw' }}>No Active Rotation</h1>
+          <p style={{ fontSize: '5vw', color: 'rgba(255,255,255,0.6)' }}>Waiting for DJ to start...</p>
         </div>
       </div>
     );
@@ -148,9 +269,6 @@ export default function RotationDisplay() {
   const breakSongIndex = displayData?.breakSongIndex ?? null;
   const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
 
-  // During break: current dancer (index 0 = next up) is NOT shown at top (top shows "Break Song")
-  // so include her at position 0 of the "Up Next" list.
-  // During active: current dancer IS shown at top, so skip her (start at offset 1).
   const startOffset = isBreak ? 0 : 1;
   const nextDancers = [];
   for (let i = startOffset; i < validRotation.length; i++) {
@@ -159,27 +277,23 @@ export default function RotationDisplay() {
     if (dancer) nextDancers.push(dancer);
   }
 
-  const nextCount = nextDancers.length;
-  const FIXED_FONT = '2rem';
-
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#08081a' }}>
       <style>{STYLES}</style>
 
-      {/* TOP: Current performer or break — pushed to top, auto height */}
-      <div className="flex flex-col items-center border-b border-[#1e293b]" style={{ padding: '2vh 4vw 1.5vh', flexShrink: 0 }}>
+      {/* TOP: Current performer or break */}
+      <div className="flex flex-col items-center border-b border-[#1e293b]" style={{ padding: '3vh 4vw 2vh', flexShrink: 0 }}>
         {isBreak ? (
           <>
-            <p className="stage-label text-lg font-bold tracking-widest uppercase mb-2" style={LABEL_STYLE}>
+            <p className="stage-label font-bold tracking-widest uppercase mb-2" style={{ ...LABEL_STYLE, fontSize: '5vw' }}>
               Break
             </p>
-            <h1
-              className="current-name text-7xl font-black text-white uppercase tracking-wider text-center leading-tight mb-2"
-            >
-              Break Song
-            </h1>
+            <FitName
+              text="Break Song"
+              className="current-name font-black text-white uppercase tracking-wider text-center"
+            />
             {breakSongTotal > 0 && (
-              <div className="flex items-center gap-4 mb-2">
+              <div className="flex items-center gap-4 mt-2 mb-2">
                 {Array.from({ length: breakSongTotal }).map((_, i) => {
                   const isDone = breakSongIndex !== null && i < breakSongIndex;
                   const isCurrent = breakSongIndex !== null && i === breakSongIndex;
@@ -188,8 +302,7 @@ export default function RotationDisplay() {
                       key={i}
                       className={isCurrent ? 'break-dot-active' : ''}
                       style={{
-                        width: 28,
-                        height: 28,
+                        width: '3vw', height: '3vw', minWidth: 18, minHeight: 18,
                         borderRadius: '50%',
                         background: isCurrent ? '#00d4ff' : isDone ? 'rgba(0,212,255,0.3)' : 'transparent',
                         border: `3px solid ${isCurrent ? '#00d4ff' : isDone ? 'rgba(0,212,255,0.45)' : 'rgba(255,255,255,0.18)'}`,
@@ -204,49 +317,46 @@ export default function RotationDisplay() {
               <div
                 ref={countdownRef}
                 className="font-black font-mono tabular-nums leading-none"
-                style={{ fontSize: '5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+                style={{ fontSize: '16vw', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em', marginTop: '1vh' }}
               />
             )}
           </>
         ) : (
           <>
-            <p className="stage-label text-2xl font-bold tracking-widest uppercase mb-1" style={LABEL_STYLE}>
+            <p className="stage-label font-bold tracking-widest uppercase mb-2" style={{ ...LABEL_STYLE, fontSize: '5vw' }}>
               Currently On Stage
             </p>
-            <h1
+            <FitName
               key={currentDancerId}
-              className="current-name font-black text-white uppercase tracking-wider text-center leading-tight" style={{ fontSize: '3rem' }}
-            >
-              {currentDancer ? currentDancer.name : '—'}
-            </h1>
+              text={currentDancer ? currentDancer.name : '—'}
+              className="current-name font-black text-white uppercase tracking-wider text-center"
+            />
             {showCountdown && (
               <div
                 ref={countdownRef}
-                className="font-black font-mono tabular-nums mt-2 leading-none"
-                style={{ fontSize: '4.5rem', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em' }}
+                className="font-black font-mono tabular-nums leading-none"
+                style={{ fontSize: '16vw', color: '#00d4ff', textShadow: '0 0 24px rgba(0,212,255,0.45)', minHeight: '1em', marginTop: '1.5vh' }}
               />
             )}
           </>
         )}
       </div>
 
-      {/* BOTTOM: Full rotation list — natural size, fills screen when enough names */}
-      <div style={{ flex: 1, overflow: 'hidden', padding: '1vh 4vw 1vh', minWidth: 0 }}>
+      {/* BOTTOM: Rotation list */}
+      <div style={{ flex: 1, overflow: 'hidden', padding: '1.5vh 4vw 1vh', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {nextDancers.length > 0 && (
-          <p className="stage-label text-xl font-bold tracking-widest uppercase text-center mb-2" style={LABEL_STYLE}>
+          <p className="stage-label font-bold tracking-widest uppercase text-center" style={{ ...LABEL_STYLE, fontSize: '4.5vw', marginBottom: '1vh', flexShrink: 0 }}>
             {isBreak ? 'Up Next' : 'Next On Stage'}
           </p>
         )}
-        {nextDancers.map((dancer) => (
-          <div key={dancer.id} style={{ textAlign: 'center', width: '100%', overflow: 'hidden' }}>
-            <h3
-              className="next-name font-bold text-white uppercase"
-              style={{ fontSize: FIXED_FONT, lineHeight: 1.15, letterSpacing: '0.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
-            >
-              {dancer.name}
-            </h3>
-          </div>
-        ))}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <FitNextList
+            dancers={nextDancers}
+            className="next-name font-bold text-white uppercase"
+            style={{ letterSpacing: '0.05em' }}
+            maxVw={10}
+          />
+        </div>
       </div>
     </div>
   );

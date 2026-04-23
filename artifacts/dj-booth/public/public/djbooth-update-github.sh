@@ -255,8 +255,6 @@ else
   echo "  No pre-built dist found — building from source..."
   ./node_modules/.bin/vite build 2>&1 | tail -10
 fi
-npm prune --production 2>&1 | tail -1
-
 rm -rf "$TMPDIR"
 
 for AFILE in /home/$(whoami)/.config/autostart/*.desktop /etc/xdg/lxsession/LXDE-pi/autostart; do
