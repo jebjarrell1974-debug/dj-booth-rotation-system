@@ -2,6 +2,15 @@ import React, { useEffect, useLayoutEffect, useRef, useMemo, useState, useCallba
 import { localEntities } from '@/api/localEntities';
 import { useQuery } from '@tanstack/react-query';
 
+// Fixed font size for the next-up list.
+// Calibrated so long names (ENCHANTRESS 11 chars, CHAMPAGNE/ANASTASIA 9 chars)
+// fit comfortably across the screen without being cut off.
+const NEXT_LIST_FONT_VW = 9;
+
+// When the rotation has more names than this, the list scrolls.
+// Below this threshold names are shown statically.
+const SCROLL_THRESHOLD = 10;
+
 const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; width: 100%; overflow: hidden; }
@@ -117,62 +126,6 @@ function FitName({ text, className, style }) {
   );
 }
 
-// Renders all next-up dancer names at a UNIFORM font size — sized so even the
-// longest name fits within 88% of the container width, making the list consistent.
-function FitNextList({ dancers, className, style, maxVw = 10 }) {
-  const containerRef = useRef(null);
-  const [fontSize, setFontSize] = useState(null);
-
-  const longestName = useMemo(
-    () => dancers.reduce((longest, d) => d.name.length > longest.length ? d.name : longest, ''),
-    [dancers]
-  );
-
-  const recalc = useCallback(() => {
-    if (!containerRef.current || !longestName) return;
-    const containerW = containerRef.current.offsetWidth;
-    if (!containerW) return;
-    const vwPx = window.innerWidth / 100;
-    const maxPx = maxVw * vwPx;
-    const minPx = 4 * vwPx;
-    const targetW = containerW * 0.88;
-    const fontStyle = 'font-weight:700;letter-spacing:0.05em;text-transform:uppercase';
-    const widthAtMax = measureText(longestName, maxPx, fontStyle);
-    if (widthAtMax <= targetW) {
-      setFontSize(maxPx);
-    } else {
-      setFontSize(Math.max(minPx, (targetW / widthAtMax) * maxPx));
-    }
-  }, [longestName, maxVw]);
-
-  useLayoutEffect(() => { recalc(); }, [recalc]);
-
-  useEffect(() => {
-    const ro = new ResizeObserver(recalc);
-    if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, [recalc]);
-
-  return (
-    <div ref={containerRef} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5vh' }}>
-      {dancers.map((dancer) => (
-        <div key={dancer.id} style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <h3
-            className={className}
-            style={{
-              ...style,
-              fontSize: fontSize ? `${fontSize}px` : `${maxVw}vw`,
-              whiteSpace: 'nowrap',
-              lineHeight: 1.15,
-            }}
-          >
-            {dancer.name}
-          </h3>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function RotationDisplay() {
   const [showCountdown, setShowCountdown] = useState(() => {
@@ -342,21 +295,46 @@ export default function RotationDisplay() {
         )}
       </div>
 
-      {/* BOTTOM: Rotation list */}
+      {/* BOTTOM: Rotation list — fixed font size, scrolls when list is long */}
       <div style={{ flex: 1, overflow: 'hidden', padding: '1.5vh 4vw 1vh', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {nextDancers.length > 0 && (
           <p className="stage-label font-bold tracking-widest uppercase text-center" style={{ ...LABEL_STYLE, fontSize: '4.5vw', marginBottom: '1vh', flexShrink: 0 }}>
             {isBreak ? 'Up Next' : 'Next On Stage'}
           </p>
         )}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <FitNextList
-            dancers={nextDancers}
-            className="next-name font-bold text-white uppercase"
-            style={{ letterSpacing: '0.05em' }}
-            maxVw={10}
-          />
-        </div>
+        {nextDancers.length > 0 && (() => {
+          const shouldScroll = nextDancers.length > SCROLL_THRESHOLD;
+          const scrollDuration = Math.max(20, nextDancers.length * 2.5);
+          const listItems = shouldScroll ? [...nextDancers, ...nextDancers] : nextDancers;
+          return (
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.8vh',
+                  animation: shouldScroll ? `scrollList ${scrollDuration}s linear infinite` : 'none',
+                }}
+              >
+                {listItems.map((dancer, i) => (
+                  <div key={`${dancer.id}-${i}`} style={{ textAlign: 'center', width: '100%' }}>
+                    <h3
+                      className="next-name font-bold text-white uppercase"
+                      style={{
+                        fontSize: `${NEXT_LIST_FONT_VW}vw`,
+                        lineHeight: 1.15,
+                        letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {dancer.name}
+                    </h3>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
