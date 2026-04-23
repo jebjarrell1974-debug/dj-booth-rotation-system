@@ -558,12 +558,15 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
       echo "UPDATE SUCCESSFUL — relaunching browsers..."
-      bash -c "chromium --kiosk --class=neon-dj-display --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+      # Launch DJ kiosk via the dedicated script (clears singleton locks, waits for server health)
+      bash "$HOME/djbooth-kiosk.sh" &
       disown
-      sleep 2
-      rm -rf /tmp/chromium-rotation
-      bash -c "chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required http://localhost:3001/RotationDisplay" &
-      disown
+      # Signal the display watcher to relaunch the crowd screen via djbooth-rotation-display.sh.
+      # That script does the xrandr rotation + correct window positioning. Never launch
+      # RotationChromium directly here — it skips positioning and puts both windows on the
+      # primary display.
+      touch /tmp/djbooth-display-trigger
+      echo "Display trigger set — crowd screen will reload on correct display via djbooth-display-watcher"
     else
       echo "UPDATE SUCCESSFUL — homebase mode, no browser relaunch"
     fi
