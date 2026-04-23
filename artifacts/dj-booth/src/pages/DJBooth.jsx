@@ -4060,7 +4060,7 @@ export default function DJBooth() {
                     try {
                       const res = await fetch('/api/display/launch', { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('djbooth_token')}` } });
                       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Server error');
-                      toast.success('Display launching on HDMI-2');
+                      toast.success('Crowd display launching on second screen');
                     } catch (err) {
                       console.error('[Rotation Screen] Failed:', err.message);
                       toast.error(`Display launch failed: ${err.message}`);

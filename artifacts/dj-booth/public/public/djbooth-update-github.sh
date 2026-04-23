@@ -331,9 +331,20 @@ while true; do
     pkill -f "RotationChromium" 2>/dev/null || true
     sleep 1
     SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-    [ -n "$SECOND" ] && DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+    POS_X=1920
+    POS_Y=0
+    if [ -n "$SECOND" ]; then
+      DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+      sleep 2
+      GEOM=$(DISPLAY=:0 xrandr --query | grep "^${SECOND} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+      PX=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)+[0-9]*$/\1/')
+      PY=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)$/\1/')
+      [ -n "$PX" ] && POS_X="$PX"
+      [ -n "$PY" ] && POS_Y="$PY"
+    fi
     rm -rf /tmp/chromium-rotation
     chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
+      --window-position=${POS_X},${POS_Y} \
       --noerrdialogs --disable-session-crashed-bubble \
       --autoplay-policy=no-user-gesture-required \
       http://localhost:3001/RotationDisplay &

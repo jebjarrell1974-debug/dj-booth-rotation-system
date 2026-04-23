@@ -1878,7 +1878,7 @@ app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
     const { writeFileSync } = await import('fs');
     writeFileSync('/tmp/djbooth-display-trigger', '1');
     console.log('[display/launch] Trigger file written — display watcher will relaunch RotationChromium on second display');
-    res.json({ ok: true, message: 'Display launching on HDMI-2' });
+    res.json({ ok: true, message: 'Display launching on second screen' });
   } catch (err) {
     console.error('[display/launch] Error writing trigger file:', err.message);
     res.status(500).json({ error: err.message });
