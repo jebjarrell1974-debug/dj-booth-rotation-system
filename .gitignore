@@ -70,3 +70,8 @@ artifacts/*/dist/
 
 # Attached assets (screenshots, uploads)
 attached_assets/
+
+# Environment variables
+.env
+.env.*
+*.local

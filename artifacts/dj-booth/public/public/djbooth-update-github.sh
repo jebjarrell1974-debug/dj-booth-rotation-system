@@ -366,12 +366,38 @@ X-GNOME-Autostart-enabled=true
 DWEOF
   echo "Second display autostart entries configured"
 
-  for KIOSK_FILE in "$HOME/.config/autostart/djbooth-kiosk.desktop"; do
-    if [ -f "$KIOSK_FILE" ]; then
-      sed -i 's/X-GNOME-Autostart-enabled=false/X-GNOME-Autostart-enabled=true/g' "$KIOSK_FILE"
-      echo "Ensured kiosk auto-launcher is enabled: $(basename $KIOSK_FILE)"
-    fi
-  done
+  KIOSK_FILE="$HOME/.config/autostart/djbooth-kiosk.desktop"
+  if [ ! -f "$KIOSK_FILE" ]; then
+    cat > "$HOME/djbooth-kiosk.sh" << 'KSEOF'
+#!/bin/bash
+# Wait for GNOME to settle, clear any stale Chromium singleton locks, then
+# wait for the server to be healthy before launching the kiosk window.
+sleep 10
+rm -f "$HOME/.config/chromium/SingletonLock" \
+      "$HOME/.config/chromium/SingletonCookie" \
+      "$HOME/.config/chromium/SingletonSocket"
+until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done
+exec chromium --kiosk \
+  --noerrdialogs --disable-infobars \
+  --autoplay-policy=no-user-gesture-required \
+  --disable-background-media-suspend \
+  --disable-features=BackgroundMediaSuspend,MediaSessionService \
+  --disable-session-crashed-bubble \
+  http://localhost:3001
+KSEOF
+    chmod +x "$HOME/djbooth-kiosk.sh"
+    cat > "$KIOSK_FILE" << KDEOF
+[Desktop Entry]
+Type=Application
+Name=DJ Booth Kiosk
+Exec=$HOME/djbooth-kiosk.sh
+X-GNOME-Autostart-enabled=true
+KDEOF
+    echo "Kiosk autostart entry created"
+  else
+    sed -i 's/X-GNOME-Autostart-enabled=false/X-GNOME-Autostart-enabled=true/g' "$KIOSK_FILE"
+    echo "Kiosk autostart entry verified"
+  fi
 fi
 
 # Remove any old labwc config that may exist from previous Pi installations

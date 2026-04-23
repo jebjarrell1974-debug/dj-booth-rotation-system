@@ -52,6 +52,18 @@ sudo apt install -y ffmpeg git chromium x11-xserver-utils xinput aubio-tools cur
 
 ---
 
+### Bug Fixes Applied Apr 22, 2026 — Deactivated Song Replay (GitHub commit `da5aeed`)
+
+#### Deactivated song still played after being blocked
+- **Problem**: A song that the DJ deactivated via the Deactivate button played again on a subsequent dancer's set.
+- **Root cause — two holes working together**:
+  1. **Stream endpoint had no block check**: `/api/music/stream/:id` called `getMusicTrackById(id)` which is `SELECT * WHERE id = ?` — no `blocked = 0` guard. Any cached stream URL from before deactivation still worked.
+  2. **Pre-pick cache not purged**: When `handleDeactivateConfirm` succeeded it called `handleSkipRef.current()` to skip the current song but never scanned `rotationSongsRef.current` to remove the blocked song from upcoming dancers' queued sets. If the song had been pre-picked for Dancer B before the block, it played on Dancer B's set anyway via the unguarded stream URL.
+- **Fix 1 (server — `artifacts/api-server/server/index.js`)**: Added `if (track.blocked) return res.status(403).json({ error: 'Track is deactivated' })` immediately after the track lookup in the stream endpoint. Blocks the file at the byte-stream level regardless of how the URL was obtained.
+- **Fix 2 (client — `artifacts/dj-booth/src/pages/DJBooth.jsx`)**: After a successful block API call, `handleDeactivateConfirm` now iterates all entries in `rotationSongsRef.current`, filters out every track whose `name` matches the blocked song, and writes the cleaned object back to both `rotationSongsRef` and `setRotationSongs` state. Affected dancers will fetch fresh tracks on their next transition.
+
+---
+
 ### Bug Fixes Applied Apr 20, 2026 (all in GitHub, pulled by update script)
 
 #### 1. Promo + Dancer Voiceover Stitching Fix
@@ -315,6 +327,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
 1. Fix Telegram alerts (broken since homebase migration)
 2. Smart Telegram alerts: fire on dead air, slow transitions, low cache hit rate — with full context
 3. **INVESTIGATE: False / stale dead air alerts on neonaidj003** — Telegram repeatedly fires "DEAD AIR — 15.7s silence detected, Dancer: AMETHYST, Track: 1982-288 Van Halen Oh Pretty Woman.mp3" every ~10 minutes (seen 2:34, 2:45, 2:55, 2:59 AM) even though that track has not played for at least an hour. Likely causes: (a) dead air watchdog is comparing against a stale `currentTrack` ref that wasn't cleared after the song ended, so it keeps re-alerting on the same frozen state; (b) the heartbeat is sending a cached/old track name instead of the live one; (c) the dead air alert has no cooldown/dedup so fires repeatedly for the same event. **Do NOT change anything until discussed with user.** They flagged this as informational only for now.
+4. **MCP server for AI monitoring** — Build a small MCP (Model Context Protocol) server alongside the API that exposes existing endpoints as AI-callable tools. The app is already ~80% ready: `/api/booth/state`, `/api/fleet/logs`, `/api/fleet/heartbeats`, `/api/fleet/play-history`, `/api/audit/log`, and `/api/client-settings` all exist. Read-only tools (`get_booth_state`, `get_diag_log`, `get_play_history`, `get_device_health`, `query_settings`) are safe at any time. Write tool (`send_command` → `update/restart/sync/reboot` via existing `/api/monitor/command/:deviceId/:action`) should be gated and discussed before enabling. Goal: when something goes wrong mid-show, an AI can instantly query live state, logs, and history without any copy-pasting.
 
 ## Commercial System (Planned)
 - Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks
