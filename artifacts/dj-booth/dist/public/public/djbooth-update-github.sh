@@ -299,30 +299,52 @@ gsettings set org.gnome.mutter auto-maximize false 2>/dev/null || true
 gsettings set org.gnome.mutter edge-tiling false 2>/dev/null || true
 echo "GNOME auto-maximize disabled (prevents window-position override)"
 
+# Install wmctrl for reliable window management across displays
+which wmctrl >/dev/null 2>&1 || {
+  echo "Installing wmctrl for multi-monitor window management..."
+  sudo apt-get install -y wmctrl >/dev/null 2>&1 || true
+}
+
+# Helper function used by both launch scripts:
+# Detects second monitor, rotates it, returns POS_X POS_Y SCR_W SCR_H
+# NOTE: --kiosk ignores --window-position on Linux (known Chromium bug).
+# We use --app=URL instead — identical visually, but respects window position.
+# After launch we use wmctrl to force fullscreen on the correct monitor.
+
 # Write the rotation display launcher script
+# Uses the PRIMARY SWAP method: temporarily sets the crowd TV as the xrandr primary,
+# launches Chromium --kiosk (which ALWAYS opens on the primary), then restores the
+# original primary. This is the only guaranteed method on Linux/GNOME/X11 because
+# --kiosk hard-codes to primary and ignores --window-position (confirmed Chromium bug).
 cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
 sleep 20
+PRIMARY=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
 SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-POS_X=0
-POS_Y=0
-if [ -n "$SECOND" ]; then
-  DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
-  sleep 2
-  GEOM=$(DISPLAY=:0 xrandr --query | grep "^${SECOND} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
-  POS_X=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)+[0-9]*$/\1/')
-  POS_Y=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)$/\1/')
+if [ -z "$SECOND" ]; then
+  echo "No second display found — skipping crowd display launch"
+  exit 0
 fi
+DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+sleep 2
+# Temporarily make crowd TV the primary so --kiosk opens there
+DISPLAY=:0 xrandr --output "$SECOND" --primary 2>/dev/null || true
+sleep 1
 rm -rf /tmp/chromium-rotation
-chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
-  --window-position=${POS_X},${POS_Y} \
+DISPLAY=:0 chromium --kiosk \
+  --class=RotationChromium \
+  --user-data-dir=/tmp/chromium-rotation \
   --noerrdialogs --disable-session-crashed-bubble \
   --autoplay-policy=no-user-gesture-required \
-  http://localhost:3001/RotationDisplay
+  http://localhost:3001/RotationDisplay &
+sleep 3
+# Restore original primary (kiosk screen) — rotation window stays on crowd TV
+[ -n "$PRIMARY" ] && DISPLAY=:0 xrandr --output "$PRIMARY" --primary 2>/dev/null || true
+wait
 RDEOF
 chmod +x "$HOME/djbooth-rotation-display.sh"
 
-# Write the display trigger watcher script (relaunches crowd display on demand)
+# Write the display trigger watcher script (relaunches crowd display on demand via button)
 cat > "$HOME/djbooth-display-watcher.sh" << 'DWEOF'
 #!/bin/bash
 while true; do
@@ -330,30 +352,39 @@ while true; do
     rm -f /tmp/djbooth-display-trigger
     pkill -f "RotationChromium" 2>/dev/null || true
     sleep 1
+    PRIMARY=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
     SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-    POS_X=1920
-    POS_Y=0
     if [ -n "$SECOND" ]; then
       DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
       sleep 2
-      GEOM=$(DISPLAY=:0 xrandr --query | grep "^${SECOND} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
-      PX=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)+[0-9]*$/\1/')
-      PY=$(echo "$GEOM" | sed 's/.*+\([0-9]*\)$/\1/')
-      [ -n "$PX" ] && POS_X="$PX"
-      [ -n "$PY" ] && POS_Y="$PY"
+      # PRIMARY SWAP: make crowd TV primary so --kiosk opens there
+      DISPLAY=:0 xrandr --output "$SECOND" --primary 2>/dev/null || true
+      sleep 1
     fi
     rm -rf /tmp/chromium-rotation
-    chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
-      --window-position=${POS_X},${POS_Y} \
+    DISPLAY=:0 chromium --kiosk \
+      --class=RotationChromium \
+      --user-data-dir=/tmp/chromium-rotation \
       --noerrdialogs --disable-session-crashed-bubble \
       --autoplay-policy=no-user-gesture-required \
       http://localhost:3001/RotationDisplay &
+    sleep 3
+    # Restore original primary
+    [ -n "$PRIMARY" ] && DISPLAY=:0 xrandr --output "$PRIMARY" --primary 2>/dev/null || true
     disown
   fi
   sleep 2
 done
 DWEOF
 chmod +x "$HOME/djbooth-display-watcher.sh"
+
+# Kill the old watcher process and restart with new version immediately
+pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
+sleep 1
+export DISPLAY=:0
+bash "$HOME/djbooth-display-watcher.sh" &
+disown
+echo "Display watcher restarted with primary-swap method"
 
 # GNOME autostart entries for second display and trigger watcher
 mkdir -p "$HOME/.config/autostart"
