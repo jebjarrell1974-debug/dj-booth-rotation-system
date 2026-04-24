@@ -338,19 +338,21 @@ which wmctrl >/dev/null 2>&1 || {
 cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
 sleep 20
-PRIMARY=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
-SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-if [ -z "$SECOND" ]; then
-  echo "No second display found — skipping crowd display launch"
+# All Dell units: HDMI = DJ kiosk monitor, DisplayPort (DP) = crowd rotation TV
+HDMI_OUT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -i "^HDMI" | awk '{print $1}' | head -1)
+DP_OUT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -iE "^DP-|^DP[0-9]|^DisplayPort" | awk '{print $1}' | head -1)
+if [ -z "$DP_OUT" ]; then
+  echo "No DisplayPort display found — skipping crowd display launch"
   exit 0
 fi
-SECOND_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$SECOND connected")
-SECOND_ROT=$(echo "$SECOND_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
-[ -n "$SECOND_ROT" ] || SECOND_ROT="right"
-DISPLAY=:0 xrandr --output "$SECOND" --rotate "$SECOND_ROT" 2>/dev/null || true
+# Preserve existing rotation of crowd TV (right for most units)
+DP_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$DP_OUT connected")
+DP_ROT=$(echo "$DP_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
+[ -n "$DP_ROT" ] || DP_ROT="right"
+DISPLAY=:0 xrandr --output "$DP_OUT" --rotate "$DP_ROT" 2>/dev/null || true
 sleep 2
-# Temporarily make crowd TV the primary so --kiosk opens there
-DISPLAY=:0 xrandr --output "$SECOND" --primary 2>/dev/null || true
+# PRIMARY SWAP: temporarily make crowd TV (DP) primary so --kiosk opens there
+DISPLAY=:0 xrandr --output "$DP_OUT" --primary 2>/dev/null || true
 sleep 1
 rm -rf /tmp/chromium-rotation
 DISPLAY=:0 chromium --kiosk \
@@ -360,8 +362,8 @@ DISPLAY=:0 chromium --kiosk \
   --autoplay-policy=no-user-gesture-required \
   http://localhost:3001/RotationDisplay &
 sleep 3
-# Restore original primary (kiosk screen) — rotation window stays on crowd TV
-[ -n "$PRIMARY" ] && DISPLAY=:0 xrandr --output "$PRIMARY" --primary 2>/dev/null || true
+# Restore HDMI as primary — kiosk stays on DJ monitor
+[ -n "$HDMI_OUT" ] && DISPLAY=:0 xrandr --output "$HDMI_OUT" --primary 2>/dev/null || true
 wait
 RDEOF
 chmod +x "$HOME/djbooth-rotation-display.sh"
@@ -374,16 +376,17 @@ while true; do
     rm -f /tmp/djbooth-display-trigger
     pkill -f "RotationChromium" 2>/dev/null || true
     sleep 1
-    PRIMARY=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
-    SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-    if [ -n "$SECOND" ]; then
-      SECOND_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$SECOND connected")
-      SECOND_ROT=$(echo "$SECOND_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
-      [ -n "$SECOND_ROT" ] || SECOND_ROT="right"
-      DISPLAY=:0 xrandr --output "$SECOND" --rotate "$SECOND_ROT" 2>/dev/null || true
+    # All Dell units: HDMI = DJ kiosk monitor, DisplayPort (DP) = crowd rotation TV
+    HDMI_OUT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -i "^HDMI" | awk '{print $1}' | head -1)
+    DP_OUT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -iE "^DP-|^DP[0-9]|^DisplayPort" | awk '{print $1}' | head -1)
+    if [ -n "$DP_OUT" ]; then
+      DP_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$DP_OUT connected")
+      DP_ROT=$(echo "$DP_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
+      [ -n "$DP_ROT" ] || DP_ROT="right"
+      DISPLAY=:0 xrandr --output "$DP_OUT" --rotate "$DP_ROT" 2>/dev/null || true
       sleep 2
-      # PRIMARY SWAP: make crowd TV primary so --kiosk opens there
-      DISPLAY=:0 xrandr --output "$SECOND" --primary 2>/dev/null || true
+      # PRIMARY SWAP: make crowd TV (DP) primary so --kiosk opens there
+      DISPLAY=:0 xrandr --output "$DP_OUT" --primary 2>/dev/null || true
       sleep 1
     fi
     rm -rf /tmp/chromium-rotation
@@ -394,8 +397,8 @@ while true; do
       --autoplay-policy=no-user-gesture-required \
       http://localhost:3001/RotationDisplay &
     sleep 3
-    # Restore original primary
-    [ -n "$PRIMARY" ] && DISPLAY=:0 xrandr --output "$PRIMARY" --primary 2>/dev/null || true
+    # Restore HDMI as primary — kiosk stays on DJ monitor
+    [ -n "$HDMI_OUT" ] && DISPLAY=:0 xrandr --output "$HDMI_OUT" --primary 2>/dev/null || true
     disown
   fi
   sleep 2
@@ -660,15 +663,13 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
       echo "UPDATE SUCCESSFUL — relaunching browsers..."
-      # Safety: if the primary display is rotated (crowd TV), swap primary to the DJ monitor
-      # before launching the kiosk so Chromium --kiosk opens on the correct screen.
-      _CUR_PRI=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
-      _CUR_SEC=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-      _PRI_ROT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ')
-      if [ -n "$_PRI_ROT" ] && [ -n "$_CUR_SEC" ]; then
-        echo "Primary is crowd TV (rotated) — setting $_CUR_SEC as primary for kiosk launch..."
-        DISPLAY=:0 xrandr --output "$_CUR_SEC" --primary 2>/dev/null || true
+      # All Dell units: HDMI = DJ kiosk, DisplayPort = crowd TV.
+      # Ensure HDMI is primary before launching kiosk so Chromium --kiosk opens on the right screen.
+      _HDMI=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -i "^HDMI" | awk '{print $1}' | head -1)
+      if [ -n "$_HDMI" ]; then
+        DISPLAY=:0 xrandr --output "$_HDMI" --primary 2>/dev/null || true
         sleep 1
+        echo "HDMI set as primary — kiosk will open on DJ monitor"
       fi
       # Launch DJ kiosk via the dedicated script (clears singleton locks, waits for server health)
       bash "$HOME/djbooth-kiosk.sh" &
