@@ -47,7 +47,11 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
   echo "  Boot mode — skipping OS upgrade to keep update fast"
 else
   sudo apt-get update -q 2>&1 | tail -3
-  sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q 2>&1 | tail -5
+  sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 \
+    apt-get upgrade -y -q \
+    -o Dpkg::Options::="--force-confold" \
+    -o Dpkg::Options::="--force-confdef" \
+    2>&1 | tail -5
   if [ -f /var/run/reboot-required ]; then
     echo "  System reboot required after package updates. Scheduling reboot for 08:30..."
     sudo shutdown -r 08:30 "Scheduled reboot after system update" 2>/dev/null || true
@@ -580,7 +584,30 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
     touch /tmp/djbooth-display-trigger
     echo "Display trigger set — crowd screen will reload via djbooth-display-watcher"
   else
-    echo "WARNING: Server did not respond after restart"
+    echo "WARNING: Server did not respond after restart — attempting direct browser launch as fallback"
+    # Safety net: if boot update ran but browsers never launched (e.g. polkit dialog blocked startup),
+    # launch them directly here rather than leaving the screens blank.
+    export DISPLAY=:0
+    pkill -f "chromium" 2>/dev/null || true
+    sleep 2
+    rm -f "$HOME/.config/chromium/SingletonLock" \
+          "$HOME/.config/chromium/SingletonCookie" \
+          "$HOME/.config/chromium/SingletonSocket"
+    if [ -x "$HOME/djbooth-kiosk.sh" ]; then
+      bash "$HOME/djbooth-kiosk.sh" &
+      disown
+      echo "DJ kiosk launch triggered"
+    fi
+    # Restart or start the display watcher, then signal it
+    pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
+    sleep 1
+    if [ -x "$HOME/djbooth-display-watcher.sh" ]; then
+      bash "$HOME/djbooth-display-watcher.sh" &
+      disown
+      sleep 2
+      touch /tmp/djbooth-display-trigger
+      echo "Display watcher restarted and crowd screen trigger set"
+    fi
   fi
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   export DISPLAY=:0
