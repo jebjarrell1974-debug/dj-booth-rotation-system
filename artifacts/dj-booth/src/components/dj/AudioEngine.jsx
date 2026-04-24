@@ -802,8 +802,6 @@ const AudioEngine = forwardRef(({
         voice.currentTime = 0;
       }
 
-      if (autoDuck) duck();
-
       const isBlobUrl = audioUrl && audioUrl.startsWith('blob:');
       let resolved = false;
       let nearEndFired = false;
@@ -858,6 +856,20 @@ const AudioEngine = forwardRef(({
         console.error('❌ Announcement audio error:', e?.target?.error?.message || 'unknown');
         cleanupAndResolve();
       };
+
+      await new Promise((readyResolve) => {
+        if (voice.readyState >= 3) {
+          readyResolve();
+        } else {
+          const onCanPlay = () => {
+            voice.removeEventListener('canplay', onCanPlay);
+            readyResolve();
+          };
+          voice.addEventListener('canplay', onCanPlay);
+        }
+      });
+
+      if (autoDuck) duck();
 
       try {
         await voice.play();

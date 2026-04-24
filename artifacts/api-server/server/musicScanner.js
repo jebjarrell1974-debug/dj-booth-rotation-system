@@ -20,6 +20,7 @@ function walkDirectory(dirPath, rootPath, results = []) {
   for (const entry of entries) {
     const fullPath = join(dirPath, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name.startsWith('.')) continue;
       walkDirectory(fullPath, rootPath, results);
     } else if (entry.isFile()) {
       if (entry.name.startsWith('._') || entry.name.startsWith('.')) continue;

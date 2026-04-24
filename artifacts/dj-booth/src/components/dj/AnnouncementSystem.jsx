@@ -766,20 +766,38 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         console.log(`📢 AnnouncementSystem: Playback complete`);
       } catch (playError) {
         const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${CURRENT_VOICE_VERSION}`;
-        console.warn(`⚠️ Playback failed for ${cacheKey} — purging corrupted entry and regenerating...`, playError.message);
+        console.warn(`⚠️ Playback failed for ${cacheKey} — clearing local cache, trying server copy first...`, playError.message);
         onVoiceDiag?.('voice_play_fail', { dancer: dancerName, voiceType: type, error: (playError.message || '').substring(0, 80) });
         await deleteFromIndexedDB(cacheKey);
+        let recovered = false;
         try {
-          await fetch(`/api/voiceovers/${encodeURIComponent(cacheKey)}`, { method: 'DELETE', headers: getAuthHeaders() });
+          const serverBlob = await loadFromServer(cacheKey);
+          if (serverBlob) {
+            const serverUrl = URL.createObjectURL(serverBlob);
+            try {
+              await onPlay?.(serverUrl, audioOptions);
+              console.log(`📢 AnnouncementSystem: Playback complete (recovered from server copy — local cache was the issue)`);
+              onVoiceDiag?.('voice_play_recovered', { dancer: dancerName, voiceType: type });
+              recovered = true;
+            } finally {
+              URL.revokeObjectURL(serverUrl);
+            }
+          }
         } catch {}
-        try {
-          const fresh = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
-          await onPlay?.(fresh.url, audioOptions);
-          console.log(`📢 AnnouncementSystem: Playback complete (recovered after cache purge)`);
-          onVoiceDiag?.('voice_play_recovered', { dancer: dancerName, voiceType: type });
-        } catch (retryError) {
-          console.error(`❌ Playback still failed after regeneration — skipping:`, retryError.message);
-          onVoiceDiag?.('voice_play_dead', { dancer: dancerName, voiceType: type, error: (retryError.message || '').substring(0, 80) });
+        if (!recovered) {
+          console.warn(`⚠️ Server copy also failed for ${cacheKey} — now deleting server file and regenerating`);
+          try {
+            await fetch(`/api/voiceovers/${encodeURIComponent(cacheKey)}`, { method: 'DELETE', headers: getAuthHeaders() });
+          } catch {}
+          try {
+            const fresh = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
+            await onPlay?.(fresh.url, audioOptions);
+            console.log(`📢 AnnouncementSystem: Playback complete (recovered after confirmed-bad file regeneration)`);
+            onVoiceDiag?.('voice_play_recovered', { dancer: dancerName, voiceType: type });
+          } catch (retryError) {
+            console.error(`❌ Playback still failed after regeneration — skipping:`, retryError.message);
+            onVoiceDiag?.('voice_play_dead', { dancer: dancerName, voiceType: type, error: (retryError.message || '').substring(0, 80) });
+          }
         }
       }
     } catch (error) {

@@ -52,6 +52,140 @@ sudo apt install -y ffmpeg git chromium x11-xserver-utils xinput aubio-tools cur
 
 ---
 
+## ⚠️ TONIGHT'S FIX — Promo Regeneration Bug (Apr 23, 2026)
+
+### Problem
+Promos that worked for 1–2 days suddenly played gibberish mid-audio on neonaidj003.
+
+### Root Cause (confirmed)
+`AnnouncementSystem.jsx` line 773: when ANY playback error occurs (even a transient audio context hiccup, memory pressure, or 1-second network blip), the recovery logic:
+1. Deletes the good file from IndexedDB (local)
+2. **Also deletes the good file from the server** (`DELETE /api/voiceovers/:cacheKey`)
+3. Regenerates from ElevenLabs
+4. If ElevenLabs returns garbled audio during that regeneration, the bad file is saved over the good one permanently
+
+The server delete (step 2) is the mistake. A transient playback error doesn't mean the server file is corrupted — it just means something went wrong locally at that moment.
+
+### The Fix (ready to implement tonight — needs your approval)
+Change the recovery path so it:
+1. Deletes from IndexedDB only (correct — clears local cache)
+2. **Does NOT delete from server** — tries to reload the server copy first
+3. Only if the server copy ALSO fails to play → then delete server copy and regenerate
+
+This means a glitch never wipes a good promo file. Only a confirmed-unplayable server file triggers regeneration.
+
+**File to change**: `artifacts/dj-booth/src/components/dj/AnnouncementSystem.jsx` lines 771–783
+**Risk**: None — this is strictly safer. Normal generation flow is untouched. Only the error recovery path changes.
+**After fix**: rebuild dist, push to GitHub, run update on all units.
+
+---
+
+## ⚠️ TONIGHT'S FIX #2 — Music Ducks Before Voice is Ready (AudioEngine.jsx line 805)
+
+### Problem
+User on 003 reported: music got "really turned down for about 5-8 seconds" before the dancer announcement for Solar actually played, then volume came back normal.
+
+### Root Cause (confirmed)
+`AudioEngine.jsx` line 805: `duck()` is called immediately when `playAnnouncement()` is triggered — before the audio file has loaded. The music drops, then `voice.src = audioUrl` and `voice.load()` are called, and the browser sits buffering the file for 5–8 seconds. The crowd hears dead air with ducked music, then the announcement plays.
+
+```
+duck()          ← line 805, INSTANT
+voice.src = …  ← line 829, starts loading
+voice.load()   ← line 830
+await play()   ← line 863, plays only after buffering complete (5-8s later)
+```
+
+### The Fix (ready to implement tonight — needs your approval)
+Reorder the sequence:
+1. Set `voice.src` and call `voice.load()` first
+2. Wait for `canplay` event (audio is buffered and ready)
+3. **Then** `duck()` and immediately `play()` back-to-back
+
+Duck delay is less than 50ms before audio starts — imperceptible. The dead-air gap disappears.
+
+**File to change**: `artifacts/dj-booth/src/components/dj/AudioEngine.jsx` lines 797–869
+**Risk**: Very low — only changes the timing of duck vs. load, not the logic of either. Normal playback flow is unchanged.
+**After fix**: rebuild dist, push to GitHub, run update on all units.
+
+---
+
+## ⚠️ TONIGHT'S FIX #3 — Deactivating Song 1 Ends Set Instead of Playing Song 2 (DJBooth.jsx line 2440)
+
+### Problem (reported by 003 during show)
+Dancer was on her first song in a 2-song set. DJ deactivated the song. Instead of transitioning with a voiceover to her second song, the system played the outro and ended her entire set. She only got one song.
+
+### Root Cause (confirmed — code traced)
+`handleDeactivateConfirm` (line 2817) removes the deactivated track from the dancer's song array:
+- Before: `[song1, song2]` (length 2)
+- After filter: `[song2]` (length 1)
+
+Then it calls `handleSkip()`, which checks at line 2440:
+```javascript
+if (songNum < songsPerSet  &&  songNum < tracksRemaining)
+if (    1   <      2       &&      1   <        1       )  // FALSE
+```
+`currentSongNumber` is still 1 (playing song 1), but the array is now length 1. `1 < 1` is false → the system thinks the set is done → outro plays → set ends. Song 2 never plays.
+
+### The Fix (ready to implement tonight — needs your approval)
+One line added to `handleDeactivateConfirm`, right before calling `handleSkip`:
+```javascript
+// Decrement position so handleSkip sees remaining songs correctly
+if (currentSongNumberRef.current > 0) {
+  currentSongNumberRef.current = currentSongNumberRef.current - 1;
+  setCurrentSongNumber(currentSongNumberRef.current);
+}
+handleSkipRef.current?.();
+```
+With this: `songNum` becomes 0, array is `[song2]` (length 1), check becomes `0 < 2 && 0 < 1` = TRUE → plays song2 with proper voiceover transition.
+
+Normal end-of-song flow is completely unaffected — this code only runs in the deactivation path.
+
+**File to change**: `artifacts/dj-booth/src/pages/DJBooth.jsx` ~line 2822
+**Risk**: None to normal flow. Deactivation now correctly continues the set instead of killing it.
+**After fix**: rebuild dist, push to GitHub, run update on all units.
+
+---
+
+## ⚠️ TONIGHT'S FIX #4 — .Trash-1000 Showing in Music Library (musicScanner.js line 22)
+
+### Problem
+The homebase music library is showing a `.Trash-1000 (33)` folder containing 33 deleted songs. These were deleted from the music drive via file manager, which stored them in Linux's drive-local trash folder (`.Trash-1000`) instead of permanently deleting them.
+
+### Root Cause (confirmed)
+`musicScanner.js` line 25 correctly skips hidden **files** (names starting with `.`), but line 22–23 recurses into **directories** without any hidden-folder check:
+
+```js
+if (entry.isDirectory()) {
+  walkDirectory(fullPath, rootPath, results); // ← .Trash-1000 walks right in
+} else if (entry.isFile()) {
+  if (entry.name.startsWith('.')) continue;  // ← only files are filtered
+```
+
+`.Trash-1000` is a directory so it bypasses the filter entirely.
+
+### The Fix (ready to implement tonight — needs your approval)
+Two-part fix:
+
+**Part 1 — Code** (one line): Add the same hidden-name check to directories:
+```js
+if (entry.isDirectory()) {
+  if (entry.name.startsWith('.')) continue; // skip .Trash-1000, .DS_Store, etc.
+  walkDirectory(fullPath, rootPath, results);
+```
+This permanently prevents ANY hidden folder (current or future trash, macOS junk, etc.) from appearing in the music library on any venue's drive.
+
+**Part 2 — Homebase cleanup**: SSH to homebase and permanently delete the trash folder:
+```bash
+rm -rf /path/to/music/drive/.Trash-1000
+```
+(Need to confirm the exact music drive mount path on homebase first.)
+
+**File to change**: `artifacts/api-server/server/musicScanner.js` line 22
+**Risk**: None — only adds a skip for hidden directories. All normal music folders are unaffected.
+**After fix**: Server auto-reloads (no rebuild needed for API server), run a manual rescan, confirm `.Trash-1000` is gone.
+
+---
+
 ### Bug Fixes Applied Apr 22, 2026 — Deactivated Song Replay (GitHub commit `da5aeed`)
 
 #### Deactivated song still played after being blocked

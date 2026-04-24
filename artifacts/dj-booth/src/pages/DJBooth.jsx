@@ -2821,6 +2821,10 @@ export default function DJBooth() {
         }
         rotationSongsRef.current = cleaned;
         setRotationSongs(cleaned);
+        if (currentSongNumberRef.current > 0) {
+          currentSongNumberRef.current = currentSongNumberRef.current - 1;
+          setCurrentSongNumber(currentSongNumberRef.current);
+        }
         handleSkipRef.current?.();
       } else {
         const data = await res.json().catch(() => ({}));
