@@ -252,7 +252,22 @@ elif [ -d "${EXTRACTED_DIR}src" ]; then
 fi
 cd "$APP_DIR"
 
-npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -3
+echo "  Installing node dependencies..."
+set +e
+_npm_ok=false
+for _npm_try in 1 2 3; do
+  npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -5
+  if node -e "require('express')" 2>/dev/null; then
+    _npm_ok=true
+    break
+  fi
+  echo "  express not found after attempt $_npm_try — retrying in 10s..."
+  sleep 10
+done
+set -e
+if [ "$_npm_ok" = "false" ]; then
+  echo "WARNING: express not found after npm install retries — service will fail to start"
+fi
 if [ -d "$APP_DIR/dist" ]; then
   echo "  Pre-built frontend already in place — skipping vite build"
 else
@@ -329,7 +344,10 @@ if [ -z "$SECOND" ]; then
   echo "No second display found — skipping crowd display launch"
   exit 0
 fi
-DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+SECOND_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$SECOND connected")
+SECOND_ROT=$(echo "$SECOND_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
+[ -n "$SECOND_ROT" ] || SECOND_ROT="right"
+DISPLAY=:0 xrandr --output "$SECOND" --rotate "$SECOND_ROT" 2>/dev/null || true
 sleep 2
 # Temporarily make crowd TV the primary so --kiosk opens there
 DISPLAY=:0 xrandr --output "$SECOND" --primary 2>/dev/null || true
@@ -359,7 +377,10 @@ while true; do
     PRIMARY=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
     SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
     if [ -n "$SECOND" ]; then
-      DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+      SECOND_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$SECOND connected")
+      SECOND_ROT=$(echo "$SECOND_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
+      [ -n "$SECOND_ROT" ] || SECOND_ROT="right"
+      DISPLAY=:0 xrandr --output "$SECOND" --rotate "$SECOND_ROT" 2>/dev/null || true
       sleep 2
       # PRIMARY SWAP: make crowd TV primary so --kiosk opens there
       DISPLAY=:0 xrandr --output "$SECOND" --primary 2>/dev/null || true
@@ -639,6 +660,16 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
       echo "UPDATE SUCCESSFUL — relaunching browsers..."
+      # Safety: if the primary display is rotated (crowd TV), swap primary to the DJ monitor
+      # before launching the kiosk so Chromium --kiosk opens on the correct screen.
+      _CUR_PRI=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
+      _CUR_SEC=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+      _PRI_ROT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ')
+      if [ -n "$_PRI_ROT" ] && [ -n "$_CUR_SEC" ]; then
+        echo "Primary is crowd TV (rotated) — setting $_CUR_SEC as primary for kiosk launch..."
+        DISPLAY=:0 xrandr --output "$_CUR_SEC" --primary 2>/dev/null || true
+        sleep 1
+      fi
       # Launch DJ kiosk via the dedicated script (clears singleton locks, waits for server health)
       bash "$HOME/djbooth-kiosk.sh" &
       disown
