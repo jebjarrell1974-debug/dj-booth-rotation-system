@@ -273,11 +273,28 @@ elif [ -d "${EXTRACTED_DIR}src" ]; then
 fi
 cd "$APP_DIR"
 
+# Strip any preinstall guard from package.json before npm install.
+# The root pnpm workspace package.json has one — defensive removal ensures it
+# never ends up in APP_DIR/package.json and blocks npm.
+node -e "
+  try {
+    const fs = require('fs');
+    const p = JSON.parse(fs.readFileSync('package.json','utf8'));
+    if (p.scripts && p.scripts.preinstall) {
+      delete p.scripts.preinstall;
+      fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
+      console.log('Removed preinstall guard from package.json');
+    }
+  } catch(e) {}
+" 2>/dev/null || true
+
 echo "  Installing node dependencies..."
 set +e
 _npm_ok=false
 for _npm_try in 1 2 3; do
-  npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -5
+  # Unset NODE_ENV so npm installs devDependencies (vite, tailwind, etc.)
+  # needed for the frontend build. The service itself sets NODE_ENV=production at runtime.
+  NODE_ENV=development npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -5
   if node -e "require('express')" 2>/dev/null; then
     _npm_ok=true
     break
@@ -293,7 +310,7 @@ if [ -d "$APP_DIR/dist" ]; then
   echo "  Pre-built frontend already in place — skipping vite build"
 else
   echo "  No pre-built dist found — building from source..."
-  ./node_modules/.bin/vite build 2>&1 | tail -10
+  NODE_ENV=development ./node_modules/.bin/vite build 2>&1 | tail -10
 fi
 rm -rf "$TMPDIR"
 
