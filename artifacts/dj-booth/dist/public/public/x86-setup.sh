@@ -120,7 +120,7 @@ cat > ~/.config/autostart/djbooth-kiosk.desktop << 'KEOF'
 [Desktop Entry]
 Type=Application
 Name=DJ Booth Kiosk
-Exec=bash -c "sleep 15 && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001"
+Exec=bash -c "sleep 15 && chromium --kiosk --noerrdialogs --disable-infobars --force-device-scale-factor=1 --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001"
 X-GNOME-Autostart-enabled=true
 KEOF
 
@@ -130,7 +130,7 @@ cat > ~/Desktop/neonaidj.desktop << DEOF
 Type=Application
 Name=NEON AI DJ
 Comment=Launch DJ Booth
-Exec=bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001"
+Exec=bash -c "chromium --kiosk --noerrdialogs --disable-infobars --force-device-scale-factor=1 --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001"
 Terminal=false
 Categories=Audio;
 DEOF

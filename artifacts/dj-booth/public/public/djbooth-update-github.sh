@@ -419,6 +419,7 @@ rm -f "$HOME/.config/chromium/SingletonLock" \
 until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done
 exec chromium --kiosk \
   --noerrdialogs --disable-infobars \
+  --force-device-scale-factor=1 \
   --autoplay-policy=no-user-gesture-required \
   --disable-background-media-suspend \
   --disable-features=BackgroundMediaSuspend,MediaSessionService \
@@ -437,6 +438,17 @@ KDEOF
   else
     sed -i 's/X-GNOME-Autostart-enabled=false/X-GNOME-Autostart-enabled=true/g' "$KIOSK_FILE"
     echo "Kiosk autostart entry verified"
+  fi
+
+  # Patch existing kiosk scripts to add --force-device-scale-factor=1 if missing
+  KIOSK_SH="$HOME/djbooth-kiosk.sh"
+  if [ -f "$KIOSK_SH" ] && ! grep -q "force-device-scale-factor" "$KIOSK_SH"; then
+    sed -i 's/exec chromium --kiosk /exec chromium --kiosk --force-device-scale-factor=1 /g' "$KIOSK_SH"
+    echo "Patched djbooth-kiosk.sh with --force-device-scale-factor=1"
+  fi
+  if [ -f "$KIOSK_FILE" ] && ! grep -q "force-device-scale-factor" "$KIOSK_FILE"; then
+    sed -i 's/chromium --kiosk /chromium --kiosk --force-device-scale-factor=1 /g' "$KIOSK_FILE"
+    echo "Patched djbooth-kiosk.desktop with --force-device-scale-factor=1"
   fi
 fi
 

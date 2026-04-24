@@ -52,7 +52,7 @@ sudo apt install -y ffmpeg git chromium x11-xserver-utils xinput aubio-tools cur
 
 ---
 
-## ⚠️ TONIGHT'S FIX — Promo Regeneration Bug (Apr 23, 2026)
+## ✅ FIXED Apr 24, 2026 — Promo Regeneration Bug (commit 8672088e)
 
 ### Problem
 Promos that worked for 1–2 days suddenly played gibberish mid-audio on neonaidj003.
@@ -80,7 +80,7 @@ This means a glitch never wipes a good promo file. Only a confirmed-unplayable s
 
 ---
 
-## ⚠️ TONIGHT'S FIX #2 — Music Ducks Before Voice is Ready (AudioEngine.jsx line 805)
+## ✅ FIXED Apr 24, 2026 — Music Ducks Before Voice is Ready (commit 8672088e)
 
 ### Problem
 User on 003 reported: music got "really turned down for about 5-8 seconds" before the dancer announcement for Solar actually played, then volume came back normal.
@@ -109,7 +109,7 @@ Duck delay is less than 50ms before audio starts — imperceptible. The dead-air
 
 ---
 
-## ⚠️ TONIGHT'S FIX #3 — Deactivating Song 1 Ends Set Instead of Playing Song 2 (DJBooth.jsx line 2440)
+## ✅ FIXED Apr 24, 2026 — Deactivating Song 1 Ends Set Instead of Playing Song 2 (commit 8672088e)
 
 ### Problem (reported by 003 during show)
 Dancer was on her first song in a 2-song set. DJ deactivated the song. Instead of transitioning with a voiceover to her second song, the system played the outro and ended her entire set. She only got one song.
@@ -146,7 +146,7 @@ Normal end-of-song flow is completely unaffected — this code only runs in the 
 
 ---
 
-## ⚠️ TONIGHT'S FIX #4 — .Trash-1000 Showing in Music Library (musicScanner.js line 22)
+## ✅ FIXED Apr 24, 2026 — .Trash-1000 Showing in Music Library (commit 8672088e)
 
 ### Problem
 The homebase music library is showing a `.Trash-1000 (33)` folder containing 33 deleted songs. These were deleted from the music drive via file manager, which stored them in Linux's drive-local trash folder (`.Trash-1000`) instead of permanently deleting them.
