@@ -160,37 +160,77 @@ echo "GNOME auto-login + X11 session configured"
 sudo apt install -y x11-xserver-utils 2>/dev/null || true
 
 # Write second display launcher script
+# Uses --app + wmctrl to open on the crowd TV at its exact xrandr coordinates.
+# --kiosk ignores --window-position on Linux, so we never use it for the crowd screen.
 cat > "$UNIT_HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
 sleep 20
-SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-if [ -n "$SECOND" ]; then
-  DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+export DISPLAY=:0
+export XAUTHORITY="${XAUTHORITY:-/home/$(whoami)/.Xauthority}"
+
+# Find the non-primary (crowd TV) display and its geometry
+SECOND=$(xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+GEOM=$(xrandr --query 2>/dev/null | grep "^$SECOND connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+if [ -n "$GEOM" ]; then
+  W=$(echo "$GEOM" | cut -dx -f1)
+  H=$(echo "$GEOM" | cut -dx -f2 | cut -d+ -f1)
+  X=$(echo "$GEOM" | cut -d+ -f2)
+  Y=$(echo "$GEOM" | cut -d+ -f3)
+else
+  W=1920; H=1080; X=0; Y=0
 fi
+
 rm -rf /tmp/chromium-rotation
-chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
+chromium --app=http://localhost:3001/RotationDisplay \
+  --class=RotationChromium \
+  --user-data-dir=/tmp/chromium-rotation \
+  --window-position=${X},${Y} \
+  --window-size=${W},${H} \
   --noerrdialogs --disable-session-crashed-bubble \
   --autoplay-policy=no-user-gesture-required \
-  http://localhost:3001/RotationDisplay
+  --force-device-scale-factor=1 &
+sleep 5
+wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
+wait
 RDEOF
 chmod +x "$UNIT_HOME/djbooth-rotation-display.sh"
 
-# Write display trigger watcher script (server calls this to relaunch crowd display)
+# Write display trigger watcher script (relaunches crowd screen when update script fires trigger)
 cat > "$UNIT_HOME/djbooth-display-watcher.sh" << 'DWEOF'
 #!/bin/bash
+export DISPLAY=:0
+export XAUTHORITY="${XAUTHORITY:-/home/$(whoami)/.Xauthority}"
+
+launch_rotation() {
+  SECOND=$(xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+  GEOM=$(xrandr --query 2>/dev/null | grep "^$SECOND connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+  if [ -n "$GEOM" ]; then
+    W=$(echo "$GEOM" | cut -dx -f1)
+    H=$(echo "$GEOM" | cut -dx -f2 | cut -d+ -f1)
+    X=$(echo "$GEOM" | cut -d+ -f2)
+    Y=$(echo "$GEOM" | cut -d+ -f3)
+  else
+    W=1920; H=1080; X=0; Y=0
+  fi
+  pkill -f "RotationChromium" 2>/dev/null || true
+  sleep 1
+  rm -rf /tmp/chromium-rotation
+  chromium --app=http://localhost:3001/RotationDisplay \
+    --class=RotationChromium \
+    --user-data-dir=/tmp/chromium-rotation \
+    --window-position=${X},${Y} \
+    --window-size=${W},${H} \
+    --noerrdialogs --disable-session-crashed-bubble \
+    --autoplay-policy=no-user-gesture-required \
+    --force-device-scale-factor=1 &
+  sleep 5
+  wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
+}
+
 while true; do
   if [ -f /tmp/djbooth-display-trigger ]; then
     rm -f /tmp/djbooth-display-trigger
-    pkill -f "RotationChromium" 2>/dev/null || true
-    sleep 1
-    SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-    [ -n "$SECOND" ] && DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
-    rm -rf /tmp/chromium-rotation
-    chromium --kiosk --class=RotationChromium --user-data-dir=/tmp/chromium-rotation \
-      --noerrdialogs --disable-session-crashed-bubble \
-      --autoplay-policy=no-user-gesture-required \
-      http://localhost:3001/RotationDisplay &
-    disown
+    launch_rotation
   fi
   sleep 2
 done
