@@ -44,8 +44,7 @@ fi
 echo "[1/8] Checking for OS package updates..."
 set +e
 if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
-  echo "  Boot mode — skipping OS upgrade to keep update fast"
-else
+  echo "  Boot mode — running OS upgrade..."
   sudo apt-get update -q 2>&1 | tail -3
   sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 \
     apt-get upgrade -y -q \
@@ -53,9 +52,11 @@ else
     -o Dpkg::Options::="--force-confdef" \
     2>&1 | tail -5
   if [ -f /var/run/reboot-required ]; then
-    echo "  System reboot required after package updates. Scheduling reboot for 08:30..."
-    sudo shutdown -r 08:30 "Scheduled reboot after system update" 2>/dev/null || true
+    echo "  System reboot required after package updates. Scheduling reboot for 03:00..."
+    sudo shutdown -r 03:00 "Scheduled reboot after system update" 2>/dev/null || true
   fi
+else
+  echo "  Manual update — skipping OS upgrade to keep the system live"
 fi
 set -e
 
