@@ -717,22 +717,28 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     if [ "$IS_HOMEBASE" != "true" ]; then
       echo "UPDATE SUCCESSFUL — relaunching browsers..."
 
+      # Must export DISPLAY and XAUTHORITY so Chromium can reach the X server
+      # when this script is run from an SSH session (no display env inherited).
+      export DISPLAY=:0
+      export XAUTHORITY="/home/$(whoami)/.Xauthority"
+
       # Ensure the non-rotated display (DJ kiosk monitor) is primary.
       # If the crowd TV (rotated) is somehow primary, swap it back first.
-      _CUR_SEC=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-      _PRI_ROT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ')
+      _CUR_SEC=$(xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+      _PRI_ROT=$(xrandr --query 2>/dev/null | grep " connected primary" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ')
       if [ -n "$_PRI_ROT" ] && [ -n "$_CUR_SEC" ]; then
         echo "Primary was crowd TV (rotated) — correcting to $_CUR_SEC..."
-        DISPLAY=:0 xrandr --output "$_CUR_SEC" --primary 2>/dev/null || true
+        xrandr --output "$_CUR_SEC" --primary 2>/dev/null || true
         sleep 2
       fi
 
-      # STEP 1: Launch the DJ kiosk on the primary display.
-      # Server is already confirmed up so skip the health-wait loop in djbooth-kiosk.sh.
+      # STEP 1: Kill any existing Chromium and launch the DJ kiosk on the primary display.
+      pkill -f chromium 2>/dev/null || true
+      sleep 2
       rm -f ~/.config/chromium/SingletonLock \
             ~/.config/chromium/SingletonCookie \
             ~/.config/chromium/SingletonSocket
-      DISPLAY=:0 chromium --kiosk \
+      chromium --kiosk \
         --noerrdialogs --disable-infobars \
         --force-device-scale-factor=1 \
         --autoplay-policy=no-user-gesture-required \
@@ -749,15 +755,15 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
 
       # STEP 3: Launch the crowd screen directly on the non-primary display.
       # Read fresh xrandr geometry — do NOT use any cached values.
-      _SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+      _SECOND=$(xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
       if [ -n "$_SECOND" ]; then
-        _SECOND_GEOM=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$_SECOND connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+')
+        _SECOND_GEOM=$(xrandr --query 2>/dev/null | grep "^$_SECOND connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+')
         _SX=$(echo "$_SECOND_GEOM" | cut -d+ -f2)
         _SY=$(echo "$_SECOND_GEOM" | cut -d+ -f3)
         _SW=$(echo "$_SECOND_GEOM" | cut -dx -f1)
         _SH=$(echo "$_SECOND_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
         rm -rf /tmp/chromium-rotation
-        DISPLAY=:0 chromium \
+        chromium \
           --app=http://localhost:3001/RotationDisplay \
           --class=RotationChromium \
           --user-data-dir=/tmp/chromium-rotation \
@@ -768,7 +774,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
           --force-device-scale-factor=1 &
         disown
         sleep 8
-        DISPLAY=:0 wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
+        wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
         echo "Crowd screen launched on $_SECOND at ${_SX},${_SY} size ${_SW}x${_SH}"
       else
         echo "WARNING: No second display found — crowd screen not launched"
