@@ -330,11 +330,9 @@ which wmctrl >/dev/null 2>&1 || {
 # We use --app=URL instead — identical visually, but respects window position.
 # After launch we use wmctrl to force fullscreen on the correct monitor.
 
-# Write the rotation display launcher script
-# Uses the PRIMARY SWAP method: temporarily sets the crowd TV as the xrandr primary,
-# launches Chromium --kiosk (which ALWAYS opens on the primary), then restores the
-# original primary. This is the only guaranteed method on Linux/GNOME/X11 because
-# --kiosk hard-codes to primary and ignores --window-position (confirmed Chromium bug).
+# Write the rotation display launcher script.
+# Uses --app + --window-position (xrandr geometry) + wmctrl fullscreen.
+# --kiosk ignores --window-position on Linux (confirmed Chromium bug), so we never use it for the crowd screen.
 cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
 sleep 20
