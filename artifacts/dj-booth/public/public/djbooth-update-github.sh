@@ -302,6 +302,10 @@ if rm -f "$HOME/.config/autostart/squeekboard.desktop" 2>/dev/null; then
   echo "Squeekboard autostart removed (prevents double on-screen keyboard)"
 fi
 
+if [ "$IS_HOMEBASE" = "true" ]; then
+  echo "[display] Homebase — skipping all display configuration"
+else
+
 echo "[display] Configuring x86 second display (crowd rotation screen)..."
 
 # Force X11 session so xrandr works reliably for display rotation
@@ -494,6 +498,8 @@ rm -rf "$HOME/.config/labwc" 2>/dev/null || true
 
 echo "Display configuration updated"
 
+fi # end IS_HOMEBASE display skip
+
 echo "[boot-update] Setting up boot-time auto-update (service + cron backup)..."
 if [ "$IS_HOMEBASE" != "true" ]; then
   BOOT_USER=$(whoami)
@@ -672,25 +678,63 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
       echo "UPDATE SUCCESSFUL — relaunching browsers..."
-      # Ensure the non-rotated display (DJ kiosk) is primary before launching.
-      # If the rotated display (crowd TV) is somehow primary, swap it back.
-      _CUR_PRI=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
+
+      # Ensure the non-rotated display (DJ kiosk monitor) is primary.
+      # If the crowd TV (rotated) is somehow primary, swap it back first.
       _CUR_SEC=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
       _PRI_ROT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ')
       if [ -n "$_PRI_ROT" ] && [ -n "$_CUR_SEC" ]; then
-        echo "Primary is crowd TV (rotated) — setting $_CUR_SEC as primary for kiosk launch..."
+        echo "Primary was crowd TV (rotated) — correcting to $_CUR_SEC..."
         DISPLAY=:0 xrandr --output "$_CUR_SEC" --primary 2>/dev/null || true
-        sleep 1
+        sleep 2
       fi
-      # Launch DJ kiosk via the dedicated script (clears singleton locks, waits for server health)
-      bash "$HOME/djbooth-kiosk.sh" &
+
+      # STEP 1: Launch the DJ kiosk on the primary display.
+      # Server is already confirmed up so skip the health-wait loop in djbooth-kiosk.sh.
+      rm -f ~/.config/chromium/SingletonLock \
+            ~/.config/chromium/SingletonCookie \
+            ~/.config/chromium/SingletonSocket
+      DISPLAY=:0 chromium --kiosk \
+        --noerrdialogs --disable-infobars \
+        --force-device-scale-factor=1 \
+        --autoplay-policy=no-user-gesture-required \
+        --disable-background-media-suspend \
+        --disable-features=BackgroundMediaSuspend,MediaSessionService \
+        --disable-session-crashed-bubble \
+        http://localhost:3001 &
       disown
-      # Signal the display watcher to relaunch the crowd screen via djbooth-rotation-display.sh.
-      # That script does the xrandr rotation + correct window positioning. Never launch
-      # RotationChromium directly here — it skips positioning and puts both windows on the
-      # primary display.
-      touch /tmp/djbooth-display-trigger
-      echo "Display trigger set — crowd screen will reload on correct display via djbooth-display-watcher"
+      echo "DJ kiosk launched on primary display — waiting 15s for it to settle..."
+
+      # STEP 2: Wait for the kiosk to fully open before launching crowd screen.
+      # This prevents the kiosk launch from interfering with crowd screen placement.
+      sleep 15
+
+      # STEP 3: Launch the crowd screen directly on the non-primary display.
+      # Read fresh xrandr geometry — do NOT use any cached values.
+      _SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+      if [ -n "$_SECOND" ]; then
+        _SECOND_GEOM=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$_SECOND connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+')
+        _SX=$(echo "$_SECOND_GEOM" | cut -d+ -f2)
+        _SY=$(echo "$_SECOND_GEOM" | cut -d+ -f3)
+        _SW=$(echo "$_SECOND_GEOM" | cut -dx -f1)
+        _SH=$(echo "$_SECOND_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+        rm -rf /tmp/chromium-rotation
+        DISPLAY=:0 chromium \
+          --app=http://localhost:3001/RotationDisplay \
+          --class=RotationChromium \
+          --user-data-dir=/tmp/chromium-rotation \
+          --window-position=${_SX:-0},${_SY:-0} \
+          --window-size=${_SW:-1080},${_SH:-1920} \
+          --noerrdialogs --disable-session-crashed-bubble \
+          --autoplay-policy=no-user-gesture-required \
+          --force-device-scale-factor=1 &
+        disown
+        sleep 8
+        DISPLAY=:0 wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
+        echo "Crowd screen launched on $_SECOND at ${_SX},${_SY} size ${_SW}x${_SH}"
+      else
+        echo "WARNING: No second display found — crowd screen not launched"
+      fi
     else
       echo "UPDATE SUCCESSFUL — homebase mode, no browser relaunch"
     fi
