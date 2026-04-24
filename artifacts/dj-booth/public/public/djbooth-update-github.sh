@@ -190,22 +190,42 @@ if [ -n "$PREBUILT_DIST" ]; then
   echo "  Pre-built frontend installed (no vite build required)"
 fi
 
-# Self-update: look in both flat and monorepo locations
-UPDATE_SCRIPT_SRC=""
-if [ -f "${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh" ]; then
-  UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh"
-elif [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
-  UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}public/djbooth-update-github.sh"
+# Self-update: always try GitHub first so the homebase bundle can never serve a stale script.
+# Fall back to the bundle only if GitHub is unreachable.
+_GH_SCRIPT_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${BRANCH}/artifacts/dj-booth/public/public/djbooth-update-github.sh"
+_GH_SCRIPT_TMP=$(mktemp /tmp/djbooth-self-update-XXXXXX.sh)
+_GH_SELF_OK=false
+if curl -sf --max-time 15 "$_GH_SCRIPT_URL" -o "$_GH_SCRIPT_TMP" 2>/dev/null && [ -s "$_GH_SCRIPT_TMP" ]; then
+  _GH_SELF_OK=true
+  echo "Update script fetched from GitHub (latest)"
+else
+  echo "GitHub unreachable for self-update — falling back to bundle version"
 fi
-if [ -n "$UPDATE_SCRIPT_SRC" ]; then
-  cp "$UPDATE_SCRIPT_SRC" "$HOME/djbooth-update.sh"
+
+if [ "$_GH_SELF_OK" = "true" ]; then
+  cp "$_GH_SCRIPT_TMP" "$HOME/djbooth-update.sh"
   chmod +x "$HOME/djbooth-update.sh"
-  echo "Update script self-updated"
-  if [ "${DJBOOTH_RESTARTED}" != "1" ]; then
-    echo "Re-executing with new script version..."
-    DJBOOTH_RESTARTED=1 /bin/bash "$HOME/djbooth-update.sh"
-    exit $?
+  rm -f "$_GH_SCRIPT_TMP"
+  echo "Update script self-updated from GitHub"
+else
+  rm -f "$_GH_SCRIPT_TMP"
+  UPDATE_SCRIPT_SRC=""
+  if [ -f "${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh" ]; then
+    UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh"
+  elif [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
+    UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}public/djbooth-update-github.sh"
   fi
+  if [ -n "$UPDATE_SCRIPT_SRC" ]; then
+    cp "$UPDATE_SCRIPT_SRC" "$HOME/djbooth-update.sh"
+    chmod +x "$HOME/djbooth-update.sh"
+    echo "Update script self-updated from bundle (GitHub was unreachable)"
+  fi
+fi
+
+if [ "${DJBOOTH_RESTARTED}" != "1" ]; then
+  echo "Re-executing with new script version..."
+  DJBOOTH_RESTARTED=1 /bin/bash "$HOME/djbooth-update.sh"
+  exit $?
 fi
 
 echo "[4.5/7] Ensuring fleet environment variables..."
