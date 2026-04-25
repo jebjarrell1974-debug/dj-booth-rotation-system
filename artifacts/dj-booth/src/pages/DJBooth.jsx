@@ -4637,10 +4637,16 @@ export default function DJBooth() {
                     const needed = n - existing.length;
                     if (needed <= 0) continue;
                     try {
-                      const newTracks = await getDancerTracks(dancer, needed, djOptions, false);
+                      // getDancerTracks signature: (dancer, additionalExcludes=[], skipAssigned=false, timeoutMs=5000)
+                      // It uses songsPerSetRef.current (= n, set above) as count, and enforces the
+                      // playlist-only rule for dancers with playlists. Pass existing track names so
+                      // the server doesn't duplicate, then append only the `needed` count.
+                      const existingNames = existing.map(t => t?.name).filter(Boolean);
+                      const newTracks = await getDancerTracks(dancer, existingNames, false, 5000);
                       if (newTracks && newTracks.length > 0) {
+                        const toAdd = newTracks.slice(0, needed);
                         const updated = { ...rotationSongsRef.current };
-                        updated[dancerId] = [...(updated[dancerId] || []), ...newTracks];
+                        updated[dancerId] = [...(updated[dancerId] || []), ...toAdd];
                         setRotationSongs(updated);
                         rotationSongsRef.current = updated;
                       }

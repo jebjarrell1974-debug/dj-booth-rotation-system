@@ -22,6 +22,16 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 
 **IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2. This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. **FIXED Apr 22 2026**: A 20% delta safeguard is now in place — if R2 has >20% fewer files than the local library, the purge is skipped entirely and a warning is logged. Never manually delete from R2 without understanding this logic.
 
+## ✅ Apr 25, 2026 — Session 47 (commits a81139d source + d5d1e2a dist)
+**Three fixes pushed for tonight's THE PONY EVANSVILLE client visit (003):**
+1. **Playlist rule enforced client-side** — `RotationPlaylistManager.jsx` initial-build fallback (lines ~385-407) now uses playlist-only (fresh + cooldown) when dancer has playlist. The songsPerSet effect (lines ~440-540) and `DJBooth.jsx` live `onSongsPerSetChange` (~line 4610) now call `/api/music/select` per dancer instead of falling back to local genre pool. Mirrors server rule in `db.js:750 selectTracksForSet` — when dancer has playlist, NEVER pull from random library.
+2. **TOP button** — cyan `ChevronsUp` button on each dancer card (RotationPlaylistManager ~line 1365) splices the dancer to the position right after `currentDancerId` without interrupting the current set. Hidden when dancer is on-stage / already next / rotation length ≤2. `lastMoveToTopTimeRef` cooldown prevents rapid-fire taps.
+3. **Bulletproof screen launch** — `djbooth-update-github.sh` rewritten to be orientation-aware: W>H = kiosk landscape, H>W = crowd portrait. Crowd launch waits for app health check, uses wmctrl move-then-fullscreen, and a 60s heartbeat watchdog re-launches if the crowd window dies (only after >180s uptime to avoid boot races). Kiosk script ALWAYS rewritten on update to set primary on the landscape monitor before launch. Single source of truth = `djbooth-rotation-display.sh`.
+
+**Pi update path verified live**: `https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/dist/public/public/djbooth-update-github.sh` (926 lines). 003 has NOT yet pulled — user must run update on 003.
+
+---
+
 ## ⚠️ Apr 24–25, 2026 — Incident Log
 
 ### ROOT CAUSE FOUND AND FIXED: --kiosk ignores --window-position on Linux
