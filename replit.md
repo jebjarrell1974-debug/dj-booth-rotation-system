@@ -42,18 +42,68 @@ If a unit is wired backwards (rare/never), the fallback in the launcher picks "a
 
 ---
 
-## ✅ Apr 25, 2026 — Session 49 (port-name screen mapping)
-**Permanent fix for screen-flip on 002 after reboot.**
+## ✅ Apr 25, 2026 — Session 49 (port-name screen mapping + per-unit display config) — LOCKED IN
 
-After Session 48, kiosk + crowd worked at test-time but **flipped at next boot** because xrandr's geometry/rotation differed at boot vs test. The launcher used "W>H = landscape = kiosk" detection, which assigned the BIG 4K landscape TV (HDMI-1, the crowd-facing TV) to the kiosk because the user's setup had the crowd TV in landscape orientation at boot.
+**Two-part permanent fix for screen-flip + rotation-loss on 002 after reboot.**
 
-**Root cause**: detecting kiosk-vs-crowd by screen ORIENTATION is fundamentally wrong. Every NEON AI DJ unit has the same physical wiring (see HARDWARE WIRING table above) — orientation can vary per venue but port assignment is universal.
+After Session 48, kiosk + crowd worked at test-time but **flipped at next boot** because xrandr reported different rotation/geometry at boot vs test. The launcher used "W>H = landscape = kiosk" detection, which assigned the wrong monitor to each window.
 
-**Fix pushed**: Both launchers (`djbooth-kiosk.sh` and `djbooth-rotation-display.sh`) now use port name only:
-- `djbooth-kiosk.sh` → reads xrandr line for HDMI-2 → that's the kiosk geometry
-- `djbooth-rotation-display.sh` → reads xrandr line for HDMI-1 → that's the crowd geometry
+**Root cause #1**: detecting kiosk-vs-crowd by screen ORIENTATION is fundamentally wrong. Every NEON AI DJ unit has the same physical wiring (see HARDWARE WIRING table above) — orientation varies per venue but port assignment is universal.
+
+**Root cause #2**: xrandr rotation is session-only. Each reboot resets HDMI-1 to its default (landscape) unless something re-applies the rotation. GNOME's monitors.xml works for some setups but is fragile.
+
+**Fix pushed (commits 02f0ad44, 8dbf7d9e)**:
+
+### Part A — Port-name-based screen detection
+Both launchers (`djbooth-kiosk.sh` and `djbooth-rotation-display.sh`) now use port name only:
+- `djbooth-kiosk.sh` → reads xrandr line for **HDMI-2** → that's the kiosk geometry
+- `djbooth-rotation-display.sh` → reads xrandr line for **HDMI-1** → that's the crowd geometry
+- Fallback: if expected port doesn't exist (rare), uses any other connected port
 
 No more orientation detection. No more `--primary` swapping. Just port-name lookup.
+
+### Part B — Per-unit display rotation config (`~/.djbooth-display-config.sh`)
+Both launchers source `~/.djbooth-display-config.sh` at startup if it exists. This file contains per-unit `xrandr` rotation commands that re-apply on every boot.
+
+**File contents pattern** (one file per unit, owned by the unit's user):
+```bash
+#!/bin/bash
+# Per-unit display rotation. Sourced by kiosk + crowd launchers at boot.
+xrandr --output HDMI-1 --rotate <right|left|normal> 2>/dev/null || true
+xrandr --output HDMI-2 --rotate <right|left|normal> 2>/dev/null || true
+```
+
+| Unit | HDMI-1 (crowd TV) | HDMI-2 (DJ kiosk) |
+|---|---|---|
+| **002** | `--rotate right` (portrait) | `--rotate normal` (landscape) |
+| **003** | `--rotate left` (portrait) | `--rotate normal` (landscape) |
+
+Setup command for any new unit:
+```bash
+cat > $HOME/.djbooth-display-config.sh << 'EOF'
+#!/bin/bash
+xrandr --output HDMI-1 --rotate <ROTATION> 2>/dev/null || true
+xrandr --output HDMI-2 --rotate normal 2>/dev/null || true
+EOF
+chmod +x $HOME/.djbooth-display-config.sh
+```
+
+### Why this is locked in (why it won't regress):
+1. The persistence file lives in user $HOME — update script never touches it
+2. The source-line is hardcoded in both launcher heredocs in `djbooth-update-github.sh` — every future update rewrites the launchers but the source line stays
+3. Port-name detection means rotation changes don't affect WHICH monitor gets WHICH content
+4. Verified live on 002: rebooted, both screens come up with correct orientation + correct content automatically
+
+**To set up 003 tonight**, run on 003 over SSH:
+```bash
+cat > $HOME/.djbooth-display-config.sh << 'EOF'
+#!/bin/bash
+xrandr --output HDMI-1 --rotate left 2>/dev/null || true
+xrandr --output HDMI-2 --rotate normal 2>/dev/null || true
+EOF
+chmod +x $HOME/.djbooth-display-config.sh
+~/djbooth-update.sh
+```
 
 ---
 
