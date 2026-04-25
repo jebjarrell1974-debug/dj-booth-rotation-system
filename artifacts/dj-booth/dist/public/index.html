@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="https://base44.com/logo_v2.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>NEON AI DJ</title>
+    <script type="module" crossorigin src="/assets/index-DynLATrg.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DDDtDq8T.css">
+  </head>
+  <body style="margin:0;background:#08081a;">
+    <div id="root">
+      <div id="preload-splash" style="position:fixed;inset:0;z-index:99999;background:#08081a;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Inter','Segoe UI',sans-serif;">
+        <h1 style="font-size:3rem;font-weight:800;color:#00d4ff;text-shadow:0 0 40px rgba(0,212,255,0.5),0 0 80px rgba(0,212,255,0.2);margin:0;letter-spacing:0.05em;">NEON AI DJ</h1>
+        <p style="color:#555;font-size:0.85rem;margin-top:0.75rem;letter-spacing:0.15em;text-transform:uppercase;">Loading</p>
+        <div style="margin-top:2rem;width:2rem;height:2rem;border:3px solid #1a1a3a;border-top:3px solid #00d4ff;border-radius:50%;animation:_s 1s linear infinite;"></div>
+        <style>@keyframes _s{to{transform:rotate(360deg)}}</style>
+      </div>
+    </div>
+    <script>
+      // Block browser keyboard shortcuts that can disrupt kiosk operation
+      document.addEventListener('keydown', function(e) {
+        const ctrl = e.ctrlKey || e.metaKey;
+        const shift = e.shiftKey;
+        const key = e.key.toLowerCase();
+        // Block: Ctrl+H (history), Ctrl+T (new tab), Ctrl+W (close tab),
+        //        Ctrl+N (new window), Ctrl+L (address bar), Ctrl+J (downloads),
+        //        Ctrl+U (view source), Ctrl+P (print), Ctrl+S (save),
+        //        Ctrl+F (find), Ctrl+G (find next),
+        //        Ctrl+Shift+I/J/C (dev tools), F12 (dev tools),
+        //        Alt+Left/Right (back/forward navigation)
+        if (ctrl && ['h','t','w','n','l','j','u','p','s','f','g'].includes(key)) {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+        if (ctrl && shift && ['i','j','c'].includes(key)) {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+        if (e.key === 'F12') {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+        if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault(); e.stopPropagation(); return false;
+        }
+      }, true);
+    </script>
+  </body>
+</html>
