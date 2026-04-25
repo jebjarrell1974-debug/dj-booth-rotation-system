@@ -42,6 +42,28 @@ If a unit is wired backwards (rare/never), the fallback in the launcher picks "a
 
 ---
 
+## ✅ Apr 25, 2026 — Session 49c (DJ kiosk Rotation tab right-side cutoff) — FIXED
+
+**Bug**: On 003's 1440×900 kiosk, the Rotation tab clipped the rightmost action button (Remove/X) on each dancer card row. Also affected the VIP/Crown and TOP buttons when they were present. Other tabs were fine — only Rotation, because it's the only tab using the two-panel split layout.
+
+**Root cause**: `RotationPlaylistManager.jsx` uses a 50/50 horizontal split (Music Library | Dancer Cards). On 1440px wide kiosks, the right panel is only ~672px. Each dancer card row contains: drag handle (16px) + avatar (28px) + name + up to 4 action buttons × 44px (Skip + TOP + VIP + Remove) + gaps + padding = ~336px of fixed width. With anything more than a short name, the rightmost button overflows the panel and gets clipped by the parent's `overflow-hidden`.
+
+**Fix pushed (commit efcb9162)**: Made the panel split responsive in `artifacts/dj-booth/src/components/dj/RotationPlaylistManager.jsx`:
+- **Default (< 1536px wide, e.g. 003 at 1440)**: library `w-2/5` (40%), rotation `w-3/5` (60%) → right panel grows from 672px to ~806px (+134px)
+- **`2xl:` (≥ 1536px wide, e.g. 002 at 1920)**: library `w-1/2`, rotation `w-1/2` → unchanged 50/50 split
+- Added `min-w-0` to both panels for proper flex shrinking
+
+**Why this is safe**:
+- No logic changes
+- No button sizes changed (still 44px touch-friendly)
+- 002 (1920px wide) unaffected — still uses 50/50
+- Only 003 and any future smaller-display kiosk gets the wider rotation panel
+- Fits 4 buttons + name comfortably in the new 60% panel
+
+Verified by 8:30 AM auto-update tomorrow on 003. If something does look off, rollback is `git revert efcb9162`.
+
+---
+
 ## ✅ Apr 25, 2026 — Session 49 (port-name screen mapping + per-unit display config) — LOCKED IN
 
 **Two-part permanent fix for screen-flip + rotation-loss on 002 after reboot.**
