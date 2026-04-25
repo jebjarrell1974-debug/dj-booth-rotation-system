@@ -372,11 +372,12 @@ which wmctrl >/dev/null 2>&1 || {
 }
 
 # BULLETPROOF SCREEN LAUNCH (Apr 2026 hardening)
-# Goals: kiosk ALWAYS lands on landscape monitor, crowd ALWAYS lands on portrait monitor,
-# both auto-recover if anything dies, works whether HDMI ports are swapped or wmctrl missing.
-# Detection by ORIENTATION (portrait vs landscape) — robust against GNOME picking wrong primary flag.
+# === HARDWARE WIRING — UNIVERSAL ON EVERY NEON AI DJ UNIT ===
+#   Native HDMI port (computer)         -> HDMI-2 in xrandr -> DJ KIOSK monitor
+#   DisplayPort with HDMI adapter       -> HDMI-1 in xrandr -> CROWD-FACING TV
+# DETECTION RULE: PORT NAME ONLY. Never orientation, never size, never primary flag.
 
-# Write the rotation display launcher script (orientation-aware, health-checked).
+# Write the rotation display launcher script (HDMI-1 = crowd, port-based).
 cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
 # Self-install wmctrl if missing (belt + suspenders with update script)
@@ -386,7 +387,6 @@ which wmctrl >/dev/null 2>&1 || sudo apt-get install -y wmctrl >/dev/null 2>&1 |
 sleep 15
 
 # Wait for the API server to be healthy BEFORE launching the crowd display.
-# Otherwise the page loads "connection refused" and stays broken until manual reload.
 echo "$(date): [crowd-display] Waiting for server health..."
 for i in $(seq 1 60); do
   if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
@@ -396,57 +396,35 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
-# Detect kiosk display (landscape: W > H) and crowd display (portrait: H > W).
-detect_displays() {
-  CROWD=""; KIOSK=""; CROWD_GEOM=""; KIOSK_GEOM=""
-  while IFS= read -r LINE; do
-    NAME=$(echo "$LINE" | awk '{print $1}')
-    GEOM=$(echo "$LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
-    [ -z "$GEOM" ] && continue
-    W=$(echo "$GEOM" | cut -dx -f1)
-    H=$(echo "$GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
-    if [ "$H" -gt "$W" ]; then
-      CROWD="$NAME"; CROWD_GEOM="$GEOM"
-    else
-      KIOSK="$NAME"; KIOSK_GEOM="$GEOM"
-    fi
-  done < <(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected")
-}
-detect_displays
+# CROWD = HDMI-1 (DisplayPort-with-adapter). Read its current geometry from xrandr.
+CROWD_PORT="HDMI-1"
+CROWD_GEOM=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^${CROWD_PORT} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
 
-# If no portrait monitor found, rotate the second one right and re-detect.
-if [ -z "$CROWD" ]; then
-  SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-  if [ -n "$SECOND" ]; then
-    echo "$(date): [crowd-display] No portrait display detected — rotating $SECOND right"
-    DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
-    sleep 2
-    detect_displays
+# Fallback: if HDMI-1 doesn't exist (rare hardware variation), use any connected port that isn't HDMI-2.
+if [ -z "$CROWD_GEOM" ]; then
+  CROWD_PORT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | awk '{print $1}' | grep -v "^HDMI-2$" | head -1)
+  if [ -n "$CROWD_PORT" ]; then
+    CROWD_GEOM=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^${CROWD_PORT} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
   fi
 fi
 
-if [ -z "$CROWD" ]; then
-  echo "$(date): [crowd-display] No crowd display found — exiting"
+if [ -z "$CROWD_GEOM" ]; then
+  echo "$(date): [crowd-display] No display found for crowd — exiting"
   exit 0
 fi
 
-# Force the kiosk monitor to be the primary so the kiosk Chromium lands on the right screen.
-if [ -n "$KIOSK" ]; then
-  DISPLAY=:0 xrandr --output "$KIOSK" --primary 2>/dev/null || true
-fi
-
-CROWD_X=$(echo "$CROWD_GEOM" | cut -d+ -f2)
-CROWD_Y=$(echo "$CROWD_GEOM" | cut -d+ -f3)
 CROWD_W=$(echo "$CROWD_GEOM" | cut -dx -f1)
 CROWD_H=$(echo "$CROWD_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
-echo "$(date): [crowd-display] kiosk=$KIOSK ($KIOSK_GEOM) crowd=$CROWD ($CROWD_GEOM)"
+CROWD_X=$(echo "$CROWD_GEOM" | cut -d+ -f2)
+CROWD_Y=$(echo "$CROWD_GEOM" | cut -d+ -f3)
+echo "$(date): [crowd-display] $CROWD_PORT at ${CROWD_X},${CROWD_Y} ${CROWD_W}x${CROWD_H}"
 
 # Kill any prior crowd Chromium and clean its profile lock
 pkill -f "RotationChromium" 2>/dev/null || true
 sleep 1
 rm -rf /tmp/chromium-rotation
 
-# Launch crowd Chromium app on the portrait monitor's geometry.
+# Launch crowd Chromium app on HDMI-1's geometry.
 # --app respects --window-position (--kiosk does not on Linux — confirmed Chromium bug).
 DISPLAY=:0 chromium \
   --app=http://localhost:3001/RotationDisplay \
@@ -528,7 +506,7 @@ sleep 1
 export DISPLAY=:0
 nohup bash "$HOME/djbooth-display-watcher.sh" > /tmp/djbooth-display-watcher.log 2>&1 &
 disown
-echo "Display watcher restarted (orientation-aware + crowd heartbeat)"
+echo "Display watcher restarted (HDMI-1=crowd, HDMI-2=kiosk + heartbeat)"
 
 # GNOME autostart entries for second display and trigger watcher
 mkdir -p "$HOME/.config/autostart"
@@ -574,27 +552,27 @@ rm -f "$HOME/.config/chromium/SingletonLock" \
       "$HOME/.config/chromium/SingletonCookie" \
       "$HOME/.config/chromium/SingletonSocket"
 
-# Detect the LANDSCAPE monitor (W > H) by orientation — robust against any primary flag.
-KIOSK_MON=""; KX=0; KY=0; KW=1920; KH=1080
-while IFS= read -r LINE; do
-  NAME=$(echo "$LINE" | awk '{print $1}')
-  GEOM=$(echo "$LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
-  [ -z "$GEOM" ] && continue
-  W=$(echo "$GEOM" | cut -dx -f1)
-  REST=$(echo "$GEOM" | sed 's/[^x]*x//')
-  H=$(echo "$REST" | cut -d+ -f1)
-  X=$(echo "$REST" | cut -d+ -f2)
-  Y=$(echo "$REST" | cut -d+ -f3)
-  if [ "$W" -gt "$H" ]; then
-    KIOSK_MON="$NAME"; KX="$X"; KY="$Y"; KW="$W"; KH="$H"
-    break
+# KIOSK = HDMI-2 (native HDMI port on the computer). Read its current geometry from xrandr.
+# Hardware convention: native HDMI -> DJ kiosk monitor on every NEON AI DJ unit.
+KIOSK_MON="HDMI-2"; KX=0; KY=0; KW=1920; KH=1080
+KIOSK_GEOM=$(xrandr --query 2>/dev/null | grep "^${KIOSK_MON} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+
+# Fallback: if HDMI-2 doesn't exist, use any connected port that isn't HDMI-1.
+if [ -z "$KIOSK_GEOM" ]; then
+  KIOSK_MON=$(xrandr --query 2>/dev/null | grep " connected" | awk '{print $1}' | grep -v "^HDMI-1$" | head -1)
+  if [ -n "$KIOSK_MON" ]; then
+    KIOSK_GEOM=$(xrandr --query 2>/dev/null | grep "^${KIOSK_MON} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
   fi
-done < <(xrandr --query 2>/dev/null | grep " connected")
-if [ -n "$KIOSK_MON" ]; then
-  xrandr --output "$KIOSK_MON" --primary 2>/dev/null || true
-  echo "$(date): [kiosk] Landscape monitor: $KIOSK_MON at ${KX},${KY} ${KW}x${KH}"
+fi
+
+if [ -n "$KIOSK_GEOM" ]; then
+  KW=$(echo "$KIOSK_GEOM" | cut -dx -f1)
+  KH=$(echo "$KIOSK_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+  KX=$(echo "$KIOSK_GEOM" | cut -d+ -f2)
+  KY=$(echo "$KIOSK_GEOM" | cut -d+ -f3)
+  echo "$(date): [kiosk] $KIOSK_MON at ${KX},${KY} ${KW}x${KH}"
 else
-  echo "$(date): [kiosk] WARNING: No landscape monitor detected — using fallback 0,0 1920x1080"
+  echo "$(date): [kiosk] WARNING: No KIOSK display found — using fallback 0,0 1920x1080"
 fi
 
 # Wait for the server to be healthy before launching
@@ -647,7 +625,7 @@ Name=DJ Booth Kiosk
 Exec=$HOME/djbooth-kiosk.sh
 X-GNOME-Autostart-enabled=true
 KDEOF
-  echo "Kiosk autostart entry refreshed (orientation-aware)"
+  echo "Kiosk autostart entry refreshed (HDMI-2 = kiosk by port name)"
 fi
 
 # Remove any old labwc config that may exist from previous Pi installations

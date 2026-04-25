@@ -22,6 +22,60 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 
 **IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2. This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. **FIXED Apr 22 2026**: A 20% delta safeguard is now in place — if R2 has >20% fewer files than the local library, the purge is skipped entirely and a warning is logged. Never manually delete from R2 without understanding this logic.
 
+## 🔒 LOCKED-IN HARDWARE WIRING — UNIVERSAL ON EVERY NEON AI DJ UNIT (Apr 25 2026)
+
+**THIS IS THE WIRING ON EVERY DELL UNIT THE COMPANY WILL EVER SHIP. NEVER CHANGES.**
+
+| Computer Port | Linux Name (xrandr) | Connected To |
+|---|---|---|
+| **Native HDMI port** | **HDMI-2** | **DJ KIOSK monitor** |
+| **DisplayPort (with HDMI adapter)** | **HDMI-1** | **CROWD-FACING TV** |
+
+Both appear as `HDMI-*` in xrandr because the DisplayPort adapter shows as HDMI to Linux.
+
+**DETECTION RULE — applies to all launcher scripts forever:**
+- Crowd display window → goes on **HDMI-1**, with whatever resolution/rotation xrandr reports
+- DJ kiosk window → goes on **HDMI-2**, with whatever resolution/rotation xrandr reports
+- **NEVER** detect by orientation (landscape vs portrait), size, or `primary` flag — these have all caused incidents (Apr 25 2026 evening: orientation-based logic flipped the screens at boot when xrandr reported a different layout than test-time).
+
+If a unit is wired backwards (rare/never), the fallback in the launcher picks "any connected port that isn't the other one" — but this is purely defensive. Don't rely on it.
+
+---
+
+## ✅ Apr 25, 2026 — Session 49 (port-name screen mapping)
+**Permanent fix for screen-flip on 002 after reboot.**
+
+After Session 48, kiosk + crowd worked at test-time but **flipped at next boot** because xrandr's geometry/rotation differed at boot vs test. The launcher used "W>H = landscape = kiosk" detection, which assigned the BIG 4K landscape TV (HDMI-1, the crowd-facing TV) to the kiosk because the user's setup had the crowd TV in landscape orientation at boot.
+
+**Root cause**: detecting kiosk-vs-crowd by screen ORIENTATION is fundamentally wrong. Every NEON AI DJ unit has the same physical wiring (see HARDWARE WIRING table above) — orientation can vary per venue but port assignment is universal.
+
+**Fix pushed**: Both launchers (`djbooth-kiosk.sh` and `djbooth-rotation-display.sh`) now use port name only:
+- `djbooth-kiosk.sh` → reads xrandr line for HDMI-2 → that's the kiosk geometry
+- `djbooth-rotation-display.sh` → reads xrandr line for HDMI-1 → that's the crowd geometry
+
+No more orientation detection. No more `--primary` swapping. Just port-name lookup.
+
+---
+
+## ✅ Apr 25, 2026 — Session 48 (commit 75a033d1)
+**Kiosk launcher rewritten to use --app pattern (same fix already applied to crowd display).**
+
+After the Apr 25 06:25 update on 002, the new launcher scripts wrote correctly to disk but the update didn't actively launch them. Manual recovery confirmed kiosk Chromium PID 51702 was running but **invisible on landscape monitor** — `--kiosk` mode landed it on the wrong monitor.
+
+**Root cause (research-confirmed)**: `--kiosk` on Linux ignores `--window-position` regardless of how primary is set (well-documented Chromium bug; multiple sources: codegenes, vladvasiliu, multibrowse, RPi forums). The crowd display already uses the proven `--app` + `--window-position` + wmctrl-fullscreen workaround — kiosk did not.
+
+**Fix pushed (commit 75a033d1)**:
+1. **`~/djbooth-kiosk.sh` rewritten** to use `chromium --app=http://localhost:3001 --class=KioskChromium --user-data-dir=/tmp/chromium-kiosk --window-position=KX,KY --window-size=KW,KH`, then poll for window with wmctrl, remove maximized/fullscreen state, move to exact coords, then re-add fullscreen. Same pattern as crowd display. Detects landscape monitor by orientation (W>H) before launching.
+2. **Update script manual mode** (line ~840) replaced inline `chromium --kiosk` with calls to `~/djbooth-kiosk.sh` and `~/djbooth-rotation-display.sh` — single source of truth.
+3. **Update script boot fallback** (line ~890) same swap — calls canonical launchers.
+4. **Watchdog (`djbooth-watchdog.sh`) rewritten** — calls `~/djbooth-kiosk.sh` instead of inlining `chromium --kiosk`. Detects via `pgrep -f "KioskChromium"` (matches `--class` flag set by launcher).
+5. **`djbooth-watchdog` systemd service** now `enable && restart` instead of `start` (handles dead/disabled state from previous updates).
+6. Added `xset s off / -dpms / s noblank` to kiosk launcher to prevent screen blanking.
+
+**Verified live on 002 Apr 25 11:05 UTC**: `wmctrl -lG` confirms kiosk window at `3840,0 1920x1080` (HDMI-2 landscape), crowd at `0,0 2160x3840` (HDMI-1 portrait), both fullscreen. Pi can pull this fix via `~/djbooth-update.sh`.
+
+---
+
 ## ✅ Apr 25, 2026 — Session 47 (commits a81139d source + d5d1e2a dist)
 **Three fixes pushed for tonight's THE PONY EVANSVILLE client visit (003):**
 1. **Playlist rule enforced client-side** — `RotationPlaylistManager.jsx` initial-build fallback (lines ~385-407) now uses playlist-only (fresh + cooldown) when dancer has playlist. The songsPerSet effect (lines ~440-540) and `DJBooth.jsx` live `onSongsPerSetChange` (~line 4610) now call `/api/music/select` per dancer instead of falling back to local genre pool. Mirrors server rule in `db.js:750 selectTracksForSet` — when dancer has playlist, NEVER pull from random library.
