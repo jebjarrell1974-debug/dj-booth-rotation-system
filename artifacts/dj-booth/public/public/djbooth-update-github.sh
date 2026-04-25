@@ -336,6 +336,11 @@ which aubio >/dev/null 2>&1 || {
   sudo apt-get install -y aubio-tools >/dev/null 2>&1 || true
 }
 
+which wmctrl >/dev/null 2>&1 || {
+  echo "Installing wmctrl for crowd screen window management..."
+  sudo apt-get install -y wmctrl >/dev/null 2>&1 || true
+}
+
 if rm -f "$HOME/.config/autostart/squeekboard.desktop" 2>/dev/null; then
   echo "Squeekboard autostart removed (prevents double on-screen keyboard)"
 fi
