@@ -15,13 +15,34 @@ fi
 echo "$(date): Watchdog monitoring started"
 
 export DISPLAY=:0
+export XAUTHORITY="$HOME/.Xauthority"
+
+# Canonical kiosk launcher — single source of truth.
+# Uses --app + --window-position + wmctrl (NOT --kiosk, which ignores window-position on Linux).
+KIOSK_LAUNCHER="$HOME/djbooth-kiosk.sh"
+
+launch_kiosk() {
+  echo "$(date): launching kiosk via $KIOSK_LAUNCHER"
+  rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
+  if [ -x "$KIOSK_LAUNCHER" ]; then
+    nohup bash "$KIOSK_LAUNCHER" > /tmp/kiosk.log 2>&1 &
+    disown
+  else
+    echo "$(date): ERROR — $KIOSK_LAUNCHER not found or not executable"
+  fi
+}
 
 # Startup kiosk check — autostart desktop entries can fail silently (Singleton locks,
-# X session timing, etc). Verify Chromium is running in kiosk mode and launch if not.
-if ! pgrep -f "chromium.*kiosk" > /dev/null 2>&1; then
-  echo "$(date): Kiosk Chromium not running at startup — launching"
-  rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
-  bash -c "until curl -sf $HEALTH_URL > /dev/null 2>&1; do sleep 2; done && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+# X session timing, etc). Verify the kiosk Chromium is running and launch if not.
+# Detect by --class=KioskChromium (set by the launcher script).
+if ! pgrep -f "KioskChromium" > /dev/null 2>&1; then
+  echo "$(date): Kiosk Chromium not running at startup — waiting for server then launching"
+  # Inline subshell (function not visible across bash -c boundary)
+  bash -c "
+    until curl -sf $HEALTH_URL > /dev/null 2>&1; do sleep 2; done
+    rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
+    [ -x '$KIOSK_LAUNCHER' ] && nohup bash '$KIOSK_LAUNCHER' > /tmp/kiosk.log 2>&1 &
+  " &
 else
   echo "$(date): Kiosk Chromium already running at startup"
 fi
@@ -39,18 +60,20 @@ while true; do
       echo "$(date): Server recovered — refreshing browser"
       sleep 3
       export DISPLAY=:0
-      CHROME_PID=$(pgrep -f "chromium.*kiosk" | head -1)
-      if [ -n "$CHROME_PID" ]; then
+      KIOSK_PID=$(pgrep -f "KioskChromium" | head -1)
+      if [ -n "$KIOSK_PID" ]; then
+        # Focus the kiosk window first, then F5
+        wmctrl -x -a "KioskChromium" 2>/dev/null || true
+        sleep 1
         xdotool key --clearmodifiers F5 2>/dev/null && echo "$(date): Sent F5 refresh" || {
-          echo "$(date): F5 failed, restarting Chrome"
-          pkill -f "chromium.*kiosk" 2>/dev/null
+          echo "$(date): F5 failed, restarting kiosk via canonical launcher"
+          pkill -f "KioskChromium" 2>/dev/null
           sleep 2
-          bash -c "until curl -sf $HEALTH_URL > /dev/null 2>&1; do sleep 2; done && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+          launch_kiosk
         }
       else
-        echo "$(date): Chrome not running, launching"
-        rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
-        bash -c "chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
+        echo "$(date): Kiosk Chromium not running, launching via canonical launcher"
+        launch_kiosk
       fi
 
       SERVER_WAS_DOWN=false

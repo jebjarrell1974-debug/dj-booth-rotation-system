@@ -553,47 +553,89 @@ DWEOF
   KIOSK_FILE="$HOME/.config/autostart/djbooth-kiosk.desktop"
 
   # ALWAYS rewrite the kiosk script to the latest bulletproof version.
-  # It now enforces primary-on-landscape-monitor BEFORE launching Chromium,
-  # so the kiosk lands on the right screen even if GNOME picked the wrong primary.
+  # Uses --app + --window-position + wmctrl (NOT --kiosk) because --kiosk on Linux
+  # ignores --window-position and lands on whatever monitor Chromium picks
+  # (confirmed Chromium bug — same fix used for crowd display, vladvasiliu, multibrowse, etc).
   cat > "$HOME/djbooth-kiosk.sh" << 'KSEOF'
 #!/bin/bash
 # Wait for GNOME to settle
 sleep 10
+
+export DISPLAY=:0
+export XAUTHORITY="$HOME/.Xauthority"
+
+# Disable screen blanking (kiosk should never sleep)
+xset s off 2>/dev/null || true
+xset -dpms 2>/dev/null || true
+xset s noblank 2>/dev/null || true
 
 # Clear stale Chromium singleton locks
 rm -f "$HOME/.config/chromium/SingletonLock" \
       "$HOME/.config/chromium/SingletonCookie" \
       "$HOME/.config/chromium/SingletonSocket"
 
-# Force the LANDSCAPE monitor to be primary so this kiosk window lands on it.
-# Detect by orientation (W > H) — robust against GNOME picking wrong primary flag.
-KIOSK_MON=""
+# Detect the LANDSCAPE monitor (W > H) by orientation — robust against any primary flag.
+KIOSK_MON=""; KX=0; KY=0; KW=1920; KH=1080
 while IFS= read -r LINE; do
   NAME=$(echo "$LINE" | awk '{print $1}')
   GEOM=$(echo "$LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
   [ -z "$GEOM" ] && continue
   W=$(echo "$GEOM" | cut -dx -f1)
-  H=$(echo "$GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+  REST=$(echo "$GEOM" | sed 's/[^x]*x//')
+  H=$(echo "$REST" | cut -d+ -f1)
+  X=$(echo "$REST" | cut -d+ -f2)
+  Y=$(echo "$REST" | cut -d+ -f3)
   if [ "$W" -gt "$H" ]; then
-    KIOSK_MON="$NAME"; break
+    KIOSK_MON="$NAME"; KX="$X"; KY="$Y"; KW="$W"; KH="$H"
+    break
   fi
-done < <(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected")
+done < <(xrandr --query 2>/dev/null | grep " connected")
 if [ -n "$KIOSK_MON" ]; then
-  DISPLAY=:0 xrandr --output "$KIOSK_MON" --primary 2>/dev/null || true
-  echo "$(date): [kiosk] Set primary to landscape monitor: $KIOSK_MON"
+  xrandr --output "$KIOSK_MON" --primary 2>/dev/null || true
+  echo "$(date): [kiosk] Landscape monitor: $KIOSK_MON at ${KX},${KY} ${KW}x${KH}"
+else
+  echo "$(date): [kiosk] WARNING: No landscape monitor detected — using fallback 0,0 1920x1080"
 fi
 
 # Wait for the server to be healthy before launching
+echo "$(date): [kiosk] Waiting for server health..."
 until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done
 
-exec chromium --kiosk \
-  --noerrdialogs --disable-infobars \
-  --force-device-scale-factor=1 \
+# Kill any prior kiosk Chromium and wipe its profile lock (separate profile prevents tab-stealing)
+pkill -f "KioskChromium" 2>/dev/null || true
+sleep 1
+rm -rf /tmp/chromium-kiosk
+
+# Launch with --app (respects --window-position; --kiosk does NOT on Linux — confirmed bug)
+chromium \
+  --app=http://localhost:3001 \
+  --class=KioskChromium \
+  --user-data-dir=/tmp/chromium-kiosk \
+  --window-position=${KX},${KY} \
+  --window-size=${KW},${KH} \
+  --no-first-run --noerrdialogs --disable-infobars \
+  --disable-session-crashed-bubble --disable-translate \
+  --disable-features=TranslateUI,BackgroundMediaSuspend,MediaSessionService \
   --autoplay-policy=no-user-gesture-required \
   --disable-background-media-suspend \
-  --disable-features=BackgroundMediaSuspend,MediaSessionService \
-  --disable-session-crashed-bubble \
-  http://localhost:3001
+  --force-device-scale-factor=1 &
+
+# Poll for window, then move + fullscreen.
+# Just calling fullscreen would fullscreen on whatever monitor it opened on — must move first.
+for i in $(seq 1 20); do
+  sleep 1
+  if wmctrl -lx 2>/dev/null | grep -q -i "kioskchromium"; then
+    wmctrl -x -r "KioskChromium" -b remove,maximized_vert,maximized_horz,fullscreen 2>/dev/null || true
+    sleep 1
+    wmctrl -x -r "KioskChromium" -e 0,${KX},${KY},${KW},${KH} 2>/dev/null || true
+    sleep 1
+    wmctrl -x -r "KioskChromium" -b add,fullscreen 2>/dev/null || true
+    echo "$(date): [kiosk] Positioned at ${KX},${KY} ${KW}x${KH} fullscreen"
+    break
+  fi
+done
+
+wait
 KSEOF
   chmod +x "$HOME/djbooth-kiosk.sh"
 
@@ -792,69 +834,41 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo ""
     echo ""
     if [ "$IS_HOMEBASE" != "true" ]; then
-      echo "UPDATE SUCCESSFUL — relaunching browsers..."
+      echo "UPDATE SUCCESSFUL — relaunching browsers via canonical launchers..."
 
       # Must export DISPLAY and XAUTHORITY so Chromium can reach the X server
       # when this script is run from an SSH session (no display env inherited).
       export DISPLAY=:0
       export XAUTHORITY="/home/$(whoami)/.Xauthority"
 
-      # Ensure the non-rotated display (DJ kiosk monitor) is primary.
-      # If the crowd TV (rotated) is somehow primary, swap it back first.
-      _CUR_SEC=$(xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-      _PRI_ROT=$(xrandr --query 2>/dev/null | grep " connected primary" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ')
-      if [ -n "$_PRI_ROT" ] && [ -n "$_CUR_SEC" ]; then
-        echo "Primary was crowd TV (rotated) — correcting to $_CUR_SEC..."
-        xrandr --output "$_CUR_SEC" --primary 2>/dev/null || true
-        sleep 2
-      fi
-
-      # STEP 1: Kill any existing Chromium and launch the DJ kiosk on the primary display.
+      # Kill all chromium and clear stale singleton locks ONCE — both launcher scripts
+      # would do this individually, but we centralize here to avoid double-kill races.
       pkill -f chromium 2>/dev/null || true
       sleep 2
       rm -f ~/.config/chromium/SingletonLock \
             ~/.config/chromium/SingletonCookie \
             ~/.config/chromium/SingletonSocket
-      chromium --kiosk \
-        --noerrdialogs --disable-infobars \
-        --force-device-scale-factor=1 \
-        --autoplay-policy=no-user-gesture-required \
-        --disable-background-media-suspend \
-        --disable-features=BackgroundMediaSuspend,MediaSessionService \
-        --disable-session-crashed-bubble \
-        http://localhost:3001 &
-      disown
-      echo "DJ kiosk launched on primary display — waiting 15s for it to settle..."
+      rm -rf /tmp/chromium-kiosk /tmp/chromium-rotation
 
-      # STEP 2: Wait for the kiosk to fully open before launching crowd screen.
-      # This prevents the kiosk launch from interfering with crowd screen placement.
-      sleep 15
-
-      # STEP 3: Launch the crowd screen directly on the non-primary display.
-      # Read fresh xrandr geometry — do NOT use any cached values.
-      _SECOND=$(xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-      if [ -n "$_SECOND" ]; then
-        _SECOND_GEOM=$(xrandr --query 2>/dev/null | grep "^$_SECOND connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+')
-        _SX=$(echo "$_SECOND_GEOM" | cut -d+ -f2)
-        _SY=$(echo "$_SECOND_GEOM" | cut -d+ -f3)
-        _SW=$(echo "$_SECOND_GEOM" | cut -dx -f1)
-        _SH=$(echo "$_SECOND_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
-        rm -rf /tmp/chromium-rotation
-        chromium \
-          --app=http://localhost:3001/RotationDisplay \
-          --class=RotationChromium \
-          --user-data-dir=/tmp/chromium-rotation \
-          --window-position=${_SX:-0},${_SY:-0} \
-          --window-size=${_SW:-1080},${_SH:-1920} \
-          --noerrdialogs --disable-session-crashed-bubble \
-          --autoplay-policy=no-user-gesture-required \
-          --force-device-scale-factor=1 &
+      # STEP 1: Launch DJ kiosk via canonical launcher (--app + window-position + wmctrl).
+      # Single source of truth — same script used by GNOME autostart and watchdog.
+      if [ -x "$HOME/djbooth-kiosk.sh" ]; then
+        nohup bash "$HOME/djbooth-kiosk.sh" > /tmp/kiosk.log 2>&1 &
         disown
-        sleep 8
-        wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
-        echo "Crowd screen launched on $_SECOND at ${_SX},${_SY} size ${_SW}x${_SH}"
+        echo "DJ kiosk launch triggered via $HOME/djbooth-kiosk.sh — waiting 20s for it to settle..."
+        sleep 20
       else
-        echo "WARNING: No second display found — crowd screen not launched"
+        echo "ERROR: $HOME/djbooth-kiosk.sh missing — cannot launch kiosk"
+      fi
+
+      # STEP 2: Launch crowd display via canonical launcher.
+      # The launcher detects the portrait monitor, applies rotation, and positions correctly.
+      if [ -x "$HOME/djbooth-rotation-display.sh" ]; then
+        nohup bash "$HOME/djbooth-rotation-display.sh" > /tmp/djbooth-rotation-display.log 2>&1 &
+        disown
+        echo "Crowd display launch triggered via $HOME/djbooth-rotation-display.sh"
+      else
+        echo "WARNING: $HOME/djbooth-rotation-display.sh missing — crowd screen not launched"
       fi
     else
       echo "UPDATE SUCCESSFUL — homebase mode, no browser relaunch"
@@ -864,17 +878,32 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
       ls -d "${APP_DIR}.backup-"* 2>/dev/null | head -n -3 | xargs rm -rf
       echo "Cleaned up $CLEANUP_COUNT old backups (kept last 3)"
     fi
-    sudo systemctl start djbooth-watchdog 2>/dev/null || true
+    sudo systemctl enable djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
   else
     echo ""
     echo "WARNING: Service failed to start. Rolling back..."
     rm -rf "$APP_DIR"
     mv "$BACKUP_DIR" "$APP_DIR"
     sudo systemctl restart "$SERVICE_NAME"
-    echo "Rolled back to previous version"
-    bash -c "until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done && chromium --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=BackgroundMediaSuspend,MediaSessionService --disable-session-crashed-bubble http://localhost:3001" &
-    disown
-    sudo systemctl start djbooth-watchdog 2>/dev/null || true
+    echo "Rolled back to previous version — relaunching browsers via canonical launchers"
+    export DISPLAY=:0
+    export XAUTHORITY="/home/$(whoami)/.Xauthority"
+    pkill -f chromium 2>/dev/null || true
+    sleep 2
+    rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
+    rm -rf /tmp/chromium-kiosk /tmp/chromium-rotation
+    if [ -x "$HOME/djbooth-kiosk.sh" ]; then
+      nohup bash "$HOME/djbooth-kiosk.sh" > /tmp/kiosk.log 2>&1 &
+      disown
+      sleep 20
+    fi
+    if [ -x "$HOME/djbooth-rotation-display.sh" ]; then
+      nohup bash "$HOME/djbooth-rotation-display.sh" > /tmp/djbooth-rotation-display.log 2>&1 &
+      disown
+    fi
+    sudo systemctl enable djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
     exit 1
   fi
 else
