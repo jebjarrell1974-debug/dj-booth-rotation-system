@@ -386,6 +386,16 @@ which wmctrl >/dev/null 2>&1 || sudo apt-get install -y wmctrl >/dev/null 2>&1 |
 # Wait for GNOME session to settle
 sleep 15
 
+# Apply per-unit display config (rotation, primary, etc) — survives reboots.
+# Each unit creates ~/.djbooth-display-config.sh once during setup with its
+# specific xrandr commands (rotation right/left, etc). xrandr rotation is
+# session-only, so this MUST run on every boot before reading geometry.
+if [ -x "$HOME/.djbooth-display-config.sh" ]; then
+  echo "$(date): [crowd-display] Applying ~/.djbooth-display-config.sh"
+  DISPLAY=:0 bash "$HOME/.djbooth-display-config.sh" 2>/dev/null || true
+  sleep 2
+fi
+
 # Wait for the API server to be healthy BEFORE launching the crowd display.
 echo "$(date): [crowd-display] Waiting for server health..."
 for i in $(seq 1 60); do
@@ -546,6 +556,14 @@ export XAUTHORITY="$HOME/.Xauthority"
 xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 xset s noblank 2>/dev/null || true
+
+# Apply per-unit display config (rotation, primary, etc) — survives reboots.
+# xrandr rotation is session-only, so this MUST run on every boot before reading geometry.
+if [ -x "$HOME/.djbooth-display-config.sh" ]; then
+  echo "$(date): [kiosk] Applying ~/.djbooth-display-config.sh"
+  bash "$HOME/.djbooth-display-config.sh" 2>/dev/null || true
+  sleep 2
+fi
 
 # Clear stale Chromium singleton locks
 rm -f "$HOME/.config/chromium/SingletonLock" \
