@@ -946,7 +946,7 @@ export default function RotationPlaylistManager({
   return (
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
       <DragDropContext onDragEnd={handleDragEnd} sensors={[useMouseSensor, useLongPressTouchSensor]} enableDefaultSensors={false}>
-        <div ref={libraryPanelRef} className="w-2/5 2xl:w-1/2 border-r border-[#1e293b] flex flex-col min-w-0">
+        <div ref={libraryPanelRef} className="w-1/2 border-r border-[#1e293b] flex flex-col min-w-0">
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
@@ -1125,7 +1125,7 @@ export default function RotationPlaylistManager({
           )}
         </div>
 
-        <div className="w-3/5 2xl:w-1/2 flex flex-col min-w-0">
+        <div className="w-1/2 flex flex-col min-w-0">
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-2">
               <div>
@@ -1296,7 +1296,7 @@ export default function RotationPlaylistManager({
                             }`}
                           >
                             <div
-                              className={`px-3 py-2.5 border-b flex items-center gap-2 cursor-pointer transition-colors ${
+                              className={`px-2 py-2.5 border-b flex items-center gap-1 cursor-pointer transition-colors ${
                                 selectedDancerId === dancer.id
                                   ? 'border-[#00d4ff] bg-[#00d4ff]/10'
                                   : 'border-[#1e293b] hover:bg-[#1a1a35]'
