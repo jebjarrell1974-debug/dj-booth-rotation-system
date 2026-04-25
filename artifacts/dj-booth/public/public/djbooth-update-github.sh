@@ -371,92 +371,152 @@ which wmctrl >/dev/null 2>&1 || {
   sudo apt-get install -y wmctrl >/dev/null 2>&1 || true
 }
 
-# Helper function used by both launch scripts:
-# Detects second monitor, rotates it, returns POS_X POS_Y SCR_W SCR_H
-# NOTE: --kiosk ignores --window-position on Linux (known Chromium bug).
-# We use --app=URL instead — identical visually, but respects window position.
-# After launch we use wmctrl to force fullscreen on the correct monitor.
+# BULLETPROOF SCREEN LAUNCH (Apr 2026 hardening)
+# Goals: kiosk ALWAYS lands on landscape monitor, crowd ALWAYS lands on portrait monitor,
+# both auto-recover if anything dies, works whether HDMI ports are swapped or wmctrl missing.
+# Detection by ORIENTATION (portrait vs landscape) — robust against GNOME picking wrong primary flag.
 
-# Write the rotation display launcher script.
-# Uses --app + --window-position (xrandr geometry) + wmctrl fullscreen.
-# --kiosk ignores --window-position on Linux (confirmed Chromium bug), so we never use it for the crowd screen.
+# Write the rotation display launcher script (orientation-aware, health-checked).
 cat > "$HOME/djbooth-rotation-display.sh" << 'RDEOF'
 #!/bin/bash
-sleep 20
-# Primary display = DJ kiosk. Non-primary (secondary) = crowd rotation TV.
-PRIMARY=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected primary" | awk '{print $1}' | head -1)
-SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-if [ -z "$SECOND" ]; then
-  echo "No second display found — skipping crowd display launch"
+# Self-install wmctrl if missing (belt + suspenders with update script)
+which wmctrl >/dev/null 2>&1 || sudo apt-get install -y wmctrl >/dev/null 2>&1 || true
+
+# Wait for GNOME session to settle
+sleep 15
+
+# Wait for the API server to be healthy BEFORE launching the crowd display.
+# Otherwise the page loads "connection refused" and stays broken until manual reload.
+echo "$(date): [crowd-display] Waiting for server health..."
+for i in $(seq 1 60); do
+  if curl -sf http://localhost:3001/__health > /dev/null 2>&1; then
+    echo "$(date): [crowd-display] Server healthy after ${i}s"
+    break
+  fi
+  sleep 1
+done
+
+# Detect kiosk display (landscape: W > H) and crowd display (portrait: H > W).
+detect_displays() {
+  CROWD=""; KIOSK=""; CROWD_GEOM=""; KIOSK_GEOM=""
+  while IFS= read -r LINE; do
+    NAME=$(echo "$LINE" | awk '{print $1}')
+    GEOM=$(echo "$LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+    [ -z "$GEOM" ] && continue
+    W=$(echo "$GEOM" | cut -dx -f1)
+    H=$(echo "$GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+    if [ "$H" -gt "$W" ]; then
+      CROWD="$NAME"; CROWD_GEOM="$GEOM"
+    else
+      KIOSK="$NAME"; KIOSK_GEOM="$GEOM"
+    fi
+  done < <(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected")
+}
+detect_displays
+
+# If no portrait monitor found, rotate the second one right and re-detect.
+if [ -z "$CROWD" ]; then
+  SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
+  if [ -n "$SECOND" ]; then
+    echo "$(date): [crowd-display] No portrait display detected — rotating $SECOND right"
+    DISPLAY=:0 xrandr --output "$SECOND" --rotate right 2>/dev/null || true
+    sleep 2
+    detect_displays
+  fi
+fi
+
+if [ -z "$CROWD" ]; then
+  echo "$(date): [crowd-display] No crowd display found — exiting"
   exit 0
 fi
-# Preserve existing rotation of crowd TV
-SECOND_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$SECOND connected")
-SECOND_ROT=$(echo "$SECOND_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
-[ -n "$SECOND_ROT" ] || SECOND_ROT="right"
-DISPLAY=:0 xrandr --output "$SECOND" --rotate "$SECOND_ROT" 2>/dev/null || true
-sleep 2
-# Detect crowd TV geometry for exact window placement
-SECOND_GEOM=$(echo "$SECOND_LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+')
-SECOND_X=$(echo "$SECOND_GEOM" | cut -d+ -f2)
-SECOND_Y=$(echo "$SECOND_GEOM" | cut -d+ -f3)
-SECOND_W=$(echo "$SECOND_GEOM" | cut -dx -f1)
-SECOND_H=$(echo "$SECOND_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+
+# Force the kiosk monitor to be the primary so the kiosk Chromium lands on the right screen.
+if [ -n "$KIOSK" ]; then
+  DISPLAY=:0 xrandr --output "$KIOSK" --primary 2>/dev/null || true
+fi
+
+CROWD_X=$(echo "$CROWD_GEOM" | cut -d+ -f2)
+CROWD_Y=$(echo "$CROWD_GEOM" | cut -d+ -f3)
+CROWD_W=$(echo "$CROWD_GEOM" | cut -dx -f1)
+CROWD_H=$(echo "$CROWD_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+echo "$(date): [crowd-display] kiosk=$KIOSK ($KIOSK_GEOM) crowd=$CROWD ($CROWD_GEOM)"
+
+# Kill any prior crowd Chromium and clean its profile lock
+pkill -f "RotationChromium" 2>/dev/null || true
+sleep 1
 rm -rf /tmp/chromium-rotation
-# Use --app instead of --kiosk: --kiosk ignores --window-position on Linux (confirmed Chromium bug).
-# --app respects --window-position, placing the window on the correct monitor.
-# wmctrl then forces it fullscreen on that monitor — no primary swap required.
+
+# Launch crowd Chromium app on the portrait monitor's geometry.
+# --app respects --window-position (--kiosk does not on Linux — confirmed Chromium bug).
 DISPLAY=:0 chromium \
   --app=http://localhost:3001/RotationDisplay \
   --class=RotationChromium \
   --user-data-dir=/tmp/chromium-rotation \
-  --window-position=${SECOND_X:-0},${SECOND_Y:-0} \
-  --window-size=${SECOND_W:-1080},${SECOND_H:-1920} \
+  --window-position=${CROWD_X},${CROWD_Y} \
+  --window-size=${CROWD_W},${CROWD_H} \
   --noerrdialogs --disable-session-crashed-bubble \
   --autoplay-policy=no-user-gesture-required \
   --force-device-scale-factor=1 &
-sleep 3
-DISPLAY=:0 wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
+
+# After launch: wait for window to appear, MOVE it to crowd geometry, then fullscreen.
+# (Just calling fullscreen without moving first will fullscreen on whatever monitor it opened on.)
+for i in $(seq 1 10); do
+  sleep 1
+  if DISPLAY=:0 wmctrl -lx 2>/dev/null | grep -q -i "rotationchromium"; then
+    DISPLAY=:0 wmctrl -x -r "RotationChromium" -e 0,${CROWD_X},${CROWD_Y},${CROWD_W},${CROWD_H} 2>/dev/null || true
+    sleep 1
+    DISPLAY=:0 wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
+    echo "$(date): [crowd-display] launched and positioned at ${CROWD_X},${CROWD_Y} ${CROWD_W}x${CROWD_H}"
+    break
+  fi
+done
+
 wait
 RDEOF
 chmod +x "$HOME/djbooth-rotation-display.sh"
 
-# Write the display trigger watcher script (relaunches crowd display on demand via button)
+# Display trigger watcher + crowd-display heartbeat watchdog.
+# Single source of truth for relaunch — calls the launcher script above.
 cat > "$HOME/djbooth-display-watcher.sh" << 'DWEOF'
 #!/bin/bash
+# This script:
+#   1. Watches /tmp/djbooth-display-trigger and relaunches crowd display on demand (DJ button).
+#   2. Heartbeat-monitors RotationChromium every 60s — auto-relaunches if missing.
+which wmctrl >/dev/null 2>&1 || sudo apt-get install -y wmctrl >/dev/null 2>&1 || true
+
+LAST_HEARTBEAT=0
+HEARTBEAT_INTERVAL=60
+
 while true; do
+  RELAUNCH=false
+
+  # Trigger file (DJ pressed the relaunch button)
   if [ -f /tmp/djbooth-display-trigger ]; then
     rm -f /tmp/djbooth-display-trigger
+    RELAUNCH=true
+    echo "$(date): [watcher] Trigger file — relaunching crowd display"
+  fi
+
+  # Heartbeat: check every 60s. Only relaunch after boot has settled (>3min uptime).
+  NOW=$(date +%s)
+  if [ $((NOW - LAST_HEARTBEAT)) -ge $HEARTBEAT_INTERVAL ]; then
+    LAST_HEARTBEAT=$NOW
+    UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 999)
+    if [ "$UPTIME_SEC" -gt 180 ] && ! pgrep -f "RotationChromium" > /dev/null 2>&1; then
+      echo "$(date): [watcher] RotationChromium not running — auto-relaunch"
+      RELAUNCH=true
+    fi
+  fi
+
+  if [ "$RELAUNCH" = true ]; then
     pkill -f "RotationChromium" 2>/dev/null || true
     sleep 1
-    # Primary = DJ kiosk, non-primary (secondary) = crowd TV
-    SECOND=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | grep -v primary | awk '{print $1}' | head -1)
-    if [ -n "$SECOND" ]; then
-      SECOND_LINE=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^$SECOND connected")
-      SECOND_ROT=$(echo "$SECOND_LINE" | sed 's/(.*)//' | grep -oE ' (left|right|inverted) ' | tr -d ' ')
-      [ -n "$SECOND_ROT" ] || SECOND_ROT="right"
-      DISPLAY=:0 xrandr --output "$SECOND" --rotate "$SECOND_ROT" 2>/dev/null || true
-      sleep 2
-      SECOND_GEOM=$(echo "$SECOND_LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+')
-      SECOND_X=$(echo "$SECOND_GEOM" | cut -d+ -f2)
-      SECOND_Y=$(echo "$SECOND_GEOM" | cut -d+ -f3)
-      SECOND_W=$(echo "$SECOND_GEOM" | cut -dx -f1)
-      SECOND_H=$(echo "$SECOND_GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+    if [ -x "$HOME/djbooth-rotation-display.sh" ]; then
+      nohup bash "$HOME/djbooth-rotation-display.sh" > /tmp/djbooth-rotation-display.log 2>&1 &
+      disown
     fi
-    rm -rf /tmp/chromium-rotation
-    DISPLAY=:0 chromium \
-      --app=http://localhost:3001/RotationDisplay \
-      --class=RotationChromium \
-      --user-data-dir=/tmp/chromium-rotation \
-      --window-position=${SECOND_X:-0},${SECOND_Y:-0} \
-      --window-size=${SECOND_W:-1080},${SECOND_H:-1920} \
-      --noerrdialogs --disable-session-crashed-bubble \
-      --autoplay-policy=no-user-gesture-required \
-      --force-device-scale-factor=1 &
-    sleep 3
-    DISPLAY=:0 wmctrl -x -r "RotationChromium" -b add,fullscreen 2>/dev/null || true
-    disown
   fi
+
   sleep 2
 done
 DWEOF
@@ -466,9 +526,9 @@ chmod +x "$HOME/djbooth-display-watcher.sh"
 pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
 sleep 1
 export DISPLAY=:0
-bash "$HOME/djbooth-display-watcher.sh" &
+nohup bash "$HOME/djbooth-display-watcher.sh" > /tmp/djbooth-display-watcher.log 2>&1 &
 disown
-echo "Display watcher restarted with primary-swap method"
+echo "Display watcher restarted (orientation-aware + crowd heartbeat)"
 
 # GNOME autostart entries for second display and trigger watcher
 mkdir -p "$HOME/.config/autostart"
@@ -491,16 +551,41 @@ DWEOF
   echo "Second display autostart entries configured"
 
   KIOSK_FILE="$HOME/.config/autostart/djbooth-kiosk.desktop"
-  if [ ! -f "$KIOSK_FILE" ]; then
-    cat > "$HOME/djbooth-kiosk.sh" << 'KSEOF'
+
+  # ALWAYS rewrite the kiosk script to the latest bulletproof version.
+  # It now enforces primary-on-landscape-monitor BEFORE launching Chromium,
+  # so the kiosk lands on the right screen even if GNOME picked the wrong primary.
+  cat > "$HOME/djbooth-kiosk.sh" << 'KSEOF'
 #!/bin/bash
-# Wait for GNOME to settle, clear any stale Chromium singleton locks, then
-# wait for the server to be healthy before launching the kiosk window.
+# Wait for GNOME to settle
 sleep 10
+
+# Clear stale Chromium singleton locks
 rm -f "$HOME/.config/chromium/SingletonLock" \
       "$HOME/.config/chromium/SingletonCookie" \
       "$HOME/.config/chromium/SingletonSocket"
+
+# Force the LANDSCAPE monitor to be primary so this kiosk window lands on it.
+# Detect by orientation (W > H) — robust against GNOME picking wrong primary flag.
+KIOSK_MON=""
+while IFS= read -r LINE; do
+  NAME=$(echo "$LINE" | awk '{print $1}')
+  GEOM=$(echo "$LINE" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
+  [ -z "$GEOM" ] && continue
+  W=$(echo "$GEOM" | cut -dx -f1)
+  H=$(echo "$GEOM" | sed 's/[^x]*x//' | cut -d+ -f1)
+  if [ "$W" -gt "$H" ]; then
+    KIOSK_MON="$NAME"; break
+  fi
+done < <(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected")
+if [ -n "$KIOSK_MON" ]; then
+  DISPLAY=:0 xrandr --output "$KIOSK_MON" --primary 2>/dev/null || true
+  echo "$(date): [kiosk] Set primary to landscape monitor: $KIOSK_MON"
+fi
+
+# Wait for the server to be healthy before launching
 until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done
+
 exec chromium --kiosk \
   --noerrdialogs --disable-infobars \
   --force-device-scale-factor=1 \
@@ -510,30 +595,17 @@ exec chromium --kiosk \
   --disable-session-crashed-bubble \
   http://localhost:3001
 KSEOF
-    chmod +x "$HOME/djbooth-kiosk.sh"
-    cat > "$KIOSK_FILE" << KDEOF
+  chmod +x "$HOME/djbooth-kiosk.sh"
+
+  # Always rewrite the autostart desktop entry too
+  cat > "$KIOSK_FILE" << KDEOF
 [Desktop Entry]
 Type=Application
 Name=DJ Booth Kiosk
 Exec=$HOME/djbooth-kiosk.sh
 X-GNOME-Autostart-enabled=true
 KDEOF
-    echo "Kiosk autostart entry created"
-  else
-    sed -i 's/X-GNOME-Autostart-enabled=false/X-GNOME-Autostart-enabled=true/g' "$KIOSK_FILE"
-    echo "Kiosk autostart entry verified"
-  fi
-
-  # Patch existing kiosk scripts to add --force-device-scale-factor=1 if missing
-  KIOSK_SH="$HOME/djbooth-kiosk.sh"
-  if [ -f "$KIOSK_SH" ] && ! grep -q "force-device-scale-factor" "$KIOSK_SH"; then
-    sed -i 's/exec chromium --kiosk /exec chromium --kiosk --force-device-scale-factor=1 /g' "$KIOSK_SH"
-    echo "Patched djbooth-kiosk.sh with --force-device-scale-factor=1"
-  fi
-  if [ -f "$KIOSK_FILE" ] && ! grep -q "force-device-scale-factor" "$KIOSK_FILE"; then
-    sed -i 's/chromium --kiosk /chromium --kiosk --force-device-scale-factor=1 /g' "$KIOSK_FILE"
-    echo "Patched djbooth-kiosk.desktop with --force-device-scale-factor=1"
-  fi
+  echo "Kiosk autostart entry refreshed (orientation-aware)"
 fi
 
 # Remove any old labwc config that may exist from previous Pi installations

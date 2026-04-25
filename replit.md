@@ -11,8 +11,8 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 |---|---|---|---|---|
 | Homebase | `100.109.73.27` | Fleet server only (no audio output) | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026) |
 | neonaidj001 | `100.115.212.34` | DJ booth | Pony Bama | SSH: `neonaidj001@100.115.212.34` — 25,209 tracks, active |
-| neonaidj002 | unknown | DJ booth | Unassigned | Tailscale IP still unknown |
-| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | **Replacing with Dell OptiPlex 7010 Micro (Apr 2026)** — old Pi had dead HiFiBerry DAC+. New unit running Debian 13 x86, setup in progress. USB audio dongle pending arrival. SSH: `neonaidj003@100.81.90.125` (will update IP after Tailscale join) |
+| neonaidj002 | unknown | DJ booth | Rocket City Showgirls | x86 Dell OptiPlex. HDMI-1 = crowd TV (2160x3840+0+0, rotated right). HDMI-2 = DJ kiosk (primary, 1920x1080+3840+0). Screens manually fixed Apr 24 2026 — confirmed correct. Scripts updated to --app+wmctrl. |
+| neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | x86 Dell OptiPlex. HDMI-1 = crowd TV (720x1280+0+0, rotated left). HDMI-2 = DJ kiosk (primary, 1440x900+720+0). Big client visit Apr 25 2026. Scripts updated to --app+wmctrl. SSH: `neonaidj003@100.81.90.125` |
 | neonaidj004 | `100.95.238.71` | DJ booth | THE PONY PENSACOLA | Placeholder Pi — pending hardware upgrade to x86 mini PC |
 
 **Fleet dashboard**: `http://100.109.73.27:3001/fleet`
@@ -21,6 +21,81 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 **IMPORTANT — Homebase dead air alerts**: Homebase (HP Compaq) has no audio output and never will. "Dead air logged" warnings from homebase in the fleet dashboard are expected and can be ignored permanently. **FIXED Apr 22 2026**: `fleet-monitor.js` now suppresses dead-air Telegram alerts for any device whose name contains "homebase", so these will no longer spam Telegram.
 
 **IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2. This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. **FIXED Apr 22 2026**: A 20% delta safeguard is now in place — if R2 has >20% fewer files than the local library, the purge is skipped entirely and a warning is logged. Never manually delete from R2 without understanding this logic.
+
+## ⚠️ Apr 24–25, 2026 — Incident Log
+
+### ROOT CAUSE FOUND AND FIXED: --kiosk ignores --window-position on Linux
+**Confirmed Chromium bug**: `--kiosk` mode on Linux completely ignores `--window-position`. This caused the crowd screen to ALWAYS open on the primary display (DJ kiosk monitor) regardless of position flags, putting both screens on the same monitor.
+
+**The fix (pushed Apr 25 2026)**: All crowd screen launches now use `--app=URL` instead of `--kiosk`, with `--window-position` set to the crowd TV's exact xrandr coordinates, followed by `wmctrl -x -r "RotationChromium" -b add,fullscreen` to force fullscreen on that monitor. No primary swapping needed — no race condition possible.
+
+**Files updated**: `djbooth-update-github.sh` (writes scripts on every update run), `x86-setup.sh` (writes scripts on fresh install). Both now produce identical correct scripts.
+
+### All Dell Unit Display Configuration (CONFIRMED — 002 verified Apr 24 2026)
+- **Both outputs show as HDMI-* in xrandr** — Dell OptiPlex uses an HDMI adapter on the DisplayPort, so both appear as HDMI to Linux
+- **HDMI-1** = crowd-facing TV (portrait, rotated right on 002 / rotated left on 003), non-primary
+- **HDMI-2** = DJ kiosk monitor (landscape, primary)
+- **The only reliable rule**: PRIMARY display = DJ kiosk. NON-PRIMARY = crowd TV. Never detect by port name.
+
+**002 confirmed xrandr layout:**
+- `HDMI-1 connected 2160x3840+0+0 right` — crowd TV at position 0,0 (big portrait TV)
+- `HDMI-2 connected primary 1920x1080+3840+0` — DJ kiosk at position 3840,0
+
+**003 confirmed xrandr layout:**
+- `HDMI-1 connected 720x1280+0+0 left` — crowd TV at position 0,0
+- `HDMI-2 connected primary 1440x900+720+0` — DJ kiosk at position 720,0
+
+### How djbooth-rotation-display.sh and djbooth-display-watcher.sh work (current — correct)
+Both scripts are rewritten fresh by the update script on every update run. They:
+1. Read xrandr to find the non-primary display (crowd TV) and its exact geometry (position + size)
+2. Launch `chromium --app=http://localhost:3001/RotationDisplay --class=RotationChromium --window-position=X,Y --window-size=W,H`
+3. Wait 5 seconds, then `wmctrl -x -r "RotationChromium" -b add,fullscreen`
+
+This places the crowd screen at the crowd TV's exact coordinates and forces it fullscreen there. No primary swap, no race condition, works on any unit regardless of resolution or rotation.
+
+### 002 Status (Apr 24–25, 2026)
+- Screens were backwards after earlier update (crowd TV showing kiosk, DJ monitor showing rotation display)
+- Manually fixed Apr 24 evening — confirmed working: crowd TV showing rotation display, DJ monitor showing kiosk
+- Scripts on disk are now the correct `--app+wmctrl` versions (written by last update run)
+- Will survive reboots and future updates
+- No `~/relaunch-djbooth.sh` on 002 — the kiosk launcher is `~/djbooth-kiosk.sh`
+
+**If 002 screens go wrong again, run these 3 commands via SSH:**
+```bash
+# Step 1 — kill everything
+export DISPLAY=:0 XAUTHORITY=/home/neonaidj002/.Xauthority && pkill -f chromium 2>/dev/null; sleep 3; rm -f ~/.config/chromium/Singleton*
+
+# Step 2 — set primary and relaunch kiosk
+xrandr --output HDMI-2 --primary && bash ~/djbooth-kiosk.sh &
+
+# Step 3 — wait 12 seconds after step 2, then launch crowd screen
+rm -rf /tmp/chromium-rotation && chromium --app=http://localhost:3001/RotationDisplay --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --window-position=0,0 --window-size=2160,3840 --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required --force-device-scale-factor=1 & sleep 3 && wmctrl -x -r "RotationChromium" -b add,fullscreen
+```
+
+### 003 Status (Apr 25, 2026 — BIG CLIENT NIGHT)
+- Installed at THE PONY EVANSVILLE, 300 miles from owner
+- Scripts should be correct from last update run (same --app+wmctrl approach)
+- Client visiting Apr 25 evening
+- **If 003 screens go wrong**, same 3-command fix but use 003 geometry:
+  - HDMI-1 (crowd TV) position: 0,0 size: 720x1280
+  - HDMI-2 (kiosk) position: 720,0
+```bash
+# Step 1
+export DISPLAY=:0 XAUTHORITY=/home/neonaidj003/.Xauthority && pkill -f chromium 2>/dev/null; sleep 3; rm -f ~/.config/chromium/Singleton*
+
+# Step 2
+xrandr --output HDMI-2 --primary && bash ~/djbooth-kiosk.sh &
+
+# Step 3 (wait 12s after step 2)
+rm -rf /tmp/chromium-rotation && chromium --app=http://localhost:3001/RotationDisplay --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --window-position=0,0 --window-size=720,1280 --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required --force-device-scale-factor=1 & sleep 3 && wmctrl -x -r "RotationChromium" -b add,fullscreen
+```
+
+### Earlier fixes also pushed Apr 24–25 2026
+- **npm install now retries up to 3x** and verifies express is findable before proceeding
+- **Kiosk primary guard** in update script — if rotated display is somehow primary, swaps it back before kiosk launch
+- **Crowd TV rotation preserved** — scripts detect existing rotation from xrandr, never hardcode it
+
+---
 
 ## Dell OptiPlex 7010 Micro — Proven Setup (neonaidj003, THE PONY EVANSVILLE, Apr 2026)
 
@@ -247,43 +322,54 @@ rm -rf /path/to/music/drive/.Trash-1000
 
 ---
 
-### Display Setup
-- **HDMI-1** = Crowd-facing screen, **portrait orientation** (rotated left). Physical screen is landscape but mounted portrait — Linux rotates the output.
-- **HDMI-2** = DJ-facing screen, **landscape orientation** (normal). This is where the kiosk Chromium window lives.
-- **Touchscreen** = ILITEK USB touchscreen. Find it with `xinput list | grep -i ILITEK`. Must be mapped to HDMI-2 (the DJ screen) so touches register in the right coordinates: `xinput map-to-output <id> HDMI-2`
-- **`~/djbooth-rotation-display.sh`** — script on the Dell that: (1) rotates HDMI-1 left, (2) opens Chromium on HDMI-1 showing `/RotationDisplay`, (3) maps the ILITEK touchscreen to HDMI-2. Run this after every kiosk relaunch or reboot.
-- **`~/relaunch-djbooth.sh`** — manually relaunches the DJ kiosk Chromium on HDMI-2 with the correct flags (see below). Use this if Chromium crashes or needs a forced refresh.
+### Display Setup (UPDATED Apr 25 2026 — confirmed on 002 and 003)
 
-### Kiosk Chromium Launch Flags (CRITICAL — wrong flags = cutoff or wrong screen)
+**The golden rule: PRIMARY display = DJ kiosk. NON-PRIMARY = crowd TV. Always.**
+
+Both Dell outputs appear as `HDMI-*` in xrandr because the DisplayPort uses an HDMI adapter. Never try to detect by port name — always use primary/non-primary.
+
+- **Primary display (HDMI-2)** = DJ kiosk monitor, landscape. `chromium --kiosk http://localhost:3001` opens here automatically because it always opens on primary.
+- **Non-primary display (HDMI-1)** = crowd-facing TV, portrait (rotated right on 002, rotated left on 003).
+- **Touchscreen** = ILITEK USB touchscreen. Find it with `xinput list | grep -i ILITEK`. Map to the DJ kiosk output: `xinput map-to-output <id> HDMI-2`
+
+**`~/djbooth-kiosk.sh`** — launches the DJ kiosk Chromium on the primary display. Used by GNOME autostart and the update script.
+
+**`~/djbooth-rotation-display.sh`** — launches the crowd TV Chromium using `--app` + exact xrandr position + wmctrl fullscreen. Rewired fresh on every update run. Run this if the crowd screen is blank or wrong.
+
+**`~/djbooth-display-watcher.sh`** — background loop that watches for `/tmp/djbooth-display-trigger` and relaunches the crowd screen when triggered by the update script. Also rewritten fresh on every update run.
+
+### CRITICAL: --kiosk vs --app for the crowd screen
+**`--kiosk` ignores `--window-position` on Linux** — confirmed Chromium bug. If you use `--kiosk` for the crowd screen, it ALWAYS opens on the primary display (DJ monitor), no matter what position flags you give it.
+
+**Always use `--app=URL` for the crowd screen**, followed by wmctrl to force fullscreen. Example for 002:
+```bash
+chromium --app=http://localhost:3001/RotationDisplay \
+  --class=RotationChromium \
+  --user-data-dir=/tmp/chromium-rotation \
+  --window-position=0,0 --window-size=2160,3840 \
+  --noerrdialogs --disable-session-crashed-bubble \
+  --autoplay-policy=no-user-gesture-required \
+  --force-device-scale-factor=1 &
+sleep 5 && wmctrl -x -r "RotationChromium" -b add,fullscreen
 ```
-chromium --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
-  --window-position=2160,0 --window-size=1920,1080 --force-device-scale-factor=1 \
-  http://localhost:3001
-```
-- `--window-position=2160,0` — places window on HDMI-2. HDMI-1 in portrait at 1080×1920 means its virtual width is 2160px (HiDPI) so HDMI-2 starts at x=2160. **This value may differ on the next unit — check with `xrandr` and adjust.**
-- `--window-size=1920,1080` — locks window to full 1080p landscape. Without this, Chrome may size itself to the wrong display dimensions.
-- `--force-device-scale-factor=1` — disables DPI scaling. Without this, Chrome may render at 0.5x or 2x and the UI appears huge/tiny.
-- These flags must be in **both** `~/.config/autostart/djbooth-kiosk.desktop` AND `~/relaunch-djbooth.sh` — they need to match exactly.
+
+**`--kiosk` is fine for the DJ kiosk** because it opens on the primary display by default — that's exactly what we want.
 
 ### If Screens Look Wrong After an Update
 
-**To fix the crowd screen only (wrong rotation, wrong font size, blank):**
-✅ **SAFE MID-VENUE** — only kills and relaunches the crowd screen Chromium (`RotationChromium` class). Music and DJ kiosk are completely unaffected. Crowd screen goes dark for ~5 seconds then comes back.
+**Quickest fix — crowd screen only** (safe mid-venue, music unaffected):
 ```bash
-~/djbooth-rotation-display.sh
+bash ~/djbooth-rotation-display.sh
 ```
 
-**To fix the DJ kiosk screen (or both screens after a full Chromium crash):**
-⛔ **AFTER CLOSE ONLY.** `pkill -f chromium` kills ALL Chromium windows including the DJ kiosk. Music stops for ~15–30 seconds while Chromium relaunches and the app reinitializes.
+**Full reset — both screens** (after close only — kills all Chromium, music stops ~15s):
 ```bash
-~/djbooth-rotation-display.sh
-sleep 2
-pkill -f chromium 2>/dev/null || true
-sleep 2
-~/relaunch-djbooth.sh
+export DISPLAY=:0 XAUTHORITY=/home/$(whoami)/.Xauthority
+pkill -f chromium 2>/dev/null; sleep 3; rm -f ~/.config/chromium/Singleton*
+xrandr --output HDMI-2 --primary && bash ~/djbooth-kiosk.sh &
+# Wait 12 seconds, then:
+bash ~/djbooth-rotation-display.sh
 ```
-
-**How this works:** The crowd screen Chromium is launched with `--class=RotationChromium`. The `~/djbooth-rotation-display.sh` script uses `pkill -f RotationChromium` which only matches that specific window — it does not touch the DJ kiosk Chromium. Confirmed by reading the script on neonaidj003 Apr 20 2026.
 
 ### Audio
 - USB DAC with S/PDIF digital optical passthrough → venue mixer
@@ -739,3 +825,73 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - **Auphonic API**: Automatic audio post-processing (noise reduction, EQ, loudness normalization)
 - **Telegram**: Notification service for fleet monitoring alerts
 - **@aws-sdk/client-s3**: AWS SDK for R2 integration
+
+## Session 46 — April 25, 2026 (THE PONY EVANSVILLE / 003 — big-client-night recovery)
+
+### Incident Timeline
+1. Began with screen-assignment fix for 002 and 003 (kiosk vs crowd swapped on portrait TVs).
+2. Pushed wmctrl auto-install + sequential window launch into `djbooth-update-github.sh` UPDATE SUCCESSFUL block.
+3. 002 ran the new update successfully. 003 only ran the manual recovery block — wmctrl was missing → crowd never went fullscreen.
+4. While debugging crowd window on 003 (multiple chromium relaunches via SSH), the **djbooth.service entered a crash-loop**: `Cannot find package 'express'`. Cause: `node_modules/` on 003 was incomplete/missing — likely a prior partial install or rebuild left it broken.
+5. Recovery: `cd ~/djbooth && NODE_ENV=development npm install --legacy-peer-deps --no-audit --no-fund` → service started → kiosk login worked → crowd window relaunched + wmctrl fullscreened.
+
+### Key Learnings — write into update script next time
+- **`--legacy-peer-deps` is REQUIRED** for `npm install` on the Pis. `@hello-pangea/dnd@17.0.0` declares `peer react@^18.0.0` while project uses `react@18.3.1`. Without the flag, install aborts and node_modules ends up missing/partial. Verify the update script is using this flag everywhere it runs npm install.
+- **node_modules integrity check** before `systemctl restart djbooth` would have caught this in 5 seconds: `node -e "require.resolve('express')"` → if it throws, run npm install before restart.
+- **wmctrl auto-install** has now been added to the update script's apt section (alongside ffmpeg/xdotool/aubio) — committed this session.
+- **Background chromium from SSH is fragile** without `nohup ... & disown` — the kiosk/crowd browsers can die when the SSH session ends. The recovery commands now use nohup+disown explicitly.
+
+### 003 Specifics (Reference)
+- User: `neonaidj003`, home: `/home/neonaidj003`, app dir: `/home/neonaidj003/djbooth`
+- Tailscale: `neonaidj002-1.tail9b3804.ts.net` (note: 002 hostname even though it's 003 — leftover from setup)
+- xrandr layout: HDMI-1 = 720x1280 portrait at 0,0 (CROWD TV), HDMI-2 = 1440x900 primary at 720,0 (KIOSK)
+- Crowd-window launch must use `--window-size=720,1280` (NOT 002's 2160x3840)
+- XAUTHORITY discovery on 003: `find /run/user -name "Xauthority" 2>/dev/null | head -1` then fall back to `/home/neonaidj003/.Xauthority`
+
+### 002 Specifics (Reference, unchanged)
+- xrandr layout: HDMI-1 = 2160x3840 portrait right (CROWD TV), HDMI-2 = 1920x1080 primary at 3840,0 (KIOSK)
+- Crowd-window launch uses `--window-size=2160,3840`
+
+### Golden Rules Reaffirmed
+- PRIMARY display = kiosk. NON-PRIMARY = crowd. Never detect by HDMI port number.
+- Service is systemd `djbooth.service` — survives chromium kills. Browser kills are cosmetic and recoverable.
+- Anti-panic invariant for the user: killing chromium windows over SSH **never** touches data, songs, schedules, or settings.
+
+### Remote Recovery Playbook (Pin to Memory)
+Crash-loop / "site can't be reached" / login broken on a Pi:
+```bash
+sudo systemctl status djbooth --no-pager | head -30
+sudo journalctl -u djbooth -n 50 --no-pager
+# If ERR_MODULE_NOT_FOUND:
+cd ~/djbooth && NODE_ENV=development npm install --legacy-peer-deps --no-audit --no-fund
+sudo systemctl restart djbooth
+```
+
+Crowd screen blank / wrong size / not fullscreen (003 dimensions shown):
+```bash
+nohup bash -c '
+export DISPLAY=:0
+export XAUTHORITY=$(find /run/user -name "Xauthority" 2>/dev/null | head -1)
+[ -z "$XAUTHORITY" ] && export XAUTHORITY=/home/$(whoami)/.Xauthority
+which wmctrl >/dev/null || sudo apt-get install -y wmctrl -q
+pkill -f "RotationDisplay\|RotationChromium" 2>/dev/null; sleep 3
+rm -rf /tmp/chromium-rotation
+nohup chromium --app=http://localhost:3001/RotationDisplay --class=RotationChromium --user-data-dir=/tmp/chromium-rotation --window-position=0,0 --window-size=720,1280 --noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required --force-device-scale-factor=1 >/tmp/crowd.log 2>&1 &
+sleep 10
+wmctrl -x -r "RotationChromium" -e 0,0,0,720,1280
+sleep 1
+wmctrl -x -r "RotationChromium" -b add,fullscreen
+' >/tmp/crowd-recovery.log 2>&1 &
+disown
+```
+
+Bootstrap a stale Pi to the latest update (skips homebase, fetches script directly from GitHub):
+```bash
+curl -sf https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/public/public/djbooth-update-github.sh -o ~/djbooth-update.sh && chmod +x ~/djbooth-update.sh && DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh 2>&1 | tee ~/update.log
+```
+
+### Open Follow-ups (NOT done tonight — for next session)
+- Verify `djbooth-update-github.sh` uses `--legacy-peer-deps` on every `npm install` invocation. If not, add it.
+- Consider adding a node_modules sanity check (`node -e "require.resolve('express')"`) before `systemctl restart djbooth` in the update script — fail loud, not crash-loop silent.
+- 003 has not yet run the new update — only manual recovery. Schedule a calm-day update for 003 to get autostart fixes.
+- User explicitly does NOT want anything else touched tonight. No more changes until they say so.

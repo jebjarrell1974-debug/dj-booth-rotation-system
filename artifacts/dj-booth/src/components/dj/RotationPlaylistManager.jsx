@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable, useMouseSensor } from '@hello-pa
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -128,6 +128,7 @@ export default function RotationPlaylistManager({
   onAnnouncementsToggle,
   onSkipDancer,
   onSkipCurrentDancer,
+  onMoveDancerToTop,
   onDancerDragReorder,
   currentDancerIndex,
   commercialCounter = 0,
@@ -384,16 +385,22 @@ export default function RotationPlaylistManager({
         const fallbackPlaylist = dancer?.playlist || [];
         let assigned = [];
         if (!isFoldersOnly && fallbackPlaylist.length > 0) {
+          // PLAYLIST RULE: when dancer has a playlist, use ONLY her playlist songs.
+          // Fresh first, then on-cooldown (oldest played first). Never random library.
+          // Mirrors server-side selectTracksForSet behavior in db.js.
           const playlistSet = new Set(fallbackPlaylist);
-          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name) && !isOnCooldown(t.name));
-          assigned = fisherYatesShuffle(playlistTracks).slice(0, songsPerSet).map(t => t.name);
-        }
-        if (assigned.length < songsPerSet) {
+          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
+          const fresh = playlistTracks.filter(t => !isOnCooldown(t.name));
+          const cooldown = playlistTracks
+            .filter(t => isOnCooldown(t.name))
+            .sort((a, b) => (songCooldowns[a.name] || 0) - (songCooldowns[b.name] || 0));
+          assigned = [...fisherYatesShuffle(fresh).map(t => t.name), ...cooldown.map(t => t.name)].slice(0, songsPerSet);
+        } else {
+          // No playlist or folders_only mode — random from genre pool is correct
           const genrePool = filterByGenres(tracks, activeGenres);
-          const usedSet = new Set([...excludeSet, ...assigned]);
-          const fresh = genrePool.filter(t => !usedSet.has(t.name) && !isOnCooldown(t.name));
-          const fill = fresh.length > 0 ? fresh : genrePool.filter(t => !usedSet.has(t.name));
-          assigned = [...assigned, ...fisherYatesShuffle(fill).slice(0, songsPerSet - assigned.length).map(t => t.name)];
+          const fresh = genrePool.filter(t => !excludeSet.has(t.name) && !isOnCooldown(t.name));
+          const fill = fresh.length > 0 ? fresh : genrePool.filter(t => !excludeSet.has(t.name));
+          assigned = fisherYatesShuffle(fill).slice(0, songsPerSet).map(t => t.name);
         }
         newAssignments[dancerId] = assigned;
         assigned.forEach(n => batchExcludes.push(n));
@@ -432,38 +439,107 @@ export default function RotationPlaylistManager({
     if (prevSongsPerSetRef.current === songsPerSet) return;
     prevSongsPerSetRef.current = songsPerSet;
     if (tracks.length === 0) return;
-    const genrePool = filterByGenres(tracks, djOptions?.activeGenres);
-    const allUsed = new Set(Object.values(songAssignmentsRef.current).flat());
+
+    // First handle the SHRINK case synchronously — just trim the list.
     setSongAssignments(prev => {
       const updated = { ...prev };
       let changed = false;
       Object.keys(updated).forEach(dancerId => {
         const songs = updated[dancerId];
-        if (!songs) return;
-        if (songs.length > songsPerSet) {
+        if (songs && songs.length > songsPerSet) {
           updated[dancerId] = songs.slice(0, songsPerSet);
-          changed = true;
-        } else if (songs.length < songsPerSet) {
-          const usedNames = new Set([...allUsed, ...songs]);
-          const dancer = dancers.find(d => d.id === dancerId);
-          const dancerPlaylist = dancer?.playlist || [];
-          let extras = [];
-          if (dancerPlaylist.length > 0) {
-            const unusedFromPlaylist = dancerPlaylist.filter(n => !usedNames.has(n));
-            extras = fisherYatesShuffle(unusedFromPlaylist);
-          }
-          if (extras.length < songsPerSet - songs.length) {
-            const available = genrePool.filter(t => !usedNames.has(t.name));
-            extras = [...extras, ...fisherYatesShuffle(available).map(t => t.name)];
-          }
-          const needed = songsPerSet - songs.length;
-          updated[dancerId] = [...songs, ...extras.slice(0, needed)];
-          updated[dancerId].forEach(n => allUsed.add(n));
           changed = true;
         }
       });
       return changed ? updated : prev;
     });
+
+    // GROW case — need to ADD songs. Use the server endpoint so the playlist rule is honored:
+    // "When a dancer has a playlist, pick ONLY from that playlist — never random library."
+    const dancersNeedingMore = Object.keys(songAssignmentsRef.current).filter(dancerId => {
+      const songs = songAssignmentsRef.current[dancerId];
+      return songs && songs.length > 0 && songs.length < songsPerSet;
+    });
+    if (dancersNeedingMore.length === 0) return;
+
+    const isFoldersOnly = djOptions?.musicMode === 'folders_only';
+    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+
+    (async () => {
+      const token = localStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const allUsed = new Set(Object.values(songAssignmentsRef.current).flat());
+      const additions = {};
+
+      for (const dancerId of dancersNeedingMore) {
+        if (djOverridesRef.current.has(dancerId)) continue;
+        const dancer = dancers.find(d => d.id === dancerId);
+        if (!dancer) continue;
+        const existingSongs = songAssignmentsRef.current[dancerId] || [];
+        const needed = songsPerSet - existingSongs.length;
+        if (needed <= 0) continue;
+
+        const dancerPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0)
+          ? fisherYatesShuffle(dancer.playlist) : [];
+
+        try {
+          const res = await fetch('/api/music/select', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              count: needed,
+              excludeNames: [...allUsed],
+              genres: activeGenres,
+              dancerPlaylist
+            }),
+            signal: AbortSignal.timeout(5000)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const selected = (data.tracks || []).map(t => t.name);
+            additions[dancerId] = selected;
+            selected.forEach(n => allUsed.add(n));
+            continue;
+          }
+        } catch (err) {
+          console.warn(`⚠️ songsPerSet grow: server failed for ${dancer.name}: ${err.message}`);
+        }
+
+        // Local fallback — playlist-strict, NEVER random library when dancer has a playlist
+        const fallbackPlaylist = dancer?.playlist || [];
+        let fillNames = [];
+        if (!isFoldersOnly && fallbackPlaylist.length > 0) {
+          const fallbackNow = Date.now();
+          const isOnCooldown = (name) => !!(songCooldowns[name] && (fallbackNow - songCooldowns[name]) < FOUR_HOURS_MS);
+          const playlistSet = new Set(fallbackPlaylist);
+          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !allUsed.has(t.name));
+          const fresh = playlistTracks.filter(t => !isOnCooldown(t.name));
+          const cooldown = playlistTracks
+            .filter(t => isOnCooldown(t.name))
+            .sort((a, b) => (songCooldowns[a.name] || 0) - (songCooldowns[b.name] || 0));
+          fillNames = [...fisherYatesShuffle(fresh).map(t => t.name), ...cooldown.map(t => t.name)].slice(0, needed);
+        } else {
+          // folders_only or no playlist — random from genre pool is correct
+          const genrePool = filterByGenres(tracks, activeGenres);
+          const available = genrePool.filter(t => !allUsed.has(t.name));
+          fillNames = fisherYatesShuffle(available).slice(0, needed).map(t => t.name);
+        }
+        additions[dancerId] = fillNames;
+        fillNames.forEach(n => allUsed.add(n));
+      }
+
+      if (Object.keys(additions).length > 0) {
+        setSongAssignments(prev => {
+          const updated = { ...prev };
+          for (const [dancerId, additionalSongs] of Object.entries(additions)) {
+            if (djOverridesRef.current.has(dancerId)) continue;
+            const existing = updated[dancerId] || [];
+            updated[dancerId] = [...existing, ...additionalSongs];
+          }
+          return updated;
+        });
+      }
+    })();
   }, [songsPerSet, tracks, dancers, djOptions]);
 
   const getAuthHeaders = useCallback(() => {
@@ -847,6 +923,7 @@ export default function RotationPlaylistManager({
   const lastSaveTimeRef = useRef(0);
   const lastSkipDancerTimeRef = useRef(0);
   const lastSkipCurrentDancerTimeRef = useRef(0);
+  const lastMoveToTopTimeRef = useRef(0);
   const handleSave = async () => {
     const now = Date.now();
     if (now - lastSaveTimeRef.current < 2000) return;
@@ -1282,6 +1359,27 @@ export default function RotationPlaylistManager({
                                   <SkipForward className="w-5 h-5" />
                                 </Button>
                               )}
+                              {isRotationActive && onMoveDancerToTop && index !== currentDancerIndex && localRotation.length > 2 && (() => {
+                                const nextIdx = (currentDancerIndex + 1) % localRotation.length;
+                                if (index === nextIdx) return null;
+                                return (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="w-11 h-11 text-cyan-400 hover:text-cyan-200 hover:bg-cyan-900/30 flex-shrink-0"
+                                    title="TOP — move to next on stage (does not interrupt current dancer)"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const now = Date.now();
+                                      if (now - lastMoveToTopTimeRef.current < 2000) return;
+                                      lastMoveToTopTimeRef.current = now;
+                                      onMoveDancerToTop(dancer.id);
+                                    }}
+                                  >
+                                    <ChevronsUp className="w-5 h-5" />
+                                  </Button>
+                                );
+                              })()}
                               {isRotationActive && onSendToVip && !dancerVipMap[dancer.id] && (
                                 <Button
                                   size="icon"

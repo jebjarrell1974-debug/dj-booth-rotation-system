@@ -4534,6 +4534,39 @@ export default function DJBooth() {
                   console.log('⏭️ Skipped dancer to bottom:', dancer?.name);
                   toast(`${dancer?.name || 'Entertainer'} moved to end of rotation`, { icon: '⏭️' });
                 }}
+                onMoveDancerToTop={(dancerId) => {
+                  if (!isRotationActive) return;
+                  const rot = [...rotationRef.current];
+                  if (rot.length <= 2) return;
+                  const moveIdx = rot.indexOf(dancerId);
+                  if (moveIdx === -1) return;
+                  const currentIdx = currentDancerIndexRef.current;
+                  if (currentIdx < 0 || currentIdx >= rot.length) return;
+                  const currentDancerId = rot[currentIdx];
+                  if (dancerId === currentDancerId) return;
+                  // Already next on stage? no-op with toast
+                  const nextIdx = (currentIdx + 1) % rot.length;
+                  if (rot[nextIdx] === dancerId) {
+                    const dancer = dancers.find(d => d.id === dancerId);
+                    toast(`${dancer?.name || 'Entertainer'} is already up next`, { icon: 'ℹ️' });
+                    return;
+                  }
+                  // Remove dancer from her current position
+                  rot.splice(moveIdx, 1);
+                  // Find where the on-stage dancer is now (her index may have shifted)
+                  let newCurrentIdx = rot.indexOf(currentDancerId);
+                  if (newCurrentIdx === -1) newCurrentIdx = currentIdx;
+                  // Insert moved dancer right after the on-stage dancer
+                  rot.splice(newCurrentIdx + 1, 0, dancerId);
+                  setRotation(rot);
+                  rotationRef.current = rot;
+                  setCurrentDancerIndex(newCurrentIdx);
+                  currentDancerIndexRef.current = newCurrentIdx;
+                  updateStageState(newCurrentIdx, rot);
+                  const dancer = dancers.find(d => d.id === dancerId);
+                  console.log('⏫ Moved dancer to TOP (next on stage):', dancer?.name);
+                  toast(`${dancer?.name || 'Entertainer'} is up next`, { icon: '⏫' });
+                }}
                 onDancerDragReorder={(newRotation, oldFirstId, newFirstId) => {
                   if (!isRotationActive) return;
                   setRotation(newRotation);
@@ -4571,24 +4604,49 @@ export default function DJBooth() {
                   }
                 }}
                 songsPerSet={songsPerSet}
-                onSongsPerSetChange={(n) => {
+                onSongsPerSetChange={async (n) => {
                   setSongsPerSet(n);
                   songsPerSetRef.current = n;
-                  if (isRotationActive) {
-                    const currentSongs = { ...rotationSongsRef.current };
-                    rotation.forEach(dancerId => {
-                      const existing = currentSongs[dancerId] || [];
-                      if (existing.length < n) {
-                        const usedNames = new Set(existing.map(t => t.name));
-                        const available = filterCooldown(tracks.filter(t => !usedNames.has(t.name)));
-                        const shuffled = fisherYatesShuffle(available);
-                        currentSongs[dancerId] = [...existing, ...shuffled.slice(0, n - existing.length)];
-                      } else if (existing.length > n) {
-                        currentSongs[dancerId] = existing.slice(0, n);
+                  if (!isRotationActive) return;
+
+                  // SHRINK case — just slice, synchronous
+                  const trimmed = { ...rotationSongsRef.current };
+                  let trimmedAny = false;
+                  rotation.forEach(dancerId => {
+                    const existing = trimmed[dancerId] || [];
+                    if (existing.length > n) {
+                      trimmed[dancerId] = existing.slice(0, n);
+                      trimmedAny = true;
+                    }
+                  });
+                  if (trimmedAny) {
+                    setRotationSongs(trimmed);
+                    rotationSongsRef.current = trimmed;
+                  }
+
+                  // GROW case — use getDancerTracks per-dancer so the playlist rule is honored
+                  // (server-side selectTracksForSet: dancer with playlist gets ONLY playlist songs).
+                  const dancersNeedingMore = rotation.filter(dancerId => {
+                    const existing = rotationSongsRef.current[dancerId] || [];
+                    return existing.length < n;
+                  });
+                  for (const dancerId of dancersNeedingMore) {
+                    const dancer = dancers.find(d => d.id === dancerId);
+                    if (!dancer) continue;
+                    const existing = rotationSongsRef.current[dancerId] || [];
+                    const needed = n - existing.length;
+                    if (needed <= 0) continue;
+                    try {
+                      const newTracks = await getDancerTracks(dancer, needed, djOptions, false);
+                      if (newTracks && newTracks.length > 0) {
+                        const updated = { ...rotationSongsRef.current };
+                        updated[dancerId] = [...(updated[dancerId] || []), ...newTracks];
+                        setRotationSongs(updated);
+                        rotationSongsRef.current = updated;
                       }
-                    });
-                    setRotationSongs(currentSongs);
-                    rotationSongsRef.current = currentSongs;
+                    } catch (err) {
+                      console.warn(`⚠️ songsPerSet grow live: ${dancer.name} failed: ${err.message}`);
+                    }
                   }
                 }}
                 onSongAssignmentsChange={setPlannedSongAssignments}
