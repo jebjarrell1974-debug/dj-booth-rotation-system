@@ -9,11 +9,11 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 
 | Unit | Tailscale IP | Role | Club | Status |
 |---|---|---|---|---|
-| Homebase | `100.109.73.27` | Fleet server only (no audio output) | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026) |
+| Homebase | `100.109.73.27` | Fleet server only (no audio output) | Homebase | HP Compaq 8200 Elite (replaced old Pi homebase Mar 2026 — historical) |
 | neonaidj001 | `100.115.212.34` | DJ booth | Pony Bama | SSH: `neonaidj001@100.115.212.34` — 25,209 tracks, active |
 | neonaidj002 | unknown | DJ booth | Rocket City Showgirls | x86 Dell OptiPlex. HDMI-1 = crowd TV (2160x3840+0+0, rotated right). HDMI-2 = DJ kiosk (primary, 1920x1080+3840+0). Screens manually fixed Apr 24 2026 — confirmed correct. Scripts updated to --app+wmctrl. |
 | neonaidj003 | `100.81.90.125` | DJ booth | THE PONY EVANSVILLE | x86 Dell OptiPlex. HDMI-1 = crowd TV (720x1280+0+0, rotated left). HDMI-2 = DJ kiosk (primary, 1440x900+720+0). Big client visit Apr 25 2026. Scripts updated to --app+wmctrl. SSH: `neonaidj003@100.81.90.125` |
-| neonaidj004 | `100.95.238.71` | DJ booth | THE PONY PENSACOLA | Placeholder Pi — pending hardware upgrade to x86 mini PC |
+| neonaidj004 | `100.95.238.71` | DJ booth | THE PONY PENSACOLA | Placeholder unit — pending hardware upgrade to x86 mini PC |
 
 **Fleet dashboard**: `http://100.109.73.27:3001/fleet`
 **Update pipeline**: `DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh` to bypass homebase and pull direct from GitHub.
@@ -21,6 +21,37 @@ The system aims to provide an AI DJ that never sleeps, offering human-sounding v
 **IMPORTANT — Homebase dead air alerts**: Homebase (HP Compaq) has no audio output and never will. "Dead air logged" warnings from homebase in the fleet dashboard are expected and can be ignored permanently. **FIXED Apr 22 2026**: `fleet-monitor.js` now suppresses dead-air Telegram alerts for any device whose name contains "homebase", so these will no longer spam Telegram.
 
 **IMPORTANT — R2 sync purge behavior**: `syncMusicFromR2` in `server/r2sync.js` deletes local music files that are not present in R2. This is intentional (homebase deletions propagate to fleet) but dangerous if R2 is ever partially populated. **FIXED Apr 22 2026**: A 20% delta safeguard is now in place — if R2 has >20% fewer files than the local library, the purge is skipped entirely and a warning is logged. Never manually delete from R2 without understanding this logic.
+
+## 🔒 RUNTIME ARCHITECTURE — VERIFIED ON EVERY DELL UNIT (Apr 27 2026)
+
+**THESE ARE DELL ENTERPRISE MINI PCS, NOT RASPBERRY PIs.** The fleet was migrated from Pi 5s to x86 Dell OptiPlex hardware. Anyone (including the agent) referring to these as "Pis" is wrong — correct terminology is "Dell unit" or just "venue unit."
+
+**The app stack on every Dell unit (Homebase, 001, 002, 003):**
+
+| Component | Detail |
+|---|---|
+| **Web server port** | `3001` — Express serves the built React bundle directly. **NO nginx, NO port 80.** |
+| **Kiosk URL** | `http://localhost:3001` (Chromium `--app=` flag) |
+| **systemd services** | `djbooth.service` (runs `/usr/bin/node server/index.js`), `djbooth-watchdog.service` (browser watchdog) |
+| **Boot auto-update** | `djbooth-update.service` (oneshot at boot) + backup `@reboot` cron entry — both run `~/djbooth-update.sh`. A `failed` status here is usually stale from a previous boot and does NOT mean the manual update failed. |
+| **App directory** | `~/djbooth/` (symlink-free, contains `server/`, `dist/`, `node_modules/`, `nightclub.db`) |
+| **Backups** | `~/djbooth.backup-YYYYMMDD-HHMMSS/` — created by `djbooth-update.sh` on every run |
+| **Update script** | `~/djbooth-update.sh` (also fetched fresh from GitHub on each run via `djbooth-update-github.sh`) |
+| **Per-unit display config** | `~/.djbooth-display-config.sh` — dotfile, READ ONLY by update script, NEVER overwritten |
+| **Launcher scripts in `~`** | `djbooth-kiosk.sh`, `djbooth-watchdog.sh`, `djbooth-display-watcher.sh`, `djbooth-rotation-display.sh`, `relaunch-djbooth.sh` |
+
+**To verify a Dell unit is healthy after an update, the user runs (locally, after their own SSH):**
+```
+sudo systemctl status djbooth djbooth-watchdog --no-pager | head -15
+curl -s http://localhost:3001/ | grep -oE "index-[A-Za-z0-9_-]+\.(js|css)" | sort -u
+ls ~/djbooth/node_modules/express/package.json && echo OK
+```
+
+**Do NOT suggest these checks (they will fail and confuse the user):**
+- ❌ `nginx` status / nginx config — there is no nginx
+- ❌ port 80 — the app does not listen there
+- ❌ `pm2` — not used; systemd manages the process
+- ❌ `djbooth-kiosk.service` / `djbooth-api.service` — service is just `djbooth.service`
 
 ## 🔒 LOCKED-IN HARDWARE WIRING — UNIVERSAL ON EVERY NEON AI DJ UNIT (Apr 25 2026)
 
@@ -42,25 +73,33 @@ If a unit is wired backwards (rare/never), the fallback in the launcher picks "a
 
 ---
 
-## ✅ Apr 25, 2026 — Session 49c (DJ kiosk Rotation tab right-side cutoff) — FIXED
+## ✅ Apr 25, 2026 — Session 49c (DJ kiosk Rotation tab right-side cutoff) — FIXED (revised)
 
-**Bug**: On 003's 1440×900 kiosk, the Rotation tab clipped the rightmost action button (Remove/X) on each dancer card row. Also affected the VIP/Crown and TOP buttons when they were present. Other tabs were fine — only Rotation, because it's the only tab using the two-panel split layout.
+**Bug**: On 003's 1440×900 kiosk, the Rotation tab clipped the rightmost action button (Remove/X) on each dancer card row. Also affected the VIP/Crown and TOP buttons when they were present.
 
-**Root cause**: `RotationPlaylistManager.jsx` uses a 50/50 horizontal split (Music Library | Dancer Cards). On 1440px wide kiosks, the right panel is only ~672px. Each dancer card row contains: drag handle (16px) + avatar (28px) + name + up to 4 action buttons × 44px (Skip + TOP + VIP + Remove) + gaps + padding = ~336px of fixed width. With anything more than a short name, the rightmost button overflows the panel and gets clipped by the parent's `overflow-hidden`.
+**Root cause**: `RotationPlaylistManager.jsx` uses a 50/50 horizontal split (Music Library | Dancer Cards). On 1440px wide kiosks, the right panel is ~672px. Each dancer card row contains: drag handle (16px) + avatar (28px) + name + up to 4 action buttons × 44px (Skip + TOP + VIP + Remove) + 6 gaps × 8px + 24px padding ≈ 336px of fixed width. Long names + 5 buttons → overflow → clipped by parent `overflow-hidden`.
 
-**Fix pushed (commit efcb9162)**: Made the panel split responsive in `artifacts/dj-booth/src/components/dj/RotationPlaylistManager.jsx`:
-- **Default (< 1536px wide, e.g. 003 at 1440)**: library `w-2/5` (40%), rotation `w-3/5` (60%) → right panel grows from 672px to ~806px (+134px)
-- **`2xl:` (≥ 1536px wide, e.g. 002 at 1920)**: library `w-1/2`, rotation `w-1/2` → unchanged 50/50 split
-- Added `min-w-0` to both panels for proper flex shrinking
+**First attempt (commit efcb9162) — superseded**: Made panel split responsive (40/60 on small, 50/50 on big). DJ flagged tradeoff: shrinking the library to 40% truncated long song titles sooner. Reverted.
+
+**Final fix (commit pushed in this session)**: Leave the 50/50 split alone, reclaim the needed space *inside* each dancer card row by tightening padding/gap:
+- Library panel: `w-1/2` (back to original 672px on 003 — song titles read same as before)
+- Rotation panel: `w-1/2` (also 672px, but now ~32px more usable internal width)
+- Dancer card row: `px-3 gap-2` → `px-2 gap-1` (saves 8px padding + 24px gaps = 32px)
+- Both panels also got `min-w-0` for proper flex shrinking
+
+**Result on 003 (1440×900)**:
+- Library: 672px wide → ~624px for song titles (UNCHANGED from last night)
+- Rotation: 672px wide → all 4 buttons + name fit, no clipping
+- 002 (1920×1080): also benefits from tighter card spacing (more name room) — no negative impact
 
 **Why this is safe**:
 - No logic changes
-- No button sizes changed (still 44px touch-friendly)
-- 002 (1920px wide) unaffected — still uses 50/50
-- Only 003 and any future smaller-display kiosk gets the wider rotation panel
-- Fits 4 buttons + name comfortably in the new 60% panel
+- No button sizes changed (all still 44px touch-friendly)
+- No font sizes changed
+- Same 50/50 layout DJs already know
+- Just slightly tighter spacing inside each card row
 
-Verified by 8:30 AM auto-update tomorrow on 003. If something does look off, rollback is `git revert efcb9162`.
+Verified by 8:30 AM auto-update tomorrow on 003.
 
 ---
 
@@ -144,7 +183,7 @@ After the Apr 25 06:25 update on 002, the new launcher scripts wrote correctly t
 5. **`djbooth-watchdog` systemd service** now `enable && restart` instead of `start` (handles dead/disabled state from previous updates).
 6. Added `xset s off / -dpms / s noblank` to kiosk launcher to prevent screen blanking.
 
-**Verified live on 002 Apr 25 11:05 UTC**: `wmctrl -lG` confirms kiosk window at `3840,0 1920x1080` (HDMI-2 landscape), crowd at `0,0 2160x3840` (HDMI-1 portrait), both fullscreen. Pi can pull this fix via `~/djbooth-update.sh`.
+**Verified live on 002 Apr 25 11:05 UTC**: `wmctrl -lG` confirms kiosk window at `3840,0 1920x1080` (HDMI-2 landscape), crowd at `0,0 2160x3840` (HDMI-1 portrait), both fullscreen. Dell unit can pull this fix via `~/djbooth-update.sh`.
 
 ---
 
@@ -154,7 +193,7 @@ After the Apr 25 06:25 update on 002, the new launcher scripts wrote correctly t
 2. **TOP button** — cyan `ChevronsUp` button on each dancer card (RotationPlaylistManager ~line 1365) splices the dancer to the position right after `currentDancerId` without interrupting the current set. Hidden when dancer is on-stage / already next / rotation length ≤2. `lastMoveToTopTimeRef` cooldown prevents rapid-fire taps.
 3. **Bulletproof screen launch** — `djbooth-update-github.sh` rewritten to be orientation-aware: W>H = kiosk landscape, H>W = crowd portrait. Crowd launch waits for app health check, uses wmctrl move-then-fullscreen, and a 60s heartbeat watchdog re-launches if the crowd window dies (only after >180s uptime to avoid boot races). Kiosk script ALWAYS rewritten on update to set primary on the landscape monitor before launch. Single source of truth = `djbooth-rotation-display.sh`.
 
-**Pi update path verified live**: `https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/dist/public/public/djbooth-update-github.sh` (926 lines). 003 has NOT yet pulled — user must run update on 003.
+**Dell unit update path verified live**: `https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/dist/public/public/djbooth-update-github.sh` (926 lines). 003 has NOT yet pulled — user must run update on 003.
 
 ---
 
@@ -600,11 +639,11 @@ This was the root cause of "I pushed it but the screen didn't change" — the di
 - Systemd service setup — ✅ identical commands
 - Tailscale VPN — ✅ same install script
 - CPU temperature (`/sys/class/thermal/thermal_zone0/temp`) — ✅ works on x86 Linux
-- FFmpeg/LUFS analysis — ✅ actually faster on x86 than Pi ARM
+- FFmpeg/LUFS analysis — ✅ actually faster on x86 than ARM
 - `chromium` package name — ✅ same on Debian x86
 - `djbooth-update.sh` update script — ✅ works on any Debian Linux
-- **Kiosk display setup** — ⚠️ needs minor update: current script configures `labwc` (Pi 5 Wayland compositor). x86 Debian uses a standard desktop environment. The `pi-setup.sh` script's display/autostart section needs to be updated for x86 before first deployment.
-- `wlr-randr` screen rotation — ⚠️ Pi-specific, skip on x86 unless display needs rotation
+- **Kiosk display setup** — ⚠️ needs minor update: current script configures `labwc` (Pi 5 Wayland compositor — legacy, Dell uses standard X11). x86 Debian uses a standard desktop environment. The `pi-setup.sh` script's display/autostart section needs to be updated for x86 before first deployment.
+- `wlr-randr` screen rotation — ⚠️ legacy from Pi era, skip on x86 unless display needs rotation
 
 **Setup process for new x86 unit**:
 1. Install Debian 12 Bookworm (wipe Windows)
@@ -623,27 +662,27 @@ This was the root cause of "I pushed it but the screen didn't change" — the di
 - **LUFS target**: `AUTO_GAIN_TARGET_LUFS = -10` (club standard, changed from -14 streaming standard). Server-side FFmpeg analysis stores per-track gain in `music_tracks.auto_gain`; pre-computed values override the browser RMS fallback.
 - **Voice cache version**: `CURRENT_VOICE_VERSION = 'V11'` in `AnnouncementSystem.jsx`; `NUM_VARIATIONS = 5`; varNum is now truly random (no back-to-back repeats).
 - Production database stored at `/home/runner/data/djbooth.db` (outside project directory) to survive republishing. Development uses `./djbooth.db`. Configurable via `DB_PATH` env var.
-- **ALWAYS ask before making ANY changes** — describe exactly what you plan to change and why, wait for explicit approval, THEN implement. This applies to every single file edit, terminal command on the Pi, and code change — no exceptions, even for "obvious" fixes.
-- **NEVER tell the user to delete files on a Pi** — if disk space is needed, ask what they want to remove
-- **NEVER push files that don't belong on Pis** — no attached_assets, no .local/state, no sample music, no database files
-- **NEVER modify Pi service files, environment variables, or database paths** without explicit user approval
+- **ALWAYS ask before making ANY changes** — describe exactly what you plan to change and why, wait for explicit approval, THEN implement. This applies to every single file edit, terminal command on the Dell unit, and code change — no exceptions, even for "obvious" fixes.
+- **NEVER tell the user to delete files on a Dell unit** — if disk space is needed, ask what they want to remove
+- **NEVER push files that don't belong on Dell units** — no attached_assets, no .local/state, no sample music, no database files
+- **NEVER modify Dell unit service files, environment variables, or database paths** without explicit user approval
 - **GitHub push must ALWAYS exclude**: attached_assets, .local, music, voiceovers, .db/.db-wal/.db-shm, node_modules, dist, .cache, .config, .upm
-- **API keys are in browser localStorage on each Pi** — code updates should NEVER affect them, but disk corruption can wipe them
-- **Music path on Pony Nation Pi**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
+- **API keys are in browser localStorage on each Dell unit** — code updates should NEVER affect them, but disk corruption can wipe them
+- **Music path on neonaidj001 Dell**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
 - **Music is synced to/from R2** — even if files are lost locally, R2 has the backup and will re-download on service restart
-- R2 boot sync (voiceovers + music) runs on every boot — this is intentional for Pi morning reboots
+- R2 boot sync (voiceovers + music) runs on every boot — this is intentional for morning reboots
 - Replit should NOT have a music path set — no local music folder needed here
 - **Before any GitHub push**: verify the file list does NOT contain screenshots, music files, database files, or Replit internal state files
-- **Test impact on Pi before pushing**: consider what the update script will do with every change
+- **Test impact on Dell unit before pushing**: consider what the update script will do with every change
 
 ## System Architecture
-The application uses React 18, Vite, and TailwindCSS for the frontend, with Radix UI primitives and shadcn/ui styling. UI/UX is designed with a dark nightclub theme featuring neon cyan and blue accents, prioritizing low-power device performance. `localStorage` manages entities, while `IndexedDB` provides fast session caching for voiceover audio. State management uses React Query, and routing is handled by React Router v6. Configuration settings are stored in the browser's `localStorage` on each Pi.
+The application uses React 18, Vite, and TailwindCSS for the frontend, with Radix UI primitives and shadcn/ui styling. UI/UX is designed with a dark nightclub theme featuring neon cyan and blue accents, prioritizing low-power device performance. `localStorage` manages entities, while `IndexedDB` provides fast session caching for voiceover audio. State management uses React Query, and routing is handled by React Router v6. Configuration settings are stored in the browser's `localStorage` on each Dell unit.
 
-Music tracks are indexed server-side in a SQLite `music_tracks` table, supporting various audio formats and genre extraction. A background FFmpeg LUFS analysis process (`server/lufsAnalyzer.js`) runs at boot — 3 songs in parallel at -10 LUFS (club standard) — storing `lufs` and `auto_gain` values per track. Pre-computed gain values are served in all track API responses and the fleet music manifest, so venue Pis receive gain values without running FFmpeg themselves. The browser's 10-second RMS fallback is preserved for tracks not yet analyzed. A custom dual-deck audio engine manages seamless music playback with equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Beat-matched crossfading adjusts incoming track tempo, and a 3-band EQ is available for music and voice. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours.
+Music tracks are indexed server-side in a SQLite `music_tracks` table, supporting various audio formats and genre extraction. A background FFmpeg LUFS analysis process (`server/lufsAnalyzer.js`) runs at boot — 3 songs in parallel at -10 LUFS (club standard) — storing `lufs` and `auto_gain` values per track. Pre-computed gain values are served in all track API responses and the fleet music manifest, so venue Dell units receive gain values without running FFmpeg themselves. The browser's 10-second RMS fallback is preserved for tracks not yet analyzed. A custom dual-deck audio engine manages seamless music playback with equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Beat-matched crossfading adjusts incoming track tempo, and a 3-band EQ is available for music and voice. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours.
 
 An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, optimized for low-power devices. Critical state persists to `localStorage` for crash recovery. Features include a 4-hour song cooldown, configurable songs-per-set, interstitial break songs, genre filtering, and a Playback Watchdog for audio recovery. The `DJBooth` component remains mounted persistently to preserve audio engine state. An Autoplay Queue feature manages music when no entertainers are present.
 
-A fleet management system enables centralized control of multiple Pi units, providing device registration, heartbeat monitoring (including hardware health metrics like CPU temp and RAM), error log collection, voiceover sharing, music manifest tracking, app update distribution, and sync coordination via Cloudflare R2. An admin dashboard offers an overview of device health, API cost tracking per unit, a master voiceover library, and sync history. A Pi-side sync client handles scheduled closed-hours synchronization. Voice recording functionality is available via the Voice Studio, featuring a record-preview-save workflow and Auphonic API integration for professional post-processing. System updates are managed via `djbooth-update.sh` with optimized backup procedures.
+A fleet management system enables centralized control of multiple Dell units, providing device registration, heartbeat monitoring (including hardware health metrics like CPU temp and RAM), error log collection, voiceover sharing, music manifest tracking, app update distribution, and sync coordination via Cloudflare R2. An admin dashboard offers an overview of device health, API cost tracking per unit, a master voiceover library, and sync history. A venue-side sync client handles scheduled closed-hours synchronization. Voice recording functionality is available via the Voice Studio, featuring a record-preview-save workflow and Auphonic API integration for professional post-processing. System updates are managed via `djbooth-update.sh` with optimized backup procedures.
 
 ## Announcement System (Current State — March 2026)
 - **3 announcement types**: intro, round2, outro (transition type removed)
@@ -662,7 +701,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
   - `validateAudioBlob()` runs `decodeAudioData()` before caching; retries generation up to 3× on failure
   - `deleteFromIndexedDB()` helper removes bad entries; playback failure auto-purges IDB + server and regenerates once
 - **ElevenLabs credits**: ~180K remaining this billing cycle; key `6e6ca8...71342`, voice ID `8RV9Jl85RVagCJGw9qhY`
-- **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Pi load
+- **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Dell unit load
 - **Song cooldown**: 6 hours (updated from 4h in Session 44)
 
 ## Recent Session Fixes (Sessions 54–55 — March 2026)
@@ -690,7 +729,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - The specials textarea will live in the Commercials section of DJ Options (not yet implemented)
 
 ## Critical Architecture Rules (READ FIRST EVERY SESSION)
-1. **Server State Relay Whitelist**: When adding ANY new field to the Pi→remote broadcast in `DJBooth.jsx`, MUST ALSO add it to the server relay whitelist in `server/index.js` (POST `/api/booth/state` handler ~line 571). The server drops fields not in its whitelist.
+1. **Server State Relay Whitelist**: When adding ANY new field to the Dell unit→remote broadcast in `DJBooth.jsx`, MUST ALSO add it to the server relay whitelist in `server/index.js` (POST `/api/booth/state` handler ~line 571). The server drops fields not in its whitelist.
 2. **Broadcast Dependency Array**: Any new state variable in the broadcast payload in `DJBooth.jsx` MUST also be added to the useEffect dependency array (~line 822) or changes won't trigger re-broadcasts to the remote.
 3. **AudioEngine.jsx**: NEVER modify audio behavior (crossfade, ducking, volume levels are finalized).
 4. **Server port**: Always 3001. Do NOT change.
@@ -711,7 +750,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - **Commit**: `6f6333e`
 
 #### Bug Fix: Playback lock prevents dual songs on boot
-- **Problem**: On full Pi reboot, two songs would play simultaneously. AudioEngine's `playTrack` had no concurrency guard — two async calls could both load onto separate decks and both end up playing
+- **Problem**: On full Dell unit reboot, two songs would play simultaneously. AudioEngine's `playTrack` had no concurrency guard — two async calls could both load onto separate decks and both end up playing
 - **Root cause**: `playTrack` is async (loadTrack → analyzeTrackLoudness → play). During those awaits, a second call could enter the function, get a different deck, and start playing alongside the first
 - **Fix**: Added `playTrackLockRef` mutex to AudioEngine's `playTrack`. If a track is already being loaded, the second call waits for the first to finish before proceeding. Lock is released on every exit path (success, error, load failure)
 - **No audio behavior changes** — only prevents concurrent track loading
@@ -754,12 +793,12 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - Generation script: `server/generate-generic-voiceovers.js` (one-time, requires ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID env vars)
 
 #### Feature: Play History in Fleet Dashboard
-- Each Pi now sends recent play history (songs played since last heartbeat) in its heartbeat payload
+- Each Dell unit now sends recent play history (songs played since last heartbeat) in its heartbeat payload
 - Fleet server stores all play history in `fleet_play_history` table (90-day retention, auto-cleanup)
 - Fleet dashboard device detail modal has new "Play History" tab showing chronological song list
 - Date picker dropdown filters by day, shows song count per date
 - Each entry shows: time, track name, and entertainer name (if assigned)
-- **Pi impact**: Minimal — one extra SQLite query per heartbeat (every 5 min), small JSON payload
+- **Dell unit impact**: Minimal — one extra SQLite query per heartbeat (every 5 min), small JSON payload
 - **Files**: `server/heartbeat-client.js` (getRecentPlayHistory + payload), `server/fleet-monitor.js` (storePlayHistory call), `server/fleet-db.js` (fleet_play_history table + helpers), `server/fleet-routes.js` (GET /play-history/:deviceId), `src/api/fleetApi.js` (getPlayHistory method), `src/pages/FleetDashboard.jsx` (Play History tab in DeviceDetailModal)
 
 ### Mar 8, 2026 — Session 32 (Simplified Promo System — Auto-Generate + Promo Beds Playback)
@@ -875,7 +914,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
 #### R2 Boot Music Sync Fix
 - **Problem**: Auto-detect logic (`const defaultMusicPath = join(__dirname, '..', 'music')`) caused Replit to detect the local `./music` folder and download 16GB of music from R2 into Replit on boot
 - **Fix**: Removed auto-detect music path — MUSIC_PATH now only comes from `MUSIC_PATH` env var or the `music_path` setting in the database
-- **Boot sync kept intact**: Both voiceover and music R2 sync still run on every boot as intended — this is correct behavior for Pi units that reboot each morning
+- **Boot sync kept intact**: Both voiceover and music R2 sync still run on every boot as intended — this is correct behavior for Dell units that reboot each morning
 - **Cleanup**: Deleted 16GB of downloaded music files from Replit's `./music/` folder
 - **R2 bucket untouched**: No duplicates were created in R2
 - **File**: `server/index.js` (removed `defaultMusicPath` auto-detect block)
@@ -884,42 +923,42 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - Added 62 entertainers to `fleet_dancer_roster` table for Voice Studio recording
 - Full list: Amelia, Amber, Amor, Anneliese, Avery, Bianca, Blair, Britney, Cameron, Cleo, Crystal, Dakota, Devin, Eliza, Emma, Enchantres, Erica, Fauna, Fendi, Hanna, Isabella, Jamie, Jasmine, Jalese, Jenn, Jules, Kaylani, Kingsley, Kitten, Kristin, Lacie, Lana, Liliah, Lily, Luna, Malia, Mia, Mieka, Milan, Minnie, Minx, Mohana, Morganna, Nadia, Natalia, Nikki, Rachel, Reese, Regina, River, Sage, Sara, Scarlette, Sierra, Simone, Sin, Stacy, Stunna, Tatiana, Valerie, Venom Rose, Yasmine
 - Each entertainer gets 4 recording slots in Voice Studio: intro, round2, round3, outro (248 total recordings needed)
-- Inserted with `reported_by_devices: ['manual']` since added manually rather than via Pi heartbeat
+- Inserted with `reported_by_devices: ['manual']` since added manually rather than via Dell unit heartbeat
 
 #### Update Script Fix
 - **Problem**: `djbooth-update.sh` backup step used `cp -r` which copied the entire `djbooth/` folder including 25,000 music files — got stuck for ages
 - **Fix**: Changed to `rsync -a --exclude='music' --exclude='voiceovers' --exclude='node_modules'` — backup now takes seconds
 - **File**: `public/djbooth-update-github.sh` (line 47-48)
-- **First-time fix on Pi**: Must download the new script first with `curl` before running update (old script on Pi still has `cp -r`)
+- **First-time fix on Dell unit**: Must download the new script first with `curl` before running update (old script on Dell unit still has `cp -r`)
 
 #### Boot Sequence & Sync Architecture
 - **R2 boot sync (voiceovers + music)** runs automatically every time the app starts — this is correct and intentional
-- Pi reboots daily at 8:30 AM → djbooth service starts → R2 sync downloads new voiceovers/music, uploads any locally-created ones
+- Dell unit reboots daily at 8:30 AM → djbooth service starts → R2 sync downloads new voiceovers/music, uploads any locally-created ones
 - **Code updates (GitHub)** are currently manual only — run `~/djbooth-update.sh` via SSH
 - Code updates do NOT run automatically on reboot (user may want this added later)
 
 #### CRITICAL RULES — NEVER BREAK THESE
 - **ALWAYS ask before making ANY changes** — present what you plan to do, wait for approval, then implement
-- **NEVER tell the user to delete files on a Pi** — if disk space is needed, ask what they want to remove
-- **NEVER push files that don't belong on Pis** — no attached_assets, no .local/state, no sample music, no database files
-- **NEVER modify Pi service files, environment variables, or database paths** without explicit user approval
+- **NEVER tell the user to delete files on a Dell unit** — if disk space is needed, ask what they want to remove
+- **NEVER push files that don't belong on Dell units** — no attached_assets, no .local/state, no sample music, no database files
+- **NEVER modify Dell unit service files, environment variables, or database paths** without explicit user approval
 - **GitHub push must ALWAYS exclude**: attached_assets, .local, music, voiceovers, .db/.db-wal/.db-shm, node_modules, dist, .cache, .config, .upm
-- **API keys are in browser localStorage on each Pi** — code updates should NEVER affect them, but disk corruption can wipe them
-- **Music path on Pony Nation Pi**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
+- **API keys are in browser localStorage on each Dell unit** — code updates should NEVER affect them, but disk corruption can wipe them
+- **Music path on neonaidj001 Dell**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
 - **Music is synced to/from R2** — even if files are lost locally, R2 has the backup and will re-download on service restart
-- R2 boot sync (voiceovers + music) runs on every boot — this is intentional for Pi morning reboots
+- R2 boot sync (voiceovers + music) runs on every boot — this is intentional for morning reboots
 - Replit should NOT have a music path set — no local music folder needed here
 - **Before any GitHub push**: verify the file list does NOT contain screenshots, music files, database files, or Replit internal state files
-- **Test impact on Pi before pushing**: consider what the update script will do with every change
+- **Test impact on Dell unit before pushing**: consider what the update script will do with every change
 
 ## System Architecture
-The application uses React 18, Vite, and TailwindCSS for the frontend, with Radix UI primitives and shadcn/ui styling. UI/UX is designed with a dark nightclub theme featuring neon cyan and blue accents, prioritizing low-power device performance. `localStorage` manages entities, while `IndexedDB` provides fast session caching for voiceover audio. State management uses React Query, and routing is handled by React Router v6. Configuration settings are stored in the browser's `localStorage` on each Pi.
+The application uses React 18, Vite, and TailwindCSS for the frontend, with Radix UI primitives and shadcn/ui styling. UI/UX is designed with a dark nightclub theme featuring neon cyan and blue accents, prioritizing low-power device performance. `localStorage` manages entities, while `IndexedDB` provides fast session caching for voiceover audio. State management uses React Query, and routing is handled by React Router v6. Configuration settings are stored in the browser's `localStorage` on each Dell unit.
 
 Music tracks are indexed server-side in a SQLite `music_tracks` table, supporting various audio formats and genre extraction. A custom dual-deck audio engine manages seamless music playback with equal-power crossfading, audio ducking, auto-gain loudness normalization, a brick-wall limiter, and sophisticated announcement overlays. Beat-matched crossfading adjusts incoming track tempo, and a 3-band EQ is available for music and voice. Voice announcements are dynamically generated using ElevenLabs TTS and OpenAI, adapting to club energy levels (5-tier system) and operating hours, featuring unique personalities and optional adult innuendo. Announcements are club-locked based on configurable club names.
 
 An Express + SQLite backend on port 3001 manages shared dancer data and PIN authentication, optimized for low-power devices. Critical state persists to `localStorage` for crash recovery. Features include a 4-hour song cooldown, configurable songs-per-set, interstitial break songs, genre filtering, and a Playback Watchdog for audio recovery. The `DJBooth` component remains mounted persistently to preserve audio engine state. An Autoplay Queue feature manages music when no entertainers are present.
 
-A fleet management system enables centralized control of multiple Pi units, providing device registration, heartbeat monitoring (including hardware health metrics like CPU temp and RAM), error log collection, voiceover sharing, music manifest tracking, app update distribution, and sync coordination via Cloudflare R2. An admin dashboard offers an overview of device health, API cost tracking per unit, a master voiceover library, and sync history. A Pi-side sync client handles scheduled closed-hours synchronization. Voice recording functionality is available via the Voice Studio, featuring a record-preview-save workflow and Auphonic API integration for professional post-processing. System updates are managed via `djbooth-update.sh` with optimized backup procedures.
+A fleet management system enables centralized control of multiple Dell units, providing device registration, heartbeat monitoring (including hardware health metrics like CPU temp and RAM), error log collection, voiceover sharing, music manifest tracking, app update distribution, and sync coordination via Cloudflare R2. An admin dashboard offers an overview of device health, API cost tracking per unit, a master voiceover library, and sync history. A venue-side sync client handles scheduled closed-hours synchronization. Voice recording functionality is available via the Voice Studio, featuring a record-preview-save workflow and Auphonic API integration for professional post-processing. System updates are managed via `djbooth-update.sh` with optimized backup procedures.
 
 ## Announcement System (Current State — March 2026)
 - **3 announcement types**: intro, round2, outro (transition type removed)
@@ -938,7 +977,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
   - `validateAudioBlob()` runs `decodeAudioData()` before caching; retries generation up to 3× on failure
   - `deleteFromIndexedDB()` helper removes bad entries; playback failure auto-purges IDB + server and regenerates once
 - **ElevenLabs credits**: ~180K remaining this billing cycle; key `6e6ca8...71342`, voice ID `8RV9Jl85RVagCJGw9qhY`
-- **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Pi load
+- **Stale IDB cleanup**: `cleanupStaleIDBEntries` auto-purges old cache versions on Dell unit load
 - **Song cooldown**: 6 hours (updated from 4h in Session 44)
 
 ## Commercial System (Planned)
@@ -972,7 +1011,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
 5. Recovery: `cd ~/djbooth && NODE_ENV=development npm install --legacy-peer-deps --no-audit --no-fund` → service started → kiosk login worked → crowd window relaunched + wmctrl fullscreened.
 
 ### Key Learnings — write into update script next time
-- **`--legacy-peer-deps` is REQUIRED** for `npm install` on the Pis. `@hello-pangea/dnd@17.0.0` declares `peer react@^18.0.0` while project uses `react@18.3.1`. Without the flag, install aborts and node_modules ends up missing/partial. Verify the update script is using this flag everywhere it runs npm install.
+- **`--legacy-peer-deps` is REQUIRED** for `npm install` on the Dell units. `@hello-pangea/dnd@17.0.0` declares `peer react@^18.0.0` while project uses `react@18.3.1`. Without the flag, install aborts and node_modules ends up missing/partial. Verify the update script is using this flag everywhere it runs npm install.
 - **node_modules integrity check** before `systemctl restart djbooth` would have caught this in 5 seconds: `node -e "require.resolve('express')"` → if it throws, run npm install before restart.
 - **wmctrl auto-install** has now been added to the update script's apt section (alongside ffmpeg/xdotool/aubio) — committed this session.
 - **Background chromium from SSH is fragile** without `nohup ... & disown` — the kiosk/crowd browsers can die when the SSH session ends. The recovery commands now use nohup+disown explicitly.
@@ -994,7 +1033,7 @@ A fleet management system enables centralized control of multiple Pi units, prov
 - Anti-panic invariant for the user: killing chromium windows over SSH **never** touches data, songs, schedules, or settings.
 
 ### Remote Recovery Playbook (Pin to Memory)
-Crash-loop / "site can't be reached" / login broken on a Pi:
+Crash-loop / "site can't be reached" / login broken on a Dell unit:
 ```bash
 sudo systemctl status djbooth --no-pager | head -30
 sudo journalctl -u djbooth -n 50 --no-pager
@@ -1021,7 +1060,7 @@ wmctrl -x -r "RotationChromium" -b add,fullscreen
 disown
 ```
 
-Bootstrap a stale Pi to the latest update (skips homebase, fetches script directly from GitHub):
+Bootstrap a stale Dell unit to the latest update (skips homebase, fetches script directly from GitHub):
 ```bash
 curl -sf https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/public/public/djbooth-update-github.sh -o ~/djbooth-update.sh && chmod +x ~/djbooth-update.sh && DJBOOTH_SKIP_HOMEBASE=1 ~/djbooth-update.sh 2>&1 | tee ~/update.log
 ```

@@ -748,10 +748,10 @@ WantedBy=graphical.target
 WEOF
     sudo systemctl daemon-reload
     sudo systemctl enable djbooth-watchdog
-    sudo systemctl start djbooth-watchdog
+    sudo systemctl start --no-block djbooth-watchdog
     echo "Watchdog service installed and started"
   else
-    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart --no-block djbooth-watchdog 2>/dev/null || true
     echo "Watchdog service updated"
   fi
 fi
@@ -901,7 +901,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
       echo "Cleaned up $CLEANUP_COUNT old backups (kept last 3)"
     fi
     sudo systemctl enable djbooth-watchdog 2>/dev/null || true
-    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart --no-block djbooth-watchdog 2>/dev/null || true
   else
     echo ""
     echo "WARNING: Service failed to start. Rolling back..."
@@ -925,7 +925,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
       disown
     fi
     sudo systemctl enable djbooth-watchdog 2>/dev/null || true
-    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart --no-block djbooth-watchdog 2>/dev/null || true
     exit 1
   fi
 else
