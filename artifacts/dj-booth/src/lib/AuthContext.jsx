@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { auth, getSessionInfo, clearToken, setSessionInfo, isRemoteMode } from '@/api/serverApi';
+import { auth, getSessionInfo, clearToken, setSessionInfo, isRemoteMode, getToken } from '@/api/serverApi';
 
 const AuthContext = createContext();
 
@@ -17,27 +17,42 @@ export const AuthProvider = ({ children }) => {
   const [dancerSession, setDancerSession] = useState(null);
 
   const autoLoginAttemptedRef = React.useRef(false);
+  const autoLoginInFlightRef = React.useRef(false);
+  const lastAutoLoginAtRef = React.useRef(0);
+
+  const attemptAutoLogin = useCallback(async () => {
+    if (isRemoteMode()) return false;
+    if (autoLoginInFlightRef.current) return false;
+    if (Date.now() - lastAutoLoginAtRef.current < 10000) return false;
+    autoLoginInFlightRef.current = true;
+    lastAutoLoginAtRef.current = Date.now();
+    try {
+      const res = await fetch('/api/auth/auto-login', { method: 'POST' });
+      if (!res.ok) return false;
+      const data = await res.json();
+      setSessionInfo(data);
+      setUser({ name: data.staffName || 'DJ' });
+      setRole('dj');
+      setStaffName(data.staffName || null);
+      setStaffRole(data.staffRole || null);
+      setIsMaster(!!data.isMaster);
+      setIsAuthenticated(true);
+      autoLoginAttemptedRef.current = true;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      autoLoginInFlightRef.current = false;
+    }
+  }, []);
 
   const checkSession = useCallback(async () => {
     const info = getSessionInfo();
     if (!info.token) {
-      if (!autoLoginAttemptedRef.current && !isRemoteMode()) {
-        autoLoginAttemptedRef.current = true;
-        try {
-          const res = await fetch('/api/auth/auto-login', { method: 'POST' });
-          if (res.ok) {
-            const data = await res.json();
-            setSessionInfo(data);
-            setUser({ name: data.staffName || 'DJ' });
-            setRole('dj');
-            setStaffName(data.staffName || null);
-            setStaffRole(data.staffRole || null);
-            setIsMaster(!!data.isMaster);
-            setIsAuthenticated(true);
-            setIsLoadingAuth(false);
-            return;
-          }
-        } catch {
+      if (!autoLoginAttemptedRef.current) {
+        if (await attemptAutoLogin()) {
+          setIsLoadingAuth(false);
+          return;
         }
       }
       setIsLoadingAuth(false);
@@ -54,6 +69,10 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
     } catch (err) {
       if (err.message === 'Session expired' && getToken() === null) {
+        if (await attemptAutoLogin()) {
+          setIsLoadingAuth(false);
+          return;
+        }
         setUser(null);
         setRole(null);
         setStaffName(null);
@@ -71,14 +90,15 @@ export const AuthProvider = ({ children }) => {
       }
     }
     setIsLoadingAuth(false);
-  }, []);
+  }, [attemptAutoLogin]);
 
   useEffect(() => {
     checkSession();
   }, [checkSession]);
 
   useEffect(() => {
-    const handler = () => {
+    const handler = async () => {
+      if (await attemptAutoLogin()) return;
       setUser(null);
       setRole(null);
       setStaffName(null);
@@ -88,7 +108,7 @@ export const AuthProvider = ({ children }) => {
     };
     window.addEventListener('djbooth-session-expired', handler);
     return () => window.removeEventListener('djbooth-session-expired', handler);
-  }, []);
+  }, [attemptAutoLogin]);
 
   useEffect(() => {
     const handler = () => {

@@ -944,7 +944,7 @@ export default function RotationPlaylistManager({
 
 
   return (
-    <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b]">
+    <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
       <DragDropContext onDragEnd={handleDragEnd} sensors={[useMouseSensor, useLongPressTouchSensor]} enableDefaultSensors={false}>
         <div ref={libraryPanelRef} className="w-2/5 border-r border-[#1e293b] flex flex-col min-w-0">
           <div className="p-4 border-b border-[#1e293b]">
@@ -1709,9 +1709,10 @@ export default function RotationPlaylistManager({
         </div>
       </DragDropContext>
 
-      {/* In VIP section */}
+      {/* In VIP section — fixed-width sidebar so it never overflows on smaller
+          monitors. Library + Rotation shrink to make room when VIP appears. */}
       {Object.keys(dancerVipMap).length > 0 && (
-        <div className="px-3 pb-3">
+        <div className="w-[260px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-3">
           <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20">
               <Crown className="w-4 h-4 text-yellow-400" />

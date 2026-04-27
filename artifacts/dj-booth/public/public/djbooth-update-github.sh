@@ -651,6 +651,32 @@ rm -rf "$HOME/.config/labwc" 2>/dev/null || true
 
 echo "Display configuration updated"
 
+# ─── udev rules: re-apply display config + touch mapping on monitor hotplug ───
+# Monitors power-cycling wipes xrandr rotation and touch-to-output mapping.
+# These rules trigger on every DRM card change so the unit self-heals.
+# Baked into the update script — every NEON AI DJ unit gets identical behavior.
+
+UDEV_USER=$(whoami)
+UDEV_HOME="/home/$UDEV_USER"
+
+sudo tee /etc/udev/rules.d/95-djbooth-monitor-hotplug.rules > /dev/null << HOTEOF
+ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \\
+  RUN+="/bin/su $UDEV_USER -c 'DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority bash $UDEV_HOME/.djbooth-display-config.sh >> /tmp/djbooth-hotplug.log 2>&1'"
+HOTEOF
+
+sudo tee /etc/udev/rules.d/96-djbooth-touch-map.rules > /dev/null << TOUCHEOF
+# Re-map ILITEK touchscreen to HDMI-2 (kiosk monitor) on any DRM or input attach.
+# Keyed by device NAME so it survives USB re-enumeration (IDs change, name doesn't).
+ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \\
+  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority bash -c \"xinput --list --name-only | grep -i ilitek | while read n; do xinput map-to-output \\\"\\\$n\\\" HDMI-2; done\" >> /tmp/djbooth-touch.log 2>&1'"
+ACTION=="add", SUBSYSTEM=="input", ATTRS{name}=="*ILITEK*", \\
+  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority bash -c \"xinput --list --name-only | grep -i ilitek | while read n; do xinput map-to-output \\\"\\\$n\\\" HDMI-2; done\" >> /tmp/djbooth-touch.log 2>&1'"
+TOUCHEOF
+
+sudo udevadm control --reload-rules 2>/dev/null || true
+sudo udevadm trigger --subsystem-match=drm 2>/dev/null || true
+echo "udev rules installed: 95-djbooth-monitor-hotplug + 96-djbooth-touch-map (self-healing on power-cycle)"
+
 fi # end IS_HOMEBASE display skip
 
 echo "[boot-update] Setting up boot-time auto-update (service + cron backup)..."
