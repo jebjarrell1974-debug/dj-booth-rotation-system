@@ -2562,8 +2562,48 @@ export default function DJBooth() {
           playingInterstitialRef.current = true;
           playingInterstitialBreakKeyRef.current = breakKey;
           interstitialIndexRef.current = 1;
+          let firstBreakName = breakSongs[0];
+
+          const fbCooldowns = songCooldownRef.current || {};
+          const fbNowMs = Date.now();
+          const fbOnCooldown = fbCooldowns[firstBreakName] && (fbNowMs - fbCooldowns[firstBreakName]) < COOLDOWN_MS;
+          if (fbOnCooldown) {
+            console.log('⏭️ HandleSkip: First break song on cooldown, finding replacement:', firstBreakName);
+            try {
+              const fbToken = localStorage.getItem('djbooth_token');
+              const fbCooldownNames = Object.entries(fbCooldowns).filter(([, ts]) => ts && (fbNowMs - ts) < COOLDOWN_MS).map(([n]) => n);
+              const fbAssignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
+              const fbAllBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
+              const fbExcludeAll = [...new Set([...fbCooldownNames, ...fbAssignedNames, ...fbAllBreakNames])];
+              const _dsFB = djOptionsRef.current?.dayShift;
+              const _dsFBOn = isDayShiftActive(_dsFB);
+              const _dsFBGenres = _dsFB?.genres || [];
+              const fbActiveGenres = (_dsFBOn && _dsFBGenres.length > 0)
+                ? _dsFBGenres
+                : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
+              const fbRes = await fetch('/api/music/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(fbToken ? { Authorization: `Bearer ${fbToken}` } : {}) },
+                body: JSON.stringify({ count: 1, excludeNames: fbExcludeAll, genres: fbActiveGenres, dancerPlaylist: [] }),
+                signal: AbortSignal.timeout(5000)
+              });
+              if (fbRes.ok) {
+                const fbData = await fbRes.json();
+                if (fbData.tracks?.length > 0) {
+                  firstBreakName = fbData.tracks[0].name;
+                  const updatedBreakSongs = [...breakSongs];
+                  updatedBreakSongs[0] = firstBreakName;
+                  breakSongs = updatedBreakSongs;
+                  interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updatedBreakSongs };
+                  console.log('🎵 HandleSkip: Replaced cooldown break song with:', firstBreakName);
+                }
+              }
+            } catch (err) {
+              console.warn('⚠️ HandleSkip: First break song replacement failed:', err.message);
+            }
+          }
+
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
-          const firstBreakName = breakSongs[0];
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
           if (!firstBreakTrack?.url) {
             firstBreakTrack = tracks.find(t => t.url && (
@@ -3205,8 +3245,48 @@ export default function DJBooth() {
           playingInterstitialRef.current = true;
           playingInterstitialBreakKeyRef.current = breakKey;
           interstitialIndexRef.current = 1;
+          let firstBreakName = breakSongs[0];
+
+          const teCooldowns = songCooldownRef.current || {};
+          const teNowMs = Date.now();
+          const teOnCooldown = teCooldowns[firstBreakName] && (teNowMs - teCooldowns[firstBreakName]) < COOLDOWN_MS;
+          if (teOnCooldown) {
+            console.log('⏭️ HandleTrackEnd: First break song on cooldown, finding replacement:', firstBreakName);
+            try {
+              const teToken = localStorage.getItem('djbooth_token');
+              const teCooldownNames = Object.entries(teCooldowns).filter(([, ts]) => ts && (teNowMs - ts) < COOLDOWN_MS).map(([n]) => n);
+              const teAssignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
+              const teAllBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
+              const teExcludeAll = [...new Set([...teCooldownNames, ...teAssignedNames, ...teAllBreakNames])];
+              const _dsTE = djOptionsRef.current?.dayShift;
+              const _dsTEOn = isDayShiftActive(_dsTE);
+              const _dsTEGenres = _dsTE?.genres || [];
+              const teActiveGenres = (_dsTEOn && _dsTEGenres.length > 0)
+                ? _dsTEGenres
+                : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
+              const teRes = await fetch('/api/music/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(teToken ? { Authorization: `Bearer ${teToken}` } : {}) },
+                body: JSON.stringify({ count: 1, excludeNames: teExcludeAll, genres: teActiveGenres, dancerPlaylist: [] }),
+                signal: AbortSignal.timeout(5000)
+              });
+              if (teRes.ok) {
+                const teData = await teRes.json();
+                if (teData.tracks?.length > 0) {
+                  firstBreakName = teData.tracks[0].name;
+                  const updatedBreakSongs = [...breakSongs];
+                  updatedBreakSongs[0] = firstBreakName;
+                  breakSongs = updatedBreakSongs;
+                  interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updatedBreakSongs };
+                  console.log('🎵 HandleTrackEnd: Replaced cooldown break song with:', firstBreakName);
+                }
+              }
+            } catch (err) {
+              console.warn('⚠️ HandleTrackEnd: First break song replacement failed:', err.message);
+            }
+          }
+
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
-          const firstBreakName = breakSongs[0];
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
           if (!firstBreakTrack?.url) {
             firstBreakTrack = tracks.find(t => t.url && (
@@ -4145,7 +4225,7 @@ export default function DJBooth() {
         {/* Main Area - Full Screen */}
         <div className="flex-1 relative min-h-0">
           {/* Content Area */}
-          <div className="h-full p-4 overflow-hidden">
+          <div className={`h-full overflow-hidden ${activeTab === 'rotation' && !remoteMode ? '' : 'p-4'}`}>
             {activeTab === 'options' && (
               <div className="h-full overflow-auto">
                 <DJOptions
