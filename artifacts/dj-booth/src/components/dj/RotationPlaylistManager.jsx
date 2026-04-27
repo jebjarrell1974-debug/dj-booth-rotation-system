@@ -1125,8 +1125,8 @@ export default function RotationPlaylistManager({
           )}
         </div>
 
-        <div className="w-3/5 flex flex-col min-w-0">
-          <div className="p-4 border-b border-[#1e293b]">
+        <div className="w-3/5 flex flex-col min-w-0 min-h-0">
+          <div className="p-4 border-b border-[#1e293b] flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <div>
                 <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
