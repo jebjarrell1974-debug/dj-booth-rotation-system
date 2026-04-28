@@ -565,16 +565,6 @@ if [ -x "$HOME/.djbooth-display-config.sh" ]; then
   sleep 2
 fi
 
-# Map ILITEK touchscreen to the kiosk monitor (PRIMARY trigger).
-# Without this, touches land on the wrong physical screen and the
-# touchscreen feels completely dead to the DJ. Idempotent — safe to re-run.
-# Mapping is by xinput device ID (mapping by NAME has been observed to fail
-# on some xinput builds even when the device is listed).
-if [ -x /usr/local/bin/djbooth-touch-map.sh ]; then
-  echo "$(date): [kiosk] Mapping touchscreen to kiosk monitor"
-  /usr/local/bin/djbooth-touch-map.sh kiosk-launch 2>/dev/null || true
-fi
-
 # Clear stale Chromium singleton locks
 rm -f "$HOME/.config/chromium/SingletonLock" \
       "$HOME/.config/chromium/SingletonCookie" \
@@ -601,6 +591,18 @@ if [ -n "$KIOSK_GEOM" ]; then
   echo "$(date): [kiosk] $KIOSK_MON at ${KX},${KY} ${KW}x${KH}"
 else
   echo "$(date): [kiosk] WARNING: No KIOSK display found — using fallback 0,0 1920x1080"
+fi
+
+# Map ILITEK touchscreen to the kiosk monitor (PRIMARY trigger).
+# Placed AFTER KIOSK_MON detection so we hard-bind the touch mapping to the
+# exact xrandr output Chromium will be positioned on. Without this call,
+# touches can land on the wrong physical screen and feel completely dead to
+# the DJ. Idempotent — safe to re-run on every kiosk launch.
+# Mapping is by xinput device ID (mapping by NAME has been observed to fail
+# on some xinput builds even when the device is listed).
+if [ -x /usr/local/bin/djbooth-touch-map.sh ]; then
+  echo "$(date): [kiosk] Mapping touchscreen to ${KIOSK_MON:-auto-detect}"
+  KIOSK_OUTPUT="${KIOSK_MON:-HDMI-2}" /usr/local/bin/djbooth-touch-map.sh kiosk-launch 2>/dev/null || true
 fi
 
 # Wait for the server to be healthy before launching
