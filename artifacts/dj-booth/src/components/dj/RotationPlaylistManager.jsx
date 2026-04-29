@@ -1125,7 +1125,7 @@ export default function RotationPlaylistManager({
           )}
         </div>
 
-        <div className="w-3/5 flex flex-col min-w-0 min-h-0">
+        <div className="w-3/5 flex flex-col min-w-0 min-h-0 overflow-hidden">
           <div className="p-4 border-b border-[#1e293b] flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <div>
@@ -1483,7 +1483,7 @@ export default function RotationPlaylistManager({
                             <div
                               ref={breakProvided.innerRef}
                               {...breakProvided.droppableProps}
-                              className={`mx-2 my-1 rounded-lg transition-all border ${
+                              className={`mx-2 my-1 rounded-lg transition-all border min-w-0 overflow-hidden ${
                                 selectedBreakKey === breakKey
                                   ? 'border-[#00d4ff] bg-[#00d4ff]/5 ring-1 ring-[#00d4ff]/20'
                                   : breakSnapshot.isDraggingOver
@@ -1520,7 +1520,7 @@ export default function RotationPlaylistManager({
                                             ref={itemProv.innerRef}
                                             {...itemProv.draggableProps}
                                             {...itemProv.dragHandleProps}
-                                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing bg-violet-900/20 border-violet-500/20 ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
+                                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing bg-violet-900/20 border-violet-500/20 min-w-0 ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
                                           >
                                             <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
                                             <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
@@ -1712,7 +1712,7 @@ export default function RotationPlaylistManager({
       {/* In VIP section — fixed-width sidebar so it never overflows on smaller
           monitors. Library + Rotation shrink to make room when VIP appears. */}
       {Object.keys(dancerVipMap).length > 0 && (
-        <div className="w-[260px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-3">
+        <div className="w-[220px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
           <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20">
               <Crown className="w-4 h-4 text-yellow-400" />
