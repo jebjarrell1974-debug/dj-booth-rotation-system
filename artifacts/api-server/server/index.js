@@ -31,6 +31,7 @@ import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
+import aichatRoutes from './aichat-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music, uploadSoundboardFile, deleteSoundboardFileFromR2, syncSoundboardToR2, syncSoundboardFromR2 } from './r2sync.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
@@ -1191,6 +1192,14 @@ app.delete('/api/playback-errors', authenticate, requireDJ, (req, res) => {
 });
 
 app.use('/api/fleet', fleetRoutes);
+// /aichat routes only mount on units that explicitly opt in (homebase only).
+// Venue Dells leave DJBOOTH_AICHAT_ENABLED unset → routes never register.
+if (process.env.DJBOOTH_AICHAT_ENABLED === '1') {
+  app.use('/aichat', aichatRoutes);
+  console.log('[aichat] routes mounted at /aichat (DJBOOTH_AICHAT_ENABLED=1)');
+} else {
+  console.log('[aichat] routes NOT mounted (set DJBOOTH_AICHAT_ENABLED=1 to enable)');
+}
 setupFleetMonitorRoutes(app);
 
 app.get('/fleet-dashboard', (req, res) => {

@@ -724,6 +724,16 @@ A fleet management system enables centralized control of multiple Dell units, pr
 3. **INVESTIGATE: False / stale dead air alerts on neonaidj003** — Telegram repeatedly fires "DEAD AIR — 15.7s silence detected, Dancer: AMETHYST, Track: 1982-288 Van Halen Oh Pretty Woman.mp3" every ~10 minutes (seen 2:34, 2:45, 2:55, 2:59 AM) even though that track has not played for at least an hour. Likely causes: (a) dead air watchdog is comparing against a stale `currentTrack` ref that wasn't cleared after the song ended, so it keeps re-alerting on the same frozen state; (b) the heartbeat is sending a cached/old track name instead of the live one; (c) the dead air alert has no cooldown/dedup so fires repeatedly for the same event. **Do NOT change anything until discussed with user.** They flagged this as informational only for now.
 4. **MCP server for AI monitoring** — Build a small MCP (Model Context Protocol) server alongside the API that exposes existing endpoints as AI-callable tools. The app is already ~80% ready: `/api/booth/state`, `/api/fleet/logs`, `/api/fleet/heartbeats`, `/api/fleet/play-history`, `/api/audit/log`, and `/api/client-settings` all exist. Read-only tools (`get_booth_state`, `get_diag_log`, `get_play_history`, `get_device_health`, `query_settings`) are safe at any time. Write tool (`send_command` → `update/restart/sync/reboot` via existing `/api/monitor/command/:deviceId/:action`) should be gated and discussed before enabling. Goal: when something goes wrong mid-show, an AI can instantly query live state, logs, and history without any copy-pasting.
 
+### Session 57 (May 3, 2026) — Phone-accessible AI fleet monitor (Phase 1, READ-ONLY)
+- Built `/aichat/*` module on api-server. Six read-only tools wrapping existing fleet data: `get_booth_state`, `get_fleet_health`, `get_device_health`, `get_play_history`, `get_diag_log`, `get_audit_log`, `query_settings`. No write endpoints — `send_command` deferred to Phase 2.
+- Auth: bearer token from `~/.djbooth-aichat-token` dotfile (or `AICHAT_TOKEN` env). Fail-closed (503) if no token configured. Returns 401 on bad/missing token.
+- OpenAPI 3.1 spec served unauthenticated at `/aichat/openapi.yaml` for OpenAI Custom GPT Action import.
+- Path-based routing: api-server `artifact.toml` paths now `["/api", "/aichat"]`.
+- Architecture: ChatGPT (Custom GPT, voice mode on phone) → Cloudflare Tunnel → homebase `localhost:3001/aichat/*`. No open ports on homebase. Uses user's existing ChatGPT Plus — no new API bills.
+- Files: `artifacts/api-server/server/aichat-routes.js`, `artifacts/api-server/server/AICHAT_SETUP.md` (homebase install + Custom GPT setup steps), wired in `index.js` line 37 + 1198.
+- **NOT YET DEPLOYED.** Built/tested in Replit only. User will copy `aichat-routes.js` to homebase + run setup script after Sunday (per "no pushes to 003 until Sunday" rule). Venue Dells never get this code.
+- Verified: 401 bad token, 503 no token, 200 with good token, 404 unknown device, all 6 tools return JSON, OpenAPI spec served as `application/yaml`.
+
 ## Commercial System (Planned)
 - Club specials will work like promos: TTS auto-generated, played over bed track during commercial breaks
 - The specials textarea will live in the Commercials section of DJ Options (not yet implemented)
