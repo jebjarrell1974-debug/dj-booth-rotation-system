@@ -307,9 +307,25 @@ router.get('/audit-log', requireBearer, (req, res) => {
 });
 
 // ─── Tool: query_settings ─────────────────────────────────────────────────────
+// Redact secret-looking fields (keys, tokens, secrets, passwords) so the AI
+// can confirm a value is configured without seeing it. App behavior is
+// unaffected — the database row is untouched; this only redacts the HTTP body.
+function redactSecrets(settings) {
+  const SECRET_RE = /(_key|_token|_secret|_password|_pass)$/i;
+  const out = {};
+  for (const [k, v] of Object.entries(settings)) {
+    if (SECRET_RE.test(k) && typeof v === 'string' && v.length > 0) {
+      out[k] = `***REDACTED (${v.length} chars)***`;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 router.get('/settings', requireBearer, (req, res) => {
   try {
-    res.json(getClientSettings() || {});
+    res.json(redactSecrets(getClientSettings() || {}));
   } catch (err) {
     sendInternalError(res, 'settings', err);
   }
