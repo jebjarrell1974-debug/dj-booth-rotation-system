@@ -802,7 +802,9 @@ app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, r
       try { dur = await getAudioDuration(chunkPath); } catch {}
       const ffArgs = ['-y', '-i', chunkPath];
       if (dur !== null) ffArgs.push('-t', String(Math.max(0.5, dur - 0.2)));
-      ffArgs.push('-b:a', '192k', '-ar', '44100', trimmedPath);
+      // atempo=1.2 speeds up audio 20% without changing pitch (eleven_v3 ignores
+      // voice_settings.speed, so we control tempo here in post-processing instead)
+      ffArgs.push('-af', 'atempo=1.2', '-b:a', '192k', '-ar', '44100', trimmedPath);
       await runFfmpeg(ffArgs);
       trimmedFiles.push(trimmedPath);
     }
