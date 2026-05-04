@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { playlistApi, musicApi, auth as authApi, setTokenOverride } from '@/api/serverApi';
 import { Button } from '@/components/ui/button';
-import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen } from 'lucide-react';
+import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen, Play, Pause } from 'lucide-react';
 
 const INACTIVITY_TIMEOUT = 4 * 60 * 60 * 1000;
 const LONG_PRESS_MS = 200;
@@ -28,6 +28,60 @@ export default function DancerView() {
   const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const searchTimerRef = useRef(null);
   const [isPhone, setIsPhone] = useState(() => window.innerWidth < PHONE_BREAKPOINT);
+
+  // Song preview is allowed only on phone/tablet remotes — never on the booth
+  // kiosk, whose audio output is wired into the club PA.
+  //
+  // Defense in depth — TWO independent gates, BOTH must agree we are remote:
+  //   1. Client-side hostname check (matches Landing.jsx's gate at lines 95-99).
+  //      Fast, no network round-trip, blocks the obvious kiosk URL.
+  //   2. Server-side loopback detection via /api/auth/connection-info.
+  //      Server inspects the actual TCP socket — cannot be fooled by URL,
+  //      mDNS name, IPv6 form, or any client-side trickery. A booth Dell
+  //      with a non-kiosk browser tab pointed at its own LAN IP would still
+  //      connect via loopback and be correctly blocked.
+  //
+  // Default state is fail-CLOSED: preview disabled until server affirmatively
+  // confirms the client is NOT on loopback. Network failure, slow load, or a
+  // server without the endpoint = preview just stays off.
+  const isKioskHostname = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '::1' ||
+    window.location.hostname === '[::1]'
+  );
+  const [serverConfirmedRemote, setServerConfirmedRemote] = useState(false);
+  const previewAllowed = !isKioskHostname && serverConfirmedRemote;
+  const [previewSong, setPreviewSong] = useState(null);
+  const [previewPaused, setPreviewPaused] = useState(false);
+  const previewAudioRef = useRef(null);
+  const tapTrackerRef = useRef({ id: null, timer: null });
+
+  // Defined early so the inactivity-timeout and beforeunload effects below can
+  // include it in their dependency arrays without TDZ errors. The other
+  // preview helpers (playPreview, togglePreviewPause, handleTrackTap) live
+  // further down with the playlist mutation helpers because they depend on
+  // those.
+  const stopPreview = useCallback(() => {
+    const a = previewAudioRef.current;
+    if (a) {
+      try { a.pause(); } catch {}
+      try { a.src = ''; } catch {}
+      previewAudioRef.current = null;
+    }
+    setPreviewSong(null);
+    setPreviewPaused(false);
+  }, []);
+
+  useEffect(() => {
+    // Fail-closed: only enable preview if server affirmatively says we are NOT loopback
+    let cancelled = false;
+    fetch('/api/auth/connection-info')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d && d.isLocalhost === false) setServerConfirmedRemote(true); })
+      .catch(() => { /* leave fail-closed */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const check = () => setIsPhone(window.innerWidth < PHONE_BREAKPOINT);
@@ -119,6 +173,7 @@ export default function DancerView() {
     
     const checker = setInterval(async () => {
       if (Date.now() - lastActivityRef.current > INACTIVITY_TIMEOUT) {
+        stopPreview();
         if (isDancerSession) {
           logoutDancerSession();
           navigate('/');
@@ -134,7 +189,7 @@ export default function DancerView() {
       events.forEach(e => window.removeEventListener(e, resetTimer));
       clearInterval(checker);
     };
-  }, [logout, navigate, isDancerSession, logoutDancerSession]);
+  }, [logout, navigate, isDancerSession, logoutDancerSession, stopPreview]);
 
   const flushSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -145,13 +200,23 @@ export default function DancerView() {
   }, []);
 
   useEffect(() => {
-    const handleBeforeUnload = () => flushSave();
+    const clearTapTimer = () => {
+      const tt = tapTrackerRef.current;
+      if (tt && tt.timer) {
+        clearTimeout(tt.timer);
+        tt.timer = null;
+        tt.id = null;
+      }
+    };
+    const handleBeforeUnload = () => { flushSave(); stopPreview(); clearTapTimer(); };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       flushSave();
+      stopPreview();
+      clearTapTimer();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [flushSave]);
+  }, [flushSave, stopPreview]);
 
   const debouncedSave = useCallback((newPlaylist) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -188,6 +253,79 @@ export default function DancerView() {
     updated.splice(index, 1);
     updatePlaylist(updated);
   }, [updatePlaylist]);
+
+  // ── Song preview (phone/tablet remote only) ────────────────────────────
+  // Uses a single hidden <audio> element scoped to this component. The booth
+  // kiosk's AudioEngine (Web Audio API graph in components/dj/AudioEngine.jsx)
+  // is intentionally NOT touched — preview lives in a completely separate
+  // browser session on a different device. /api/music/stream/:id is unauthed
+  // by design (the kiosk relies on this), so HTML5 <audio> can hit it directly.
+  // Note: stopPreview is defined earlier (above the lifecycle effects that
+  // reference it). Only the helpers that depend on addSong/removeSong live here.
+  const playPreview = useCallback((track) => {
+    if (!previewAllowed) return;
+    if (!track || !track.id) return;
+    const prev = previewAudioRef.current;
+    if (prev) {
+      try { prev.pause(); } catch {}
+      try { prev.src = ''; } catch {}
+      previewAudioRef.current = null;
+    }
+    const audio = new Audio(`/api/music/stream/${track.id}`);
+    // Instance-guarded: a callback from a stale Audio (e.g. user double-tapped
+    // a different song before the previous one's events fired) must NOT stop
+    // the currently-active preview. Only stop if we are still the active ref.
+    const safeStop = () => { if (previewAudioRef.current === audio) stopPreview(); };
+    audio.onended = safeStop;
+    audio.onerror = safeStop;
+    audio.play().catch(safeStop);
+    previewAudioRef.current = audio;
+    setPreviewSong(track.name);
+    setPreviewPaused(false);
+  }, [previewAllowed, stopPreview]);
+
+  const togglePreviewPause = useCallback(() => {
+    const a = previewAudioRef.current;
+    if (!a) return;
+    if (a.paused) {
+      a.play().catch(() => stopPreview());
+      setPreviewPaused(false);
+    } else {
+      a.pause();
+      setPreviewPaused(true);
+    }
+  }, [stopPreview]);
+
+  // Tap once = add/remove from playlist (existing behavior, delayed 260ms).
+  // Tap twice on the same row = preview (kiosk: skips preview, fires
+  // single-tap action immediately so kiosk UX is unchanged).
+  const handleTrackTap = useCallback((track) => {
+    const tt = tapTrackerRef.current;
+    const singleTapAction = () => {
+      const inPl = playlistRef.current.includes(track.name);
+      if (inPl) {
+        const idx = playlistRef.current.indexOf(track.name);
+        if (idx !== -1) removeSong(idx);
+      } else {
+        addSong(track.name);
+      }
+    };
+    if (!previewAllowed) { singleTapAction(); return; }
+    if (tt.timer && tt.id === track.id) {
+      clearTimeout(tt.timer);
+      tt.timer = null;
+      tt.id = null;
+      playPreview(track);
+      return;
+    }
+    if (tt.timer) clearTimeout(tt.timer);
+    tt.id = track.id;
+    tt.timer = setTimeout(() => {
+      tt.timer = null;
+      tt.id = null;
+      singleTapAction();
+    }, 260);
+  }, [previewAllowed, addSong, removeSong, playPreview]);
 
   const handleDragStart = (idx) => setDragIdx(idx);
   const handleDragOver = (e, idx) => {
@@ -278,6 +416,7 @@ export default function DancerView() {
 
   const handleLogout = () => {
     flushSave();
+    stopPreview();
     if (isDancerSession) {
       logoutDancerSession();
       navigate('/');
@@ -428,19 +567,13 @@ export default function DancerView() {
                   return (
                     <button
                       key={track.id}
-                      onClick={() => {
-                        if (inPlaylist) {
-                          const idx = playlist.indexOf(track.name);
-                          if (idx !== -1) removeSong(idx);
-                        } else {
-                          addSong(track.name);
-                        }
-                      }}
+                      onClick={() => handleTrackTap(track)}
+                      style={{ touchAction: 'manipulation' }}
                       className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
                         inPlaylist
                           ? 'bg-[#00d4ff]/10 text-[#00d4ff] active:bg-red-500/20'
                           : 'text-gray-300 active:bg-[#00d4ff]/20'
-                      }`}
+                      } ${previewSong === track.name ? 'ring-2 ring-purple-400/60' : ''}`}
                     >
                       <Music className="w-3.5 h-3.5 flex-shrink-0 opacity-50" />
                       <div className="flex-1 min-w-0">
@@ -475,6 +608,29 @@ export default function DancerView() {
           </div>
         </div>
       </div>
+
+      {previewSong && previewAllowed && (
+        <div className="flex items-center gap-3 px-3 py-2 bg-[#1a0d2e] border-t border-purple-500/40 flex-shrink-0">
+          <button
+            onClick={togglePreviewPause}
+            className="w-10 h-10 rounded-full bg-purple-500/20 active:bg-purple-500/60 flex items-center justify-center text-purple-200 flex-shrink-0"
+            aria-label={previewPaused ? 'Resume preview' : 'Pause preview'}
+          >
+            {previewPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-purple-300/70 leading-tight">Preview {previewPaused ? '(paused)' : ''}</div>
+            <div className="text-xs text-white truncate leading-tight">{previewSong}</div>
+          </div>
+          <button
+            onClick={stopPreview}
+            className="w-8 h-8 rounded-full bg-white/5 active:bg-white/20 flex items-center justify-center text-gray-400 flex-shrink-0"
+            aria-label="Stop preview"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

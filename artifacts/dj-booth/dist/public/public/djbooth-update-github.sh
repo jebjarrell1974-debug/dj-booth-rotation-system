@@ -593,6 +593,18 @@ else
   echo "$(date): [kiosk] WARNING: No KIOSK display found — using fallback 0,0 1920x1080"
 fi
 
+# Map ILITEK touchscreen to the kiosk monitor (PRIMARY trigger).
+# Placed AFTER KIOSK_MON detection so we hard-bind the touch mapping to the
+# exact xrandr output Chromium will be positioned on. Without this call,
+# touches can land on the wrong physical screen and feel completely dead to
+# the DJ. Idempotent — safe to re-run on every kiosk launch.
+# Mapping is by xinput device ID (mapping by NAME has been observed to fail
+# on some xinput builds even when the device is listed).
+if [ -x /usr/local/bin/djbooth-touch-map.sh ]; then
+  echo "$(date): [kiosk] Mapping touchscreen to ${KIOSK_MON:-auto-detect}"
+  KIOSK_OUTPUT="${KIOSK_MON:-HDMI-2}" /usr/local/bin/djbooth-touch-map.sh kiosk-launch 2>/dev/null || true
+fi
+
 # Wait for the server to be healthy before launching
 echo "$(date): [kiosk] Waiting for server health..."
 until curl -sf http://localhost:3001/__health > /dev/null 2>&1; do sleep 2; done
@@ -651,6 +663,37 @@ rm -rf "$HOME/.config/labwc" 2>/dev/null || true
 
 echo "Display configuration updated"
 
+# ─── Install canonical ILITEK touchscreen mapper ──────────────────────────────
+# /usr/local/bin/djbooth-touch-map.sh is the single source of truth for mapping
+# the touchscreen to the kiosk monitor. Called from FOUR independent triggers
+# so any one is enough to keep touch working:
+#   1. Inside ~/djbooth-kiosk.sh  (PRIMARY — runs every X session start)
+#   2. GNOME autostart .desktop   (BACKUP if kiosk launcher path changes)
+#   3. udev rule on input add     (HOTPLUG — touchscreen unplug/replug)
+#   4. udev rule on DRM change    (HOTPLUG — monitor unplug/replug)
+# Mapping is by xinput device ID — mapping by NAME has been observed to
+# silently fail on Debian's xinput build even when the device is listed.
+TOUCH_MAP_SRC="$APP_DIR/public/public/djbooth-touch-map.sh"
+if [ -f "$TOUCH_MAP_SRC" ]; then
+  sudo cp "$TOUCH_MAP_SRC" /usr/local/bin/djbooth-touch-map.sh
+  sudo chmod +x /usr/local/bin/djbooth-touch-map.sh
+  echo "Touchscreen mapper installed: /usr/local/bin/djbooth-touch-map.sh"
+
+  # GNOME autostart entry — backup trigger in case the kiosk launcher path
+  # is ever changed without updating the inline call.
+  mkdir -p "$HOME/.config/autostart"
+  cat > "$HOME/.config/autostart/djbooth-touch-map.desktop" << TMEOF
+[Desktop Entry]
+Type=Application
+Name=DJ Booth Touchscreen Mapper
+Exec=/usr/local/bin/djbooth-touch-map.sh autostart
+X-GNOME-Autostart-enabled=true
+TMEOF
+  echo "Touchscreen mapper autostart entry installed"
+else
+  echo "WARNING: $TOUCH_MAP_SRC not found — touchscreen mapper NOT installed"
+fi
+
 # ─── udev rules: re-apply display config + touch mapping on monitor hotplug ───
 # Monitors power-cycling wipes xrandr rotation and touch-to-output mapping.
 # These rules trigger on every DRM card change so the unit self-heals.
@@ -665,12 +708,21 @@ ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \\
 HOTEOF
 
 sudo tee /etc/udev/rules.d/96-djbooth-touch-map.rules > /dev/null << TOUCHEOF
-# Re-map ILITEK touchscreen to HDMI-2 (kiosk monitor) on any DRM or input attach.
-# Keyed by device NAME so it survives USB re-enumeration (IDs change, name doesn't).
+# Re-map ILITEK touchscreen to the kiosk monitor on USB hotplug or DRM change.
+# Calls /usr/local/bin/djbooth-touch-map.sh — the canonical mapper script
+# (ID-based, idempotent, logs to /tmp/djbooth-touch.log). Primary trigger is
+# the kiosk launcher; this udev rule is a safety net for genuine USB
+# unplug/replug events during operation.
+#
+# IMPORTANT: previous version of this rule used inline xinput-by-name lookups,
+# which silently failed because xinput map-to-output by NAME is unreliable on
+# Debian's xinput build (confirmed live on unit 003, Apr 2026 — the device was
+# listed but map-to-output returned "unable to find device"). The new script
+# maps by numeric ID instead, which always works.
 ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \\
-  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority bash -c \"xinput --list --name-only | grep -i ilitek | while read n; do xinput map-to-output \\\"\\\$n\\\" HDMI-2; done\" >> /tmp/djbooth-touch.log 2>&1'"
+  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority HOME=$UDEV_HOME /usr/local/bin/djbooth-touch-map.sh udev-drm'"
 ACTION=="add", SUBSYSTEM=="input", ATTRS{name}=="*ILITEK*", \\
-  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority bash -c \"xinput --list --name-only | grep -i ilitek | while read n; do xinput map-to-output \\\"\\\$n\\\" HDMI-2; done\" >> /tmp/djbooth-touch.log 2>&1'"
+  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority HOME=$UDEV_HOME /usr/local/bin/djbooth-touch-map.sh udev-input'"
 TOUCHEOF
 
 sudo udevadm control --reload-rules 2>/dev/null || true
@@ -748,10 +800,10 @@ WantedBy=graphical.target
 WEOF
     sudo systemctl daemon-reload
     sudo systemctl enable djbooth-watchdog
-    sudo systemctl start djbooth-watchdog
+    sudo systemctl start --no-block djbooth-watchdog
     echo "Watchdog service installed and started"
   else
-    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart --no-block djbooth-watchdog 2>/dev/null || true
     echo "Watchdog service updated"
   fi
 fi
@@ -901,7 +953,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
       echo "Cleaned up $CLEANUP_COUNT old backups (kept last 3)"
     fi
     sudo systemctl enable djbooth-watchdog 2>/dev/null || true
-    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart --no-block djbooth-watchdog 2>/dev/null || true
   else
     echo ""
     echo "WARNING: Service failed to start. Rolling back..."
@@ -925,7 +977,7 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
       disown
     fi
     sudo systemctl enable djbooth-watchdog 2>/dev/null || true
-    sudo systemctl restart djbooth-watchdog 2>/dev/null || true
+    sudo systemctl restart --no-block djbooth-watchdog 2>/dev/null || true
     exit 1
   fi
 else

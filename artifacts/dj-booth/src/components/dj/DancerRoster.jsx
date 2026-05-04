@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,11 +41,14 @@ const DANCER_COLORS = [
   '#ff6b35', '#ff1493', '#00bfff', '#ff4081', '#00ffc8'
 ];
 
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
 export default function DancerRoster({ 
   dancers, 
   rotation = [],
   onAddToRotation,
   onRemoveFromRotation,
+  onPullAll,
   onAddDancer, 
   onEditDancer, 
   onDeleteDancer,
@@ -57,6 +60,7 @@ export default function DancerRoster({
   onReleaseFromVip
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [pullAllConfirmOpen, setPullAllConfirmOpen] = useState(false);
   const [newDancerName, setNewDancerName] = useState('');
   const [newDancerPin, setNewDancerPin] = useState('');
   const [newDancerPhonetic, setNewDancerPhonetic] = useState('');
@@ -69,6 +73,8 @@ export default function DancerRoster({
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [vipPickerDancerId, setVipPickerDancerId] = useState(null);
+
+  const gridRef = useRef(null);
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -164,6 +170,29 @@ export default function DancerRoster({
   const sortedDancers = [...dancers].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   const activeDancers = sortedDancers.filter(d => d.is_active);
 
+  const firstIdByLetter = useMemo(() => {
+    const map = new Map();
+    for (const d of sortedDancers) {
+      const ch = (d.name?.charAt(0) || '').toUpperCase();
+      if (ch >= 'A' && ch <= 'Z' && !map.has(ch)) map.set(ch, d.id);
+    }
+    return map;
+  }, [sortedDancers]);
+
+  const availableLetters = useMemo(
+    () => new Set(firstIdByLetter.keys()),
+    [firstIdByLetter]
+  );
+
+  const handleLetterTap = (letter) => {
+    const root = gridRef.current;
+    if (!root) return;
+    const el = root.querySelector(`[data-section-letter="${letter}"]`);
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
@@ -173,13 +202,25 @@ export default function DancerRoster({
           </h3>
           <p className="text-xs text-gray-500 mt-1">{activeDancers.length} active</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
-              <UserPlus className="w-4 h-4 mr-1" />
-              Add
+        <div className="flex items-center gap-2">
+          {rotation.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-700/60 text-red-400 hover:bg-red-900/30 hover:text-red-300"
+              onClick={() => setPullAllConfirmOpen(true)}
+            >
+              <Minus className="w-3.5 h-3.5 mr-1" />
+              Pull All
             </Button>
-          </DialogTrigger>
+          )}
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
+                <UserPlus className="w-4 h-4 mr-1" />
+                Add
+              </Button>
+            </DialogTrigger>
           <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
             <DialogHeader>
               <DialogTitle>Add New Entertainer</DialogTitle>
@@ -226,14 +267,47 @@ export default function DancerRoster({
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
       
+      <div className="flex-1 flex gap-2 min-h-0">
+        {activeDancers.length > 0 && (
+          <div
+            className="flex flex-col items-stretch py-1 select-none"
+            aria-label="Jump to letter"
+          >
+            {ALPHABET.map((letter) => {
+              const has = availableLetters.has(letter);
+              return (
+                <button
+                  key={letter}
+                  type="button"
+                  disabled={!has}
+                  onClick={() => has && handleLetterTap(letter)}
+                  className={`flex-1 min-h-[26px] w-8 flex items-center justify-center text-[11px] font-bold rounded transition-all touch-manipulation ${
+                    has
+                      ? 'text-[#00d4ff] hover:bg-[#00d4ff]/15 active:bg-[#00d4ff]/30 active:scale-90'
+                      : 'text-gray-700 cursor-default'
+                  }`}
+                  aria-label={`Jump to ${letter}`}
+                >
+                  {letter}
+                </button>
+              );
+            })}
+          </div>
+        )}
       <ScrollArea className="flex-1">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {sortedDancers.map((dancer) => (
+        <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          {sortedDancers.map((dancer) => {
+            const firstChar = (dancer.name?.charAt(0) || '').toUpperCase();
+            const isLetterAnchor = firstIdByLetter.get(firstChar) === dancer.id;
+            return (
             <div
               key={dancer.id}
+              data-section-letter={isLetterAnchor ? firstChar : undefined}
+              style={isLetterAnchor ? { scrollMarginTop: '8px' } : undefined}
               className={`bg-[#151528] rounded-lg border p-3 flex flex-col items-center transition-colors ${
                 selectedDancerId === dancer.id
                   ? 'border-[#00d4ff] ring-1 ring-[#00d4ff]/30'
@@ -441,7 +515,8 @@ export default function DancerRoster({
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
           
           {sortedDancers.length === 0 && (
             <div className="col-span-full text-center py-12">
@@ -451,6 +526,38 @@ export default function DancerRoster({
           )}
         </div>
       </ScrollArea>
+      </div>
+
+      <Dialog open={pullAllConfirmOpen} onOpenChange={setPullAllConfirmOpen}>
+        <DialogContent className="bg-[#0d0d1f] border-[#1e293b] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Pull All From Rotation?</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-5">
+            <p className="text-gray-300 text-center">
+              This will remove all <span className="font-semibold text-white">{rotation.length}</span> entertainer{rotation.length !== 1 ? 's' : ''} from rotation at once. Music keeps playing — this just clears the lineup.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 h-14 text-lg border-[#1e293b] text-gray-400"
+                onClick={() => setPullAllConfirmOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 h-14 text-lg bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => {
+                  onPullAll?.();
+                  setPullAllConfirmOpen(false);
+                }}
+              >
+                Pull All
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent className="bg-[#0d0d1f] border-[#1e293b] max-w-sm">

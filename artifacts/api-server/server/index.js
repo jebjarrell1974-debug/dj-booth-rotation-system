@@ -292,6 +292,38 @@ app.get('/api/server-info', (req, res) => {
   res.json({ ips, port: process.env.PORT || 3001 });
 });
 
+// Reports whether the calling client is on THIS machine — either via
+// loopback (127.0.0.1/::1) OR via any of this machine's own LAN/Tailscale
+// interface IPs (catches the case where a browser on the booth opens
+// http://192.168.x.y:3001/ instead of http://localhost:3001/).
+//
+// Used by the dancer phone/tablet preview feature to absolutely guarantee
+// the booth kiosk can never trigger song preview audio — preview must only
+// ever fire on remote devices like phones/tablets.
+//
+// Defense-in-depth: client-side hostname check + this server check, both
+// must agree before preview UI is allowed. Default fail-closed.
+const SELF_IPS = (() => {
+  const set = new Set(['127.0.0.1', '::1', '0.0.0.0']);
+  try {
+    const nets = networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net && net.address) set.add(net.address.replace('::ffff:', ''));
+      }
+    }
+  } catch {}
+  return set;
+})();
+
+app.get('/api/auth/connection-info', (req, res) => {
+  const rawIp = (req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '')
+    .replace('::ffff:', '');
+  // If we can't parse the IP at all, fail safe = treat as local (blocks preview).
+  const isLocalhost = !rawIp || SELF_IPS.has(rawIp);
+  res.json({ isLocalhost });
+});
+
 app.post('/api/auth/auto-login', (req, res) => {
   const clientIp = req.ip || req.connection?.remoteAddress || '';
   const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';

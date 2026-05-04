@@ -3509,6 +3509,12 @@ export default function DJBooth() {
     
     const watchdogCheck = async () => {
       if (!playbackExpectedRef.current) return;
+      // Don't fire dead-air alerts when no dancers are on rotation. The
+      // playbackExpectedRef latch is one-way (set true on first track, never
+      // reset), so without this guard the watchdog reports stale dancer/track
+      // info during the empty-rotation autoplay window. See replit.md
+      // "Dead-air false-positive investigation" (May 3 2026).
+      if (!isRotationActiveRef.current || rotationRef.current.length === 0) return;
       if (watchdogRecoveringRef.current) return;
       if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
@@ -3771,6 +3777,23 @@ export default function DJBooth() {
     }
     rotationRef.current = newRotation;
     setRotation(newRotation);
+  };
+
+  const pullAllFromRotation = () => {
+    // Clear pending-VIP flags for everyone in rotation
+    const current = rotationRef.current;
+    for (const dancerId of current) {
+      if (pendingVipRef.current[dancerId]) {
+        delete pendingVipRef.current[dancerId];
+      }
+    }
+    setPendingVipState({ ...pendingVipRef.current });
+    try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(pendingVipRef.current)); } catch {}
+
+    rotationRef.current = [];
+    currentDancerIndexRef.current = 0;
+    setCurrentDancerIndex(0);
+    setRotation([]);
   };
 
   const moveUp = (index) => {
@@ -4757,6 +4780,7 @@ export default function DJBooth() {
                   rotation={rotation}
                   onAddToRotation={addToRotation}
                   onRemoveFromRotation={removeFromRotation}
+                  onPullAll={pullAllFromRotation}
                   onAddDancer={addDancer}
                   onEditDancer={(id, data) => updateDancerMutation.mutate({ id, data })}
                   onDeleteDancer={(id) => deleteDancerMutation.mutate(id)}

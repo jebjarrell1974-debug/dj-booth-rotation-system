@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "postgresql-16"]
+modules = ["nodejs-24", "postgresql-16", "python-3.11"]
 
 [deployment]
 router = "application"
@@ -48,9 +48,21 @@ externalPort = 3001
 localPort = 18595
 externalPort = 3003
 
+[[ports]]
+localPort = 21474
+externalPort = 5000
+
+[[ports]]
+localPort = 22228
+externalPort = 5173
+
 [userenv]
 
 [userenv.shared]
+
+[userenv.development]
+ELEVENLABS_API_KEY = "6e6ca8d3c96256409bf197b076d0ede7fae7183d9bc02374d1e2be55fdd71342"
+ELEVENLABS_VOICE_ID = "8RV9Jl85RVagCJGw9qhY"
 
 [nix]
 channel = "stable-25_05"
