@@ -110,9 +110,9 @@ const SHIFT_TYPES = {
     excitement: 'This is the peak of the night. Bring your A-game energy — charged language, drawn-out key words, bigger presence. Sound like the room is packed and you own every corner of it. Still smooth, still cool, just turned up.',
   },
   LATE_SHIFT: {
-    tone: 'smooth, intimate, persuasive',
+    tone: 'charged, intimate, persuasive',
     confidence: 'controlled and confident',
-    excitement: 'Cool it down. Slower cadence, smoother delivery. Intimate and enticing.',
+    excitement: 'Keep the energy up but pull it close — still charged, still exciting, but with a late-night edge. Fast when it counts, intense throughout.',
   },
 };
 
@@ -155,11 +155,18 @@ TTS FORMATTING (this text is read aloud by a speech engine):
 - Em dash for emphasis breaks: "she's coming — and she's worth every dollar"
 - Periods between thoughts, not run-on sentences
 - No all caps — it makes the engine shout
-- Maximum one exclamation mark per announcement
 - Write numbers as words, "V I P" with spaces between letters
 - Use contractions: "don't", "she's", "let's"
 - Sentences between five and fourteen words
-- End on a smooth note, no exclamation mark on the last sentence`;
+
+EMOTION TAGS (inline delivery cues read by the speech engine — use these every announcement):
+- Tags go in lowercase square brackets directly before the word or phrase they affect: [excitedly] She's back!
+- Tags to draw from: [excitedly], [enthusiastically], [laughs], [eagerly], [energetically], [urgently], [triumphantly], [playfully], [conspiratorially], [impressed]
+- Every announcement must use at least one tag, ideally two or three placed at natural high points
+- Vary which tags you use — never repeat the same combination twice in a row
+- Stack two tags when a moment calls for it: [excitedly][eagerly] Get up to that rail right now
+- Place tags where the energy spikes — at the name drop, the call to tip, or the big build
+- Keep tags brief — they direct delivery, not replace it`;
 
 export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, varNum = 1) => {
   const level = Math.max(1, Math.min(5, energyLevel || 3));
@@ -173,18 +180,18 @@ export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energy
   const genericNote = isGeneric ? '\nIMPORTANT: Do NOT use a specific name. Refer to her as "your next entertainer", "this beauty", "she", or similar generic references.' : '';
 
   const STYLE_VIBES = [
-    'Go smooth and seductive — slow cadence, low-key charm',
-    'Bring the hype — fast, punchy, high energy',
-    'Be funny and clever — work in a witty one-liner',
-    'Keep it mysterious — build suspense before dropping the name',
-    'Go direct and commanding — short sentences, total authority',
-    'Be playful and teasing — mess with the crowd a little',
-    'Sound like a radio host — polished and slick delivery',
-    'Be conversational — like you\'re talking to your boys at the bar',
-    'Go dramatic — pause for effect, build the moment big',
-    'Keep it street — confident, casual, real talk energy',
-    'Be smooth like a late-night jazz DJ — cool and collected',
-    'Bring old-school club energy — classic strip club MC vibes',
+    'Bring the hype — fast, punchy, high energy from the first word',
+    'Be funny and clever — work in a witty one-liner with big energy',
+    'Keep it mysterious then explode — build suspense then drop the name with maximum impact',
+    'Go direct and commanding — short sharp sentences, total authority, no wasted words',
+    'Be playful and teasing — mess with the crowd, then hit them hard at the end',
+    'Sound like a hype-man radio host — slick, rapid-fire, electrifying',
+    'Be conversational but hyped — like you just saw something incredible and you\'re telling your boys',
+    'Go dramatic and explosive — build the moment then detonate it',
+    'Bring old-school club energy — classic strip club MC vibes turned all the way up',
+    'Go rapid-fire — staccato rhythm, short punchy phrases, relentless pace',
+    'Be triumphant — like announcing a champion entering the arena',
+    'Start low and quiet, then build to an explosive finish on the name',
   ];
   const styleVibe = STYLE_VIBES[Math.floor(Math.random() * STYLE_VIBES.length)];
   const finalStyleVibe = (type === 'intro' && varNum === 3)

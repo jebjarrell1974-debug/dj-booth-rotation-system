@@ -100,7 +100,7 @@ async function generateTTS(text) {
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_multilingual_v2',
+      model_id: 'eleven_v3',
       voice_settings: VOICE_SETTINGS,
     }),
   });

@@ -74,7 +74,7 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
       },
       body: JSON.stringify({
         text: script,
-        model_id: 'eleven_multilingual_v2',
+        model_id: 'eleven_v3',
         voice_settings: {
           stability: voiceSettings.stability,
           similarity_boost: voiceSettings.similarity_boost,
@@ -91,7 +91,7 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
       throw new Error(`ElevenLabs error (${res.status}): ${detail || 'Unknown error'}`);
     }
 
-    trackElevenLabsCall({ text: script, model: 'eleven_multilingual_v2', context: 'house-announcement' });
+    trackElevenLabsCall({ text: script, model: 'eleven_v3', context: 'house-announcement' });
     return await res.blob();
   }, []);
 

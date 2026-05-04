@@ -197,7 +197,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       },
       body: JSON.stringify({
         text: script,
-        model_id: 'eleven_multilingual_v2',
+        model_id: 'eleven_v3',
         voice_settings: {
           stability: voiceSettings.stability,
           similarity_boost: voiceSettings.similarity_boost,
@@ -217,7 +217,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
     }
 
-    trackElevenLabsCall({ text: script, model: 'eleven_multilingual_v2', context: 'promo-tts' });
+    trackElevenLabsCall({ text: script, model: 'eleven_v3', context: 'promo-tts' });
     return await response.blob();
   };
 

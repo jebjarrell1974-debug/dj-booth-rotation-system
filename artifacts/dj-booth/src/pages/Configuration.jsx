@@ -342,7 +342,7 @@ export default function Configuration() {
             },
             body: JSON.stringify({
               text: script,
-              model_id: 'eleven_monolingual_v1',
+              model_id: 'eleven_v3',
               voice_settings: {
                 stability: voiceSettings.stability,
                 similarity_boost: voiceSettings.similarity_boost,

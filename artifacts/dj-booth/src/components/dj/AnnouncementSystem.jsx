@@ -138,7 +138,7 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-const CURRENT_VOICE_VERSION = 'V11';
+const CURRENT_VOICE_VERSION = 'V12';
 
 const hashPhonetic = (str) => {
   let h = 5381;
@@ -408,7 +408,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           },
           body: JSON.stringify({
             text: ttsText,
-            model_id: 'eleven_multilingual_v2',
+            model_id: 'eleven_v3',
             voice_settings: {
               stability: voiceSettings.stability,
               similarity_boost: voiceSettings.similarity_boost,
@@ -436,7 +436,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
         }
 
-        trackElevenLabsCall({ text: ttsText, model: 'eleven_multilingual_v2', context: 'announcement-tts' });
+        trackElevenLabsCall({ text: ttsText, model: 'eleven_v3', context: 'announcement-tts' });
         return await response.blob();
       } catch (err) {
         clearTimeout(timeout);

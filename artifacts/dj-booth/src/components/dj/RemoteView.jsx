@@ -269,11 +269,11 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: 'POST',
         headers: { Accept: 'audio/mpeg', 'Content-Type': 'application/json', 'xi-api-key': apiKey },
-        body: JSON.stringify({ text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: vs.stability, similarity_boost: vs.similarity_boost, style: vs.style, speed: vs.speed, use_speaker_boost: vs.use_speaker_boost !== false } }),
+        body: JSON.stringify({ text: script, model_id: 'eleven_v3', voice_settings: { stability: vs.stability, similarity_boost: vs.similarity_boost, style: vs.style, speed: vs.speed, use_speaker_boost: vs.use_speaker_boost !== false } }),
         signal: AbortSignal.timeout(30000),
       });
       if (!ttsRes.ok) throw new Error(`ElevenLabs ${ttsRes.status}`);
-      trackElevenLabsCall({ text: script, model: 'eleven_multilingual_v2', context: 'remote-promo-tts' });
+      trackElevenLabsCall({ text: script, model: 'eleven_v3', context: 'remote-promo-tts' });
 
       setPromoStatus('Saving...');
       const audioBlob = await ttsRes.blob();
