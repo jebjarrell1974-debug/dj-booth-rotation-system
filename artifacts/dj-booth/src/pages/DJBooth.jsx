@@ -4793,6 +4793,7 @@ export default function DJBooth() {
                   pendingVipState={pendingVipState}
                   onSendToVip={sendDancerToVip}
                   onReleaseFromVip={releaseDancerFromVip}
+                  onResetVoiceovers={(name) => announcementRef.current?.resetAndRegenerateDancer?.(name)}
                 />
               </div>
             )}

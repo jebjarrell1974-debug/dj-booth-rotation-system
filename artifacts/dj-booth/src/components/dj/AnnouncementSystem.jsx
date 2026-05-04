@@ -947,6 +947,62 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     return true;
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
+  const resetAndRegenerateDancer = useCallback(async (dancerName) => {
+    if (!dancerName) return { deleted: 0 };
+    let deletedCount = 0;
+
+    try {
+      const res = await fetch(`/api/voiceovers/dancer/${encodeURIComponent(dancerName)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        deletedCount = data.deleted || 0;
+        console.log(`🧹 Reset: deleted ${deletedCount} server voiceovers for "${dancerName}"`);
+      }
+    } catch (e) {
+      console.error('Reset: server delete failed:', e);
+    }
+
+    try {
+      const db = await openDB();
+      const allKeys = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).getAllKeys();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      const matches = allKeys.filter(k => typeof k === 'string' && k.includes(dancerName));
+      if (matches.length) {
+        const tx2 = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx2.objectStore(STORE_NAME);
+        for (const key of matches) store.delete(key);
+        await new Promise((resolve) => { tx2.oncomplete = resolve; tx2.onerror = resolve; });
+      }
+      console.log(`🧹 Reset: cleared ${matches.length} IndexedDB entries for "${dancerName}"`);
+    } catch (e) {
+      console.error('Reset: IDB wipe failed:', e);
+    }
+
+    setCacheStatus(prev => {
+      const next = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (!k.includes(dancerName)) next[k] = v;
+      }
+      return next;
+    });
+
+    for (const failKey of Array.from(failedGenerationsRef.current)) {
+      if (failKey.includes(dancerName)) failedGenerationsRef.current.delete(failKey);
+    }
+
+    console.log(`🔄 Reset complete for "${dancerName}" — regenerating fresh voiceovers...`);
+    preCacheDancer(dancerName).catch(e => console.error('Reset: regenerate failed:', e));
+
+    return { deleted: deletedCount };
+  }, [preCacheDancer]);
+
   React.useImperativeHandle(ref, () => ({
     playAutoAnnouncement: async (type, currentDancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
       await playAnnouncement(type, currentDancerName, nextDancerName, roundNumber, audioOptions);
@@ -964,7 +1020,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     },
     preCacheDancer,
     preCacheUpcoming,
-    preCacheForRotationStart
+    preCacheForRotationStart,
+    resetAndRegenerateDancer
   }));
 
   const preCacheAll = useCallback(async () => {

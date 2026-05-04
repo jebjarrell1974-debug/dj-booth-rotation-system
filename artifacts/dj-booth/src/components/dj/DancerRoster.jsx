@@ -57,7 +57,8 @@ export default function DancerRoster({
   dancerVipMap = {},
   pendingVipState = {},
   onSendToVip,
-  onReleaseFromVip
+  onReleaseFromVip,
+  onResetVoiceovers
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [pullAllConfirmOpen, setPullAllConfirmOpen] = useState(false);
@@ -134,6 +135,26 @@ export default function DancerRoster({
       }
     } catch (e) {
       console.error('Failed to reset voiceovers:', e);
+    } finally {
+      setResettingVoiceovers(false);
+    }
+  };
+
+  const fullResetAndRegenerate = async (dancerName) => {
+    if (!dancerName) return;
+    setResettingVoiceovers(true);
+    setVoiceoverResetCount(null);
+    try {
+      if (onResetVoiceovers) {
+        const result = await onResetVoiceovers(dancerName);
+        const deleted = result?.deleted ?? 0;
+        setVoiceoverResetCount(deleted);
+        setTimeout(() => setVoiceoverResetCount(null), 5000);
+      } else {
+        await resetVoiceoversForDancer(dancerName);
+      }
+    } catch (e) {
+      console.error('Failed to fully reset voiceovers:', e);
     } finally {
       setResettingVoiceovers(false);
     }
@@ -483,16 +504,16 @@ export default function DancerRoster({
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => editingDancer?.name && resetVoiceoversForDancer(editingDancer.name)}
+                        onClick={() => editingDancer?.name && fullResetAndRegenerate(editingDancer.name)}
                         disabled={resettingVoiceovers}
                         className="w-full border-red-500/50 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                       >
                         <RotateCcw className={`w-4 h-4 mr-2 ${resettingVoiceovers ? 'animate-spin' : ''}`} />
-                        {resettingVoiceovers ? 'Resetting...' : 'Reset Voiceovers'}
+                        {resettingVoiceovers ? 'Resetting & regenerating...' : 'Reset Voiceovers'}
                       </Button>
                       {voiceoverResetCount !== null && (
                         <p className="text-xs text-center text-green-400">
-                          {voiceoverResetCount > 0 ? `Cleared ${voiceoverResetCount} voiceover${voiceoverResetCount !== 1 ? 's' : ''}` : 'No voiceovers to clear'}
+                          {voiceoverResetCount > 0 ? `Wiped ${voiceoverResetCount} voiceover${voiceoverResetCount !== 1 ? 's' : ''} — regenerating fresh ones now` : 'Cache cleared — regenerating fresh voiceovers now'}
                         </p>
                       )}
                     </div>
