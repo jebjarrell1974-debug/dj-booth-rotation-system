@@ -33,7 +33,7 @@ set -uo pipefail
 
 LOG="/tmp/djbooth-touch.log"
 KIOSK_OUTPUT="${KIOSK_OUTPUT:-HDMI-2}"
-TOUCH_PATTERN="${TOUCH_PATTERN:-ILITEK}"
+TOUCH_PATTERN="${TOUCH_PATTERN:-}"
 MAX_WAIT_X="${MAX_WAIT_X:-60}"
 MAX_WAIT_DEV="${MAX_WAIT_DEV:-60}"
 TRIGGER="${1:-manual}"
@@ -61,11 +61,44 @@ while ! xrandr --query >/dev/null 2>&1; do
 done
 log "X11 ready (waited ${WAITED}s)"
 
-# --- Wait for touchscreen device(s) to appear in xinput --------------------
+# --- Vendor-agnostic touchscreen detection ---------------------------------
+# A touchscreen is identified by the kernel multi-touch protocol: any X11
+# device exposing the "Abs MT Position X" property is a touchscreen, period.
+# This works for ILITEK, Weida, Goodix, eGalax, generic HID — every vendor.
+# Mice, keyboards, trackpads do NOT have this property — exclusive to MT.
+# TOUCH_PATTERN env override forces a name-based match (legacy escape hatch).
+find_touch_ids() {
+  local ids="" id pointer_ids
+  if [ -n "$TOUCH_PATTERN" ]; then
+    ids=$(xinput list 2>/dev/null \
+      | grep -i "$TOUCH_PATTERN" \
+      | grep -oE 'id=[0-9]+' \
+      | grep -oE '[0-9]+')
+  else
+    pointer_ids=$(xinput list 2>/dev/null \
+      | grep -E 'slave[[:space:]]+pointer' \
+      | grep -oE 'id=[0-9]+' \
+      | grep -oE '[0-9]+')
+    for id in $pointer_ids; do
+      if xinput list-props "$id" 2>/dev/null | grep -q "Abs MT Position X"; then
+        ids="$ids $id"
+      fi
+    done
+  fi
+  echo "$ids" | tr -s ' ' '\n' | grep -v '^$'
+}
+
 WAITED=0
-while ! xinput list 2>/dev/null | grep -qi "$TOUCH_PATTERN"; do
+DEVICE_IDS=""
+while :; do
+  DEVICE_IDS=$(find_touch_ids | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+  [ -n "$DEVICE_IDS" ] && break
   if [ $WAITED -ge $MAX_WAIT_DEV ]; then
-    log "ERROR: No '$TOUCH_PATTERN' device found in xinput after ${MAX_WAIT_DEV}s"
+    if [ -n "$TOUCH_PATTERN" ]; then
+      log "ERROR: No '$TOUCH_PATTERN' device found in xinput after ${MAX_WAIT_DEV}s"
+    else
+      log "ERROR: No touchscreen (device with 'Abs MT Position X' property) found after ${MAX_WAIT_DEV}s"
+    fi
     log "xinput list output for diagnostics:"
     xinput list 2>&1 | sed 's/^/  /' >> "$LOG"
     exit 2
@@ -73,7 +106,7 @@ while ! xinput list 2>/dev/null | grep -qi "$TOUCH_PATTERN"; do
   sleep 1
   WAITED=$((WAITED + 1))
 done
-log "'$TOUCH_PATTERN' device(s) detected (waited ${WAITED}s)"
+log "Touchscreen device(s) detected: $DEVICE_IDS (waited ${WAITED}s)"
 
 # --- Auto-detect target output ---------------------------------------------
 detect_output() {
@@ -105,17 +138,6 @@ if [ -z "$OUTPUT" ]; then
   exit 3
 fi
 log "Target output: $OUTPUT"
-
-# --- Get all matching device IDs (touch + mouse subsystem both need mapping) -
-DEVICE_IDS=$(xinput list 2>/dev/null \
-  | grep -i "$TOUCH_PATTERN" \
-  | grep -oE 'id=[0-9]+' \
-  | grep -oE '[0-9]+')
-
-if [ -z "$DEVICE_IDS" ]; then
-  log "ERROR: Could not extract device IDs from xinput list"
-  exit 4
-fi
 
 # --- Map by ID (NAME-based map-to-output is unreliable on this xinput build) -
 SUCCESS=0

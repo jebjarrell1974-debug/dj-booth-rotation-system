@@ -309,7 +309,7 @@ HOTEOF
   sudo tee /etc/udev/rules.d/96-djbooth-touch-map.rules > /dev/null << TOUCHEOF
 ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \
   RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority HOME=$UDEV_HOME /usr/local/bin/djbooth-touch-map.sh udev-drm'"
-ACTION=="add", SUBSYSTEM=="input", ATTRS{name}=="*ILITEK*", \
+ACTION=="add", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
   RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority HOME=$UDEV_HOME /usr/local/bin/djbooth-touch-map.sh udev-input'"
 TOUCHEOF
 
