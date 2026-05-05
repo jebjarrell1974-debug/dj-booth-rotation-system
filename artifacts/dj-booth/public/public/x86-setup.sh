@@ -55,8 +55,8 @@ echo "SSH: $(sudo systemctl is-active ssh)"
 
 echo "[3/12] Installing NoMachine for remote desktop access..."
 if ! command -v nxserver &> /dev/null; then
-  NM_URL=$(curl -sf "https://www.nomachine.com/download" | \
-    grep -oE 'https://download\.nomachine\.com/download/[0-9]+\.[0-9]+/Linux/nomachine_[0-9._]+amd64\.deb' | \
+  NM_URL=$(curl -sf "https://download.nomachine.com/download/?id=1&platform=linux" | \
+    grep -oE 'https://web9001\.nomachine\.com/download/[0-9]+\.[0-9]+/Linux/nomachine_[0-9._]+amd64\.deb' | \
     head -1)
   if [ -z "$NM_URL" ]; then
     echo "⚠ Could not auto-detect NoMachine download URL."
