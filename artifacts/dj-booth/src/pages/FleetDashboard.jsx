@@ -9,7 +9,7 @@ import {
   Upload, Package, Search, Filter, XCircle, 
   BarChart3, Music, Eye, Wifi, WifiOff, MemoryStick,
   AlertCircle, Info, DollarSign, Monitor, Users, Download, RotateCcw,
-  Radio, Volume2, VolumeX, Zap, Lock, KeyRound
+  Radio, Volume2, VolumeX, Zap, Lock, KeyRound, Pencil
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fleetAdmin } from '@/api/fleetApi';
@@ -501,11 +501,21 @@ function ManualKeyModal({ device, onClose }) {
   );
 }
 
-function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands, onInitiateLicense, onRestoreLicense, onManualKey, licensePending }) {
+function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands, onInitiateLicense, onRestoreLicense, onManualKey, licensePending, onUpdateClubName }) {
   const isOnline = device.status === 'online';
   const timeSince = device.timeSinceHeartbeat;
   const isStale = timeSince && timeSince > 10 * 60 * 1000;
   const devId = device.device_id;
+  const [editingClub, setEditingClub] = useState(false);
+  const [clubInput, setClubInput] = useState(device.club_name || '');
+  const [savingClub, setSavingClub] = useState(false);
+
+  const handleSaveClub = async () => {
+    setSavingClub(true);
+    await onUpdateClubName(devId, clubInput.trim());
+    setSavingClub(false);
+    setEditingClub(false);
+  };
 
   const cmdBtn = (action, label, icon, colorClass, borderClass) => {
     const isPending = pendingCommands?.has(`${devId}-${action}`);
@@ -522,9 +532,29 @@ function DeviceCard({ device, onDelete, onViewDetail, onCommand, pendingCommands
   return (
     <div className={`bg-[#0d0d1f] border rounded-xl overflow-hidden transition-colors ${isOnline ? 'border-[#1a3a2a]' : isStale ? 'border-red-500/30' : 'border-[#1e293b]'}`}>
       <div className="px-4 pt-3 pb-2 flex items-start justify-between">
-        <div>
+        <div className="flex-1 min-w-0 mr-2">
           <h3 className="text-white font-semibold text-base">{device.device_name}</h3>
-          <p className="text-xs text-gray-500">{device.club_name || 'No club assigned'}</p>
+          {editingClub ? (
+            <div className="flex items-center gap-1 mt-0.5" onClick={e => e.stopPropagation()}>
+              <input
+                autoFocus
+                value={clubInput}
+                onChange={e => setClubInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveClub(); if (e.key === 'Escape') setEditingClub(false); }}
+                className="text-xs bg-[#1a1a2e] border border-[#00d4ff]/40 rounded px-2 py-0.5 text-white w-40 focus:outline-none focus:border-[#00d4ff]"
+                placeholder="Club name"
+              />
+              <button onClick={handleSaveClub} disabled={savingClub} className="text-[10px] px-2 py-0.5 rounded bg-[#00d4ff] text-black font-semibold disabled:opacity-50">
+                {savingClub ? '…' : 'Save'}
+              </button>
+              <button onClick={() => setEditingClub(false)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#1e293b] text-gray-400">✕</button>
+            </div>
+          ) : (
+            <button onClick={e => { e.stopPropagation(); setClubInput(device.club_name || ''); setEditingClub(true); }} className="flex items-center gap-1 group text-left">
+              <span className="text-xs text-gray-500 group-hover:text-gray-300 transition-colors">{device.club_name || 'No club assigned'}</span>
+              <Pencil className="w-2.5 h-2.5 text-gray-600 group-hover:text-gray-400 transition-colors" />
+            </button>
+          )}
         </div>
         <Badge variant="outline" className={`text-xs font-semibold uppercase tracking-wide ${isOnline ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-red-500/30 text-red-400 bg-red-500/10'}`}>
           {isOnline ? 'Online' : 'Offline'}
@@ -1227,6 +1257,11 @@ export default function FleetDashboard() {
     refresh();
   };
 
+  const handleUpdateClubName = async (deviceId, clubName) => {
+    await fleetAdmin.updateDevice(deviceId, { club_name: clubName });
+    refresh();
+  };
+
   const [licensePending, setLicensePending] = useState(new Set());
   const [manualKeyDevice, setManualKeyDevice] = useState(null);
 
@@ -1492,7 +1527,8 @@ export default function FleetDashboard() {
                   onInitiateLicense={handleInitiateLicense}
                   onRestoreLicense={handleRestoreLicense}
                   onManualKey={handleManualKey}
-                  licensePending={licensePending.has(device.device_id)} />
+                  licensePending={licensePending.has(device.device_id)}
+                  onUpdateClubName={handleUpdateClubName} />
               ))
             )}
           </div>
