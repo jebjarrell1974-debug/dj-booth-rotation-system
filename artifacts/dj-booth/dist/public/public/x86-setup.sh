@@ -281,6 +281,44 @@ X-GNOME-Autostart-enabled=true
 DWEOF
 echo "Second display (crowd rotation screen) configured"
 
+# ── Touchscreen mapper ────────────────────────────────────────────────────────
+# Install xinput, copy the canonical touch-map script, add GNOME autostart,
+# and install udev rules so the touchscreen self-heals on USB/monitor hotplug.
+sudo apt install -y xinput 2>/dev/null || true
+TOUCH_MAP_SRC="$APP_DIR/public/public/djbooth-touch-map.sh"
+if [ -f "$TOUCH_MAP_SRC" ]; then
+  sudo cp "$TOUCH_MAP_SRC" /usr/local/bin/djbooth-touch-map.sh
+  sudo chmod +x /usr/local/bin/djbooth-touch-map.sh
+  echo "Touchscreen mapper installed"
+
+  cat > "$HOME/.config/autostart/djbooth-touch-map.desktop" << TMEOF
+[Desktop Entry]
+Type=Application
+Name=DJ Booth Touchscreen Mapper
+Exec=/usr/local/bin/djbooth-touch-map.sh autostart
+X-GNOME-Autostart-enabled=true
+TMEOF
+
+  UDEV_USER=$UNIT_USER
+  UDEV_HOME=$UNIT_HOME
+  sudo tee /etc/udev/rules.d/95-djbooth-monitor-hotplug.rules > /dev/null << HOTEOF
+ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \
+  RUN+="/bin/su $UDEV_USER -c 'DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority bash $UDEV_HOME/.djbooth-display-config.sh >> /tmp/djbooth-hotplug.log 2>&1'"
+HOTEOF
+
+  sudo tee /etc/udev/rules.d/96-djbooth-touch-map.rules > /dev/null << TOUCHEOF
+ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card[0-9]*", \
+  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority HOME=$UDEV_HOME /usr/local/bin/djbooth-touch-map.sh udev-drm'"
+ACTION=="add", SUBSYSTEM=="input", ATTRS{name}=="*ILITEK*", \
+  RUN+="/bin/su $UDEV_USER -c 'sleep 2 && DISPLAY=:0 XAUTHORITY=$UDEV_HOME/.Xauthority HOME=$UDEV_HOME /usr/local/bin/djbooth-touch-map.sh udev-input'"
+TOUCHEOF
+
+  sudo udevadm control --reload-rules 2>/dev/null || true
+  echo "Touchscreen udev rules installed (self-healing on hotplug)"
+else
+  echo "WARNING: $TOUCH_MAP_SRC not found — run ~/djbooth-update.sh after setup to install touch mapping"
+fi
+
 echo "[10/12] Setting up passwordless sudo..."
 NOPASSWD_FILE="/etc/sudoers.d/010_${UNIT_USER}-nopasswd"
 if [ ! -f "$NOPASSWD_FILE" ]; then
