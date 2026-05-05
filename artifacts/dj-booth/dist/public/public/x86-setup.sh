@@ -17,7 +17,7 @@ echo "Home: $UNIT_HOME"
 echo "App:  $APP_DIR"
 echo ""
 
-echo "[1/11] Installing Tailscale..."
+echo "[1/12] Installing Tailscale..."
 if ! command -v tailscale &> /dev/null; then
   curl -fsSL https://tailscale.com/install.sh | sh
   echo ""
@@ -43,7 +43,7 @@ if [ "$TAILSCALE_IP" = "not connected" ] || [ -z "$TAILSCALE_IP" ]; then
 fi
 echo "Tailscale IP: $TAILSCALE_IP"
 
-echo "[2/11] Installing Node.js and SSH server..."
+echo "[2/12] Installing Node.js and SSH server..."
 if ! command -v node &> /dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt install -y nodejs
@@ -53,18 +53,44 @@ sudo apt install -y openssh-server git curl
 sudo systemctl enable --now ssh
 echo "SSH: $(sudo systemctl is-active ssh)"
 
-echo "[3/11] Cloning app from GitHub..."
+echo "[3/12] Installing NoMachine for remote desktop access..."
+if ! command -v nxserver &> /dev/null; then
+  NM_URL=$(curl -sf "https://www.nomachine.com/download" | \
+    grep -oE 'https://download\.nomachine\.com/download/[0-9]+\.[0-9]+/Linux/nomachine_[0-9._]+amd64\.deb' | \
+    head -1)
+  if [ -z "$NM_URL" ]; then
+    echo "⚠ Could not auto-detect NoMachine download URL."
+    echo "  Visit https://www.nomachine.com/download to get the .deb link,"
+    echo "  then run: wget <url> && sudo dpkg -i nomachine_*.deb"
+  else
+    echo "Downloading: $NM_URL"
+    curl -fL -o /tmp/nomachine.deb "$NM_URL"
+    if file /tmp/nomachine.deb | grep -q "Debian binary package"; then
+      sudo dpkg -i /tmp/nomachine.deb
+      rm -f /tmp/nomachine.deb
+      echo "NoMachine installed. Connect via Tailscale ($TAILSCALE_IP) on port 4000"
+    else
+      echo "⚠ Download was not a valid .deb — skipping NoMachine install."
+      echo "  Visit https://www.nomachine.com/download to install manually."
+      rm -f /tmp/nomachine.deb
+    fi
+  fi
+else
+  echo "NoMachine already installed"
+fi
+
+echo "[4/12] Cloning app from GitHub..."
 if [ ! -d "$APP_DIR" ]; then
   cd "$UNIT_HOME"
   git clone "https://github.com/$GITHUB_REPO.git" djbooth
 fi
 cd "$APP_DIR"
 
-echo "[4/11] Installing dependencies and building..."
+echo "[5/12] Installing dependencies and building..."
 npm install --no-audit --no-fund 2>&1 | tail -5
 npx vite build 2>&1 | tail -5
 
-echo "[5/11] Setting up environment variables..."
+echo "[6/12] Setting up environment variables..."
 if [ ! -f "$APP_DIR/.env" ]; then
   FLEET_SERVER="http://100.109.73.27:3001"
   echo "Fetching fleet config from homebase..."
@@ -84,7 +110,7 @@ else
   echo ".env already exists"
 fi
 
-echo "[6/11] Setting up systemd service..."
+echo "[7/12] Setting up systemd service..."
 sudo tee /etc/systemd/system/djbooth.service > /dev/null << EOF
 [Unit]
 Description=NEON AI DJ Booth
@@ -109,7 +135,7 @@ sudo systemctl enable djbooth
 sudo systemctl start djbooth
 echo "Service started"
 
-echo "[7/11] Installing Chromium and setting up kiosk..."
+echo "[8/12] Installing Chromium and setting up kiosk..."
 sudo apt install -y chromium 2>/dev/null || sudo apt install -y chromium-browser 2>/dev/null || true
 
 sudo hostnamectl set-hostname "$UNIT_USER"
@@ -137,7 +163,7 @@ DEOF
 chmod +x ~/Desktop/neonaidj.desktop
 gio set ~/Desktop/neonaidj.desktop metadata::trusted true 2>/dev/null || true
 
-echo "[8/11] Configuring GNOME for unattended kiosk operation..."
+echo "[9/12] Configuring GNOME for unattended kiosk operation..."
 # Disable screen lock and screensaver
 gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
 gsettings set org.gnome.desktop.screensaver idle-activation-enabled false 2>/dev/null || true
@@ -255,7 +281,7 @@ X-GNOME-Autostart-enabled=true
 DWEOF
 echo "Second display (crowd rotation screen) configured"
 
-echo "[9/11] Setting up passwordless sudo..."
+echo "[10/12] Setting up passwordless sudo..."
 NOPASSWD_FILE="/etc/sudoers.d/010_${UNIT_USER}-nopasswd"
 if [ ! -f "$NOPASSWD_FILE" ]; then
   echo "$UNIT_USER ALL=(ALL) NOPASSWD: ALL" | sudo tee "$NOPASSWD_FILE" > /dev/null
@@ -263,7 +289,7 @@ if [ ! -f "$NOPASSWD_FILE" ]; then
   sudo visudo -c -f "$NOPASSWD_FILE" > /dev/null 2>&1 && echo "Passwordless sudo configured" || { sudo rm -f "$NOPASSWD_FILE"; echo "WARNING: sudoers validation failed, skipping"; }
 fi
 
-echo "[10/11] Setting up browser watchdog..."
+echo "[11/12] Setting up browser watchdog..."
 WATCHDOG_SRC="$APP_DIR/public/djbooth-watchdog.sh"
 WATCHDOG_DEST="$UNIT_HOME/djbooth-watchdog.sh"
 if [ -f "$WATCHDOG_SRC" ]; then
@@ -296,7 +322,7 @@ WEOF
   fi
 fi
 
-echo "[11/11] Setting daily reboot and downloading update script..."
+echo "[12/12] Setting daily reboot and downloading update script..."
 echo "0 8 * * * root /sbin/reboot" | sudo tee /etc/cron.d/daily-reboot > /dev/null
 curl -o "$UNIT_HOME/djbooth-update.sh" "https://raw.githubusercontent.com/$GITHUB_REPO/main/public/djbooth-update-github.sh" && chmod +x "$UNIT_HOME/djbooth-update.sh"
 
