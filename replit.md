@@ -26,6 +26,14 @@ NEON AI DJ (Nightclub Entertainment Entertainment Operations Network — Automat
 - **Before any GitHub push**: verify the file list does NOT contain screenshots, music files, database files, or Replit internal state files
 - **Test impact on Dell unit before pushing**: consider what the update script will do with every change
 
+## Gotchas / Recovery Procedures
+- **Frozen mouse + touchscreen on Dell unit (X input grab wedged)**: symptoms — local mouse and touch dead, music keeps playing, SSH still works, NoMachine connects but inputs do not register. Cause — gnome-shell holding a stuck X input grab (often after Chromium briefly stalled, e.g. enabling beat matching). **Fix (does NOT stop music)**: SSH in and run `killall -HUP gnome-shell`. On X11 sessions (`gdm-x-session`), gnome-shell respawns in ~2 seconds while X and Chromium stay running. Diagnostic: `DISPLAY=:0 xdotool getmouselocation` returning coordinates confirms X is alive but inputs are grabbed. Verified working on neonaidj002 May 5 2026.
+
+## TODO / Pending Fixes
+- Investigate root cause of beat-matching toggle causing gnome-shell input grab on neonaidj002 (look at `AudioEngine.jsx` beat-matching enable path for synchronous main-thread stalls)
+- Consider binding `killall -HUP gnome-shell` to a one-touch SSH-callable recovery script for managers
+- Possibly add a recovery hotkey on the kiosk itself
+
 ## System Architecture
 The application is built with React 18, Vite, and TailwindCSS for the frontend, utilizing Radix UI primitives and shadcn/ui for styling. The UI/UX features a dark nightclub theme with neon cyan and blue accents, optimized for low-power device performance. State is managed using `localStorage` for entities and `IndexedDB` for fast session caching of voiceover audio. React Query handles data fetching and caching, and React Router v6 manages client-side routing. Configuration settings are stored in the browser's `localStorage` on each Dell unit.
 

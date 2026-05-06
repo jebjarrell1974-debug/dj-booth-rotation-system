@@ -2296,11 +2296,14 @@ export default function DJBooth() {
   }, [swapPromoAtSlot]);
 
   const lastSkipTimeRef = useRef(0);
-  const handleSkip = useCallback(async () => {
+  const handleSkip = useCallback(async (opts = {}) => {
+    // opts.skipBreaks (bool): when true, bypass break songs and go straight to next dancer's intro + song 1.
+    // Used by the top-level "Next Entertainer" button which is meant to be an immediate hard advance.
+    const skipBreaks = opts && typeof opts === 'object' && opts.skipBreaks === true;
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
     lastSkipTimeRef.current = now;
-    auditEvent('skip_song');
+    auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
     if (playingCommercialRef.current) {
       console.log('📺 HandleSkip: Skipping commercial');
       if (audioEngineRef.current) {
@@ -2500,7 +2503,15 @@ export default function DJBooth() {
         const breakKey = `after-${rot[idx]}`;
         let breakSongs = interstitialSongsRef.current[breakKey] || [];
 
-        if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+        if (skipBreaks) {
+          // Hard skip — clear any queued break songs for this transition and fall through
+          // to the next-dancer path (intro + song 1, no break music).
+          breakSongs = [];
+          const cleared = { ...interstitialSongsRef.current };
+          delete cleared[breakKey];
+          interstitialSongsRef.current = cleared;
+        }
+        if (!skipBreaks && breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -4611,6 +4622,16 @@ export default function DJBooth() {
                   setCurrentSongNumber(999);
                   currentSongNumberRef.current = 999;
                   handleSkipRef.current?.();
+                }}
+                onSkipEntertainerNow={() => {
+                  // Top-level "Next Entertainer" button — hard skip, no break songs.
+                  // Ends current entertainer's set immediately, plays next entertainer's
+                  // intro + song 1 with no break music in between.
+                  if (!isRotationActiveRef.current) return;
+                  if (rotationRef.current.length <= 1) return;
+                  setCurrentSongNumber(999);
+                  currentSongNumberRef.current = 999;
+                  handleSkipRef.current?.({ skipBreaks: true });
                 }}
                 onSkipDancer={(dancerId) => {
                   if (!isRotationActive) return;
