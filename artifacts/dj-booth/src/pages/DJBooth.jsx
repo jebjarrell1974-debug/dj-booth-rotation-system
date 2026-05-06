@@ -2352,62 +2352,94 @@ export default function DJBooth() {
       }
       return;
     }
-    
+
+    // Tracks whether we cleaned up an interstitial because of a skipBreaks request.
+    // When true, rotation was already flipped at break-start, idx points at the new
+    // top dancer, and songNum should stay at 0 so we play her song 1 + intro on fall-through.
+    let skipBreaksFromInterstitial = false;
     if (playingInterstitialRef.current) {
       const rot = rotationRef.current;
       const idx = currentDancerIndexRef.current;
       const currentDancerId = rot[idx];
       const breakKey = playingInterstitialBreakKeyRef.current || `after-${currentDancerId}`;
-      const breakSongs = interstitialSongsRef.current[breakKey] || [];
-      const breakIdx = interstitialIndexRef.current;
 
-      if (breakIdx < breakSongs.length) {
-        const nextBreakName = breakSongs[breakIdx];
-        let nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
-        if (!nextBreakTrack?.url) {
-          nextBreakTrack = tracks.find(t => t.url && (
-            t.name === nextBreakName ||
-            t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
-          ));
+      if (skipBreaks) {
+        // Hard skip from "Next Entertainer" while a break song is playing — abandon
+        // remaining break songs immediately and fall through to play the new top
+        // dancer's intro + song 1.
+        console.log('⏭️ HandleSkip(skipBreaks): Abandoning active break, jumping to next dancer');
+        playingInterstitialRef.current = false;
+        playingInterstitialBreakKeyRef.current = null;
+        interstitialIndexRef.current = 0;
+        setActiveBreakInfo(null);
+        const clearedInterstitials = { ...interstitialSongsRef.current };
+        delete clearedInterstitials[breakKey];
+        interstitialSongsRef.current = clearedInterstitials;
+        setInterstitialSongsState(clearedInterstitials);
+        setInterstitialRemoteVersion(v => v + 1);
+        try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
+        skipBreaksFromInterstitial = true;
+      } else {
+        const breakSongs = interstitialSongsRef.current[breakKey] || [];
+        const breakIdx = interstitialIndexRef.current;
+
+        if (breakIdx < breakSongs.length) {
+          const nextBreakName = breakSongs[breakIdx];
+          let nextBreakTrack = tracks.find(t => t.name === nextBreakName && t.url);
+          if (!nextBreakTrack?.url) {
+            nextBreakTrack = tracks.find(t => t.url && (
+              t.name === nextBreakName ||
+              t.name.replace(/\.[^.]+$/, '') === nextBreakName.replace(/\.[^.]+$/, '')
+            ));
+          }
+          if (!nextBreakTrack?.url) {
+            nextBreakTrack = await resolveTrackByName(nextBreakName);
+          }
+          if (nextBreakTrack?.url) {
+            console.log('⏭️ HandleSkip: Skipping to next break song:', nextBreakTrack.name);
+            interstitialIndexRef.current = breakIdx + 1;
+            setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
+            lastAudioActivityRef.current = Date.now();
+            const ok = await playTrack(nextBreakTrack.url, false, nextBreakTrack.name, nextBreakTrack.genre);
+            if (!ok) await playFallbackTrack(false);
+            transitionInProgressRef.current = false;
+            return;
+          }
         }
-        if (!nextBreakTrack?.url) {
-          nextBreakTrack = await resolveTrackByName(nextBreakName);
-        }
-        if (nextBreakTrack?.url) {
-          console.log('⏭️ HandleSkip: Skipping to next break song:', nextBreakTrack.name);
-          interstitialIndexRef.current = breakIdx + 1;
-          setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
-          lastAudioActivityRef.current = Date.now();
-          const ok = await playTrack(nextBreakTrack.url, false, nextBreakTrack.name, nextBreakTrack.genre);
-          if (!ok) await playFallbackTrack(false);
-          transitionInProgressRef.current = false;
-          return;
-        }
+
+        playingInterstitialRef.current = false;
+        playingInterstitialBreakKeyRef.current = null;
+        interstitialIndexRef.current = 0;
+        setActiveBreakInfo(null);
+        console.log('⏭️ HandleSkip: No more break songs, advancing to next dancer');
+        const clearedInterstitials = { ...interstitialSongsRef.current };
+        delete clearedInterstitials[breakKey];
+        interstitialSongsRef.current = clearedInterstitials;
+        setInterstitialSongsState(clearedInterstitials);
+        setInterstitialRemoteVersion(v => v + 1);
+        try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
       }
-
-      playingInterstitialRef.current = false;
-      playingInterstitialBreakKeyRef.current = null;
-      interstitialIndexRef.current = 0;
-      setActiveBreakInfo(null);
-      console.log('⏭️ HandleSkip: No more break songs, advancing to next dancer');
-      const clearedInterstitials = { ...interstitialSongsRef.current };
-      delete clearedInterstitials[breakKey];
-      interstitialSongsRef.current = clearedInterstitials;
-      setInterstitialSongsState(clearedInterstitials);
-      setInterstitialRemoteVersion(v => v + 1);
-      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
     }
 
     transitionInProgressRef.current = true;
     transitionStartTimeRef.current = Date.now();
     lastAudioActivityRef.current = Date.now();
-    
+
+    // Force end-of-set path for "Next Entertainer" hard-skip when we were NOT just
+    // in an interstitial (rotation hasn't been flipped yet — we need to flip it now).
+    // Done HERE (after all early returns/guards) instead of in the caller so a
+    // debounced/rejected click never leaves a stale 999 sentinel behind.
+    if (skipBreaks && !skipBreaksFromInterstitial) {
+      currentSongNumberRef.current = 999;
+      setCurrentSongNumber(999);
+    }
+
     const idx = currentDancerIndexRef.current;
     const songNum = currentSongNumberRef.current;
     const songs = rotationSongsRef.current;
     const rot = rotationRef.current;
     const dnc = dancersRef.current;
-    
+
     const dancer = dnc.find(d => d.id === rot[idx]);
     if (!dancer) {
       console.warn('⚠️ HandleSkip: dancer not found, falling back to random');
@@ -4627,10 +4659,11 @@ export default function DJBooth() {
                   // Top-level "Next Entertainer" button — hard skip, no break songs.
                   // Ends current entertainer's set immediately, plays next entertainer's
                   // intro + song 1 with no break music in between.
+                  // NOTE: songNum=999 sentinel is set INSIDE handleSkip after all guards
+                  // pass (debounce/transition/etc.) so a rejected click never leaves a
+                  // stale sentinel that would corrupt the next legitimate skip.
                   if (!isRotationActiveRef.current) return;
                   if (rotationRef.current.length <= 1) return;
-                  setCurrentSongNumber(999);
-                  currentSongNumberRef.current = 999;
                   handleSkipRef.current?.({ skipBreaks: true });
                 }}
                 onSkipDancer={(dancerId) => {
