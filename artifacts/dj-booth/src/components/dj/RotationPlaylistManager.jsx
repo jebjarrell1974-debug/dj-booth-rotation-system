@@ -948,6 +948,11 @@ export default function RotationPlaylistManager({
   return (
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
       <DragDropContext onDragEnd={handleDragEnd} sensors={[useMouseSensor, useLongPressTouchSensor]} enableDefaultSensors={false}>
+        {/* Library + Rotation share whatever width remains after the VIP sidebar
+            takes its fixed 220px. Wrapping them in this flex-1 container guarantees
+            VIP can never be pushed off-screen by content inside Library or Rotation
+            (e.g. break songs being added to entertainer cards). */}
+        <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
         <div ref={libraryPanelRef} className="w-2/5 border-r border-[#1e293b] flex flex-col min-w-0">
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
@@ -1724,10 +1729,12 @@ export default function RotationPlaylistManager({
             )}
           </Droppable>
         </div>
+        </div>
       </DragDropContext>
 
-      {/* In VIP section — fixed-width sidebar so it never overflows on smaller
-          monitors. Library + Rotation shrink to make room when VIP appears. */}
+      {/* In VIP sidebar — sibling of the Library+Rotation wrapper (NOT inside it),
+          so the flex parent reserves a guaranteed 220px slot for VIP that no amount
+          of break songs / dancer rows / button additions can ever steal. */}
       {Object.keys(dancerVipMap).length > 0 && (
         <div className="w-[220px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
           <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden">
