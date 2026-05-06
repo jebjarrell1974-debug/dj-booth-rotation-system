@@ -1,0 +1,32 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "uHMKlauMAMDTZ06RJGpUl"
+uri = "file://artifacts/dj-booth/public/public/neon-ai-dj-logo.jpeg"
+type = "image"
+title = "Brand logo (NEON AI DJ — neon blue on black)"
+
+[[outputs]]
+id = "ZcXaoyxHqpkzRxf-z1e4E"
+uri = "file://artifacts/dj-booth/public/opengraph.jpg"
+type = "image"
+title = "System boot screen — great hero/intro image"
+
+[[outputs]]
+id = "RAhSvutP4uR3Nem306zOP"
+uri = "file://artifacts/dj-booth/public/public/neonaidj-icon.svg"
+type = "image"
+title = "App icon (SVG, scalable — use as favicon/social)"
+
+[[outputs]]
+id = "w4P9iPOGekWBQcubNsFNp"
+uri = "file://artifacts/dj-booth/public/favicon.svg"
+type = "image"
+title = "Favicon"
+
+[[outputs]]
+id = "GeynlIXnySLuXlkle2As1"
+uri = "file://attached_assets/79937861058__C40AD8B1-022C-434D-8576-43A09EAC5D34_1777720482196.jpeg"
+type = "image"
+title = "Real-world DJ console in The Pony Evansville (with crowd display + neon visible behind)"

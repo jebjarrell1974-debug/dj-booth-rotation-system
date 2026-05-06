@@ -37,6 +37,7 @@ import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './flee
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos, runFfmpeg, getAudioDuration } from './promo-mixer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
+import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1540,6 +1541,36 @@ app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
 
 app.get('/api/booth/state', authenticate, (req, res) => {
   res.json(liveBoothState);
+});
+
+app.post('/api/diag/log', authenticate, (req, res) => {
+  try {
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : (req.body ? [req.body] : []);
+    if (entries.length === 0) return res.json({ written: 0 });
+    const meta = {
+      hostname: hostname(),
+      sessionRole: req.session?.role,
+      sessionName: req.session?.staff_name || req.session?.dancer_name,
+    };
+    const written = appendDiagBatch(entries, meta);
+    res.json({ written });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/diag/log/recent', authenticate, requireDJ, (req, res) => {
+  try {
+    const lines = Math.min(5000, Math.max(1, parseInt(req.query.lines, 10) || 500));
+    const out = readRecentDiag(lines);
+    res.type('application/x-ndjson').send(out.join('\n') + '\n');
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/diag/log/info', authenticate, requireDJ, (req, res) => {
+  res.json({ dir: getDiagDir(), hostname: hostname() });
 });
 
 app.get('/api/booth/display', (req, res) => {

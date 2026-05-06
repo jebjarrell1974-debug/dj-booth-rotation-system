@@ -274,6 +274,16 @@ function App() {
   const [bootComplete, setBootComplete] = useState(skipBoot);
   const handleBootReady = useCallback(() => setBootComplete(true), []);
 
+  // Kiosk: suppress browser context menu globally. On Chrome/Linux a
+  // touchscreen long-press fires `contextmenu` and the native menu pops up
+  // before react-beautiful-dnd can start a drag. CSS -webkit-touch-callout
+  // does not work outside iOS, so we have to preventDefault in JS.
+  useEffect(() => {
+    const blockContextMenu = (e) => e.preventDefault();
+    window.addEventListener('contextmenu', blockContextMenu);
+    return () => window.removeEventListener('contextmenu', blockContextMenu);
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

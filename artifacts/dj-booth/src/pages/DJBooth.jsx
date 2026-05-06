@@ -212,10 +212,37 @@ export default function DJBooth() {
     }, DUCK_SETTLE_MS));
   };
 
+  const diagPostQueueRef = useRef([]);
+  const diagPostTimerRef = useRef(null);
+  const flushDiagQueue = () => {
+    const batch = diagPostQueueRef.current;
+    if (!batch || batch.length === 0) return;
+    diagPostQueueRef.current = [];
+    diagPostTimerRef.current = null;
+    try {
+      const token = localStorage.getItem('djbooth_token');
+      if (!token) return;
+      fetch('/api/diag/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ entries: batch }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  };
   const logDiag = (type, data = {}) => {
     const entry = { ts: Date.now(), type, ...data };
-    diagLogRef.current = [entry, ...diagLogRef.current].slice(0, 20);
+    diagLogRef.current = [entry, ...diagLogRef.current].slice(0, 200);
     try { localStorage.setItem('djbooth_diag_log', JSON.stringify(diagLogRef.current)); } catch {}
+    try {
+      diagPostQueueRef.current.push(entry);
+      if (diagPostQueueRef.current.length >= 25) {
+        if (diagPostTimerRef.current) { clearTimeout(diagPostTimerRef.current); diagPostTimerRef.current = null; }
+        flushDiagQueue();
+      } else if (!diagPostTimerRef.current) {
+        diagPostTimerRef.current = setTimeout(flushDiagQueue, 2000);
+      }
+    } catch {}
   };
   
   const fisherYatesShuffle = (arr) => {
@@ -650,6 +677,13 @@ export default function DJBooth() {
   // Send a dancer to In VIP — removes from rotation, stores with timer
   const sendDancerToVip = useCallback((dancerId, durationMs) => {
     const isOnStage = rotationRef.current[currentDancerIndexRef.current] === dancerId && isRotationActiveRef.current;
+    const _vipDancerName = dancersRef.current.find(d => d.id === dancerId)?.name;
+    logDiag('vip_send', {
+      dancer: _vipDancerName,
+      durationMs,
+      onStage: isOnStage,
+      transitionInProgress: transitionInProgressRef.current,
+    });
     if (isOnStage) {
       pendingVipRef.current = { ...pendingVipRef.current, [dancerId]: durationMs };
       setPendingVipState({ ...pendingVipRef.current });
@@ -678,6 +712,8 @@ export default function DJBooth() {
 
   // Release a dancer from In VIP early — adds to bottom of rotation
   const releaseDancerFromVip = useCallback((dancerId) => {
+    const _relName = dancersRef.current.find(d => d.id === dancerId)?.name;
+    logDiag('vip_release', { dancer: _relName });
     const id = String(dancerId);
     const newMap = { ...dancerVipMapRef.current };
     delete newMap[id];
@@ -814,6 +850,12 @@ export default function DJBooth() {
           break;
         case 'updateRotation':
           if (cmd.payload.rotation) {
+            logDiag('remote_updateRotation', {
+              before: rotationRef.current.map(id => dancers.find(d => d.id === id)?.name).filter(Boolean),
+              after: cmd.payload.rotation.map(id => dancers.find(d => d.id === id)?.name).filter(Boolean),
+              transitionInProgress: transitionInProgressRef.current,
+              playingInterstitial: playingInterstitialRef.current,
+            });
             setRotation(cmd.payload.rotation);
             rotationRef.current = cmd.payload.rotation;
           }
@@ -3064,11 +3106,19 @@ export default function DJBooth() {
       const nextDancer = dnc.find(d => d.id === newRotation[newIdx]);
 
       if (!nextDancer) {
+        logDiag('post_interstitial_no_dancer', { rot: newRotation, idx: newIdx });
         await playFallbackTrack(true);
         transitionInProgressRef.current = false;
         return;
       }
 
+      logDiag('post_interstitial_resolve', {
+        nextDancer: nextDancer.name,
+        idx: newIdx,
+        rot: newRotation.map(id => dnc.find(d => d.id === id)?.name).filter(Boolean),
+        rotRef: rotationRef.current.map(id => dnc.find(d => d.id === id)?.name).filter(Boolean),
+        idxRef: currentDancerIndexRef.current,
+      });
       console.log('🎵 Break songs done — next dancer:', nextDancer.name, 'at index', newIdx);
 
       try {
@@ -3109,13 +3159,26 @@ export default function DJBooth() {
         }
 
         const liveRot = rotationRef.current;
+        const _liveRotChanged = JSON.stringify(liveRot) !== JSON.stringify(newRotation);
+        if (_liveRotChanged) {
+          logDiag('post_interstitial_rotref_changed', {
+            expected: newRotation.map(id => dnc.find(d => d.id === id)?.name).filter(Boolean),
+            actual: liveRot.map(id => dnc.find(d => d.id === id)?.name).filter(Boolean),
+          });
+        }
         setRotation(liveRot);
         currentDancerIndexRef.current = newIdx;
         currentSongNumberRef.current = 1;
         setCurrentDancerIndex(newIdx);
         setCurrentSongNumber(1);
+        logDiag('post_interstitial_played', {
+          dancer: nextDancer.name,
+          idx: newIdx,
+          track: nextTrack?.name,
+        });
         await updateStageState(newIdx, liveRot);
       } catch (err) {
+        logDiag('post_interstitial_error', { msg: String(err?.message || err) });
         console.error('❌ HandleTrackEnd (post-interstitial) error:', err);
         audioEngineRef.current?.unduck();
         await playFallbackTrack(true);
@@ -3274,6 +3337,16 @@ export default function DJBooth() {
           const flippedRotation = [...rotationRef.current];
           const [finishedId] = flippedRotation.splice(idx, 1);
           flippedRotation.push(finishedId);
+          const _expectedNextName = dnc.find(d => d.id === flippedRotation[0])?.name;
+          logDiag('break_flip_rotation', {
+            finished: dancer.name,
+            expectedNext: _expectedNextName,
+            rotBefore: rotationRef.current.map(id => dnc.find(d => d.id === id)?.name).filter(Boolean),
+            rotAfter: flippedRotation.map(id => dnc.find(d => d.id === id)?.name).filter(Boolean),
+            idxBefore: idx,
+            breakKey,
+            numBreakSongs: breakSongs.length,
+          });
           setRotation(flippedRotation);
           rotationRef.current = flippedRotation;
           setCurrentDancerIndex(0);

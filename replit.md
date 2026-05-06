@@ -19,7 +19,8 @@ NEON AI DJ (Nightclub Entertainment Entertainment Operations Network — Automat
 - **NEVER modify Dell unit service files, environment variables, or database paths** without explicit user approval
 - **GitHub push must ALWAYS exclude**: attached_assets, .local, music, voiceovers, .db/.db-wal/.db-shm, node_modules, dist, .cache, .config, .upm
 - **API keys are in browser localStorage on each Dell unit** — code updates should NEVER affect them, but disk corruption can wipe them
-- **Music path on neonaidj001 Dell**: `/home/neonaidj001/djbooth/music/` — set in systemd service file, DO NOT CHANGE
+- **Fleet inventory**: 002, 003, and homebase. That is the entire fleet — no other units exist.
+- **Music path on Dell units**: `/home/neonaidj00X/djbooth/music/` — set in systemd service file, DO NOT CHANGE
 - **Music is synced to/from R2** — even if files are lost locally, R2 has the backup and will re-download on service restart
 - R2 boot sync (voiceovers + music) runs on every boot — this is intentional for morning reboots
 - Replit should NOT have a music path set — no local music folder needed here
@@ -28,6 +29,23 @@ NEON AI DJ (Nightclub Entertainment Entertainment Operations Network — Automat
 
 ## Gotchas / Recovery Procedures
 - **Frozen mouse + touchscreen on Dell unit (X input grab wedged)**: symptoms — local mouse and touch dead, music keeps playing, SSH still works, NoMachine connects but inputs do not register. Cause — gnome-shell holding a stuck X input grab (often after Chromium briefly stalled, e.g. enabling beat matching). **Fix (does NOT stop music)**: SSH in and run `killall -HUP gnome-shell`. On X11 sessions (`gdm-x-session`), gnome-shell respawns in ~2 seconds while X and Chromium stay running. Diagnostic: `DISPLAY=:0 xdotool getmouselocation` returning coordinates confirms X is alive but inputs are grabbed. Verified working on neonaidj002 May 5 2026.
+
+## Diagnostic Journal (added May 6 2026)
+Persistent JSONL log on each Dell unit so we can pull a full history of state-change events at any time without restarting anything.
+- **File location**: `~/djbooth/diag/diag-YYYY-MM-DD.jsonl` (one file per day, UTC). Override with `DIAG_LOG_PATH` env var. Created automatically by the api-server.
+- **Retention**: 30 days. Older files auto-deleted on append (lazy cleanup, ~6h interval).
+- **Writer**: `artifacts/api-server/server/diag-writer.js` — `appendDiagBatch`, `readRecentDiag`, `getDiagDir`.
+- **Endpoints** (all auth-gated, kiosk uses its existing token):
+  - `POST /api/diag/log` — kiosk pushes batches of `{ ts, type, ...data }` entries (debounced 2s / max 25 per batch).
+  - `GET /api/diag/log/recent?lines=N` — returns NDJSON of last N entries (max 5000). Requires DJ role.
+  - `GET /api/diag/log/info` — returns `{ dir, hostname }`. DJ role.
+- **Client**: `logDiag()` in `DJBooth.jsx` writes to localStorage (cap raised 20→200) AND queues for POST. Fire-and-forget — never blocks audio. New event types include `break_flip_rotation`, `post_interstitial_resolve`, `post_interstitial_rotref_changed`, `post_interstitial_played`, `post_interstitial_error`, `remote_updateRotation`, `vip_send`, `vip_release`, plus the existing transition/prepick/watchdog events.
+- **SSH commands** (run as the unit user, e.g. `neonaidj003`):
+  - Tail today: `tail -f ~/djbooth/diag/diag-$(date -u +%Y-%m-%d).jsonl | jq`
+  - Last 100 events: `tail -100 ~/djbooth/diag/diag-$(date -u +%Y-%m-%d).jsonl | jq`
+  - Find rotation flips: `grep '"type":"break_flip_rotation"' ~/djbooth/diag/*.jsonl | jq`
+  - Pull yesterday to laptop: `scp neonaidj003:djbooth/diag/diag-$(date -u -d yesterday +%Y-%m-%d).jsonl .`
+- **Disk budget**: ~10 MB/day estimate, ~300 MB cap with 30-day retention.
 
 ## TODO / Pending Fixes
 - Investigate root cause of beat-matching toggle causing gnome-shell input grab on neonaidj002 (look at `AudioEngine.jsx` beat-matching enable path for synchronous main-thread stalls)
