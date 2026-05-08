@@ -210,6 +210,16 @@ try { db.exec("ALTER TABLE sessions ADD COLUMN staff_role TEXT DEFAULT NULL"); }
 try { db.exec("ALTER TABLE dancers ADD COLUMN pin_plain TEXT DEFAULT NULL"); } catch {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_dancers_pin_plain ON dancers(pin_plain)"); } catch {}
 
+try {
+  const total = db.prepare('SELECT COUNT(*) AS n FROM dancers').get().n;
+  const missing = db.prepare('SELECT COUNT(*) AS n FROM dancers WHERE pin_plain IS NULL').get().n;
+  if (missing > 0) {
+    console.log(`🔍 Dancer PIN lookup: ${missing} of ${total} dancers will use slow bcrypt path on first login (then auto-backfill to fast path)`);
+  } else {
+    console.log(`🔍 Dancer PIN lookup: all ${total} dancers on fast indexed path`);
+  }
+} catch {}
+
 function getVoiceoverDir() {
   if (process.env.VOICEOVER_PATH) {
     const dir = process.env.VOICEOVER_PATH;
