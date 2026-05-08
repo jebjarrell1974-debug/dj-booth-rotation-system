@@ -335,7 +335,24 @@ app.post('/api/auth/auto-login', (req, res) => {
   return res.json({ token, role: 'dj', staffName: 'Auto' });
 });
 
+const loginAttempts = new Map();
+const LOGIN_MIN_INTERVAL_MS = 1000;
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 1000;
+  for (const [ip, ts] of loginAttempts) {
+    if (ts < cutoff) loginAttempts.delete(ip);
+  }
+}, 60 * 1000);
+
 app.post('/api/auth/login', (req, res) => {
+  const ip = (req.ip || req.socket?.remoteAddress || '').replace('::ffff:', '') || 'unknown';
+  const now = Date.now();
+  const last = loginAttempts.get(ip) || 0;
+  if (now - last < LOGIN_MIN_INTERVAL_MS) {
+    return res.status(429).json({ error: 'Too many attempts, please wait a moment' });
+  }
+  loginAttempts.set(ip, now);
+
   const { role, pin } = req.body;
 
   if (!role || !pin || pin.length !== 5) {

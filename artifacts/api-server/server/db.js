@@ -207,6 +207,9 @@ try { db.exec("ALTER TABLE sessions ADD COLUMN staff_name TEXT DEFAULT NULL"); }
 try { db.exec("ALTER TABLE sessions ADD COLUMN is_master INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE sessions ADD COLUMN staff_role TEXT DEFAULT NULL"); } catch {}
 
+try { db.exec("ALTER TABLE dancers ADD COLUMN pin_plain TEXT DEFAULT NULL"); } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_dancers_pin_plain ON dancers(pin_plain)"); } catch {}
+
 function getVoiceoverDir() {
   if (process.env.VOICEOVER_PATH) {
     const dir = process.env.VOICEOVER_PATH;
@@ -352,7 +355,9 @@ export function verifyPin(pin, hash) {
 }
 
 export function isPinTaken(pin) {
-  const rows = db.prepare('SELECT pin_hash FROM dancers').all();
+  const fast = db.prepare('SELECT 1 FROM dancers WHERE pin_plain = ? LIMIT 1').get(pin);
+  if (fast) return true;
+  const rows = db.prepare('SELECT pin_hash FROM dancers WHERE pin_plain IS NULL').all();
   return rows.some(r => verifyPin(pin, r.pin_hash));
 }
 
@@ -378,10 +383,15 @@ export function getDancer(id) {
 }
 
 export function getDancerByPin(pin) {
-  const rows = db.prepare('SELECT * FROM dancers').all();
+  const fast = db.prepare('SELECT * FROM dancers WHERE pin_plain = ? LIMIT 1').get(pin);
+  if (fast) {
+    return { ...fast, playlist: JSON.parse(fast.playlist), is_active: !!fast.is_active };
+  }
+  const rows = db.prepare('SELECT * FROM dancers WHERE pin_plain IS NULL').all();
   for (const row of rows) {
     if (verifyPin(pin, row.pin_hash)) {
-      return { ...row, playlist: JSON.parse(row.playlist), is_active: !!row.is_active };
+      try { db.prepare('UPDATE dancers SET pin_plain = ? WHERE id = ?').run(pin, row.id); } catch {}
+      return { ...row, playlist: JSON.parse(row.playlist), is_active: !!row.is_active, pin_plain: pin };
     }
   }
   return null;
