@@ -55,6 +55,22 @@ fi
 
 log "=== START (interval=${INTERVAL_SEC}s display=$DISPLAY user=$(whoami)) ==="
 
+# Safety net: if the script exits between --disable and --enable (SIGTERM
+# from systemctl restart, SIGINT, crash, etc) the touchscreen stays dead
+# until next service start. Track the currently-disabled device and force
+# re-enable on any exit signal.
+CURRENTLY_DISABLED=""
+on_exit() {
+  if [ -n "$CURRENTLY_DISABLED" ]; then
+    log "EXIT TRAP — re-enabling id=$CURRENTLY_DISABLED before exit"
+    xinput --enable "$CURRENTLY_DISABLED" 2>>"$LOG_FILE" || true
+  fi
+  log "=== EXIT ==="
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # Vendor-agnostic touchscreen detection. Re-runs every loop so hotplug works.
 find_touch_ids() {
   local ids="" id pointer_ids
@@ -86,15 +102,22 @@ cycle_device() {
     log "  FAIL  disable id=$dev_id ($dev_name)"
     return 1
   fi
+  CURRENTLY_DISABLED="$dev_id"
   sleep 0.5
-  if ! xinput --enable "$dev_id" 2>>"$LOG_FILE"; then
-    log "  FAIL  enable id=$dev_id ($dev_name) — DEVICE LEFT DISABLED, retrying"
+  # Tight retry loop on enable — the device MUST come back, even if it takes
+  # multiple attempts. Don't let it sit disabled until the next 180s tick.
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if xinput --enable "$dev_id" 2>>"$LOG_FILE"; then
+      CURRENTLY_DISABLED=""
+      [ "$attempt" -gt 1 ] && log "  ok    cycled id=$dev_id ($dev_name) [enable took $attempt attempts]" \
+                          || log "  ok    cycled id=$dev_id ($dev_name)"
+      return 0
+    fi
     sleep 1
-    xinput --enable "$dev_id" 2>>"$LOG_FILE" || log "  FAIL  retry enable id=$dev_id"
-    return 1
-  fi
-  log "  ok    cycled id=$dev_id ($dev_name)"
-  return 0
+  done
+  log "  CRIT  enable id=$dev_id ($dev_name) failed 5x — device may be disabled until next cycle"
+  return 1
 }
 
 # Wait for X11 to be ready before the main loop (handles cold-boot race).
