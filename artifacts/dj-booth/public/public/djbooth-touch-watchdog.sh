@@ -71,25 +71,55 @@ trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Vendor-agnostic touchscreen detection. Re-runs every loop so hotplug works.
+# Touchscreen detection — robust against modern libinput drivers that no longer
+# expose the legacy "Abs MT Position X" evdev property. Confirmed empirically
+# on Debian 13 / kernel 6.12 / ILITEK ILITEK-TP: that property is absent and
+# property-only detection returns ZERO devices.
+#
+# Detection layers (first match wins per device):
+#   1. TOUCH_PATTERN env var      — explicit name match (escape hatch)
+#   2. Known touchscreen vendors  — ILITEK, Goodix, Weida, eGalax, ELAN,
+#                                    FocalTech, Wacom, Atmel maXTouch,
+#                                    HID-multitouch, generic "TouchScreen"
+#   3. Legacy MT property check   — "Abs MT Position X" (older systems)
+#
+# We DELIBERATELY exclude devices whose name contains Mouse/Pointer/Trackpad/
+# Touchpad. Vendor mouse-emulation interfaces (e.g. "ILITEK ILITEK-TP Mouse"
+# id=13 alongside "ILITEK ILITEK-TP" id=19) share the touch hardware but
+# disabling them would kill the mouse cursor fallback used to recover the
+# kiosk when touch is broken — which is exactly when we need that fallback.
 find_touch_ids() {
-  local ids="" id pointer_ids
+  local ids="" id pointer_ids name
+
   if [ -n "$TOUCH_PATTERN" ]; then
     ids=$(xinput list 2>/dev/null \
       | grep -i "$TOUCH_PATTERN" \
       | grep -oE 'id=[0-9]+' \
       | grep -oE '[0-9]+')
-  else
-    pointer_ids=$(xinput list 2>/dev/null \
-      | grep -E 'slave[[:space:]]+pointer' \
-      | grep -oE 'id=[0-9]+' \
-      | grep -oE '[0-9]+')
-    for id in $pointer_ids; do
-      if xinput list-props "$id" 2>/dev/null | grep -q "Abs MT Position X"; then
-        ids="$ids $id"
-      fi
-    done
+    echo "$ids" | tr -s ' ' '\n' | grep -v '^$'
+    return
   fi
+
+  pointer_ids=$(xinput list 2>/dev/null \
+    | grep -E 'slave[[:space:]]+pointer' \
+    | grep -oE 'id=[0-9]+' \
+    | grep -oE '[0-9]+')
+
+  for id in $pointer_ids; do
+    name=$(xinput list --name-only "$id" 2>/dev/null)
+    # Skip mouse-emulation / pointer / trackpad interfaces — protects mouse fallback.
+    echo "$name" | grep -iqE 'Mouse|Pointer|Trackpad|Touchpad' && continue
+    # Layer 2: known touchscreen vendor name patterns
+    if echo "$name" | grep -iqE 'ILITEK|Goodix|Weida|eGalax|ELAN|FocalTech|Wacom|Atmel.*maXTouch|HID-multitouch|TouchScreen|Touch[[:space:]]*Screen'; then
+      ids="$ids $id"
+      continue
+    fi
+    # Layer 3: legacy MT property fallback
+    if xinput list-props "$id" 2>/dev/null | grep -q "Abs MT Position X"; then
+      ids="$ids $id"
+    fi
+  done
+
   echo "$ids" | tr -s ' ' '\n' | grep -v '^$'
 }
 
