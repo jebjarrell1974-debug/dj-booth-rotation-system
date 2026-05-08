@@ -949,11 +949,17 @@ export default function RotationPlaylistManager({
     <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
       <DragDropContext onDragEnd={handleDragEnd} sensors={[useMouseSensor, useLongPressTouchSensor]} enableDefaultSensors={false}>
         {/* Library + Rotation share whatever width remains after the VIP sidebar
-            takes its fixed 220px. Wrapping them in this flex-1 container guarantees
+            takes its fixed 210px. Wrapping them in this flex-1 container guarantees
             VIP can never be pushed off-screen by content inside Library or Rotation
-            (e.g. break songs being added to entertainer cards). */}
+            (e.g. break songs being added to entertainer cards).
+            DYNAMIC SQUEEZE: when VIP is open (>=1 dancer in timeout), Library
+            shrinks from w-2/5 → w-1/3 and Rotation grows from w-3/5 → w-2/3.
+            That extra ~7% reclaimed for the rotation column ensures the four
+            44px → now 40px action buttons (Skip/Top/Crown/Remove) on each
+            entertainer row never get clipped by the card's overflow-hidden,
+            which was the day-shift "screen cut off on the right" complaint. */}
         <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
-        <div ref={libraryPanelRef} className="w-2/5 border-r border-[#1e293b] flex flex-col min-w-0">
+        <div ref={libraryPanelRef} className={`${Object.keys(dancerVipMap || {}).length > 0 ? 'w-1/3' : 'w-2/5'} border-r border-[#1e293b] flex flex-col min-w-0`}>
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
@@ -1132,8 +1138,8 @@ export default function RotationPlaylistManager({
           )}
         </div>
 
-        <div className="w-3/5 flex flex-col min-w-0 min-h-0 overflow-hidden">
-          <div className="p-4 border-b border-[#1e293b] flex-shrink-0">
+        <div className={`${Object.keys(dancerVipMap || {}).length > 0 ? 'w-2/3' : 'w-3/5'} flex flex-col min-w-0 min-h-0 overflow-hidden`}>
+          <div className="p-4 border-b border-[#1e293b] flex-shrink-0 min-w-0">
             <div className="flex items-center justify-between mb-2">
               <div>
                 <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
@@ -1318,7 +1324,7 @@ export default function RotationPlaylistManager({
                             }`}
                           >
                             <div
-                              className={`px-2 py-2.5 border-b flex items-center gap-1 cursor-pointer transition-colors ${
+                              className={`px-2 py-2.5 border-b flex items-center gap-0.5 cursor-pointer transition-colors ${
                                 selectedDancerId === dancer.id
                                   ? 'border-[#00d4ff] bg-[#00d4ff]/10'
                                   : 'border-[#1e293b] hover:bg-[#1a1a35]'
@@ -1351,7 +1357,7 @@ export default function RotationPlaylistManager({
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="w-11 h-11 text-orange-400 hover:text-orange-200 hover:bg-orange-900/30 flex-shrink-0"
+                                  className="w-10 h-10 text-orange-400 hover:text-orange-200 hover:bg-orange-900/30 flex-shrink-0"
                                   title="Skip to next dancer (ends her set, resets songs, she goes to bottom)"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1368,7 +1374,7 @@ export default function RotationPlaylistManager({
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="w-11 h-11 text-yellow-500 hover:text-yellow-300 hover:bg-yellow-900/30 flex-shrink-0"
+                                  className="w-10 h-10 text-yellow-500 hover:text-yellow-300 hover:bg-yellow-900/30 flex-shrink-0"
                                   title="Skip to bottom of rotation"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1388,7 +1394,7 @@ export default function RotationPlaylistManager({
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="w-11 h-11 text-cyan-400 hover:text-cyan-200 hover:bg-cyan-900/30 flex-shrink-0"
+                                    className="w-10 h-10 text-cyan-400 hover:text-cyan-200 hover:bg-cyan-900/30 flex-shrink-0"
                                     title="TOP — move to next on stage (does not interrupt current dancer)"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1406,7 +1412,7 @@ export default function RotationPlaylistManager({
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className={`w-11 h-11 flex-shrink-0 ${pendingVipMap[dancer.id] ? 'text-yellow-400 bg-yellow-900/30' : 'text-yellow-600 hover:text-yellow-400 hover:bg-yellow-900/30'}`}
+                                  className={`w-10 h-10 flex-shrink-0 ${pendingVipMap[dancer.id] ? 'text-yellow-400 bg-yellow-900/30' : 'text-yellow-600 hover:text-yellow-400 hover:bg-yellow-900/30'}`}
                                   title={pendingVipMap[dancer.id] ? 'VIP pending — will enter after this set' : 'Send to VIP after current set'}
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1419,7 +1425,7 @@ export default function RotationPlaylistManager({
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="w-11 h-11 text-gray-500 hover:text-red-400 hover:bg-[#1e293b] flex-shrink-0"
+                                className="w-10 h-10 text-gray-500 hover:text-red-400 hover:bg-[#1e293b] flex-shrink-0"
                                 onClick={(e) => { e.stopPropagation(); handleRemoveFromRotation(dancer.id); }}
                               >
                                 <X className="w-5 h-5" />
@@ -1739,7 +1745,7 @@ export default function RotationPlaylistManager({
           Release button. Stacked layout prevents the timer text from being clipped on
           smaller booth screens (1440x900 on 003). */}
       {Object.keys(dancerVipMap).length > 0 && (
-        <div className="w-[260px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
+        <div className="w-[210px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
           <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20">
               <Crown className="w-4 h-4 text-yellow-400" />
@@ -1759,7 +1765,7 @@ export default function RotationPlaylistManager({
                 return (
                   <div key={dancerId} className="px-2 py-2">
                     <div className="flex items-center gap-2 mb-1">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                         {dancer.name.charAt(0).toUpperCase()}
                       </div>
                       <p className="text-sm font-medium text-white leading-none truncate flex-1 min-w-0">{dancer.name}</p>
