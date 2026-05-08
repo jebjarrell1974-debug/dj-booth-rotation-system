@@ -1733,10 +1733,13 @@ export default function RotationPlaylistManager({
       </DragDropContext>
 
       {/* In VIP sidebar — sibling of the Library+Rotation wrapper (NOT inside it),
-          so the flex parent reserves a guaranteed 220px slot for VIP that no amount
-          of break songs / dancer rows / button additions can ever steal. */}
+          so the flex parent reserves a guaranteed 260px slot for VIP that no amount
+          of break songs / dancer rows / button additions can ever steal.
+          Card layout: row 1 = avatar + name, row 2 = "Returns in <time>" + icon-only
+          Release button. Stacked layout prevents the timer text from being clipped on
+          smaller booth screens (1440x900 on 003). */}
       {Object.keys(dancerVipMap).length > 0 && (
-        <div className="w-[220px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
+        <div className="w-[260px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
           <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20">
               <Crown className="w-4 h-4 text-yellow-400" />
@@ -1754,23 +1757,26 @@ export default function RotationPlaylistManager({
                 const mins = totalMins % 60;
                 const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
                 return (
-                  <div key={dancerId} className="flex items-center gap-3 px-3 py-2.5">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
-                      {dancer.name.charAt(0).toUpperCase()}
+                  <div key={dancerId} className="px-2 py-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-sm flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                        {dancer.name.charAt(0).toUpperCase()}
+                      </div>
+                      <p className="text-sm font-medium text-white leading-none truncate flex-1 min-w-0">{dancer.name}</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white leading-none">{dancer.name}</p>
-                      <p className="text-xs text-yellow-400 mt-0.5">Returns in {timeStr}</p>
+                    <div className="flex items-center justify-between gap-2 pl-1">
+                      <p className="text-xs text-yellow-400 truncate">Returns in {timeStr}</p>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Release from VIP"
+                        aria-label={`Release ${dancer.name} from VIP`}
+                        className="text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 flex-shrink-0 h-7 w-7 p-0"
+                        onClick={() => onReleaseFromVip?.(dancerId)}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-xs text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 flex items-center gap-1 flex-shrink-0 h-7 px-2"
-                      onClick={() => onReleaseFromVip?.(dancerId)}
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Release
-                    </Button>
                   </div>
                 );
               })}
