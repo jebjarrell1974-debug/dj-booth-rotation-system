@@ -360,6 +360,38 @@ WEOF
   fi
 fi
 
+# Touch-input watchdog — preventive xinput cycle to clear stuck X grabs.
+TOUCH_WD_SRC="$APP_DIR/public/public/djbooth-touch-watchdog.sh"
+TOUCH_WD_DEST="$UNIT_HOME/djbooth-touch-watchdog.sh"
+if [ -f "$TOUCH_WD_SRC" ]; then
+  cp "$TOUCH_WD_SRC" "$TOUCH_WD_DEST"
+  chmod +x "$TOUCH_WD_DEST"
+  sudo tee /etc/systemd/system/djbooth-touch-watchdog.service > /dev/null << TWEOF
+[Unit]
+Description=DJ Booth Touchscreen Watchdog (preventive xinput cycle)
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=$UNIT_USER
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=$UNIT_HOME/.Xauthority
+Environment=HOME=$UNIT_HOME
+Environment=INTERVAL_SEC=180
+ExecStart=/bin/bash $TOUCH_WD_DEST
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=graphical.target
+TWEOF
+  sudo systemctl daemon-reload
+  sudo systemctl enable djbooth-touch-watchdog 2>/dev/null || true
+  sudo systemctl start djbooth-touch-watchdog 2>/dev/null || true
+  echo "Touch watchdog installed (cycles every 180s)"
+fi
+
 echo "[12/12] Setting daily reboot and downloading update script..."
 echo "0 8 * * * root /sbin/reboot" | sudo tee /etc/cron.d/daily-reboot > /dev/null
 curl -o "$UNIT_HOME/djbooth-update.sh" "https://raw.githubusercontent.com/$GITHUB_REPO/main/public/djbooth-update-github.sh" && chmod +x "$UNIT_HOME/djbooth-update.sh"

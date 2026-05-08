@@ -808,6 +808,43 @@ WEOF
   fi
 fi
 
+# ── Touch-input watchdog ─────────────────────────────────────────────────────
+# Preventively cycles the touchscreen via xinput every 3 minutes to clear any
+# stuck X11 input grab held by gnome-shell. See script header for full rationale.
+TOUCH_WD_SRC="$APP_DIR/public/public/djbooth-touch-watchdog.sh"
+TOUCH_WD_DEST="/home/$(whoami)/djbooth-touch-watchdog.sh"
+if [ -f "$TOUCH_WD_SRC" ]; then
+  cp "$TOUCH_WD_SRC" "$TOUCH_WD_DEST"
+  chmod +x "$TOUCH_WD_DEST"
+
+  TOUCH_WD_USER=$(whoami)
+  TOUCH_WD_HOME="/home/$TOUCH_WD_USER"
+  sudo tee /etc/systemd/system/djbooth-touch-watchdog.service > /dev/null << TWEOF
+[Unit]
+Description=DJ Booth Touchscreen Watchdog (preventive xinput cycle)
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=$TOUCH_WD_USER
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=$TOUCH_WD_HOME/.Xauthority
+Environment=HOME=$TOUCH_WD_HOME
+Environment=INTERVAL_SEC=180
+ExecStart=/bin/bash $TOUCH_WD_DEST
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=graphical.target
+TWEOF
+  sudo systemctl daemon-reload
+  sudo systemctl enable djbooth-touch-watchdog 2>/dev/null || true
+  sudo systemctl restart --no-block djbooth-touch-watchdog 2>/dev/null || true
+  echo "Touch watchdog installed/refreshed (cycles every 180s)"
+fi
+
 CURRENT_USER=$(whoami)
 NOPASSWD_FILE="/etc/sudoers.d/010_${CURRENT_USER}-nopasswd"
 if [ ! -f "$NOPASSWD_FILE" ]; then
