@@ -2781,15 +2781,30 @@ export default function DJBooth() {
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
-        const existingTracks = scratchSongs[newRotation[newIdx]];
+        // Honor DJ-saved songs for the INCOMING dancer too — if DJ explicitly picked
+        // these on Save All, play them even if on cooldown. Only the .url check stays
+        // (we can't play a track with no URL). This prevents the "DJ assigns songs →
+        // system plays random ones" bug when DJ picks a track that's been recently played.
+        const nextDancerId = newRotation[newIdx];
+        const djSavedNext = djSavedSongsRef.current[nextDancerId];
+        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t?.url);
+        if (djSavedNextValid) {
+          delete djSavedSongsRef.current[nextDancerId];
+          console.log(`🎵 HandleSkip: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
+          logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: djSavedNext.map(t => t.name), trigger: 'skip' });
+        }
+        const existingTracks = djSavedNextValid ? djSavedNext : scratchSongs[nextDancerId];
         // Filter stale pre-picks: remove any tracks now inside the 4-hour cooldown window
-        const validPrePicks = existingTracks
-          ? existingTracks.filter(t => {
-              if (!t?.url) return false;
-              const lp = songCooldownRef.current?.[t.name];
-              return !lp || (Date.now() - lp) >= COOLDOWN_MS;
-            })
-          : null;
+        // (DJ-saved tracks bypass this filter — handled above)
+        const validPrePicks = djSavedNextValid
+          ? djSavedNext
+          : (existingTracks
+            ? existingTracks.filter(t => {
+                if (!t?.url) return false;
+                const lp = songCooldownRef.current?.[t.name];
+                return !lp || (Date.now() - lp) >= COOLDOWN_MS;
+              })
+            : null);
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
@@ -3505,15 +3520,30 @@ export default function DJBooth() {
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
-        const existingTracks = scratchSongs[newRotation[newIdx]];
+        // Honor DJ-saved songs for the INCOMING dancer too — if DJ explicitly picked
+        // these on Save All, play them even if on cooldown. Only the .url check stays
+        // (we can't play a track with no URL). This prevents the "DJ assigns songs →
+        // system plays random ones" bug when DJ picks a track that's been recently played.
+        const nextDancerId = newRotation[newIdx];
+        const djSavedNext = djSavedSongsRef.current[nextDancerId];
+        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t?.url);
+        if (djSavedNextValid) {
+          delete djSavedSongsRef.current[nextDancerId];
+          console.log(`🎵 HandleTrackEnd: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
+          logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: djSavedNext.map(t => t.name), trigger: 'track_end' });
+        }
+        const existingTracks = djSavedNextValid ? djSavedNext : scratchSongs[nextDancerId];
         // Filter stale pre-picks: remove any tracks now inside the 4-hour cooldown window
-        const validPrePicks = existingTracks
-          ? existingTracks.filter(t => {
-              if (!t?.url) return false;
-              const lp = songCooldownRef.current?.[t.name];
-              return !lp || (Date.now() - lp) >= COOLDOWN_MS;
-            })
-          : null;
+        // (DJ-saved tracks bypass this filter — handled above)
+        const validPrePicks = djSavedNextValid
+          ? djSavedNext
+          : (existingTracks
+            ? existingTracks.filter(t => {
+                if (!t?.url) return false;
+                const lp = songCooldownRef.current?.[t.name];
+                return !lp || (Date.now() - lp) >= COOLDOWN_MS;
+              })
+            : null);
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
@@ -4578,14 +4608,16 @@ export default function DJBooth() {
                     const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
                     if (currentPerformerId != null) {
                       const newIdx = newRotation.indexOf(currentPerformerId);
-                      const wasAtTop = currentDancerIndexRef.current === 0;
-                      const movedAwayFromTop = wasAtTop && newIdx !== 0;
-                      if (movedAwayFromTop) {
-                        console.log(`🔄 Save All: current dancer dragged off top — treating as skip, resetting to new top dancer`);
-                        currentSongNumberRef.current = 0;
-                        setCurrentSongNumber(0);
-                      } else if (newIdx >= 0 && newIdx !== currentDancerIndexRef.current) {
-                        console.log(`🔄 Save All: adjusting currentDancerIndex ${currentDancerIndexRef.current} → ${newIdx} (performer ID ${currentPerformerId})`);
+                      // Always FOLLOW the on-stage performer to wherever she lands in the
+                      // new rotation. Never reset her song counter on Save All — she keeps
+                      // playing her remaining songs at her new index. If a DJ truly wants
+                      // to skip the current dancer they have a dedicated Skip button.
+                      // Old behavior: when wasAtTop && newIdx!==0, resetting songNumber
+                      // to 0 without updating currentDancerIndexRef caused the song-end
+                      // handler to read a stale index pointing at a different dancer,
+                      // skipping the rest of the on-stage dancer's set.
+                      if (newIdx >= 0 && newIdx !== currentDancerIndexRef.current) {
+                        console.log(`🔄 Save All: tracking on-stage performer ${currentPerformerId} from idx ${currentDancerIndexRef.current} → ${newIdx} (song counter preserved)`);
                         setCurrentDancerIndex(newIdx);
                         currentDancerIndexRef.current = newIdx;
                       }
