@@ -2044,6 +2044,12 @@ export default function DJBooth() {
         } else {
           dancerTracks = await getDancerTracks(dancer, batchExcludes);
         }
+        // Final length guard — if cache had unnamed/corrupted entries OR server returned
+        // fewer than asked, the result can still be short. Log so we can spot real-world
+        // occurrences. Don't auto-recover here (one fetch attempt already happened above).
+        if (dancerTracks.length < need) {
+          logDiag?.('beginrotation_still_short', { dancer: dancer.name, got: dancerTracks.length, need });
+        }
         selectedSongs[dancerId] = dancerTracks;
         dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
       }
