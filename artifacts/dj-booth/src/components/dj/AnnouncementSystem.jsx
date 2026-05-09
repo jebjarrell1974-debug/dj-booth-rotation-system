@@ -832,7 +832,13 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
 
   const preCacheCancelRef = useRef(false);
-  const UPCOMING_CACHE_VARIATIONS = 3;
+  // MUST equal NUM_VARIATIONS — the random picker (line ~226) chooses from 1..NUM_VARIATIONS,
+  // so any value lower than NUM_VARIATIONS leaves a (NUM_VARIATIONS-this)/NUM_VARIATIONS chance
+  // of cache-miss → fresh ElevenLabs gen → 2-5s of silence at dancer changeover.
+  // Was 3 with NUM_VARIATIONS=5 → 40% miss rate ("not every girl, but noticeable" — 003 May 8).
+  // Trade-off: cold-cache pre-warm goes from ~54s to ~90s per dancer, but only on first-ever
+  // rotation per dancer; subsequent rotations are all cache hits and finish in seconds.
+  const UPCOMING_CACHE_VARIATIONS = 5;
 
   const preCacheUpcoming = useCallback(async (upcomingDancers) => {
     const config = getApiConfig();

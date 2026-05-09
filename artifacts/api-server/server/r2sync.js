@@ -2,6 +2,61 @@ import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, Hea
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, createWriteStream, unlinkSync } from 'fs';
 import { join, basename, extname } from 'path';
 import { pipeline } from 'stream/promises';
+import { hostname } from 'os';
+
+// ---- Per-device Promos namespacing -----------------------------------------
+// Promos (commercials) are venue-specific — each Dell unit's commercials must
+// stay isolated. Other genres remain shared fleet-wide.
+//
+// On disk (every unit): music/Promos/<file>.mp3                  (unchanged)
+// In R2:                 music/Promos__<deviceId>/<file>.mp3     (namespaced)
+//
+// "homebase" does not run promos at this time; it neither uploads nor
+// downloads any Promos. When homebase is upgraded to a Dell unit we'll
+// revisit.
+function getDeviceId() {
+  const raw = (process.env.DEVICE_ID || hostname() || 'unknown').toLowerCase();
+  // Strict allowlist: only a-z, 0-9, '-', max 32 chars. Anything else
+  // (slashes, dots, whitespace, control chars) is stripped. Falls back
+  // to 'unknown' if nothing usable remains. This prevents R2 keyspace
+  // injection / namespace collision via malformed hostnames.
+  const cleaned = raw.replace(/[^a-z0-9-]/g, '').slice(0, 32);
+  return cleaned || 'unknown';
+}
+function isHomebase() {
+  return getDeviceId().includes('homebase');
+}
+function ownPromosPrefix() {
+  return `Promos__${getDeviceId()}/`;
+}
+// Returns: { kind: 'own'|'foreign'|'legacy'|'other', localRelPath, r2Key }
+// - 'own'     : R2 key is this device's namespaced promos → maps to local Promos/<file>
+// - 'foreign' : R2 key is some other device's namespaced promos → ignore
+// - 'legacy'  : R2 key is plain "Promos/<file>" from before namespacing → ignore
+//               (we will not touch local promos based on legacy R2 entries)
+// - 'other'   : non-promo music path → unchanged
+function classifyR2Path(r2RelPath) {
+  if (r2RelPath.startsWith('Promos__')) {
+    if (r2RelPath.startsWith(ownPromosPrefix())) {
+      return { kind: 'own', localRelPath: 'Promos/' + r2RelPath.slice(ownPromosPrefix().length), r2Key: r2RelPath };
+    }
+    return { kind: 'foreign', localRelPath: null, r2Key: r2RelPath };
+  }
+  if (r2RelPath.startsWith('Promos/')) {
+    return { kind: 'legacy', localRelPath: null, r2Key: r2RelPath };
+  }
+  return { kind: 'other', localRelPath: r2RelPath, r2Key: r2RelPath };
+}
+// Convert a LOCAL relative path to the R2 key we should upload it under.
+// Returns null if the file should NOT be uploaded (e.g. homebase trying to
+// upload a Promos/ file that shouldn't exist there in the first place).
+function localToR2Key(localRelPath) {
+  if (localRelPath.startsWith('Promos/')) {
+    if (isHomebase()) return null;
+    return ownPromosPrefix() + localRelPath.slice('Promos/'.length);
+  }
+  return localRelPath;
+}
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -306,6 +361,33 @@ export async function uploadMusicTrack(filePath, relativePath) {
   }
 }
 
+// Download an explicit R2 key to an explicit local destination path. Used for
+// per-device Promos where the R2 key (Promos__<device>/foo.mp3) differs from
+// the local destination (Promos/foo.mp3).
+async function downloadMusicTrackToLocalPath(r2RelPath, destPath) {
+  const client = getClient();
+  if (!client) return false;
+  const safeKey = sanitizePath(r2RelPath);
+  if (!safeKey) return false;
+  try {
+    const destDirPath = join(destPath, '..');
+    if (!existsSync(destDirPath)) mkdirSync(destDirPath, { recursive: true });
+    const response = await client.send(new GetObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `music/${safeKey}`,
+    }));
+    const ws = createWriteStream(destPath);
+    await pipelineWithTimeout(response.Body, ws);
+    return true;
+  } catch (err) {
+    if (err.name !== 'NoSuchKey') {
+      console.error(`☁️ R2: Failed to download promo ${r2RelPath} → ${destPath}: ${err.message}`);
+    }
+    try { if (existsSync(destPath)) unlinkSync(destPath); } catch {}
+    return false;
+  }
+}
+
 export async function downloadMusicTrack(relativePath, musicDir, force = false) {
   const client = getClient();
   if (!client) return null;
@@ -383,12 +465,20 @@ export async function syncMusicFromR2(musicDir) {
 
   const remoteFiles = await listR2Music();
   let downloaded = 0, skipped = 0, errors = 0, purged = 0;
+  let promoForeignSkipped = 0, promoLegacySkipped = 0, promoHomebaseSkipped = 0;
+  const ownPromoLocalPaths = new Set();
 
-  console.log(`☁️ R2 music sync: ${remoteFiles.length} files in cloud, checking local...`);
+  console.log(`☁️ R2 music sync: ${remoteFiles.length} files in cloud, checking local... (deviceId=${getDeviceId()})`);
 
   for (const file of remoteFiles) {
-    if (file.path.startsWith('Promos/')) { skipped++; continue; }
-    const localPath = join(musicDir, file.path);
+    const cls = classifyR2Path(file.path);
+    if (cls.kind === 'foreign') { promoForeignSkipped++; continue; }
+    if (cls.kind === 'legacy') { promoLegacySkipped++; continue; }
+    if (cls.kind === 'own' && isHomebase()) { promoHomebaseSkipped++; continue; }
+
+    const targetRelPath = cls.localRelPath;
+    if (cls.kind === 'own') ownPromoLocalPaths.add(targetRelPath);
+    const localPath = join(musicDir, targetRelPath);
     let force = false;
     if (existsSync(localPath)) {
       const localSize = statSync(localPath).size;
@@ -399,8 +489,18 @@ export async function syncMusicFromR2(musicDir) {
       force = true;
     }
 
-    const result = await downloadMusicTrack(file.path, musicDir, force);
-    if (result) {
+    // For own-promos we need to download under the namespaced R2 key but write
+    // to the un-namespaced local path; downloadMusicTrack uses relativePath as
+    // both the R2 key suffix and the destination, so promo downloads need a
+    // direct GetObject + write rather than going through downloadMusicTrack.
+    let ok = false;
+    if (cls.kind === 'own') {
+      ok = await downloadMusicTrackToLocalPath(cls.r2Key, localPath);
+    } else {
+      const result = await downloadMusicTrack(targetRelPath, musicDir, force);
+      ok = !!result;
+    }
+    if (ok) {
       downloaded++;
       if (downloaded % 50 === 0) {
         console.log(`☁️ R2 music sync progress: ${downloaded} downloaded so far...`);
@@ -408,6 +508,9 @@ export async function syncMusicFromR2(musicDir) {
     } else {
       errors++;
     }
+  }
+  if (promoForeignSkipped || promoLegacySkipped || promoHomebaseSkipped) {
+    console.log(`☁️ R2 music sync: promos filtered — foreign=${promoForeignSkipped} legacy=${promoLegacySkipped} homebase=${promoHomebaseSkipped}`);
   }
 
   // Purge local files that no longer exist in R2 (homebase deletions propagate to fleet)
@@ -433,10 +536,23 @@ export async function syncMusicFromR2(musicDir) {
 
     const localFiles = walkLocal(musicDir);
 
-    // Safety: if R2 has >20% fewer files than local, skip purge to prevent accidental mass deletion
-    if (localFiles.length > 0 && remoteFiles.length < localFiles.length * 0.8) {
-      console.warn(`⚠️ R2 sync purge SKIPPED: R2 has ${remoteFiles.length} files but local has ${localFiles.length} (>20% gap). Manual review required before purging local files.`);
+    // Compute purge-relevant counts: exclude promo entries (own, foreign, legacy)
+    // from BOTH sides before the gap check. Otherwise other devices' Promos__*
+    // entries inflate remoteCount and let a partial listing of shared-genre
+    // files slip past the safety check and wipe valid local non-promo tracks.
+    const purgeRelevantRemote = remoteFiles.filter(f =>
+      !f.path.startsWith('Promos/') && !f.path.startsWith('Promos__')
+    ).length;
+    const purgeRelevantLocal = localFiles.filter(relPath =>
+      !relPath.startsWith('Promos/')
+    ).length;
+
+    // Safety: if R2 has >20% fewer non-promo files than local, skip purge.
+    if (purgeRelevantLocal > 0 && purgeRelevantRemote < purgeRelevantLocal * 0.8) {
+      console.warn(`⚠️ R2 sync purge SKIPPED: non-promo R2 count ${purgeRelevantRemote} vs local ${purgeRelevantLocal} (>20% gap). Manual review required before purging local files.`);
     } else {
+      // Promos/ excluded from purge — they are user-created and irreplaceable; a transient/partial R2 listing
+      // must NOT be able to wipe local promos. Promos still sync UP and DOWN, just never purge-deleted.
       const toDelete = localFiles.filter(relPath => !r2PathSet.has(relPath) && !relPath.startsWith('Promos/'));
 
       if (toDelete.length > 0) {
@@ -495,12 +611,17 @@ export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
 
   console.log(`☁️ R2 music upload: ${localFiles.length} local files, ${remoteFiles.length} remote files`);
 
+  let promoUploadSkipped = 0;
   for (const relPath of localFiles) {
-    if (relPath.startsWith('Promos/')) { skipped++; continue; }
+    const r2RelPath = localToR2Key(relPath);
+    if (r2RelPath === null) {
+      promoUploadSkipped++;
+      continue;
+    }
     const localPath = join(musicDir, relPath);
     const localSize = statSync(localPath).size;
 
-    if (remoteMap.has(relPath) && remoteMap.get(relPath) === localSize) {
+    if (remoteMap.has(r2RelPath) && remoteMap.get(r2RelPath) === localSize) {
       skipped++;
       continue;
     }
@@ -515,7 +636,7 @@ export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
 
       await client.send(new PutObjectCommand({
         Bucket: R2_BUCKET_NAME,
-        Key: `music/${relPath}`,
+        Key: `music/${r2RelPath}`,
         Body: fileBuffer,
         ContentType: contentType,
       }));
@@ -528,10 +649,22 @@ export async function syncMusicToR2(musicDir, { purgeOrphans = false } = {}) {
       errors++;
     }
   }
+  if (promoUploadSkipped) {
+    console.log(`☁️ R2 music upload: ${promoUploadSkipped} promo file(s) skipped (homebase does not upload promos)`);
+  }
 
   // Homebase rewrite: delete R2 files not in local library
   if (purgeOrphans && localFiles.length > 0) {
-    const toDelete = remoteFiles.filter(f => !localSet.has(f.path) && !f.path.startsWith('Promos/'));
+    // Promos__*/ AND legacy Promos/ excluded from R2 purge:
+    //  - homebase library being temporarily incomplete must NOT erase
+    //    promos in cloud (which would then propagate back to venues on next pull).
+    //  - homebase has no per-device Promos__<device>/ namespace anyway, so it
+    //    must never reach in and delete another device's namespaced promos.
+    const toDelete = remoteFiles.filter(f =>
+      !localSet.has(f.path) &&
+      !f.path.startsWith('Promos/') &&
+      !f.path.startsWith('Promos__')
+    );
     if (toDelete.length > 0) {
       console.log(`☁️ R2 purge: removing ${toDelete.length} R2 file(s) not in homebase library...`);
       for (const f of toDelete) {

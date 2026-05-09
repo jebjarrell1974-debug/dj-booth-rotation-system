@@ -138,6 +138,9 @@ export default function RotationDisplay() {
     return () => { document.title = 'NEON AI DJ'; };
   }, []);
 
+  // Local in-process listeners — still useful when booth + display ARE in the
+  // same Chromium profile (e.g., 003 confirmed-working setup): keeps response
+  // instant instead of waiting for the 2s server poll below.
   useEffect(() => {
     const readVal = () => {
       const stored = localStorage.getItem('djbooth_display_countdown');
@@ -146,13 +149,34 @@ export default function RotationDisplay() {
     const handler = () => setShowCountdown(readVal());
     window.addEventListener('djbooth_display_countdown_changed', handler);
     window.addEventListener('storage', handler);
-    const poll = setInterval(() => setShowCountdown(readVal()), 1500);
     return () => {
       window.removeEventListener('djbooth_display_countdown_changed', handler);
       window.removeEventListener('storage', handler);
-      clearInterval(poll);
     };
   }, []);
+
+  // Server poll — source of truth for the toggle when the crowd display runs
+  // in a separate Chromium process from the booth (suspected on 002, where the
+  // localStorage 'storage' event never reaches this kiosk). The booth already
+  // saves the flag to the server via /api/config/save-to-server. We poll the
+  // public /api/booth/display-settings endpoint every 2s and mirror the value
+  // back into both React state AND localStorage so subsequent reloads start
+  // with the right value.
+  const { data: displaySettings = null } = useQuery({
+    queryKey: ['booth-display-settings'],
+    queryFn: () => fetch('/api/booth/display-settings').then(r => r.ok ? r.json() : null).catch(() => null),
+    refetchInterval: 2000,
+    refetchIntervalInBackground: true,
+    staleTime: 1500,
+  });
+  useEffect(() => {
+    if (!displaySettings || typeof displaySettings.countdown !== 'boolean') return;
+    setShowCountdown(prev => {
+      if (prev === displaySettings.countdown) return prev;
+      try { localStorage.setItem('djbooth_display_countdown', String(displaySettings.countdown)); } catch {}
+      return displaySettings.countdown;
+    });
+  }, [displaySettings]);
 
   const { data: stageState = null } = useQuery({
     queryKey: ['stage-server'],

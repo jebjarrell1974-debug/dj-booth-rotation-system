@@ -31,6 +31,11 @@ Automates dancer rotations, manages music playback, and generates dynamic voice 
 - **Persistent Logs**: `~/djbooth/diag/` (on Dell units)
 - **Update Script**: `djbooth-update.sh`
 - **Display Config Script**: `~/.djbooth-display-config.sh` (per-unit local)
+- **Watchdog scripts** (all three live at `artifacts/dj-booth/public/public/`, installed to `~/` on units):
+  - `djbooth-watchdog.sh` — server health + kiosk Chromium relaunch
+  - `djbooth-display-watcher.sh` — crowd-display heartbeat + relaunch trigger
+  - `djbooth-touch-map.sh` — vendor-agnostic touch→monitor mapping (autostart + udev)
+  - `djbooth-touch-watchdog.sh` — preventive xinput cycle every 180s (clears stuck X grabs)
 
 ## Architecture decisions
 
@@ -78,9 +83,51 @@ Automates dancer rotations, manages music playback, and generates dynamic voice 
 
 ## Gotchas
 
-- **Frozen mouse + touchscreen on Dell unit**: Caused by `gnome-shell` holding a stuck X input grab. Fix: `killall -HUP gnome-shell` (does not stop music).
+- **Frozen mouse + touchscreen on Dell unit**: Caused by `gnome-shell` holding a stuck X input grab. Heavy-handed manual fix: `killall -HUP gnome-shell` (does not stop music). **Preventive auto-fix is now in place fleet-wide**: `djbooth-touch-watchdog.service` cycles every touchscreen via `xinput --disable; sleep 0.5; xinput --enable` every 180s, which forcibly drops any stuck X grab on the touch device only (~500ms invisible blip, no GUI flicker, no music interruption). Vendor-agnostic — detects any device with the `Abs MT Position X` property. Logs to `/tmp/djbooth-touch-watchdog.log`. If touchscreens still freeze with this running, escalate by checking the log; tier-2 recovery would add `killall -HUP gnome-shell` and tier-3 a kiosk relaunch.
 - **Touchscreen registers in wrong place**: Touchscreen Coordinate Transformation Matrix is reset. Fix: `DISPLAY=:0 xinput map-to-output <id> <monitor>` (per-unit `xinput list` and `xrandr` output needed).
 - **OpenAI / R2 / apt failing with "fetch failed" / "Temporary failure resolving"**: Caused by Tailscale owning `/etc/resolv.conf` with `--accept-dns=true`. Fix: `sudo tailscale set --accept-dns=false` and reconfigure Wi-Fi connection with `ipv4.never-default yes ipv4.ignore-auto-dns yes`.
+
+## Open TODOs (calm-window work)
+
+Full background and detailed fix plans for each item live in `.local/work-log-archive.md`. Only the actionable summary stays here.
+
+- **002 timer switch is ineffective (003 works fine)** — DONE May 9 (server-poll architecture). Hypothesis was that crowd-display Chromium on 002 runs in a separate process/profile from the booth, so localStorage `'storage'` events never propagate cross-process. Fix sidesteps localStorage entirely: new public endpoint `GET /api/booth/display-settings` returns only `{ countdown: boolean }` (no secrets — safe without auth). `RotationDisplay.jsx` polls it every 2s via React Query and mirrors the value back into both React state and localStorage. Local `'storage'`/custom-event listeners kept as instant-response fallback for the same-process case (003). After deploy: toggle should work on both 002 and 003 within ≤2s regardless of how the kiosks are launched.
+
+- **Diagnose 002 vs 003 Chromium kiosk launch difference** — when next on each unit, run `ps -ef | grep -i chromium` on both and compare. Theory is that 003 runs a single Chromium process (booth + crowd display in the same profile, localStorage shared) while 002 launches two separate Chromium processes with different `--user-data-dir` paths (isolated localStorage). Confirming this would: (1) explain why several other localStorage-driven cross-window features may behave differently between units, (2) inform whether to standardize the launch model fleet-wide, (3) tell us if other settings need the same server-poll treatment. Capture: process tree, `--user-data-dir` flags, any per-unit autostart `.desktop` files / systemd kiosk units that diverged from the homebase image.
+
+- **Slow dancer transitions on 003 (silent gap before late announcement)** — DONE May 9 (one-line fix in `AnnouncementSystem.jsx`). Root cause: `UPCOMING_CACHE_VARIATIONS = 3` while `NUM_VARIATIONS = 5`. The random voice-variation picker rolls from 1..5, but only variations 1, 2, 3 were pre-cached for upcoming dancers → 40% chance of cache miss → fresh ElevenLabs generation → 2-5s of silence right at the changeover. Bumped to `UPCOMING_CACHE_VARIATIONS = 5` so all rolls hit cache. Constant is reused across all three pre-cache paths (`preCacheUpcoming` next + second-up background, and `preCacheForRotationStart` buffer), so the single change covers every entry point. Trade-off: cold-cache pre-warm per dancer goes from ~54s to ~90s on first-ever rotation; once warm, all subsequent rotations finish in seconds (cache hits are free). 6s rate-limit pacing between fresh gens kept intentionally for ElevenLabs.
+
+- **Autoplay queue ignores DJ's manual edits** — DONE May 9. Added `autoplayAutoFillEnabled` state (default true) with localStorage persistence. UI toggle in autoplay-queue header: "Auto-fill: ON" (current behavior — keeps queue topped to 10 with randoms; manual entries still preserved at their drag positions) vs "DJ-curated" (no random fill; queue plays exactly what DJ placed; falls back to single random track via `playFallbackTrack` when queue empties). The autoplay queue itself now persists to localStorage on every change so manual edits survive page refresh / kiosk reload. Files: `DJBooth.jsx` (state + ref + fillAutoplayQueue early-bail + localStorage mirror in fill path), `RotationPlaylistManager.jsx` (toggle button in queue header).
+
+- **002 playing wrong songs for entertainers (off-playlist with non-cooldown tracks available)** — DONE May 9 (3 defensive fixes). Root cause: client `getDancerTracks` falls through to `dancerPlaylist=[]` when `dancer.playlist` is undefined (race during dancers React Query refetch), which makes server `selectTracksForSet` use random library + genre filter — exactly matching "random songs from assigned folder" symptom. Fixes: (a) `getDancerTracks` (DJBooth.jsx ~1745) refuses to proceed when `dancer.playlist` is undefined/null vs empty array, logs warn + diag (`dancer_playlist_undefined`); (b) `restoredSongs` effect (~1830) waits until every rotation dancer has `Array.isArray(playlist)` before pre-picking; (c) server `selectTracksForSet` (db.js ~941) logs `⚠️ NO PLAYLIST path with dancer-set signature` when count > 1 AND genres list is narrow (1-2 genres) — that's the dancer-set signature; break songs (count=1) and autoplay/folders_only (many genres) don't log to keep noise down. After deploy, grep 002 logs for `NO PLAYLIST path with dancer-set` to confirm zero hits during normal rotation.
+
+- **Sunny rotation bug + commercial volume** (4 small changes, ~30 LOC, all in `DJBooth.jsx`):
+  1. When `getDancerTracks` returns fewer tracks than `songsPerSet`, repeat available tracks to fill the set (don't end early).
+  2. Add diag entry `getDancerTracks: thin pool — N tracks for songsPerSet=M dancer=X`.
+  3. Post-interstitial cooldown check (`DJBooth.jsx:3144-3146`): replace only cooldown-blocked tracks individually, preserve valid ones.
+  4. Boost music gain to ~1.3x while a Promos-genre track is playing (commercials sit ~33% quieter today because they route through music bus, not voice bus).
+- **Harden `djbooth-update-github.sh`** (after the May 8 night incident where 002's `node_modules` was wiped):
+  1. Abort cleanly if `npm install` fails (currently warns + continues).
+  2. Confirm `--legacy-peer-deps` is always present; bundle latest script revision to homebase.
+  3. Either include `node_modules` in the backup OR detect empty `node_modules` post-rollback and force reinstall.
+  4. Test on 002 manually before letting boot-update use it on 003/homebase.
+- **Touch-watchdog tier-2 escalation** — if the 180s xinput cycle still doesn't clear freezes after 24h of running, add `killall -HUP gnome-shell` to the cycle. Decision pending observation data from `/tmp/djbooth-touch-watchdog.log`.
+- **002 commercials wiped mid-shift May 8** — `~/djbooth/music/Promos/` directory was deleted (entire dir gone, not just emptied). Source promo voice clips SAFE: 45× `promo-auto-*.mp3` in `~/djbooth/voiceovers/`. Voiceovers DB lost all 45 promo rows (only 8 intro / 8 outro / 8 round2 left = 24 total). `music_tracks` still has 11 stale Promos rows → "ghost commercials" (system tries to play missing files). User disabled commercials on booth as workaround. **Recovery plan (4 steps when calm)**: (1) `mkdir -p ~/djbooth/music/Promos`; (2) rebuild voiceovers DB rows from the 45 disk files (filename → row with `type='promo'`); (3) `POST /api/voiceovers/convert-all-promos` to re-mix against Promo Beds; (4) rescan music + prune any still-stale `music_tracks` rows. **Unknown root cause**: r2sync.js explicitly excludes `Promos/` in both directions (lines 440, 534), so it shouldn't be sync. Either a bug there or a stray rm during the morning recovery. Investigate before deploying recovery so it doesn't repeat.
+
+## Scheduled work
+
+### Monday May 11, 2026 — 003 kiosk monitor swap
+
+- **New hardware**: CUNPU 27" Touchscreen `TUH1AW-7727Y` — 10-point touch, FHD 1080p @ 60Hz, Nano IPS, 100% sRGB, VESA mount, HDMI/VGA. Replacing the 1440×900 monitor on 003's HDMI-2 (kiosk port).
+- **⚠️ HARDWARE INSPECTION PENDING (manager doing it before install)**: First back-panel photos showed only HDMI + VGA + DC power + single USB-A — NO USB-B visible. Manufacturer states "Touch functionality requires USB-B + HDMI." Manager to photograph every side of the monitor + every cable in the box and confirm USB-B port and USB-B-to-A pigtail are present. Install only proceeds if BOTH confirmed; otherwise exchange/return.
+- **Pre-install checks on 003 after plug-in**:
+  1. `DISPLAY=:0 xinput list` — confirm new touch device name + ID. If vendor name doesn't match `ILITEK|Goodix|Weida|eGalax|ELAN|FocalTech|Wacom|Atmel.*maXTouch|HID-multitouch|TouchScreen`, add the new vendor to `find_touch_ids()` in `djbooth-touch-watchdog.sh`.
+  2. `DISPLAY=:0 xrandr --query` — confirm HDMI-2 picks up native 1920×1080.
+  3. Inspect `~/.djbooth-display-config.sh` — if it hardcodes `--mode 1440x900`, change to `--mode 1920x1080` or `--auto`.
+  4. `DISPLAY=:0 xinput map-to-output <new-touch-id> HDMI-2`.
+  5. Verify touch responds before assuming prior freeze fixes apply.
+- **Layout impact**: FHD is 480px wider — layout fix `babfb1c2` will have plenty of room.
+- **Touch-freeze unknown**: 8h freeze on old ILITEK may or may not affect new hardware.
 
 ## Pointers
 

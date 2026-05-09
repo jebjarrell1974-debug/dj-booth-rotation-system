@@ -127,11 +127,28 @@ export default function DJBooth() {
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
   const tracksRef = useRef([]);
-  const [autoplayQueue, setAutoplayQueue] = useState([]);
+  // Autoplay queue is persisted to localStorage so DJ's manual edits survive page refresh.
+  // autoplayAutoFillEnabled controls whether fillAutoplayQueue is allowed to top up with
+  // random tracks. When false (DJ-curated mode), the queue plays exactly what the DJ put
+  // there and does not get random "assigned folder" songs mixed in.
+  const [autoplayQueue, setAutoplayQueue] = useState(() => {
+    try {
+      const saved = localStorage.getItem('djbooth_autoplay_queue');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
   const autoplayQueueRef = useRef([]);
   const autoplayFillInFlightRef = useRef(false);
   const autoplayPlayingRef = useRef(false);
   const autoplayFillVersionRef = useRef(0);
+  const [autoplayAutoFillEnabled, setAutoplayAutoFillEnabled] = useState(() => {
+    const stored = localStorage.getItem('djbooth_autoplay_autofill');
+    return stored === null ? true : stored === 'true';
+  });
+  const autoplayAutoFillEnabledRef = useRef(true);
+  useEffect(() => { autoplayAutoFillEnabledRef.current = autoplayAutoFillEnabled; }, [autoplayAutoFillEnabled]);
+  useEffect(() => { autoplayQueueRef.current = autoplayQueue; }, [autoplayQueue]);
   const [rotationSongs, setRotationSongs] = useState(() => {
     try {
       const saved = localStorage.getItem('djbooth_rotation_songs');
@@ -1510,6 +1527,11 @@ export default function DJBooth() {
   const AUTOPLAY_QUEUE_SIZE = 10;
 
   const fillAutoplayQueue = useCallback(async (currentQueue = []) => {
+    // DJ-curated mode: when auto-fill is disabled, do not append random tracks.
+    // The queue plays exactly what the DJ put there, in order. When it empties,
+    // playFromAutoplayQueue's existing fallback chain takes over (one-shot
+    // playFallbackTrack), but no new randoms get pre-loaded into the queue.
+    if (!autoplayAutoFillEnabledRef.current) return currentQueue;
     const needed = AUTOPLAY_QUEUE_SIZE - currentQueue.length;
     if (needed <= 0) return currentQueue;
     if (autoplayFillInFlightRef.current) return currentQueue;
@@ -1542,6 +1564,9 @@ export default function DJBooth() {
         const filled = [...latestQueue, ...newTracks].slice(0, AUTOPLAY_QUEUE_SIZE);
         autoplayQueueRef.current = filled;
         setAutoplayQueue(filled);
+        // Mirror manual-update path: keep localStorage in sync so a page refresh
+        // mid-fill doesn't surface a queue shorter than what the DJ sees on screen.
+        try { localStorage.setItem('djbooth_autoplay_queue', JSON.stringify(filled)); } catch {}
         return filled;
       }
     } catch (err) {
@@ -1555,6 +1580,8 @@ export default function DJBooth() {
   const updateAutoplayQueue = useCallback((newQueue) => {
     autoplayQueueRef.current = newQueue;
     setAutoplayQueue(newQueue);
+    // Persist so DJ's manual queue survives page refresh / kiosk reload.
+    try { localStorage.setItem('djbooth_autoplay_queue', JSON.stringify(newQueue)); } catch {}
   }, []);
 
   const playFromAutoplayQueue = useCallback(async (crossfade = true) => {
@@ -1734,7 +1761,18 @@ export default function DJBooth() {
     const excludeNames = [...new Set([...assignedNames, ...additionalExcludes])];
     console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} — ${assignedNames.length} assigned + ${additionalExcludes.length} batch excluded (server handles cooldowns)`);
 
-    const rawPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0) ? dancer.playlist : [];
+    // Distinguish "playlist undefined" (suspicious — dancer not fully loaded, schema gap, or
+    // race between dancers query and rotation start) from "playlist is []" (legitimate — DJ
+    // explicitly cleared it). For undefined/null, REFUSE to proceed — falling through to []
+    // makes the server treat it like folders_only mode and pull random library tracks from
+    // the assigned-genre folder, which is exactly the "off-playlist song played" bug.
+    const playlistDefined = Array.isArray(dancer?.playlist);
+    if (!isFoldersOnly && !playlistDefined) {
+      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has UNDEFINED playlist (id=${dancer?.id}) — refusing to fetch tracks (would otherwise use random genre fallback). Dancer query likely not loaded yet.`);
+      logDiag?.('dancer_playlist_undefined', { dancerId: dancer?.id, dancerName: dancer?.name });
+      return [];
+    }
+    const rawPlaylist = (!isFoldersOnly && dancer.playlist.length > 0) ? dancer.playlist : [];
 
     const dayShift = opts?.dayShift;
     const dayShiftOn = isDayShiftActive(dayShift);
@@ -1814,6 +1852,18 @@ export default function DJBooth() {
     if (Object.keys(rotationSongsRef.current).length > 0) return;
     const allDancersExist = rotation.every(id => dancers.some(d => d.id === id));
     if (!allDancersExist) return;
+    // Also require playlist to be defined (not undefined/null) on every rotation dancer.
+    // If the dancers query hasn't loaded playlist columns yet, getDancerTracks would
+    // refuse and we'd cache empty arrays into rotationSongs, blocking the rotation.
+    // Defer until React Query has hydrated dancers fully.
+    const allDancersHaveLoadedPlaylists = rotation.every(id => {
+      const d = dancers.find(x => x.id === id);
+      return d && Array.isArray(d.playlist);
+    });
+    if (!allDancersHaveLoadedPlaylists) {
+      console.log('⏳ restoredSongs: waiting for dancers to load playlist columns');
+      return;
+    }
     restoredSongsRef.current = true;
     const capturedRotation = [...rotation];
     (async () => {
@@ -4919,6 +4969,14 @@ export default function DJBooth() {
                 }}
                 onSongAssignmentsChange={setPlannedSongAssignments}
                 autoplayQueue={autoplayQueue}
+                autoplayAutoFillEnabled={autoplayAutoFillEnabled}
+                onAutoplayAutoFillToggle={(val) => {
+                  setAutoplayAutoFillEnabled(val);
+                  autoplayAutoFillEnabledRef.current = val;
+                  localStorage.setItem('djbooth_autoplay_autofill', String(val));
+                  // Turning auto-fill back ON immediately tops up the queue.
+                  if (val) fillAutoplayQueue(autoplayQueueRef.current);
+                }}
                 onAutoplayQueueChange={(newQueue) => {
                   updateAutoplayQueue(newQueue);
                   fillAutoplayQueue(newQueue);

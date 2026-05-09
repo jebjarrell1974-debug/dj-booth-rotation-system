@@ -141,6 +141,8 @@ export default function RotationPlaylistManager({
   onBreakSongsPerSetChange,
   onSongAssignmentsChange,
   autoplayQueue = [],
+  autoplayAutoFillEnabled = true,
+  onAutoplayAutoFillToggle,
   onAutoplayQueueChange,
   onAutoplayQueueRemove,
   songCooldowns = {},
@@ -1676,7 +1678,20 @@ export default function RotationPlaylistManager({
                           <div className="flex items-center gap-1.5 px-1 mb-2">
                             <Radio className="w-3.5 h-3.5 text-cyan-400" />
                             <span className="text-[11px] text-cyan-400 uppercase font-semibold tracking-wider">Autoplay Queue</span>
-                            <span className="text-[10px] text-cyan-500/60 ml-auto">{autoplayQueue.length} song{autoplayQueue.length !== 1 ? 's' : ''}</span>
+                            <span className="text-[10px] text-cyan-500/60 ml-2">{autoplayQueue.length} song{autoplayQueue.length !== 1 ? 's' : ''}</span>
+                            <button
+                              onClick={() => onAutoplayAutoFillToggle?.(!autoplayAutoFillEnabled)}
+                              className={`ml-auto px-2 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider border transition-colors ${
+                                autoplayAutoFillEnabled
+                                  ? 'border-cyan-500/40 bg-cyan-900/20 text-cyan-300 hover:bg-cyan-900/40'
+                                  : 'border-yellow-500/50 bg-yellow-900/20 text-yellow-300 hover:bg-yellow-900/40'
+                              }`}
+                              title={autoplayAutoFillEnabled
+                                ? 'Auto-fill ON — system keeps queue topped up to 10 with random songs (your manual picks are preserved)'
+                                : 'DJ-curated mode — only your manual picks play; no random fill (queue can be any length)'}
+                            >
+                              {autoplayAutoFillEnabled ? 'Auto-fill: ON' : 'DJ-curated'}
+                            </button>
                           </div>
                           {autoplayQueue.length === 0 ? (
                             <div className="text-center py-6 text-gray-500">

@@ -529,12 +529,11 @@ export function getVoiceover(cacheKey) {
   const row = db.prepare('SELECT * FROM voiceovers WHERE cache_key = ?').get(cacheKey);
   if (!row) return null;
   if (row.created_at && row.created_at < VOICEOVER_VALID_AFTER) {
-    db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(cacheKey);
     return null;
   }
   const filePath = join(VOICEOVER_DIR, row.file_name);
   if (!existsSync(filePath)) {
-    db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(cacheKey);
+    console.warn(`⚠️ getVoiceover: file missing for cache_key=${cacheKey} file=${row.file_name} — returning null but KEEPING DB row (cleanup is gated to cleanupOrphanedVoiceovers with safety guards).`);
     return null;
   }
   return { ...row, filePath };
@@ -550,6 +549,10 @@ export function deleteVoiceover(cacheKey) {
     const filePath = join(VOICEOVER_DIR, row.file_name);
     try { if (existsSync(filePath)) unlinkSync(filePath); } catch (e) {}
     db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(cacheKey);
+    try {
+      db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+        .run('system', 'system', 'voiceover.delete_one', JSON.stringify({ cacheKey, fileName: row.file_name }));
+    } catch {}
   }
 }
 
@@ -562,6 +565,11 @@ export function deleteVoiceoversByDancer(dancerName) {
     deleted++;
   }
   db.prepare('DELETE FROM voiceovers WHERE dancer_name = ?').run(dancerName);
+  console.log(`🗑️ deleteVoiceoversByDancer: dancer=${dancerName} removed=${deleted}`);
+  try {
+    db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+      .run('system', 'system', 'voiceover.delete_by_dancer', JSON.stringify({ dancerName, count: deleted }));
+  } catch {}
   return deleted;
 }
 
@@ -574,20 +582,54 @@ export function clearAllVoiceovers() {
     deleted++;
   }
   db.prepare('DELETE FROM voiceovers').run();
+  console.warn(`🗑️ clearAllVoiceovers: WIPED ${deleted} voiceover row(s) and attempted file deletion. Caller should be a deliberate DJ "Clear All" action.`);
+  try {
+    db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+      .run('system', 'system', 'voiceover.clear_all', JSON.stringify({ count: deleted }));
+  } catch {}
   return deleted;
 }
 
+// Safety thresholds — protect against folder-glitch wiping the entire table.
+// Abort on EITHER condition — ratio guard catches small libraries, abs guard catches large ones.
+const ORPHAN_CLEANUP_MAX_DELETE_RATIO = 0.5;
+const ORPHAN_CLEANUP_MAX_DELETE_ABS = 20;
+
 export function cleanupOrphanedVoiceovers() {
+  if (!existsSync(VOICEOVER_DIR)) {
+    console.warn(`⚠️ cleanupOrphanedVoiceovers: SKIPPED — voiceover dir does not exist (${VOICEOVER_DIR}). Refusing to wipe DB rows when folder is missing.`);
+    try {
+      db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+        .run('system', 'system', 'voiceover.cleanup_skipped', JSON.stringify({ reason: 'voiceover_dir_missing', dir: VOICEOVER_DIR }));
+    } catch {}
+    return 0;
+  }
   const rows = db.prepare('SELECT cache_key, file_name FROM voiceovers').all();
-  let removed = 0;
+  if (rows.length === 0) return 0;
+  const orphaned = [];
   for (const row of rows) {
     const filePath = join(VOICEOVER_DIR, row.file_name);
-    if (!existsSync(filePath)) {
-      db.prepare('DELETE FROM voiceovers WHERE cache_key = ?').run(row.cache_key);
-      removed++;
-    }
+    if (!existsSync(filePath)) orphaned.push(row.cache_key);
   }
-  return removed;
+  if (orphaned.length === 0) return 0;
+  const ratio = orphaned.length / rows.length;
+  if (orphaned.length >= ORPHAN_CLEANUP_MAX_DELETE_ABS || ratio >= ORPHAN_CLEANUP_MAX_DELETE_RATIO) {
+    console.warn(`⚠️ cleanupOrphanedVoiceovers: ABORTED — would delete ${orphaned.length}/${rows.length} rows (${(ratio * 100).toFixed(1)}%). Threshold is >=${ORPHAN_CLEANUP_MAX_DELETE_RATIO * 100}% OR >=${ORPHAN_CLEANUP_MAX_DELETE_ABS} rows. Folder may have been briefly unmounted/inaccessible at boot. Manual intervention required.`);
+    try {
+      db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+        .run('system', 'system', 'voiceover.cleanup_aborted', JSON.stringify({ wouldDelete: orphaned.length, total: rows.length, ratio }));
+    } catch {}
+    return 0;
+  }
+  const del = db.prepare('DELETE FROM voiceovers WHERE cache_key = ?');
+  const txn = db.transaction((keys) => { for (const k of keys) del.run(k); });
+  txn(orphaned);
+  console.log(`🧹 cleanupOrphanedVoiceovers: removed ${orphaned.length} orphaned row(s) of ${rows.length} total.`);
+  try {
+    db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+      .run('system', 'system', 'voiceover.cleanup_executed', JSON.stringify({ removed: orphaned.length, total: rows.length }));
+  } catch {}
+  return orphaned.length;
 }
 
 export function upsertMusicTrack(name, path, genre, size, modifiedAt) {
@@ -598,8 +640,13 @@ export function upsertMusicTrack(name, path, genre, size, modifiedAt) {
 
 export function removeDeletedTracks(existingPaths) {
   if (!existingPaths || existingPaths.length === 0) {
-    db.prepare('DELETE FROM music_tracks').run();
-    return;
+    const totalRows = db.prepare('SELECT COUNT(*) AS n FROM music_tracks').get().n;
+    console.warn(`⚠️ removeDeletedTracks: REFUSING TO WIPE — scanner returned 0 paths but DB has ${totalRows} tracks. Music dir may be unreadable, mispermissioned, or mounted away. No rows deleted.`);
+    try {
+      db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+        .run('system', 'system', 'music.remove_deleted_aborted', JSON.stringify({ reason: 'empty_scan_result', totalRows }));
+    } catch {}
+    return 0;
   }
   const allTracks = db.prepare('SELECT path FROM music_tracks').all();
   const pathSet = new Set(existingPaths);
@@ -882,8 +929,17 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     return result;
   }
 
-  // No dancer playlist — folders_only mode, break songs, autoplay queue
-  // Pick random from full library with genre filter (unchanged behaviour)
+  // No dancer playlist — folders_only mode, break songs, autoplay queue.
+  // Pick random from full library with genre filter (unchanged behaviour).
+  // SAFETY LOG: only log when count > 1 AND genres list is narrow (1-2 genres),
+  // which is the dancer-set signature. Break songs are usually count=1 and
+  // autoplay/folders_only modes pass many genres — those don't log to keep noise low.
+  // The point of this log is to catch the bug where a dancer with a real playlist
+  // arrives here as dancerPlaylist=[] (client race / schema gap) and starts pulling
+  // random tracks from the assigned-genre folder.
+  if (count > 1 && Array.isArray(genres) && genres.length > 0 && genres.length <= 2) {
+    console.log(`⚠️ selectTracksForSet: NO PLAYLIST path with dancer-set signature — count=${count} genres=[${genres.join(',')}] excludeCount=${(excludeNames || []).length}`);
+  }
   const usedNames = new Set(excludeNames);
   let filler = getRandomTracks(count, [...usedNames], genres);
   if (filler.length < count && genres.length > 0) {
@@ -1257,10 +1313,15 @@ export function setPromoTrackBlockedById(id, blocked) {
 }
 
 export function deletePromoTrackById(id) {
-  const row = readDb.prepare('SELECT path FROM music_tracks WHERE id = ?').get(id);
+  const row = readDb.prepare('SELECT path, name FROM music_tracks WHERE id = ?').get(id);
   if (row) {
     try { if (existsSync(row.path)) unlinkSync(row.path); } catch (e) {}
     db.prepare('DELETE FROM music_tracks WHERE id = ?').run(id);
+    console.log(`🗑️ deletePromoTrackById: id=${id} name=${row.name} path=${row.path}`);
+    try {
+      db.prepare('INSERT INTO audit_log (staff_name, staff_role, action, details) VALUES (?, ?, ?, ?)')
+        .run('system', 'system', 'promo.delete', JSON.stringify({ id, name: row.name, path: row.path }));
+    } catch {}
   }
 }
 

@@ -716,6 +716,23 @@ app.get('/api/client-settings', authenticate, (req, res) => {
   }
 });
 
+// Public, narrowly-scoped display settings endpoint for the crowd-display kiosk.
+// The kiosk runs without a DJ session, so it can't hit /api/client-settings.
+// This endpoint returns ONLY non-sensitive display flags — no API keys, no PINs.
+// Used by RotationDisplay to make the countdown toggle work even when the booth
+// and crowd display are in separate Chromium processes (localStorage isolated).
+app.get('/api/booth/display-settings', (req, res) => {
+  try {
+    const all = getClientSettings();
+    const stored = all.djbooth_display_countdown;
+    res.json({
+      countdown: stored === null || stored === undefined ? true : stored === 'true',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/songs', authenticate, (req, res) => {
   const songs = listSongs();
   res.json(songs);
@@ -2237,7 +2254,44 @@ async function syncAnalysisFromHomebase() {
   }
 }
 
+function snapshotPromosDirectory() {
+  if (!MUSIC_PATH) return;
+  try {
+    const promosDir = join(MUSIC_PATH, 'Promos');
+    const diagDir = getDiagDir();
+    if (!existsSync(diagDir)) mkdirSync(diagDir, { recursive: true });
+    const snapshotPath = join(diagDir, 'promos-snapshot.log');
+    const ts = new Date().toISOString();
+    let lines = [`[${ts}] Promos snapshot @ ${promosDir}`];
+    if (!existsSync(promosDir)) {
+      lines.push(`  STATE: directory MISSING`);
+    } else {
+      try {
+        const entries = readdirSync(promosDir, { withFileTypes: true });
+        const files = entries.filter(e => e.isFile()).map(e => {
+          try {
+            const s = statSync(join(promosDir, e.name));
+            return `  ${e.name}\t${s.size}\t${s.mtime.toISOString()}`;
+          } catch { return `  ${e.name}\t?\t?`; }
+        });
+        lines.push(`  STATE: ${files.length} file(s)`);
+        lines.push(...files);
+      } catch (err) {
+        lines.push(`  STATE: readdir FAILED — ${err.message}`);
+      }
+    }
+    lines.push('');
+    const existing = existsSync(snapshotPath) ? readFileSync(snapshotPath, 'utf8') : '';
+    const trimmed = existing.split('\n').slice(-2000).join('\n');
+    writeFileSync(snapshotPath, trimmed + lines.join('\n') + '\n');
+    console.log(`📸 Promos snapshot written to ${snapshotPath}`);
+  } catch (err) {
+    console.warn(`⚠️ snapshotPromosDirectory failed: ${err.message}`);
+  }
+}
+
 function initMusicScanner() {
+  snapshotPromosDirectory();
   if (MUSIC_PATH) {
     try {
       updateBootStep('musicScan', 'running', 'Scanning...');
