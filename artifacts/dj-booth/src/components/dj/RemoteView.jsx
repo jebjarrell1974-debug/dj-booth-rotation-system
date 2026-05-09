@@ -471,7 +471,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Songs Per Set</div>
                 <div className="flex gap-1.5">
                   {[1, 2, 3, 4, 5].map(n => (
-                    <button key={n} onClick={() => boothApi.sendCommand('setSongsPerSet', { count: n })}
+                    <button key={n} onClick={() => boothApi.sendCommand('setSongsPerSet', { count: n, source: 'phone-remote' })}
                       className={`flex-1 h-13 rounded-xl font-bold text-lg ${n === songsPerSet ? 'bg-[#00d4ff] text-black' : 'bg-[#1e293b] text-gray-400 active:bg-[#2e2e5a]'}`}>
                       {n}
                     </button>

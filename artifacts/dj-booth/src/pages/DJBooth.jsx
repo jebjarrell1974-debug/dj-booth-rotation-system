@@ -57,6 +57,14 @@ function auditEvent(action, details) {
   }).catch(() => {});
 }
 
+// Diagnostic: track every songsPerSet change with its source so we can find
+// the path that caused unexplained drops to 1 on 002. Skip no-ops (e.g. mount
+// restore that matches the default) to keep the log clean.
+function auditSongsPerSet(prev, next, source) {
+  if (prev === next) return;
+  auditEvent('songs_per_set_change', `${prev}→${next} via ${source}`);
+}
+
 function isDayShiftActive(dayShift) {
   if (!dayShift?.enabled || !dayShift?.startTime || !dayShift?.endTime) return false;
   const now = new Date();
@@ -861,6 +869,7 @@ export default function DJBooth() {
           break;
         case 'setSongsPerSet':
           if (cmd.payload.count) {
+            auditSongsPerSet(songsPerSetRef.current, cmd.payload.count, cmd.payload.source || 'remote-unknown');
             setSongsPerSet(cmd.payload.count);
             songsPerSetRef.current = cmd.payload.count;
           }
@@ -1292,7 +1301,7 @@ export default function DJBooth() {
       const raw = localStorage.getItem('djbooth_playback_state');
       if (raw) {
         const s = JSON.parse(raw);
-        if (s.songsPerSet != null) { setSongsPerSet(s.songsPerSet); songsPerSetRef.current = s.songsPerSet; }
+        if (s.songsPerSet != null) { auditSongsPerSet(songsPerSetRef.current, s.songsPerSet, 'localstorage-mount'); setSongsPerSet(s.songsPerSet); songsPerSetRef.current = s.songsPerSet; }
         if (s.currentSongNumber != null) { setCurrentSongNumber(s.currentSongNumber); currentSongNumberRef.current = s.currentSongNumber; }
       }
     } catch (e) {}
@@ -1304,6 +1313,7 @@ export default function DJBooth() {
           if (data?.neonaidj_songs_per_set != null) {
             const v = parseInt(data.neonaidj_songs_per_set);
             if (!isNaN(v) && v >= 1) {
+              auditSongsPerSet(songsPerSetRef.current, v, 'server-mount');
               setSongsPerSet(v);
               songsPerSetRef.current = v;
             }
@@ -4495,7 +4505,7 @@ export default function DJBooth() {
                     <span className="text-xs text-gray-500">Songs/Set:</span>
                     <select
                       value={liveBoothState?.songsPerSet || 3}
-                      onChange={(e) => boothApi.sendCommand('setSongsPerSet', { count: parseInt(e.target.value) })}
+                      onChange={(e) => boothApi.sendCommand('setSongsPerSet', { count: parseInt(e.target.value), source: 'dashboard-dropdown' })}
                       className="bg-[#151528] border border-[#1e293b] text-white text-xs rounded px-2 py-1"
                     >
                       {[1,2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}</option>)}
@@ -4946,6 +4956,7 @@ export default function DJBooth() {
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={async (n) => {
+                  auditSongsPerSet(songsPerSetRef.current, n, 'booth-buttons');
                   setSongsPerSet(n);
                   songsPerSetRef.current = n;
                   if (!isRotationActive) return;
