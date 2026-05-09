@@ -1869,10 +1869,14 @@ export default function DJBooth() {
     (async () => {
       const selectedSongs = {};
       const batchExcludes = [];
+      const need = songsPerSetRef.current;
       for (const dancerId of capturedRotation) {
         const dancer = dancers.find(d => d.id === dancerId);
         if (dancer) {
           const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+          if (dancerTracks && dancerTracks.length > 0 && dancerTracks.length < need) {
+            logDiag?.('restored_songs_short', { dancer: dancer.name, got: dancerTracks.length, need });
+          }
           selectedSongs[dancerId] = dancerTracks;
           dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
         }
@@ -2012,11 +2016,24 @@ export default function DJBooth() {
     const existingSongs = rotationSongsRef.current || {};
     const selectedSongs = {};
     const batchExcludes = [];
+    const need = songsPerSetRef.current;
     for (const dancerId of cleanRotation) {
       const dancer = dnc.find(d => d.id === dancerId);
       if (dancer) {
         const existing = existingSongs[dancerId];
-        const dancerTracks = (existing && existing.length > 0) ? existing : await getDancerTracks(dancer, batchExcludes);
+        let dancerTracks;
+        if (existing && existing.length >= need) {
+          dancerTracks = existing.slice(0, need);
+        } else if (existing && existing.length > 0) {
+          // Stale cache from a prior smaller songsPerSet — top up rather than reuse short.
+          const have = existing.filter(t => t?.name);
+          const haveNames = have.map(t => t.name);
+          const extra = await getDancerTracks(dancer, [...batchExcludes, ...haveNames]);
+          dancerTracks = [...have, ...extra].slice(0, need);
+          logDiag?.('rotation_songs_topped_up', { dancer: dancer.name, had: have.length, need, got: dancerTracks.length });
+        } else {
+          dancerTracks = await getDancerTracks(dancer, batchExcludes);
+        }
         selectedSongs[dancerId] = dancerTracks;
         dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
       }
@@ -3289,7 +3306,19 @@ export default function DJBooth() {
     }
 
     const dancerSongCount = dancerTracks.length;
-    
+
+    // Diag: would-have-played-more but dancerTracks is short. Indicates a stale/short
+    // rotationSongs cache (the bug Change 1 fixes at beginRotation) or server returning
+    // fewer tracks than requested. Logging only — do not auto-recover mid-transition.
+    if (songNum < songsPerSetRef.current && dancerSongCount < songsPerSetRef.current && songNum >= dancerSongCount) {
+      logDiag?.('thin_dancer_tracks_advance', {
+        dancer: dancer.name,
+        has: dancerSongCount,
+        expected: songsPerSetRef.current,
+        songNum,
+      });
+    }
+
     try {
       if (songNum < songsPerSetRef.current && songNum < dancerSongCount) {
         let nextTrack = dancerTracks[songNum];
