@@ -1773,16 +1773,16 @@ export default function DJBooth() {
 
     // Distinguish "playlist undefined" (suspicious — dancer not fully loaded, schema gap, or
     // race between dancers query and rotation start) from "playlist is []" (legitimate — DJ
-    // explicitly cleared it). For undefined/null, REFUSE to proceed — falling through to []
-    // makes the server treat it like folders_only mode and pull random library tracks from
-    // the assigned-genre folder, which is exactly the "off-playlist song played" bug.
+    // explicitly cleared it). For undefined/null, LOG IT but proceed with the old fallback —
+    // returning empty here was making rotation start with zero tracks for that dancer, which
+    // is worse than playing a wrong genre-matched track. The server-side "NO PLAYLIST path
+    // with dancer-set signature" log will also fire and confirm the race in correlated logs.
     const playlistDefined = Array.isArray(dancer?.playlist);
     if (!isFoldersOnly && !playlistDefined) {
-      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has UNDEFINED playlist (id=${dancer?.id}) — refusing to fetch tracks (would otherwise use random genre fallback). Dancer query likely not loaded yet.`);
+      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has UNDEFINED playlist (id=${dancer?.id}) — falling through to genre-only fallback. Dancer query likely not loaded yet.`);
       logDiag?.('dancer_playlist_undefined', { dancerId: dancer?.id, dancerName: dancer?.name });
-      return [];
     }
-    const rawPlaylist = (!isFoldersOnly && dancer.playlist.length > 0) ? dancer.playlist : [];
+    const rawPlaylist = (!isFoldersOnly && playlistDefined && dancer.playlist.length > 0) ? dancer.playlist : [];
 
     const dayShift = opts?.dayShift;
     const dayShiftOn = isDayShiftActive(dayShift);
