@@ -108,6 +108,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       `No labels, brackets, stage directions, or explanations. Just the spoken words.`,
       `Use commas for breath pauses, ellipsis for drawn-out pauses.`,
       `Keep it punchy, engaging, and club-appropriate.`,
+      `When referring to the event date, always say the full day and date (for example: "Saturday, May 30th" or "Saturday the 30th"). Never say "this Saturday", "next Saturday", "upcoming", "coming up soon", or any other relative date phrasing — the script may play weeks before the event, so relative phrasing will be wrong.`,
       `Maximum ${maxWords} words. End with a complete sentence followed by a period.`
     );
     return parts.join('\n');
