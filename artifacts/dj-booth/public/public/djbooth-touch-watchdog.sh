@@ -27,6 +27,21 @@
 #   LOG_FILE       — log path (default /tmp/djbooth-touch-watchdog.log)
 #   BOOT_GUARD_SEC — wait this long after boot before first cycle (default 120)
 #   TOUCH_PATTERN  — case-insensitive xinput name match (legacy escape hatch)
+#   KIOSK_OUTPUT   — preferred xrandr output for touch mapping (default HDMI-2;
+#                    falls back to first non-rotated connected, then first connected)
+#
+# TOUCH MAPPING SELF-HEAL
+# -----------------------
+# `xinput --enable` resets the device's Coordinate Transformation Matrix to
+# identity, which un-maps the touchscreen from the kiosk monitor and sprays
+# input across the combined virtual screen. Discovered live on 003 May 12 2026
+# after CUNPU monitor swap — touch kept "breaking" because our own watchdog
+# was un-mapping it every 180s.
+#
+# Fix: after every successful --enable, immediately re-apply
+# `xinput map-to-output <id> <KIOSK_OUTPUT>` so the matrix is restored.
+# Self-healing: max 180s window where touch could be misrouted.
+# Output detection mirrors djbooth-touch-map.sh detect_output() exactly.
 
 set -uo pipefail
 
@@ -34,6 +49,7 @@ INTERVAL_SEC="${INTERVAL_SEC:-180}"
 LOG_FILE="${LOG_FILE:-/tmp/djbooth-touch-watchdog.log}"
 BOOT_GUARD_SEC="${BOOT_GUARD_SEC:-120}"
 TOUCH_PATTERN="${TOUCH_PATTERN:-}"
+KIOSK_OUTPUT="${KIOSK_OUTPUT:-HDMI-2}"
 
 export DISPLAY="${DISPLAY:-:0}"
 if [ -z "${XAUTHORITY:-}" ] && [ -n "${HOME:-}" ] && [ -f "$HOME/.Xauthority" ]; then
@@ -110,7 +126,7 @@ find_touch_ids() {
     # Skip mouse-emulation / pointer / trackpad interfaces — protects mouse fallback.
     echo "$name" | grep -iqE 'Mouse|Pointer|Trackpad|Touchpad' && continue
     # Layer 2: known touchscreen vendor name patterns
-    if echo "$name" | grep -iqE 'ILITEK|Goodix|Weida|eGalax|ELAN|FocalTech|Wacom|Atmel.*maXTouch|HID-multitouch|TouchScreen|Touch[[:space:]]*Screen'; then
+    if echo "$name" | grep -iqE 'ILITEK|Goodix|Weida|eGalax|ELAN|FocalTech|Wacom|Atmel.*maXTouch|HID-multitouch|TouchScreen|Touch[[:space:]]*Screen|Siliconworks|SiW'; then
       ids="$ids $id"
       continue
     fi
@@ -121,6 +137,52 @@ find_touch_ids() {
   done
 
   echo "$ids" | tr -s ' ' '\n' | grep -v '^$'
+}
+
+# Auto-detect target xrandr output for touch mapping. Mirrors detect_output()
+# in djbooth-touch-map.sh exactly so behavior is consistent across both scripts.
+#   1. Use configured KIOSK_OUTPUT if currently connected
+#   2. First connected output that is NOT rotated (rotated = crowd display)
+#   3. First connected output (last resort)
+detect_output() {
+  local connected
+  connected=$(xrandr --query 2>/dev/null | awk '/ connected/ {print $1}')
+
+  if echo "$connected" | grep -qx "$KIOSK_OUTPUT"; then
+    echo "$KIOSK_OUTPUT"
+    return
+  fi
+
+  while IFS= read -r out; do
+    [ -z "$out" ] && continue
+    if ! xrandr --query 2>/dev/null | grep -E "^$out connected" | grep -qE " (left|right|inverted)( |$)"; then
+      echo "$out"
+      return
+    fi
+  done <<< "$connected"
+
+  echo "$connected" | head -1
+}
+
+# Re-apply the kiosk-monitor mapping. `xinput --enable` resets the device's
+# Coordinate Transformation Matrix to identity; without this re-map, every
+# 180s cycle would silently un-map the touchscreen from the kiosk monitor.
+remap_touch() {
+  local dev_id="$1"
+  local dev_name="$2"
+  local output
+  output=$(detect_output)
+  if [ -z "$output" ]; then
+    log "  WARN  remap id=$dev_id ($dev_name) — no connected output detected"
+    return 1
+  fi
+  if xinput map-to-output "$dev_id" "$output" 2>>"$LOG_FILE"; then
+    log "  remap id=$dev_id ($dev_name) -> $output"
+    return 0
+  else
+    log "  FAIL  remap id=$dev_id ($dev_name) -> $output"
+    return 1
+  fi
 }
 
 cycle_device() {
@@ -142,6 +204,8 @@ cycle_device() {
       CURRENTLY_DISABLED=""
       [ "$attempt" -gt 1 ] && log "  ok    cycled id=$dev_id ($dev_name) [enable took $attempt attempts]" \
                           || log "  ok    cycled id=$dev_id ($dev_name)"
+      # Re-apply touch→monitor mapping (enable resets the CTM to identity).
+      remap_touch "$dev_id" "$dev_name" || true
       return 0
     fi
     sleep 1
