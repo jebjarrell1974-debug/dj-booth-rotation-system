@@ -138,7 +138,7 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-const CURRENT_VOICE_VERSION = 'V12';
+const CURRENT_VOICE_VERSION = 'V13';
 
 const hashPhonetic = (str) => {
   let h = 5381;
@@ -385,7 +385,19 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       }
     }
     const SPELL_OUT = new Set(['VIP', 'DJ', 'MC', 'ATM', 'ID', 'VR', 'TV', 'AC', 'DC', 'OK', 'UV']);
-    let ttsText = script.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
+    let ttsText = script;
+    // Case-insensitive normalize: catch "vip", "Vip", "VIP", "vip's" etc.
+    // and spell them out directly. ElevenLabs reads "vip" as a word otherwise.
+    for (const acronym of SPELL_OUT) {
+      const spelled = acronym.split('').join('.') + '.';
+      ttsText = ttsText.replace(
+        new RegExp(`\\b${acronym}('[Ss])?\\b`, 'gi'),
+        (_m, suffix) => spelled + (suffix || '')
+      );
+    }
+    // Existing all-caps pass: handles other acronyms (USA → Usa) and any
+    // SPELL_OUT entry that somehow wasn't caught above.
+    ttsText = ttsText.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
       const base = match.replace(/'[Ss]$/, '');
       const suffix = match.slice(base.length);
       if (SPELL_OUT.has(base)) return base.split('').join('.') + '.' + suffix;
