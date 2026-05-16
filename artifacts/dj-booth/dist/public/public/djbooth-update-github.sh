@@ -845,6 +845,35 @@ TWEOF
   echo "Touch watchdog installed/refreshed (cycles every 180s)"
 fi
 
+# ── Unfreeze recovery script ─────────────────────────────────────────────────
+# One-shot manual recovery for the "frozen mouse + touch, music playing" state.
+# Triggered remotely from operator's phone via Tailscale SSH.
+UNFREEZE_SRC="$APP_DIR/public/public/djbooth-unfreeze.sh"
+UNFREEZE_DEST="/home/$(whoami)/djbooth-unfreeze.sh"
+if [ -f "$UNFREEZE_SRC" ]; then
+  cp "$UNFREEZE_SRC" "$UNFREEZE_DEST"
+  chmod +x "$UNFREEZE_DEST"
+  echo "Unfreeze recovery script installed at $UNFREEZE_DEST"
+fi
+
+# ── USB autosuspend disable for Siliconworks SiW touch controller ────────────
+# Cheap HID controllers misbehave coming out of USB autosuspend (resume storms
+# can cause X input grab → frozen mouse + touch). Pin power state to "on".
+# Vendor 1fd2 / Product 9101 = Siliconworks SiW HID Touch Controller.
+sudo tee /etc/udev/rules.d/97-djbooth-touch-power.rules > /dev/null << TPEOF
+# Disable USB autosuspend on the Siliconworks SiW touch controller to prevent
+# resume-storm HID events that can lock up X input on the booth units.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1fd2", ATTR{idProduct}=="9101", ATTR{power/control}="on"
+TPEOF
+sudo udevadm control --reload-rules 2>/dev/null || true
+# Apply immediately to any currently-attached device, no replug needed.
+for d in /sys/bus/usb/devices/*/; do
+  if [ "$(cat "$d/idVendor" 2>/dev/null)" = "1fd2" ] && [ "$(cat "$d/idProduct" 2>/dev/null)" = "9101" ]; then
+    echo on | sudo tee "$d/power/control" > /dev/null 2>&1 || true
+  fi
+done
+echo "USB autosuspend disabled for Siliconworks SiW touch controller"
+
 CURRENT_USER=$(whoami)
 NOPASSWD_FILE="/etc/sudoers.d/010_${CURRENT_USER}-nopasswd"
 if [ ! -f "$NOPASSWD_FILE" ]; then

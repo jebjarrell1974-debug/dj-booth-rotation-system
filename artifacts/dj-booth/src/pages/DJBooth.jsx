@@ -1302,6 +1302,7 @@ export default function DJBooth() {
       if (raw) {
         const s = JSON.parse(raw);
         if (s.songsPerSet != null) { auditSongsPerSet(songsPerSetRef.current, s.songsPerSet, 'localstorage-mount'); setSongsPerSet(s.songsPerSet); songsPerSetRef.current = s.songsPerSet; }
+        if (s.breakSongsPerSet != null) { setBreakSongsPerSet(s.breakSongsPerSet); breakSongsPerSetRef.current = s.breakSongsPerSet; }
         if (s.currentSongNumber != null) { setCurrentSongNumber(s.currentSongNumber); currentSongNumberRef.current = s.currentSongNumber; }
       }
     } catch (e) {}
@@ -1331,8 +1332,9 @@ export default function DJBooth() {
       isRotationActive,
       currentSongNumber,
       songsPerSet,
+      breakSongsPerSet,
     }));
-  }, [isRotationActive, currentSongNumber, songsPerSet]);
+  }, [isRotationActive, currentSongNumber, songsPerSet, breakSongsPerSet]);
 
   useEffect(() => {
     if (!songsPerSetMountedRef.current) return;
