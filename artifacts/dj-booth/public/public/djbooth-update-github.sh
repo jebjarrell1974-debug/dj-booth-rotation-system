@@ -289,23 +289,71 @@ node -e "
 " 2>/dev/null || true
 
 echo "  Installing node dependencies..."
+# Hardened May 17 2026 after incident on 002: iconv-lite was silently missing
+# from node_modules for 9 days because the prior version of this script only
+# verified `express` after install and continued on failure. We now:
+#   1. Capture full npm output to a log file (not | tail -5 which loses errors)
+#   2. Verify a LIST of critical packages, not just express
+#   3. If install fails after retries, ABORT — restore prior code from BACKUP_DIR
+#      and exit 1. The currently running service stays alive on its in-memory
+#      version; next reboot will boot the rolled-back (working) code.
+NPM_LOG="/tmp/djbooth-npm-install-$(date +%Y%m%d-%H%M%S).log"
+CRITICAL_PKGS="express iconv-lite better-sqlite3 dotenv body-parser cors multer"
 set +e
 _npm_ok=false
+_missing=""
 for _npm_try in 1 2 3; do
+  echo "  npm install attempt $_npm_try (full log: $NPM_LOG)"
   # Unset NODE_ENV so npm installs devDependencies (vite, tailwind, etc.)
   # needed for the frontend build. The service itself sets NODE_ENV=production at runtime.
-  NODE_ENV=development npm install --no-audit --no-fund --legacy-peer-deps 2>&1 | tail -5
-  if node -e "require('express')" 2>/dev/null; then
+  NODE_ENV=development npm install --no-audit --no-fund --legacy-peer-deps > "$NPM_LOG" 2>&1
+  _npm_exit=$?
+  tail -5 "$NPM_LOG"
+  if [ "$_npm_exit" -ne 0 ]; then
+    echo "  npm install exited $_npm_exit on attempt $_npm_try"
+  fi
+  _missing=""
+  for _pkg in $CRITICAL_PKGS; do
+    if ! node -e "require('$_pkg')" 2>/dev/null; then
+      _missing="$_missing $_pkg"
+    fi
+  done
+  if [ -z "$_missing" ]; then
     _npm_ok=true
+    echo "  All critical packages verified present:$CRITICAL_PKGS"
     break
   fi
-  echo "  express not found after attempt $_npm_try — retrying in 10s..."
+  echo "  Missing after attempt $_npm_try:$_missing — retrying in 10s..."
   sleep 10
 done
 set -e
 if [ "$_npm_ok" = "false" ]; then
-  echo "WARNING: express not found after npm install retries — service will fail to start"
+  echo ""
+  echo "================================================"
+  echo "  FATAL: npm install could not restore critical packages"
+  echo "  Missing:$_missing"
+  echo "  Full npm log: $NPM_LOG"
+  echo "================================================"
+  if [ -d "$BACKUP_DIR" ]; then
+    echo "  Rolling back code to $BACKUP_DIR (so next service start uses prior working version)..."
+    for _f in "$BACKUP_DIR"/*; do
+      _b=$(basename "$_f")
+      rm -rf "$APP_DIR/$_b" 2>/dev/null
+      cp -a "$_f" "$APP_DIR/" 2>/dev/null || true
+    done
+    echo "  Code rolled back."
+  else
+    echo "  No backup directory found at $BACKUP_DIR — cannot roll back code."
+  fi
+  echo "FAILED $(date -u +%Y-%m-%dT%H:%M:%SZ) missing:$_missing" > "$STAMP_FILE.last-error" 2>/dev/null || true
+  echo ""
+  echo "  Service NOT restarted. Current process keeps running its in-memory version."
+  echo "  To recover manually on this unit:"
+  echo "    cd $APP_DIR && npm install --legacy-peer-deps"
+  echo "    sudo systemctl restart $SERVICE_NAME"
+  exit 1
 fi
+rm -f "$STAMP_FILE.last-error" 2>/dev/null || true
 if [ -d "$APP_DIR/dist" ]; then
   echo "  Pre-built frontend already in place — skipping vite build"
 else
