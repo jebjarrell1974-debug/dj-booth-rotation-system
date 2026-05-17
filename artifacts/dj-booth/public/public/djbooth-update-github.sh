@@ -334,16 +334,22 @@ if [ "$_npm_ok" = "false" ]; then
   echo "  Missing:$_missing"
   echo "  Full npm log: $NPM_LOG"
   echo "================================================"
-  if [ -d "$BACKUP_DIR" ]; then
+  if [ -d "$BACKUP_DIR" ] && [ -n "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]; then
     echo "  Rolling back code to $BACKUP_DIR (so next service start uses prior working version)..."
+    shopt -s nullglob
     for _f in "$BACKUP_DIR"/*; do
       _b=$(basename "$_f")
-      rm -rf "$APP_DIR/$_b" 2>/dev/null
+      # Defensive: never let _b be empty, '*', '.', '..', '/', or contain path separators
+      case "$_b" in
+        ''|'*'|'.'|'..'|'/'|*/*) echo "  Skipping suspicious entry: $_b"; continue ;;
+      esac
+      rm -rf "${APP_DIR:?}/$_b" 2>/dev/null
       cp -a "$_f" "$APP_DIR/" 2>/dev/null || true
     done
+    shopt -u nullglob
     echo "  Code rolled back."
   else
-    echo "  No backup directory found at $BACKUP_DIR — cannot roll back code."
+    echo "  No backup directory (or empty) at $BACKUP_DIR — cannot roll back code."
   fi
   echo "FAILED $(date -u +%Y-%m-%dT%H:%M:%SZ) missing:$_missing" > "$STAMP_FILE.last-error" 2>/dev/null || true
   echo ""
