@@ -298,7 +298,7 @@ echo "  Installing node dependencies..."
 #      and exit 1. The currently running service stays alive on its in-memory
 #      version; next reboot will boot the rolled-back (working) code.
 NPM_LOG="/tmp/djbooth-npm-install-$(date +%Y%m%d-%H%M%S).log"
-CRITICAL_PKGS="express iconv-lite better-sqlite3 dotenv body-parser cors multer"
+CRITICAL_PKGS="express iconv-lite better-sqlite3 body-parser cors"
 set +e
 _npm_ok=false
 _missing=""
