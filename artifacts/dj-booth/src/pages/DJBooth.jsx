@@ -1665,7 +1665,24 @@ export default function DJBooth() {
     playbackExpectedRef.current = true;
     lastAudioActivityRef.current = Date.now();
     console.log('🎵 PlayTrack: Playing track URL, crossfade=' + crossfade);
-    const success = await audioEngineRef.current.playTrack(trackName ? { url: trackUrl, name: trackName } : trackUrl, crossfade);
+    // Commercial boost: Promos-genre tracks route through the music bus and end up
+    // ~33% quieter than music to a trained ear. Pre-populate auto_gain * 1.4 (44% LUFS lift)
+    // ONLY for Promos so the AudioEngine skips its 10s RMS analysis and uses the boosted value.
+    // For every non-Promos track we still pass `{url, name}` (NO auto_gain) so AudioEngine
+    // behavior is identical to before — protecting 003.
+    let trackPayload = trackName ? { url: trackUrl, name: trackName } : trackUrl;
+    if (trackName && trackGenre === 'Promos') {
+      const trackMeta = tracks.find(t => t.name === trackName);
+      const baseAutoGain = trackMeta?.auto_gain;
+      if (baseAutoGain != null) {
+        const boosted = baseAutoGain * 1.4;
+        trackPayload = { url: trackUrl, name: trackName, auto_gain: boosted };
+        console.log(`📢 Commercial boost: "${trackName}" auto_gain ${baseAutoGain.toFixed(2)} → ${boosted.toFixed(2)} (x1.4)`);
+      } else {
+        console.log(`📢 Commercial: "${trackName}" has no pre-computed auto_gain — boost skipped (AudioEngine will do its own RMS, no lift applied)`);
+      }
+    }
+    const success = await audioEngineRef.current.playTrack(trackPayload, crossfade);
     if (success !== false) {
       lastAudioActivityRef.current = Date.now();
     }
@@ -1680,7 +1697,21 @@ export default function DJBooth() {
     }
     setIsPlaying(true);
     return true;
-  }, [recordSongPlayed, playFallbackTrack, isFeatureTrack]);
+  }, [recordSongPlayed, playFallbackTrack, isFeatureTrack, tracks]);
+
+  // Returns rich metadata object for a FEATURE entertainer (for feature_intro voiceovers),
+  // or null for a regular dancer. Used at every prefetchAnnouncement('intro', ...) call site
+  // in the rotation pipeline to decide whether to issue a normal intro or a marquee
+  // feature-entertainer intro.
+  const getFeatureMeta = useCallback((d) => {
+    if (!d || d.entertainer_type !== 'feature') return null;
+    return {
+      awards: d.feature_awards || '',
+      titles: d.feature_titles || '',
+      websites: d.feature_websites || '',
+      notes: d.feature_notes || '',
+    };
+  }, []);
 
   const tracksLoadedRef = useRef(false);
   const initialLoadGraceRef = useRef(true);
@@ -1929,11 +1960,11 @@ export default function DJBooth() {
     }
   }, [announcementsEnabled]);
 
-  const prefetchAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1) => {
+  const prefetchAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, featureMeta = null) => {
     if (!announcementsEnabled || !announcementRef.current?.getAnnouncementUrl) return null;
     try {
       const url = await Promise.race([
-        announcementRef.current.getAnnouncementUrl(type, dancerName, nextDancerName, roundNumber),
+        announcementRef.current.getAnnouncementUrl(type, dancerName, nextDancerName, roundNumber, featureMeta),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Pre-fetch timeout')), 30000))
       ]);
       return url;
@@ -2086,7 +2117,10 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         if (announcementsEnabled) {
           console.log('🎤 BeginRotation: Pre-fetching intro then ducking');
-          const announcementPromise = prefetchAnnouncement('intro', dancer.name, null, 1);
+          const _fm = getFeatureMeta(dancer);
+          const _introType = _fm ? 'feature_intro' : 'intro';
+          if (_fm) console.log('🌟 BeginRotation: dancer is FEATURE — using feature_intro');
+          const announcementPromise = prefetchAnnouncement(_introType, dancer.name, null, 1, _fm);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           await playPrefetchedAnnouncement(announcementUrl);
@@ -2098,7 +2132,9 @@ export default function DJBooth() {
         await playFallbackTrack(false);
         lastAudioActivityRef.current = Date.now();
         if (announcementsEnabled) {
-          const announcementPromise = prefetchAnnouncement('intro', dancer.name, null, 1);
+          const _fm = getFeatureMeta(dancer);
+          const _introType = _fm ? 'feature_intro' : 'intro';
+          const announcementPromise = prefetchAnnouncement(_introType, dancer.name, null, 1, _fm);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           await playPrefetchedAnnouncement(announcementUrl);
@@ -2956,7 +2992,10 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+          const _fm = getFeatureMeta(nextDancer);
+          const _introType = _fm ? 'feature_intro' : 'intro';
+          if (_fm) console.log('🌟 Natural flip: next dancer is FEATURE — using feature_intro');
+          const introPromise = prefetchAnnouncement(_introType, nextDancer.name, null, 1, _fm);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3250,7 +3289,10 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+          const _fm = getFeatureMeta(nextDancer);
+          const _introType = _fm ? 'feature_intro' : 'intro';
+          if (_fm) console.log('🌟 Post-interstitial: next dancer is FEATURE — using feature_intro');
+          const announcementPromise = prefetchAnnouncement(_introType, nextDancer.name, null, 1, _fm);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3325,10 +3367,19 @@ export default function DJBooth() {
 
     const dancerSongCount = dancerTracks.length;
 
+    // FEATURE entertainers always perform a 1-song set. After song 1 ends, we MUST flip
+    // to the next dancer regardless of songsPerSet. Forcing isFeatureDancer into the
+    // condition below bypasses the "next song for same dancer" branch and falls through
+    // to the dancer-flip path.
+    const isFeatureDancer = dancer.entertainer_type === 'feature';
+    if (isFeatureDancer && songNum >= 1) {
+      console.log(`🌟 HandleTrackEnd: FEATURE ${dancer.name} finished song ${songNum} — forcing flip to next dancer (single-song set)`);
+    }
+
     // Diag: would-have-played-more but dancerTracks is short. Indicates a stale/short
     // rotationSongs cache (the bug Change 1 fixes at beginRotation) or server returning
     // fewer tracks than requested. Logging only — do not auto-recover mid-transition.
-    if (songNum < songsPerSetRef.current && dancerSongCount < songsPerSetRef.current && songNum >= dancerSongCount) {
+    if (!isFeatureDancer && songNum < songsPerSetRef.current && dancerSongCount < songsPerSetRef.current && songNum >= dancerSongCount) {
       logDiag?.('thin_dancer_tracks_advance', {
         dancer: dancer.name,
         has: dancerSongCount,
@@ -3338,7 +3389,7 @@ export default function DJBooth() {
     }
 
     try {
-      if (songNum < songsPerSetRef.current && songNum < dancerSongCount) {
+      if (!isFeatureDancer && songNum < songsPerSetRef.current && songNum < dancerSongCount) {
         let nextTrack = dancerTracks[songNum];
         const newSongNum = songNum + 1;
         currentSongNumberRef.current = newSongNum;
@@ -3707,7 +3758,10 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1);
+          const _fm = getFeatureMeta(nextDancer);
+          const _introType = _fm ? 'feature_intro' : 'intro';
+          if (_fm) console.log('🌟 Natural flip: next dancer is FEATURE — using feature_intro');
+          const introPromise = prefetchAnnouncement(_introType, nextDancer.name, null, 1, _fm);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();

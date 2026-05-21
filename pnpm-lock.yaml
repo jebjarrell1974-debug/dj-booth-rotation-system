@@ -156,6 +156,10 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      '@octokit/rest':
+        specifier: ^22.0.1
+        version: 22.0.1
     devDependencies:
       prettier:
         specifier: ^3.8.1

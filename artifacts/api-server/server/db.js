@@ -210,6 +210,13 @@ try { db.exec("ALTER TABLE sessions ADD COLUMN staff_role TEXT DEFAULT NULL"); }
 try { db.exec("ALTER TABLE dancers ADD COLUMN pin_plain TEXT DEFAULT NULL"); } catch {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_dancers_pin_plain ON dancers(pin_plain)"); } catch {}
 
+try { db.exec("ALTER TABLE dancers ADD COLUMN entertainer_type TEXT DEFAULT 'dancer'"); } catch {}
+try { db.exec("ALTER TABLE dancers ADD COLUMN feature_awards TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE dancers ADD COLUMN feature_titles TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE dancers ADD COLUMN feature_websites TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE dancers ADD COLUMN feature_notes TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE dancers ADD COLUMN feature_music_folder TEXT DEFAULT ''"); } catch {}
+
 try {
   const total = db.prepare('SELECT COUNT(*) AS n FROM dancers').get().n;
   const missing = db.prepare('SELECT COUNT(*) AS n FROM dancers WHERE pin_plain IS NULL').get().n;
@@ -371,18 +378,35 @@ export function isPinTaken(pin) {
   return rows.some(r => verifyPin(pin, r.pin_hash));
 }
 
-export function createDancer(name, color, pin) {
-  if (isPinTaken(pin)) {
+export function createDancer(name, color, pin, opts = {}) {
+  const isFeature = opts.entertainer_type === 'feature';
+  let effectivePin = pin;
+  if (isFeature && (!pin || pin.length === 0)) {
+    effectivePin = `FEATURE-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+  if (!isFeature && isPinTaken(effectivePin)) {
     throw new Error('PIN_TAKEN');
   }
   const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const pinHash = hashPin(pin);
+  const pinHash = hashPin(effectivePin);
   try {
     db.exec('ALTER TABLE dancers ADD COLUMN pin_plain TEXT DEFAULT NULL');
   } catch {}
   db.prepare(
-    'INSERT INTO dancers (id, name, color, pin_hash, pin_plain) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, name, color || '#e040fb', pinHash, pin);
+    'INSERT INTO dancers (id, name, color, pin_hash, pin_plain, entertainer_type, feature_awards, feature_titles, feature_websites, feature_notes, feature_music_folder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(
+    id,
+    name,
+    color || '#e040fb',
+    pinHash,
+    isFeature ? null : effectivePin,
+    isFeature ? 'feature' : 'dancer',
+    opts.feature_awards || '',
+    opts.feature_titles || '',
+    opts.feature_websites || '',
+    opts.feature_notes || '',
+    opts.feature_music_folder || ''
+  );
   return getDancer(id);
 }
 
@@ -437,6 +461,11 @@ export function updateDancer(id, data) {
   }
   if (data.phonetic_name !== undefined) {
     db.prepare('UPDATE dancers SET phonetic_name = ? WHERE id = ?').run(data.phonetic_name, id);
+  }
+  for (const field of ['entertainer_type', 'feature_awards', 'feature_titles', 'feature_websites', 'feature_notes', 'feature_music_folder']) {
+    if (data[field] !== undefined) {
+      db.prepare(`UPDATE dancers SET ${field} = ? WHERE id = ?`).run(data[field] || '', id);
+    }
   }
   return getDancer(id);
 }

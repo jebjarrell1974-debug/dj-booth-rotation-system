@@ -65,6 +65,11 @@ export default function DancerRoster({
   const [newDancerName, setNewDancerName] = useState('');
   const [newDancerPin, setNewDancerPin] = useState('');
   const [newDancerPhonetic, setNewDancerPhonetic] = useState('');
+  const [newIsFeature, setNewIsFeature] = useState(false);
+  const [newFeatureAwards, setNewFeatureAwards] = useState('');
+  const [newFeatureTitles, setNewFeatureTitles] = useState('');
+  const [newFeatureWebsites, setNewFeatureWebsites] = useState('');
+  const [newFeatureNotes, setNewFeatureNotes] = useState('');
   const [addError, setAddError] = useState('');
   const [editingDancer, setEditingDancer] = useState(null);
   const [editingPin, setEditingPin] = useState('');
@@ -87,24 +92,39 @@ export default function DancerRoster({
   };
 
   const handleAdd = async () => {
-    if (newDancerName.trim() && newDancerPin.length === 5 && !isAdding) {
+    const nameOk = newDancerName.trim().length > 0;
+    const pinOk = newIsFeature || newDancerPin.length === 5;
+    if (nameOk && pinOk && !isAdding) {
       setIsAdding(true);
       setAddError('');
       const color = DANCER_COLORS[dancers.length % DANCER_COLORS.length];
-      
+
       try {
-        await onAddDancer({ 
-          name: newDancerName.trim(), 
-          color, 
-          pin: newDancerPin,
+        const payload = {
+          name: newDancerName.trim(),
+          color,
+          pin: newIsFeature ? '' : newDancerPin,
           phonetic_name: newDancerPhonetic.trim(),
-          playlist: [], 
-          is_active: true 
-        });
+          playlist: [],
+          is_active: true,
+        };
+        if (newIsFeature) {
+          payload.entertainer_type = 'feature';
+          payload.feature_awards = newFeatureAwards.trim();
+          payload.feature_titles = newFeatureTitles.trim();
+          payload.feature_websites = newFeatureWebsites.trim();
+          payload.feature_notes = newFeatureNotes.trim();
+        }
+        await onAddDancer(payload);
         await new Promise(resolve => setTimeout(resolve, 300));
         setNewDancerName('');
         setNewDancerPin('');
         setNewDancerPhonetic('');
+        setNewIsFeature(false);
+        setNewFeatureAwards('');
+        setNewFeatureTitles('');
+        setNewFeatureWebsites('');
+        setNewFeatureNotes('');
         setIsAddOpen(false);
       } catch (error) {
         console.error('Failed to add dancer:', error);
@@ -173,6 +193,12 @@ export default function DancerRoster({
 
       const updatePayload = { name: editingDancer.name, phonetic_name: editingDancer.phonetic_name || '' };
       if (editingPin.length === 5) updatePayload.pin = editingPin;
+      if (editingDancer.entertainer_type === 'feature') {
+        updatePayload.feature_awards = editingDancer.feature_awards || '';
+        updatePayload.feature_titles = editingDancer.feature_titles || '';
+        updatePayload.feature_websites = editingDancer.feature_websites || '';
+        updatePayload.feature_notes = editingDancer.feature_notes || '';
+      }
 
       onEditDancer(editingDancer.id, updatePayload);
 
@@ -242,15 +268,39 @@ export default function DancerRoster({
                 Add
               </Button>
             </DialogTrigger>
-          <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
+          <DialogContent className="bg-[#151528] border-[#1e293b] text-white max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Entertainer</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewIsFeature(false)}
+                  className={`py-2 rounded-md text-sm font-medium transition-colors border ${
+                    !newIsFeature
+                      ? 'bg-[#00d4ff] text-black border-[#00d4ff]'
+                      : 'bg-[#0d0d1f] text-gray-400 border-[#1e293b] hover:border-[#2e2e4a]'
+                  }`}
+                >
+                  Dancer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewIsFeature(true)}
+                  className={`py-2 rounded-md text-sm font-medium transition-colors border ${
+                    newIsFeature
+                      ? 'bg-purple-600 text-white border-purple-500'
+                      : 'bg-[#0d0d1f] text-gray-400 border-[#1e293b] hover:border-[#2e2e4a]'
+                  }`}
+                >
+                  🌟 Feature
+                </button>
+              </div>
               <Input
                 value={newDancerName}
                 onChange={(e) => setNewDancerName(e.target.value)}
-                placeholder="Stage name..."
+                placeholder={newIsFeature ? 'Feature stage name...' : 'Stage name...'}
                 className="bg-[#0d0d1f] border-[#1e293b]"
                 autoFocus
               />
@@ -263,28 +313,72 @@ export default function DancerRoster({
                 />
                 <p className="text-xs text-gray-500 mt-1">How the DJ voice should say the name — leave blank if it sounds fine</p>
               </div>
-              <div>
-                <Input
-                  value={newDancerPin}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                    setNewDancerPin(val);
-                  }}
-                  placeholder="5-digit PIN..."
-                  className="bg-[#0d0d1f] border-[#1e293b]"
-                  inputMode="numeric"
-                  maxLength={5}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                />
-                <p className="text-xs text-gray-500 mt-1">Entertainer uses this PIN to log in on their phone</p>
-              </div>
+              {!newIsFeature && (
+                <div>
+                  <Input
+                    value={newDancerPin}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                      setNewDancerPin(val);
+                    }}
+                    placeholder="5-digit PIN..."
+                    className="bg-[#0d0d1f] border-[#1e293b]"
+                    inputMode="numeric"
+                    maxLength={5}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Entertainer uses this PIN to log in on their phone</p>
+                </div>
+              )}
+              {newIsFeature && (
+                <div className="space-y-3 p-3 rounded-md bg-purple-950/20 border border-purple-700/40">
+                  <p className="text-xs text-purple-300 font-semibold uppercase tracking-wider">Feature Details (woven into the AI intro)</p>
+                  <div>
+                    <textarea
+                      value={newFeatureTitles}
+                      onChange={(e) => setNewFeatureTitles(e.target.value)}
+                      placeholder="Titles (e.g. 'Miss Nude Texas 2023', 'Two-time XBIZ award winner')"
+                      className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500 min-h-[60px]"
+                      rows={2}
+                    />
+                  </div>
+                  <div>
+                    <textarea
+                      value={newFeatureAwards}
+                      onChange={(e) => setNewFeatureAwards(e.target.value)}
+                      placeholder="Awards / recognition (e.g. 'AVN Best New Starlet 2022', 'Penthouse Pet of the Year')"
+                      className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500 min-h-[60px]"
+                      rows={2}
+                    />
+                  </div>
+                  <div>
+                    <textarea
+                      value={newFeatureWebsites}
+                      onChange={(e) => setNewFeatureWebsites(e.target.value)}
+                      placeholder="Websites / social (e.g. 'JennaJameson.com', 'Instagram @username')"
+                      className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500 min-h-[60px]"
+                      rows={2}
+                    />
+                  </div>
+                  <div>
+                    <textarea
+                      value={newFeatureNotes}
+                      onChange={(e) => setNewFeatureNotes(e.target.value)}
+                      placeholder="Extra context / hype notes (inspiration for the announcer — NOT read verbatim)"
+                      className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500 min-h-[60px]"
+                      rows={3}
+                    />
+                  </div>
+                  <p className="text-[11px] text-purple-300/80 italic">Features don't need a PIN. They get a single-song slot with a stadium-announcer intro and full-length playback. Assign their music in Edit Playlist.</p>
+                </div>
+              )}
               {addError && <p className="text-sm text-red-400">{addError}</p>}
-              <Button 
-                onClick={handleAdd} 
-                disabled={isAdding || !newDancerName.trim() || newDancerPin.length !== 5}
-                className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+              <Button
+                onClick={handleAdd}
+                disabled={isAdding || !newDancerName.trim() || (!newIsFeature && newDancerPin.length !== 5)}
+                className={`w-full text-black ${newIsFeature ? 'bg-purple-500 hover:bg-purple-600 text-white' : 'bg-[#00d4ff] hover:bg-[#00a3cc]'}`}
               >
-                {isAdding ? 'Adding...' : 'Add Entertainer'}
+                {isAdding ? 'Adding...' : newIsFeature ? '🌟 Add Feature Entertainer' : 'Add Entertainer'}
               </Button>
             </div>
           </DialogContent>
@@ -461,9 +555,11 @@ export default function DancerRoster({
                       <Edit2 className="w-3 h-3" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-[#151528] border-[#1e293b] text-white">
+                  <DialogContent className="bg-[#151528] border-[#1e293b] text-white max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>Edit Entertainer</DialogTitle>
+                      <DialogTitle>
+                        {editingDancer?.entertainer_type === 'feature' ? '🌟 Edit Feature Entertainer' : 'Edit Entertainer'}
+                      </DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 pt-4">
                       <Input
@@ -481,24 +577,60 @@ export default function DancerRoster({
                         />
                         <p className="text-xs text-gray-500 mt-1">How the DJ voice should say the name — leave blank if it sounds fine</p>
                       </div>
-                      <div>
-                        {editingDancer?.pin_plain && (
-                          <p className="text-xs text-gray-400 mb-1">Current PIN: <span className="font-mono text-gray-200">{editingDancer.pin_plain}</span></p>
-                        )}
-                        <input
-                          type="tel"
-                          value={editingPin}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                            setEditingPin(val);
-                          }}
-                          placeholder="New PIN (leave blank to keep current)"
-                          className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]"
-                          inputMode="numeric"
-                          maxLength={5}
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Enter a new 5-digit PIN to change it, or leave blank</p>
-                      </div>
+                      {editingDancer?.entertainer_type !== 'feature' && (
+                        <div>
+                          {editingDancer?.pin_plain && (
+                            <p className="text-xs text-gray-400 mb-1">Current PIN: <span className="font-mono text-gray-200">{editingDancer.pin_plain}</span></p>
+                          )}
+                          <input
+                            type="tel"
+                            value={editingPin}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                              setEditingPin(val);
+                            }}
+                            placeholder="New PIN (leave blank to keep current)"
+                            className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]"
+                            inputMode="numeric"
+                            maxLength={5}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Enter a new 5-digit PIN to change it, or leave blank</p>
+                        </div>
+                      )}
+                      {editingDancer?.entertainer_type === 'feature' && (
+                        <div className="space-y-3 p-3 rounded-md bg-purple-950/20 border border-purple-700/40">
+                          <p className="text-xs text-purple-300 font-semibold uppercase tracking-wider">Feature Details</p>
+                          <textarea
+                            value={editingDancer?.feature_titles || ''}
+                            onChange={(e) => setEditingDancer(prev => ({ ...prev, feature_titles: e.target.value }))}
+                            placeholder="Titles"
+                            rows={2}
+                            className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          <textarea
+                            value={editingDancer?.feature_awards || ''}
+                            onChange={(e) => setEditingDancer(prev => ({ ...prev, feature_awards: e.target.value }))}
+                            placeholder="Awards / recognition"
+                            rows={2}
+                            className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          <textarea
+                            value={editingDancer?.feature_websites || ''}
+                            onChange={(e) => setEditingDancer(prev => ({ ...prev, feature_websites: e.target.value }))}
+                            placeholder="Websites / social"
+                            rows={2}
+                            className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          <textarea
+                            value={editingDancer?.feature_notes || ''}
+                            onChange={(e) => setEditingDancer(prev => ({ ...prev, feature_notes: e.target.value }))}
+                            placeholder="Extra context / hype notes"
+                            rows={3}
+                            className="w-full bg-[#0d0d1f] border border-[#1e293b] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          <p className="text-[11px] text-purple-300/80 italic">Saving here invalidates this feature's cached voiceovers on next reset.</p>
+                        </div>
+                      )}
                       <Button onClick={handleEdit} disabled={editingPin.length > 0 && editingPin.length !== 5} className="w-full bg-[#00d4ff] hover:bg-[#00a3cc] text-black disabled:opacity-50">
                         Save Changes
                       </Button>

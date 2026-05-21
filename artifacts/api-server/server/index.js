@@ -623,11 +623,19 @@ app.get('/api/dancers', (req, res) => {
 });
 
 app.post('/api/dancers', authenticate, requireDJ, (req, res) => {
-  const { name, color, pin, phonetic_name } = req.body;
+  const { name, color, pin, phonetic_name, entertainer_type, feature_awards, feature_titles, feature_websites, feature_notes, feature_music_folder } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
-  if (!pin || pin.length !== 5) return res.status(400).json({ error: '5-digit PIN required' });
+  const isFeature = entertainer_type === 'feature';
+  if (!isFeature && (!pin || pin.length !== 5)) return res.status(400).json({ error: '5-digit PIN required' });
   try {
-    let dancer = createDancer(name, color, pin);
+    let dancer = createDancer(name, color, pin, {
+      entertainer_type,
+      feature_awards,
+      feature_titles,
+      feature_websites,
+      feature_notes,
+      feature_music_folder,
+    });
     if (phonetic_name) {
       dancer = updateDancer(dancer.id, { phonetic_name });
     }

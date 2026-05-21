@@ -295,9 +295,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   };
 
 
-  const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1) => {
+  const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1, featureMeta = null) => {
     const config = getApiConfig();
-    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, LOCKED_LEVEL, roundNumber, varNum);
+    // Features always use peak energy (level 5) regardless of clock — they're a marquee event.
+    const promptLevel = type === 'feature_intro' ? 5 : LOCKED_LEVEL;
+    const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, promptLevel, roundNumber, varNum, featureMeta);
 
     const openaiKey = config.openaiApiKey || '';
     const scriptModel = config.scriptModel || 'auto';
@@ -457,9 +459,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     });
   }, [elevenLabsApiKey]);
 
+  // Feature entertainers use their own cache version namespace so their voiceovers stay
+  // separate from regular dancer voiceovers and can be invalidated independently (bump
+  // FEATURE_VOICE_VERSION when changing the feature_intro prompt).
+  const FEATURE_VOICE_VERSION = 'FEATURE_V1';
+
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1, phonetic = null) => {
     const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}${ph}-var${varNum}-${CURRENT_VOICE_VERSION}`;
+    const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION : CURRENT_VOICE_VERSION;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}${ph}-var${varNum}-${versionTag}`;
   };
 
   const getLegacyL4Key = (type, dancerName, nextDancerName = null) => {
@@ -637,7 +645,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
   }, []);
 
-  const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, varNum = 1, roundNumber = 1) => {
+  const getOrGenerateAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, varNum = 1, roundNumber = 1, featureMeta = null) => {
     const key = getKeyForDancer(type, dancerName, nextDancerName, varNum);
 
     const customBlob = await checkCustomRecording(dancerName, type);
@@ -701,7 +709,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     try {
       console.log(`🎙️ Generating announcement: ${key} (var${varNum})`);
       setGeneratingType(type);
-      const script = await generateScript(type, dancerName, nextDancerName, roundNumber, varNum);
+      const script = await generateScript(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta);
 
       // Chunk-and-stitch via server FFmpeg — prevents ElevenLabs corrupt blob artifacts (backwards/garbled audio)
       const scriptChunks = splitScriptIntoChunks(script);
@@ -767,17 +775,21 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
   }, [generateScript, generateAudio, findCachedAtAnyVariation, saveToServer, loadFromServer, checkCustomRecording, checkGenericRecording, checkServerCacheMeta, onVoiceDiag]);
 
-  const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
+  const playAnnouncement = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}, featureMeta = null) => {
     try {
       const varNum = getNextVariationNum(type, dancerName, nextDancerName);
-      console.log(`📢 AnnouncementSystem: Playing ${type} for ${dancerName} (var${varNum}, Round ${roundNumber})`);
-      const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
+      console.log(`📢 AnnouncementSystem: Playing ${type} for ${dancerName} (var${varNum}, Round ${roundNumber})${featureMeta ? ' [FEATURE]' : ''}`);
+      const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber, featureMeta);
       console.log(`📢 AnnouncementSystem: Got audio URL (cached=${result.fromCache}), playing...`);
       try {
         await onPlay?.(result.url, audioOptions);
         console.log(`📢 AnnouncementSystem: Playback complete`);
       } catch (playError) {
-        const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${CURRENT_VOICE_VERSION}`;
+        // Use the per-type version tag so feature_intro recovery targets the correct
+        // FEATURE_VOICE_VERSION-tagged key (was hardcoded to CURRENT_VOICE_VERSION,
+        // which silently broke recovery for feature voiceovers).
+        const _versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION : CURRENT_VOICE_VERSION;
+        const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${_versionTag}`;
         console.warn(`⚠️ Playback failed for ${cacheKey} — clearing local cache, trying server copy first...`, playError.message);
         onVoiceDiag?.('voice_play_fail', { dancer: dancerName, voiceType: type, error: (playError.message || '').substring(0, 80) });
         await deleteFromIndexedDB(cacheKey);
@@ -802,7 +814,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
             await fetch(`/api/voiceovers/${encodeURIComponent(cacheKey)}`, { method: 'DELETE', headers: getAuthHeaders() });
           } catch {}
           try {
-            const fresh = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
+            const fresh = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber, featureMeta);
             await onPlay?.(fresh.url, audioOptions);
             console.log(`📢 AnnouncementSystem: Playback complete (recovered after confirmed-bad file regeneration)`);
             onVoiceDiag?.('voice_play_recovered', { dancer: dancerName, voiceType: type });
@@ -1022,14 +1034,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   }, [preCacheDancer]);
 
   React.useImperativeHandle(ref, () => ({
-    playAutoAnnouncement: async (type, currentDancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
-      await playAnnouncement(type, currentDancerName, nextDancerName, roundNumber, audioOptions);
+    playAutoAnnouncement: async (type, currentDancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}, featureMeta = null) => {
+      await playAnnouncement(type, currentDancerName, nextDancerName, roundNumber, audioOptions, featureMeta);
     },
-    getAnnouncementUrl: async (type, dancerName, nextDancerName = null, roundNumber = 1) => {
+    getAnnouncementUrl: async (type, dancerName, nextDancerName = null, roundNumber = 1, featureMeta = null) => {
       try {
         const varNum = getNextVariationNum(type, dancerName, nextDancerName);
-        console.log(`🔄 Pre-fetching ${type} announcement for ${dancerName} (var${varNum})`);
-        const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber);
+        console.log(`🔄 Pre-fetching ${type} announcement for ${dancerName} (var${varNum})${featureMeta ? ' [FEATURE]' : ''}`);
+        const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber, featureMeta);
         return result?.url || null;
       } catch (error) {
         console.error(`❌ Pre-fetch announcement failed:`, error.message);

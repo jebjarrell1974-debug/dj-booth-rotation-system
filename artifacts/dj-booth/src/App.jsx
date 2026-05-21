@@ -207,8 +207,14 @@ function AppRoutes() {
   const location = useLocation();
   const isRotationDisplay = location.pathname === '/RotationDisplay';
 
+  // Kiosk-facing pages get the bigger-font scope. DancerView (phone),
+  // FleetDashboard (remote browser), and RotationDisplay (crowd display)
+  // are intentionally NOT in this set — they keep their current sizing.
+  const KIOSK_PATHS = new Set(['/', '/Landing', '/DJBooth', '/Configuration', '/VoiceStudio', '/Help']);
+  const isKioskPage = KIOSK_PATHS.has(location.pathname);
+
   return (
-    <>
+    <div className={isKioskPage ? 'kiosk-big-text' : ''}>
       <KioskLockManager />
       <PersistentDJBooth />
       {SHOW_VIRTUAL_KEYBOARD && !isRotationDisplay && <VirtualKeyboard />}
@@ -247,7 +253,7 @@ function AppRoutes() {
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </div>
   );
 }
 

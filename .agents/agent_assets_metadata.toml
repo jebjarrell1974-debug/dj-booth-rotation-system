@@ -30,3 +30,9 @@ id = "GeynlIXnySLuXlkle2As1"
 uri = "file://attached_assets/79937861058__C40AD8B1-022C-434D-8576-43A09EAC5D34_1777720482196.jpeg"
 type = "image"
 title = "Real-world DJ console in The Pony Evansville (with crowd display + neon visible behind)"
+
+[[outputs]]
+id = "cVjto5aV8RNVfaUlyAjY9"
+uri = "file://reports/002-forensic-report-2026-05-16.pdf"
+type = "pdf"
+title = "002 Forensic Report — Show 2026-05-16"

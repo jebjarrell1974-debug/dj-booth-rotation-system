@@ -168,7 +168,7 @@ EMOTION TAGS (inline delivery cues read by the speech engine — use these every
 - Place tags where the energy spikes — at the name drop, the call to tip, or the big build
 - Keep tags brief — they direct delivery, not replace it`;
 
-export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, varNum = 1) => {
+export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energyLevel, roundNumber, varNum = 1, featureMeta = null) => {
   const level = Math.max(1, Math.min(5, energyLevel || 3));
   const levelInfo = ENERGY_LEVELS[level];
   const shiftType = levelInfo.shiftType;
@@ -178,6 +178,63 @@ export const buildAnnouncementPrompt = (type, dancerName, nextDancerName, energy
   const isGeneric = dancerName === '_GENERIC_';
   const displayName = isGeneric ? 'your next entertainer' : dancerName;
   const genericNote = isGeneric ? '\nIMPORTANT: Do NOT use a specific name. Refer to her as "your next entertainer", "this beauty", "she", or similar generic references.' : '';
+
+  // FEATURE ENTERTAINER INTRO — short-circuit: returns a complete prompt and does not use the
+  // normal SHIFT/STYLE composition. Features get rock-concert-announcer energy regardless of
+  // time of night. Voice settings are still VOICE_SETTINGS[5] from the caller.
+  if (type === 'feature_intro') {
+    const awards = featureMeta?.awards?.trim();
+    const titles = featureMeta?.titles?.trim();
+    const websites = featureMeta?.websites?.trim();
+    const notes = featureMeta?.notes?.trim();
+    const credsBlock = [
+      titles ? `TITLES & CREDENTIALS (announce at least one — say it like you're proud to host her):\n${titles}` : '',
+      awards ? `AWARDS / RECOGNITION (work one or two in naturally — like credentials, not a list):\n${awards}` : '',
+      websites ? `WEBSITES / SOCIAL HANDLES (mention ONE at the end — "follow her at X dot com", "catch her on Y". Read URLs as words, "dot com" not ".com". Numbers as words):\n${websites}` : '',
+      notes ? `EXTRA CONTEXT (inspiration only, do NOT read verbatim):\n${notes}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    return `${SYSTEM_PROMPT}
+
+EVENT: SPECIAL FEATURE ENTERTAINER — MARQUEE INTRODUCTION
+
+${displayName} is a SPECIAL FEATURE entertainer. This is NOT a normal rotation intro — this is a HEADLINER walking out. Stadium-announcer energy. Rock-concert-MC voice. Like introducing a championship fighter at the entrance. Maximum hype, maximum build, maximum payoff.
+
+${credsBlock || 'No additional credentials provided — sell her purely on presence and arrival.'}
+
+CRITICAL DELIVERY RULES FOR FEATURES:
+- This is THE moment of the night — build like the room has been waiting all evening for HER specifically
+- Open BIG. No casual lead-in. First word should already be hyped.
+- Five to eight sentences — longer than a normal intro, because she's a marquee event
+- Use MORE emotion tags than normal: stack [excitedly][energetically], drop in [triumphantly] at the credential reveal, [eagerly] at the call-to-the-rail
+- Say "${displayName}" THREE TIMES: once early in the build, once at the credential reveal, once as the final landing (slow, drawn out, savored)
+- Treat her credentials with PRIDE — make the crowd feel lucky she chose this stage tonight
+- End on her NAME as the headline drop — let it land like the announcer at a heavyweight title fight
+- NO money-tipping push for THIS one — pure introduction. The tip push comes later in her round 2 / outro.
+- Do NOT mention day of the week or club name
+- Do NOT use "give it up", "make some noise", "let me hear you" or any cheer-soliciting language
+
+STRUCTURE GUIDE (loose — vary the order):
+1. HYPE OPENER — grab the room, signal that this one is different from the rotation
+2. CREDENTIAL DROP — announce her titles / awards with pride
+3. THE BUILD — what she brings, what she's about, why she's special
+4. CALL TO THE RAIL — get the room close, get them ready, get them locked in
+5. WEBSITE/SOCIAL MENTION (if provided) — natural plug at the end
+6. THE NAME LANDING — final, slow, savored, headlining
+
+EXAMPLES (inspiration only — write something COMPLETELY ORIGINAL every time):
+"[excitedly] Gentlemen — pause everything. [energetically] What you're about to see is not part of the regular rotation. ${displayName} is a feature entertainer — and that means something. [triumphantly] Two-time crowned, nationally recognized, and tonight... tonight she's HERE. On this stage. [eagerly] Get to that rail with cash in hand, fellas. The one and only... ${displayName}."
+
+"[energetically] Hold up, hold up — I need every man in this room locked in right now. ${displayName} is about to walk out here, and let me put this in perspective. [triumphantly] We're talking about a feature performer. A headliner. Somebody who's earned every accolade she's got and then some. [excitedly] If you're not at the rail in ten seconds, that's a mistake. Catch her after the show — and follow her work. Right now... the incomparable... ${displayName}."
+
+Write something COMPLETELY ORIGINAL. Pure hype. Five to eight sentences. End on her name landing big.
+
+OUTPUT FORMAT:
+Write the announcement as flowing spoken text — exactly what the DJ would say over the mic.
+Do not include labels, brackets (except emotion tags), stage directions, or explanations.
+Do not number the lines.
+Just the spoken words, nothing else.`;
+  }
 
   const STYLE_VIBES = [
     'Bring the hype — fast, punchy, high energy from the first word',

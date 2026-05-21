@@ -211,3 +211,30 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(1.1); }
 }
+
+/* ============================================================
+   KIOSK BIG TEXT (added May 21, 2026)
+   Owner-operator on 002 reported the booth UI font as too small.
+   Scope: only the kiosk-facing pages (DJBooth, Configuration,
+   VoiceStudio, Help, Landing). DancerView (phone), FleetDashboard
+   (remote browser), and RotationDisplay (crowd display) are NOT
+   wrapped with `.kiosk-big-text` and are UNCHANGED.
+   Approach: bump every Tailwind text-* size up by ~one step so
+   text fills the existing horizontal whitespace WITHOUT touching
+   padding, widths, columns, or any layout structure. If a single
+   element gets too cramped, override on that element with
+   `text-sm!important` instead of modifying this block.
+   ============================================================ */
+.kiosk-big-text .text-xs   { font-size: 0.875rem; line-height: 1.25rem; }   /* 12 -> 14 */
+.kiosk-big-text .text-sm   { font-size: 1rem;     line-height: 1.5rem; }    /* 14 -> 16 */
+.kiosk-big-text .text-base { font-size: 1.125rem; line-height: 1.75rem; }   /* 16 -> 18 */
+.kiosk-big-text .text-lg   { font-size: 1.25rem;  line-height: 1.75rem; }   /* 18 -> 20 */
+.kiosk-big-text .text-xl   { font-size: 1.5rem;   line-height: 2rem; }      /* 20 -> 24 */
+.kiosk-big-text .text-2xl  { font-size: 1.875rem; line-height: 2.25rem; }   /* 24 -> 30 */
+/* Inputs/textareas inherit Tailwind size classes too, but raw inputs without
+   text-* class default to the browser size — bump those inside the scope. */
+.kiosk-big-text input:not([class*="text-"]),
+.kiosk-big-text textarea:not([class*="text-"]),
+.kiosk-big-text select:not([class*="text-"]) {
+  font-size: 1rem;
+}

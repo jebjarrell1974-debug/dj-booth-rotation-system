@@ -1,8 +1,0 @@
-{
-  "name": "NEON AI DJ",
-  "short_name": "NEON AI DJ",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#08081a",
-  "theme_color": "#00d4ff"
-}
