@@ -166,6 +166,12 @@ export default function DJBooth() {
   const currentDancerIndexRef = useRef(0);
   const currentSongNumberRef = useRef(1);
   const rotationSongsRef = useRef(rotationSongs);
+  // Monotonic version token guarding async rotationSongs writes (Rule 1 flip-to-bottom
+  // re-pick + Rule 5 instant re-roll). Bumped at the START of any operation that wipes
+  // or replaces queue state; async callbacks capture the version at dispatch and only
+  // write back if it still matches. Prevents stale results from a prior reroll/flip
+  // overwriting a newer queue (e.g. DJ taps songsPerSet 3→5→4 in rapid succession).
+  const rotationAssignmentVersionRef = useRef(0);
   const djSavedSongsRef = useRef({});
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
@@ -1824,6 +1830,44 @@ export default function DJBooth() {
       ? dayShiftGenres
       : (opts?.activeGenres?.length > 0 ? opts.activeGenres : []);
 
+    // Rule 7 (locked spec May 21): when dancer's playlist can't produce enough FRESH
+    // off-cooldown songs, top up the remainder from the manager-assigned break-song pool
+    // (same pool as interstitial break songs — genre-filtered library minus cooldown/assigned).
+    // Only applies when dancer has a playlist (rawPlaylist.length > 0); folders_only path is
+    // left as-is so caller's random-library fallback still runs.
+    const topUpFromBreakPool = async (current) => {
+      if (current.length >= count || rawPlaylist.length === 0) return current;
+      const need = count - current.length;
+      const currentNames = new Set(current.map(t => t?.name).filter(Boolean));
+      const allExcl = new Set([...excludeNames, ...currentNames]);
+      const cdMap = songCooldownRef.current || {};
+      const nowMs = Date.now();
+      Object.entries(cdMap).forEach(([n, ts]) => {
+        if (ts && (nowMs - ts) < COOLDOWN_MS) allExcl.add(n);
+      });
+      try {
+        const tk = localStorage.getItem('djbooth_token');
+        const r = await fetch('/api/music/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(tk ? { Authorization: `Bearer ${tk}` } : {}) },
+          body: JSON.stringify({ count: need, excludeNames: [...allExcl], genres: activeGenres, dancerPlaylist: [] }),
+          signal: AbortSignal.timeout(timeoutMs)
+        });
+        if (r.ok) {
+          const d = await r.json();
+          const extras = d.tracks || [];
+          if (extras.length > 0) {
+            console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} — topping up ${extras.length} from break-song pool (had ${current.length}/${count})`);
+            logDiag?.('cooldown_fallback_breakpool', { dancer: dancer?.name, had: current.length, need, got: extras.length });
+            return [...current, ...extras];
+          }
+        }
+      } catch (err) {
+        console.warn(`⚠️ getDancerTracks: break-pool top-up failed for ${dancer?.name}: ${err.message}`);
+      }
+      return current;
+    };
+
     try {
       const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/music/select', {
@@ -1845,7 +1889,7 @@ export default function DJBooth() {
         const data = await res.json();
         const result = data.tracks || [];
         console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks, playlist: ${rawPlaylist.length})`);
-        return result;
+        return await topUpFromBreakPool(result);
       }
     } catch (err) {
       console.warn(`⚠️ getDancerTracks: Server select failed for ${dancer?.name}: ${err.message}, using local fallback`);
@@ -1873,14 +1917,23 @@ export default function DJBooth() {
         })
         .sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0)); // oldest-played first
 
-      const combined = [...fisherYatesShuffle([...freshTracks]), ...cooldownTracks];
-      if (combined.length > 0) {
-        const result = combined.slice(0, count);
-        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, ${freshTracks.length} fresh + ${cooldownTracks.length} cooldown)`);
+      // Rule 7: only stack cooldown repeats if break-pool top-up also fails. Prefer fresh
+      // playlist tracks alone first, let topUp fill the rest from break pool.
+      const result = fisherYatesShuffle([...freshTracks]).slice(0, count);
+      if (result.length >= count) {
+        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, ${freshTracks.length} fresh)`);
         return result;
       }
-      console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} — no playlist tracks found in local library`);
-      return [];
+      const toppedUp = await topUpFromBreakPool(result);
+      if (toppedUp.length >= count) {
+        console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${toppedUp.map(t => t.name).join(', ')}] (local fallback ${result.length} fresh + ${toppedUp.length - result.length} break-pool)`);
+        return toppedUp;
+      }
+      // Last resort: stack oldest-cooldown playlist tracks to reach count
+      const combined = [...toppedUp, ...cooldownTracks.filter(t => !toppedUp.some(x => x.name === t.name))].slice(0, count);
+      console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${combined.map(t => t.name).join(', ')}] (local fallback EXHAUSTED — fresh+breakpool+cooldown stack)`);
+      logDiag?.('getDancerTracks_exhausted', { dancer: dancer?.name, fresh: result.length, afterTopUp: toppedUp.length, final: combined.length, need: count });
+      return combined.length > 0 ? combined : await topUpFromBreakPool([]);
     }
 
     console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has no playlist — returning empty`);
@@ -2763,7 +2816,36 @@ export default function DJBooth() {
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
           rotationSongsRef.current = clearedSongs;
+          setRotationSongs(clearedSongs);
           updateStageState(0, flippedRotation);
+
+          // Rule 1 (locked spec May 21): flip-to-bottom is THE reset trigger. After clearing
+          // the finished dancer's queue, re-pick fresh tracks NOW so when the DJ scrolls down
+          // to the bottom she sees brand-new songs (orange/unchanged-songs bug live-observed
+          // on 002 May 21). Async fire-and-forget — break-song transition continues unblocked.
+          // songsPerSet is read fresh inside getDancerTracks via songsPerSetRef.current, so
+          // the current system default is honored automatically (also satisfies the "reset
+          // her songs-per-set to current system default" half of Rule 1).
+          const finishedDancerForRepick = dnc.find(d => d.id === finishedId);
+          if (finishedDancerForRepick) {
+            const _repickVer = ++rotationAssignmentVersionRef.current;
+            getDancerTracks(finishedDancerForRepick, [], true, 5000)
+              .then(repicked => {
+                if (_repickVer !== rotationAssignmentVersionRef.current) {
+                  console.log(`🚫 Flip-to-bottom re-pick stale (ver ${_repickVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
+                  return;
+                }
+                if (repicked && repicked.length > 0) {
+                  const updated = { ...rotationSongsRef.current, [finishedId]: repicked };
+                  rotationSongsRef.current = updated;
+                  setRotationSongs(updated);
+                  djSavedSongsRef.current[finishedId] = repicked;
+                  console.log(`🔄 Flip-to-bottom re-pick: ${finishedDancerForRepick.name} → [${repicked.map(t => t.name).join(', ')}]`);
+                  logDiag?.('flip_to_bottom_repick', { dancer: finishedDancerForRepick.name, got: repicked.length });
+                }
+              })
+              .catch(err => console.warn(`⚠️ Flip-to-bottom re-pick failed for ${finishedDancerForRepick.name}: ${err.message}`));
+          }
 
           playingInterstitialRef.current = true;
           playingInterstitialBreakKeyRef.current = breakKey;
@@ -3519,7 +3601,36 @@ export default function DJBooth() {
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
           rotationSongsRef.current = clearedSongs;
+          setRotationSongs(clearedSongs);
           updateStageState(0, flippedRotation);
+
+          // Rule 1 (locked spec May 21): flip-to-bottom is THE reset trigger. After clearing
+          // the finished dancer's queue, re-pick fresh tracks NOW so when the DJ scrolls down
+          // to the bottom she sees brand-new songs (orange/unchanged-songs bug live-observed
+          // on 002 May 21). Async fire-and-forget — break-song transition continues unblocked.
+          // songsPerSet is read fresh inside getDancerTracks via songsPerSetRef.current, so
+          // the current system default is honored automatically (also satisfies the "reset
+          // her songs-per-set to current system default" half of Rule 1).
+          const finishedDancerForRepick = dnc.find(d => d.id === finishedId);
+          if (finishedDancerForRepick) {
+            const _repickVer = ++rotationAssignmentVersionRef.current;
+            getDancerTracks(finishedDancerForRepick, [], true, 5000)
+              .then(repicked => {
+                if (_repickVer !== rotationAssignmentVersionRef.current) {
+                  console.log(`🚫 Flip-to-bottom re-pick stale (ver ${_repickVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
+                  return;
+                }
+                if (repicked && repicked.length > 0) {
+                  const updated = { ...rotationSongsRef.current, [finishedId]: repicked };
+                  rotationSongsRef.current = updated;
+                  setRotationSongs(updated);
+                  djSavedSongsRef.current[finishedId] = repicked;
+                  console.log(`🔄 Flip-to-bottom re-pick: ${finishedDancerForRepick.name} → [${repicked.map(t => t.name).join(', ')}]`);
+                  logDiag?.('flip_to_bottom_repick', { dancer: finishedDancerForRepick.name, got: repicked.length });
+                }
+              })
+              .catch(err => console.warn(`⚠️ Flip-to-bottom re-pick failed for ${finishedDancerForRepick.name}: ${err.message}`));
+          }
 
           playingInterstitialRef.current = true;
           playingInterstitialBreakKeyRef.current = breakKey;
@@ -4391,7 +4502,7 @@ export default function DJBooth() {
                   </div>
                 </div>
                 
-                <div ref={timeDisplayRef} className="mt-2 text-xs text-gray-500 text-center" style={{ display: 'none' }} />
+                <div ref={timeDisplayRef} className="mt-2 text-7xl font-bold text-[#00d4ff] text-center tabular-nums leading-none" style={{ display: 'none' }} />
               </div>
             )}
           </div>
@@ -4792,36 +4903,17 @@ export default function DJBooth() {
                   setInterstitialRemoteVersion(v => v + 1);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
                   const overrideSet = new Set(manualOverrides.map(id => String(id)));
-                  const playlistUpdates = [];
-                  for (const [dancerId, displayedSongs] of Object.entries(playlists)) {
-                    const dancer = dancers.find(d => String(d.id) === String(dancerId));
-                    const existingPlaylist = dancer?.playlist || [];
-
-                    if (!overrideSet.has(String(dancerId))) continue;
-                    const playlistSet = new Set(existingPlaylist);
-                    const newSongs = displayedSongs.filter(s => !playlistSet.has(s));
-                    const updatedPlaylist = [...existingPlaylist, ...newSongs];
-                    if (newSongs.length > 0) {
-                      console.log(`🎵 Added ${newSongs.length} song(s) to ${dancer?.name}'s permanent playlist: ${newSongs.join(', ')}`);
-                      playlistUpdates.push({ id: dancerId, name: dancer?.name, playlist: updatedPlaylist });
-                    }
-                  }
-                  let saveErrors = 0;
-                  for (const update of playlistUpdates) {
-                    try {
-                      await localEntities.Dancer.update(update.id, { playlist: update.playlist });
-                      console.log(`💾 Saved ${update.name}'s playlist (${update.playlist.length} songs)`);
-                    } catch (err) {
-                      saveErrors++;
-                      console.error(`❌ Failed to save ${update.name}'s playlist:`, err.message);
-                    }
-                  }
-                  if (saveErrors > 0) {
-                    console.error(`❌ ${saveErrors} playlist save(s) failed — check connection`);
-                  }
-                  if (playlistUpdates.length > 0) {
-                    queryClient.invalidateQueries({ queryKey: ['dancers'] });
-                  }
+                  // Rule 2 (locked spec May 21): Set edits are EPHEMERAL — dragging songs
+                  // into or removing from an active set is scoped to THIS set instance only.
+                  // We do NOT write to the dancer's permanent playlist here. On her next
+                  // flip-to-bottom, the system regenerates her set from her unchanged
+                  // playlist (Rule 1), so manual edits naturally evaporate after she
+                  // performs. Playlist edits happen ONLY in the roster UI (DancerRoster).
+                  // Fixes "She performs 3-song edited set, next cycle STILL has 3 songs
+                  // not back to system default of 2" bug live-observed on 002 May 21.
+                  // The ephemeral apply to rotationSongs / djSavedSongsRef happens below
+                  // (still gated by overrideSet so the on-stage / upcoming-songs Option A
+                  // behavior the DJ expects continues to work).
                   if (tracks.length > 0) {
                     const updatedSongs = { ...(rotationSongsRef.current || {}) };
                     for (const [dancerId, songNames] of Object.entries(playlists)) {
@@ -5023,49 +5115,54 @@ export default function DJBooth() {
                   songsPerSetRef.current = n;
                   if (!isRotationActive) return;
 
-                  // SHRINK case — just slice, synchronous
-                  const trimmed = { ...rotationSongsRef.current };
-                  let trimmedAny = false;
-                  rotation.forEach(dancerId => {
-                    const existing = trimmed[dancerId] || [];
-                    if (existing.length > n) {
-                      trimmed[dancerId] = existing.slice(0, n);
-                      trimmedAny = true;
-                    }
-                  });
-                  if (trimmedAny) {
-                    setRotationSongs(trimmed);
-                    rotationSongsRef.current = trimmed;
-                  }
+                  // Rule 5 (locked spec May 21): System songs-per-set knob change applies
+                  // INSTANTLY — all queued dancers re-roll right that second. User explicitly
+                  // confirmed they're aware this changes what the DJ is currently looking at
+                  // and that is deliberate. The currently-playing track is held in
+                  // currentTrackRef / AudioEngine (separate from rotationSongs), so wiping
+                  // rotationSongs does NOT interrupt audio — it just changes the upcoming queue.
+                  const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
+                  const _rerollVer = ++rotationAssignmentVersionRef.current;
+                  const wiped = {};
+                  rotationSongsRef.current = wiped;
+                  setRotationSongs(wiped);
+                  // Also drop djSavedSongsRef entries so old DJ-saved picks don't bypass
+                  // the new fresh selection (Rule 5: re-roll means re-roll, not "use stale").
+                  djSavedSongsRef.current = {};
+                  console.log(`🔄 songsPerSet → ${n}: re-rolling all ${rotation.length} queued dancer set(s) (Rule 5, ver=${_rerollVer})`);
+                  logDiag?.('songs_per_set_reroll_all', { newCount: n, dancers: rotation.length, ver: _rerollVer });
 
-                  // GROW case — use getDancerTracks per-dancer so the playlist rule is honored
-                  // (server-side selectTracksForSet: dancer with playlist gets ONLY playlist songs).
-                  const dancersNeedingMore = rotation.filter(dancerId => {
-                    const existing = rotationSongsRef.current[dancerId] || [];
-                    return existing.length < n;
-                  });
-                  for (const dancerId of dancersNeedingMore) {
+                  const batchExcludes = [];
+                  // Re-pick for the current performer first so her NEXT song is ready fastest,
+                  // then everyone else in rotation order.
+                  const orderedIds = [...rotation];
+                  if (currentPerformerId != null) {
+                    const ci = orderedIds.indexOf(currentPerformerId);
+                    if (ci > 0) { orderedIds.splice(ci, 1); orderedIds.unshift(currentPerformerId); }
+                  }
+                  for (const dancerId of orderedIds) {
+                    // Bail the whole loop if another rotation mutation (newer reroll, flip, etc.)
+                    // has happened — late results from THIS loop would clobber a newer queue.
+                    if (_rerollVer !== rotationAssignmentVersionRef.current) {
+                      console.log(`🚫 songsPerSet re-roll stale (ver ${_rerollVer} ≠ ${rotationAssignmentVersionRef.current}) — aborting remaining picks`);
+                      return;
+                    }
                     const dancer = dancers.find(d => d.id === dancerId);
                     if (!dancer) continue;
-                    const existing = rotationSongsRef.current[dancerId] || [];
-                    const needed = n - existing.length;
-                    if (needed <= 0) continue;
                     try {
-                      // getDancerTracks signature: (dancer, additionalExcludes=[], skipAssigned=false, timeoutMs=5000)
-                      // It uses songsPerSetRef.current (= n, set above) as count, and enforces the
-                      // playlist-only rule for dancers with playlists. Pass existing track names so
-                      // the server doesn't duplicate, then append only the `needed` count.
-                      const existingNames = existing.map(t => t?.name).filter(Boolean);
-                      const newTracks = await getDancerTracks(dancer, existingNames, false, 5000);
+                      const newTracks = await getDancerTracks(dancer, batchExcludes, false, 5000);
+                      if (_rerollVer !== rotationAssignmentVersionRef.current) {
+                        console.log(`🚫 songsPerSet re-roll stale after await (ver ${_rerollVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding ${dancer.name} result`);
+                        return;
+                      }
                       if (newTracks && newTracks.length > 0) {
-                        const toAdd = newTracks.slice(0, needed);
-                        const updated = { ...rotationSongsRef.current };
-                        updated[dancerId] = [...(updated[dancerId] || []), ...toAdd];
-                        setRotationSongs(updated);
+                        const updated = { ...rotationSongsRef.current, [dancerId]: newTracks };
                         rotationSongsRef.current = updated;
+                        setRotationSongs(updated);
+                        newTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
                       }
                     } catch (err) {
-                      console.warn(`⚠️ songsPerSet grow live: ${dancer.name} failed: ${err.message}`);
+                      console.warn(`⚠️ songsPerSet re-roll: ${dancer.name} failed: ${err.message}`);
                     }
                   }
                 }}
@@ -5097,6 +5194,8 @@ export default function DJBooth() {
                 <DancerRoster
                   dancers={dancers}
                   rotation={rotation}
+                  currentDancerIndex={currentDancerIndex}
+                  isRotationActive={isRotationActive}
                   onAddToRotation={addToRotation}
                   onRemoveFromRotation={removeFromRotation}
                   onPullAll={pullAllFromRotation}

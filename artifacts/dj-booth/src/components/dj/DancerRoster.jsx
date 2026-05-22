@@ -58,7 +58,9 @@ export default function DancerRoster({
   pendingVipState = {},
   onSendToVip,
   onReleaseFromVip,
-  onResetVoiceovers
+  onResetVoiceovers,
+  currentDancerIndex = -1,
+  isRotationActive = false
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [pullAllConfirmOpen, setPullAllConfirmOpen] = useState(false);
@@ -418,6 +420,7 @@ export default function DancerRoster({
           {sortedDancers.map((dancer) => {
             const firstChar = (dancer.name?.charAt(0) || '').toUpperCase();
             const isLetterAnchor = firstIdByLetter.get(firstChar) === dancer.id;
+            const isOnStage = isRotationActive && currentDancerIndex >= 0 && rotation[currentDancerIndex] === dancer.id;
             return (
             <div
               key={dancer.id}
@@ -474,7 +477,7 @@ export default function DancerRoster({
                 </Button>
               )}
 
-              {vipPickerDancerId === dancer.id ? (
+              {!isOnStage && (vipPickerDancerId === dancer.id ? (
                 <div className="w-full mb-2">
                   <p className="text-[10px] text-yellow-400 text-center mb-1">VIP timeout duration:</p>
                   <div className="grid grid-cols-4 gap-1 mb-1">
@@ -523,7 +526,7 @@ export default function DancerRoster({
                 >
                   <span>👑</span> VIP Timeout
                 </button>
-              )}
+              ))}
 
               <div className="flex items-center gap-1">
                 <Button
