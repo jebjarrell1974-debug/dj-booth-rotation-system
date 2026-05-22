@@ -4411,7 +4411,7 @@ export default function DJBooth() {
                 </div>
               </div>
             ) : (
-              <div className="bg-[#0d0d1f] rounded-lg border border-[#1e293b] p-2 min-w-0 flex-1">
+              <div className="bg-[#0d0d1f] rounded-lg border border-[#1e293b] p-2 min-w-0 flex-1 relative">
                 <div className="flex items-center gap-3 mb-2">
                   {currentDancer && (
                     <div 
@@ -4502,7 +4502,7 @@ export default function DJBooth() {
                   </div>
                 </div>
                 
-                <div ref={timeDisplayRef} className="mt-2 text-7xl font-bold text-[#00d4ff] text-center tabular-nums leading-none" style={{ display: 'none' }} />
+                <div ref={timeDisplayRef} className="absolute inset-0 flex items-center justify-center text-7xl font-bold text-[#00d4ff] tabular-nums leading-none pointer-events-none" style={{ display: 'none' }} />
               </div>
             )}
           </div>
