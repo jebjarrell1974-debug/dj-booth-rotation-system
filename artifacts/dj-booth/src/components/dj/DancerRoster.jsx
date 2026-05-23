@@ -275,30 +275,9 @@ export default function DancerRoster({
               <DialogTitle>Add New Entertainer</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-4">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewIsFeature(false)}
-                  className={`py-2 rounded-md text-sm font-medium transition-colors border ${
-                    !newIsFeature
-                      ? 'bg-[#00d4ff] text-black border-[#00d4ff]'
-                      : 'bg-[#0d0d1f] text-gray-400 border-[#1e293b] hover:border-[#2e2e4a]'
-                  }`}
-                >
-                  Dancer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewIsFeature(true)}
-                  className={`py-2 rounded-md text-sm font-medium transition-colors border ${
-                    newIsFeature
-                      ? 'bg-purple-600 text-white border-purple-500'
-                      : 'bg-[#0d0d1f] text-gray-400 border-[#1e293b] hover:border-[#2e2e4a]'
-                  }`}
-                >
-                  🌟 Feature
-                </button>
-              </div>
+              <p className="text-xs text-gray-500">
+                Feature entertainers are managed in the new <span className="text-purple-300 font-semibold">Feature</span> tab on the left.
+              </p>
               <Input
                 value={newDancerName}
                 onChange={(e) => setNewDancerName(e.target.value)}

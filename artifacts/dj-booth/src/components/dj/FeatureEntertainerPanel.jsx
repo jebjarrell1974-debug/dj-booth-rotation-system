@@ -1,0 +1,486 @@
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Star, Trash2, Play, Square, Loader2, Save, Sparkles, Folder, Music } from 'lucide-react';
+
+function authHeaders() {
+  const token = localStorage.getItem('djbooth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function getElevenLabsConfig() {
+  try {
+    const apiKey = localStorage.getItem('elevenLabsApiKey') || '';
+    const voiceId = localStorage.getItem('elevenLabsVoiceId') || '';
+    return { apiKey, voiceId };
+  } catch {
+    return { apiKey: '', voiceId: '' };
+  }
+}
+
+async function elevenLabsTTS(script) {
+  const { apiKey, voiceId } = getElevenLabsConfig();
+  if (!apiKey || !voiceId) throw new Error('ElevenLabs API key / voice ID not configured in Options');
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      text: script,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.4, similarity_boost: 0.75, style: 0.6, use_speaker_boost: true },
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`ElevenLabs ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  const buf = await res.arrayBuffer();
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function buildDefaultIntroScript(d) {
+  const name = d?.name || 'our feature entertainer';
+  const titles = (d?.feature_titles || '').trim();
+  const awards = (d?.feature_awards || '').trim();
+  const websites = (d?.feature_websites || '').trim();
+  const notes = (d?.feature_notes || '').trim();
+  const lines = [`Ladies and gentlemen, the moment you've been waiting for!`];
+  lines.push(`Please welcome to the stage, the one, the only — ${name}!`);
+  if (titles) lines.push(titles);
+  if (awards) lines.push(awards);
+  if (notes) lines.push(notes);
+  if (websites) lines.push(`Find her at ${websites}.`);
+  lines.push(`Show her some love — make some noise for ${name}!`);
+  return lines.join(' ');
+}
+
+function buildDefaultOutroScript(d) {
+  const name = d?.name || 'our feature entertainer';
+  const websites = (d?.feature_websites || '').trim();
+  const lines = [`Make some noise one more time for the incredible ${name}!`];
+  lines.push(`What a performance — give it up!`);
+  if (websites) lines.push(`Follow her at ${websites}.`);
+  lines.push(`Tip your entertainers, tip your bartenders, and stay right here — we're just getting started!`);
+  return lines.join(' ');
+}
+
+export default function FeatureEntertainerPanel({ dancers, onRefreshDancers }) {
+  const features = useMemo(
+    () => (dancers || []).filter(d => d.entertainer_type === 'feature').sort((a, b) => a.name.localeCompare(b.name)),
+    [dancers]
+  );
+
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = features.find(d => d.id === selectedId) || null;
+
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [editAwards, setEditAwards] = useState('');
+  const [editTitles, setEditTitles] = useState('');
+  const [editWebsites, setEditWebsites] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [savingMeta, setSavingMeta] = useState(false);
+
+  const [introScript, setIntroScript] = useState('');
+  const [outroScript, setOutroScript] = useState('');
+  const [beds, setBeds] = useState([]);
+  const [introBed, setIntroBed] = useState('');
+  const [outroBed, setOutroBed] = useState('');
+  const [producingIntro, setProducingIntro] = useState(false);
+  const [producingOutro, setProducingOutro] = useState(false);
+  const [introExists, setIntroExists] = useState(false);
+  const [outroExists, setOutroExists] = useState(false);
+
+  const [folders, setFolders] = useState([]);
+  const [folderTracks, setFolderTracks] = useState([]);
+  const [pickedFolder, setPickedFolder] = useState('');
+  const [loadingShow, setLoadingShow] = useState(false);
+
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/features/beds', { headers: authHeaders() })
+      .then(r => r.json()).then(d => setBeds(d.beds || [])).catch(() => setBeds([]));
+    fetch('/api/features/music-folders', { headers: authHeaders() })
+      .then(r => r.json()).then(d => setFolders(d.folders || [])).catch(() => setFolders([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selected) {
+      setEditAwards(''); setEditTitles(''); setEditWebsites(''); setEditNotes('');
+      setIntroScript(''); setOutroScript('');
+      setIntroExists(false); setOutroExists(false);
+      setPickedFolder(''); setFolderTracks([]);
+      return;
+    }
+    setEditAwards(selected.feature_awards || '');
+    setEditTitles(selected.feature_titles || '');
+    setEditWebsites(selected.feature_websites || '');
+    setEditNotes(selected.feature_notes || '');
+    setPickedFolder(selected.feature_music_folder || '');
+    fetch(`/api/features/${selected.id}/status`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => {
+        setIntroExists(!!d.intro?.exists);
+        setOutroExists(!!d.outro?.exists);
+        setIntroScript(d.intro?.script || buildDefaultIntroScript(selected));
+        setOutroScript(d.outro?.script || buildDefaultOutroScript(selected));
+      })
+      .catch(() => {
+        setIntroScript(buildDefaultIntroScript(selected));
+        setOutroScript(buildDefaultOutroScript(selected));
+      });
+    if (selected.feature_music_folder) {
+      fetch(`/api/features/folder-tracks/${encodeURIComponent(selected.feature_music_folder)}`, { headers: authHeaders() })
+        .then(r => r.json()).then(d => setFolderTracks(d.tracks || [])).catch(() => setFolderTracks([]));
+    } else {
+      setFolderTracks([]);
+    }
+  }, [selectedId, selected?.feature_awards, selected?.feature_titles, selected?.feature_websites, selected?.feature_notes, selected?.feature_music_folder]);
+
+  const createFeature = useCallback(async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const res = await fetch('/api/dancers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          name,
+          color: '#a855f7',
+          entertainer_type: 'feature',
+          feature_awards: '', feature_titles: '', feature_websites: '', feature_notes: '',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Create failed (${res.status})`);
+      }
+      const created = await res.json();
+      setNewName('');
+      if (onRefreshDancers) await onRefreshDancers();
+      setSelectedId(created.id);
+    } catch (e) {
+      alert(`Couldn't create feature: ${e.message}`);
+    } finally {
+      setCreating(false);
+    }
+  }, [newName, onRefreshDancers]);
+
+  const deleteFeature = useCallback(async (id) => {
+    if (!confirm('Delete this feature entertainer? Her produced intro/outro audio will be wiped too.')) return;
+    try {
+      await fetch(`/api/dancers/${id}`, { method: 'DELETE', headers: authHeaders() });
+      if (onRefreshDancers) await onRefreshDancers();
+      if (selectedId === id) setSelectedId(null);
+    } catch (e) {
+      alert(`Delete failed: ${e.message}`);
+    }
+  }, [selectedId, onRefreshDancers]);
+
+  const saveMeta = useCallback(async () => {
+    if (!selected) return;
+    setSavingMeta(true);
+    try {
+      const res = await fetch(`/api/dancers/${selected.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          feature_awards: editAwards,
+          feature_titles: editTitles,
+          feature_websites: editWebsites,
+          feature_notes: editNotes,
+        }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      if (onRefreshDancers) await onRefreshDancers();
+    } catch (e) {
+      alert(`Save failed: ${e.message}`);
+    } finally {
+      setSavingMeta(false);
+    }
+  }, [selected, editAwards, editTitles, editWebsites, editNotes, onRefreshDancers]);
+
+  const produce = useCallback(async (mode) => {
+    if (!selected) return;
+    const script = (mode === 'intro' ? introScript : outroScript).trim();
+    if (!script) { alert(`${mode} script is empty`); return; }
+    const setBusy = mode === 'intro' ? setProducingIntro : setProducingOutro;
+    setBusy(true);
+    try {
+      const audio_base64 = await elevenLabsTTS(script);
+      const res = await fetch(`/api/features/${selected.id}/produce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          type: mode,
+          script,
+          audio_base64,
+          bed_file_name: (mode === 'intro' ? introBed : outroBed) || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Produce failed (${res.status})`);
+      if (mode === 'intro') setIntroExists(true); else setOutroExists(true);
+      alert(`${mode === 'intro' ? 'Intro' : 'Outro'} produced! Bed used: ${data.bed_used}`);
+    } catch (e) {
+      alert(`${mode} produce failed: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [selected, introScript, outroScript, introBed, outroBed]);
+
+  const previewAudio = useCallback((mode) => {
+    if (!selected) return;
+    if (playing === mode) {
+      audioRef.current?.pause();
+      setPlaying(null);
+      return;
+    }
+    audioRef.current?.pause();
+    const url = `/api/features/${selected.id}/audio/${mode}?t=${Date.now()}`;
+    const a = new Audio(url);
+    a.onended = () => setPlaying(null);
+    a.onerror = () => { setPlaying(null); alert(`Couldn't load ${mode} audio — produce it first?`); };
+    a.play().catch(e => { setPlaying(null); alert(`Play failed: ${e.message}`); });
+    audioRef.current = a;
+    setPlaying(mode);
+  }, [selected, playing]);
+
+  const loadShow = useCallback(async () => {
+    if (!selected || !pickedFolder) return;
+    setLoadingShow(true);
+    try {
+      const res = await fetch(`/api/dancers/${selected.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ feature_music_folder: pickedFolder }),
+      });
+      if (!res.ok) throw new Error(`Load failed (${res.status})`);
+      const t = await fetch(`/api/features/folder-tracks/${encodeURIComponent(pickedFolder)}`, { headers: authHeaders() });
+      const d = await t.json();
+      setFolderTracks(d.tracks || []);
+      if (onRefreshDancers) await onRefreshDancers();
+      alert(`Loaded show "${pickedFolder}" — ${d.tracks?.length || 0} track(s) for ${selected.name}.`);
+    } catch (e) {
+      alert(`Load show failed: ${e.message}`);
+    } finally {
+      setLoadingShow(false);
+    }
+  }, [selected, pickedFolder, onRefreshDancers]);
+
+  return (
+    <div className="h-full flex flex-col gap-4 text-white">
+      <div className="flex items-center gap-2">
+        <Sparkles className="w-5 h-5 text-purple-400" />
+        <h2 className="text-lg font-semibold">Feature Entertainers</h2>
+      </div>
+
+      <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
+        {/* LEFT: list + add */}
+        <div className="col-span-3 flex flex-col gap-3 bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-3 min-h-0">
+          <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Add Feature</div>
+          <div className="flex gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Feature name..."
+              className="bg-[#08081a] border-[#1e293b] text-white"
+              onKeyDown={(e) => { if (e.key === 'Enter') createFeature(); }}
+            />
+            <Button
+              onClick={createFeature}
+              disabled={creating || !newName.trim()}
+              className="bg-purple-500 hover:bg-purple-600 text-white"
+            >
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+            </Button>
+          </div>
+          <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold mt-2">Roster</div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="flex flex-col gap-1">
+              {features.length === 0 && (
+                <div className="text-gray-500 text-sm italic p-2">No features yet. Add one above.</div>
+              )}
+              {features.map(d => (
+                <div
+                  key={d.id}
+                  onClick={() => setSelectedId(d.id)}
+                  className={`flex items-center justify-between gap-2 p-2 rounded cursor-pointer ${
+                    selectedId === d.id ? 'bg-purple-500/20 border border-purple-500/40' : 'hover:bg-[#151528]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Star className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                    <span className="truncate">{d.name}</span>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteFeature(d.id); }}
+                    className="text-gray-500 hover:text-red-400 flex-shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* RIGHT: details / producer / show */}
+        <div className="col-span-9 flex flex-col gap-3 min-h-0 overflow-auto pr-1">
+          {!selected ? (
+            <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-6 text-center text-gray-500">
+              Pick a feature on the left, or add a new one to get started.
+            </div>
+          ) : (
+            <>
+              {/* META */}
+              <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-3 flex flex-col gap-2">
+                <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
+                  Info for {selected.name}'s intros
+                </div>
+                <textarea
+                  value={editTitles}
+                  onChange={(e) => setEditTitles(e.target.value)}
+                  placeholder="Titles (e.g. Miss Exotic World 2025)"
+                  className="bg-[#08081a] border border-[#1e293b] rounded p-2 text-sm min-h-[40px] resize-y"
+                />
+                <textarea
+                  value={editAwards}
+                  onChange={(e) => setEditAwards(e.target.value)}
+                  placeholder="Awards (e.g. Three-time winner of...)"
+                  className="bg-[#08081a] border border-[#1e293b] rounded p-2 text-sm min-h-[40px] resize-y"
+                />
+                <textarea
+                  value={editWebsites}
+                  onChange={(e) => setEditWebsites(e.target.value)}
+                  placeholder="Websites / socials (e.g. @hername on Insta)"
+                  className="bg-[#08081a] border border-[#1e293b] rounded p-2 text-sm min-h-[40px] resize-y"
+                />
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Notes / one-liner (any extra detail to weave into the intro)"
+                  className="bg-[#08081a] border border-[#1e293b] rounded p-2 text-sm min-h-[40px] resize-y"
+                />
+                <Button onClick={saveMeta} disabled={savingMeta} className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black self-end">
+                  {savingMeta ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4 mr-1" /> Save Info</>}
+                </Button>
+              </div>
+
+              {/* PRODUCER */}
+              <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-3 flex flex-col gap-3">
+                <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
+                  Intro / Outro Producer (voice + music bed)
+                </div>
+                {beds.length === 0 && (
+                  <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded p-2">
+                    No bed files found. Drop short loops into <code className="text-amber-300">music/feature-beds/</code> on the unit.
+                  </div>
+                )}
+
+                {/* INTRO */}
+                <div className="border border-[#1e293b] rounded p-2 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-purple-300">Intro {introExists && <span className="text-xs text-emerald-400 ml-2">✓ produced</span>}</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setIntroScript(buildDefaultIntroScript(selected))} className="text-xs text-gray-400 hover:text-white">Reset template</Button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={introScript}
+                    onChange={(e) => setIntroScript(e.target.value)}
+                    placeholder="Intro script — what the announcer says..."
+                    className="bg-[#08081a] border border-[#1e293b] rounded p-2 text-sm min-h-[80px] resize-y"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <select value={introBed} onChange={(e) => setIntroBed(e.target.value)} className="bg-[#08081a] border border-[#1e293b] rounded p-1 text-xs">
+                      <option value="">Random bed</option>
+                      {beds.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                    </select>
+                    <Button onClick={() => produce('intro')} disabled={producingIntro || beds.length === 0} className="bg-purple-500 hover:bg-purple-600 text-white">
+                      {producingIntro ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Producing...</> : (introExists ? 'Re-create Intro' : 'Create Intro')}
+                    </Button>
+                    <Button onClick={() => previewAudio('intro')} disabled={!introExists} variant="outline" className="border-[#1e293b]">
+                      {playing === 'intro' ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  <div className="text-xs text-gray-500">Bed lead-in, voice with bed ducked, hard cut on end (no fade — her first song hits clean).</div>
+                </div>
+
+                {/* OUTRO */}
+                <div className="border border-[#1e293b] rounded p-2 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-purple-300">Outro {outroExists && <span className="text-xs text-emerald-400 ml-2">✓ produced</span>}</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setOutroScript(buildDefaultOutroScript(selected))} className="text-xs text-gray-400 hover:text-white">Reset template</Button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={outroScript}
+                    onChange={(e) => setOutroScript(e.target.value)}
+                    placeholder="Outro script — what the announcer says when she finishes..."
+                    className="bg-[#08081a] border border-[#1e293b] rounded p-2 text-sm min-h-[80px] resize-y"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <select value={outroBed} onChange={(e) => setOutroBed(e.target.value)} className="bg-[#08081a] border border-[#1e293b] rounded p-1 text-xs">
+                      <option value="">Random bed</option>
+                      {beds.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                    </select>
+                    <Button onClick={() => produce('outro')} disabled={producingOutro || beds.length === 0} className="bg-purple-500 hover:bg-purple-600 text-white">
+                      {producingOutro ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Producing...</> : (outroExists ? 'Re-create Outro' : 'Create Outro')}
+                    </Button>
+                    <Button onClick={() => previewAudio('outro')} disabled={!outroExists} variant="outline" className="border-[#1e293b]">
+                      {playing === 'outro' ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  <div className="text-xs text-gray-500">Bed lead-in, voice with bed ducked, gradual fade out at the end.</div>
+                </div>
+              </div>
+
+              {/* SHOW */}
+              <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-3 flex flex-col gap-2">
+                <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Music Show</div>
+                <div className="flex gap-2 items-center">
+                  <Folder className="w-4 h-4 text-gray-400" />
+                  <select value={pickedFolder} onChange={(e) => setPickedFolder(e.target.value)} className="bg-[#08081a] border border-[#1e293b] rounded p-1 text-sm flex-1">
+                    <option value="">— Pick a folder —</option>
+                    {folders.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                  <Button onClick={loadShow} disabled={loadingShow || !pickedFolder} className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black">
+                    {loadingShow ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Load'}
+                  </Button>
+                </div>
+                {selected.feature_music_folder && (
+                  <div className="text-xs text-emerald-300">
+                    Current show: <strong>{selected.feature_music_folder}</strong> ({folderTracks.length} track{folderTracks.length === 1 ? '' : 's'})
+                  </div>
+                )}
+                {folderTracks.length > 0 && (
+                  <div className="text-xs text-gray-400 max-h-32 overflow-auto border border-[#1e293b] rounded p-2">
+                    {folderTracks.map(t => (
+                      <div key={t} className="flex items-center gap-1 truncate">
+                        <Music className="w-3 h-3 flex-shrink-0" /> {t}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="text-xs text-gray-500">When she's promoted, her set will be the tracks in this folder played in order (usually one long file).</div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

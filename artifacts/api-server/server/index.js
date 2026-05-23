@@ -36,6 +36,7 @@ import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversTo
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos, runFfmpeg, getAudioDuration } from './promo-mixer.js';
+import { listFeatureBeds, listMusicFolders, listFolderTracks, produceFeatureAudio, featureCacheKey, ensureFeatureBedsFolder } from './feature-producer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
 
@@ -824,6 +825,87 @@ app.post('/api/voiceovers/mix-promo/:cacheKey', authenticate, requireDJ, (req, r
   const voiceover = getVoiceover(cacheKey);
   processPromo(cacheKey, voiceoverPath, voiceover?.dancer_name || cacheKey).catch(() => {});
   res.json({ ok: true, status: 'processing' });
+});
+
+// ============================================================
+// Feature Entertainer producer (intro/outro mixed with bed music)
+// ============================================================
+app.get('/api/features/beds', authenticate, requireDJ, (req, res) => {
+  try {
+    ensureFeatureBedsFolder(MUSIC_PATH);
+    const beds = listFeatureBeds(MUSIC_PATH).map(b => ({ name: b.name }));
+    res.json({ beds, folder: MUSIC_PATH ? 'feature-beds' : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/features/music-folders', authenticate, requireDJ, (req, res) => {
+  try {
+    const folders = listMusicFolders(MUSIC_PATH);
+    res.json({ folders });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/features/folder-tracks/:folder', authenticate, requireDJ, (req, res) => {
+  try {
+    const tracks = listFolderTracks(MUSIC_PATH, req.params.folder);
+    res.json({ tracks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/features/:dancerId/produce', authenticate, requireDJ, async (req, res) => {
+  const { dancerId } = req.params;
+  const { type, script, audio_base64, bed_file_name } = req.body || {};
+  if (type !== 'intro' && type !== 'outro') return res.status(400).json({ error: 'type must be intro or outro' });
+  if (!audio_base64) return res.status(400).json({ error: 'audio_base64 required (ElevenLabs voice mp3)' });
+  try {
+    const voiceBuffer = Buffer.from(audio_base64, 'base64');
+    const { mixedBuffer, bedUsed } = await produceFeatureAudio({
+      musicPath: MUSIC_PATH,
+      voiceBuffer,
+      mode: type,
+      bedFileName: bed_file_name || null,
+    });
+    const cacheKey = featureCacheKey(dancerId, type);
+    const saveResult = saveVoiceover(cacheKey, mixedBuffer, script || null, `feature_${type}_produced`, String(dancerId), 3, null, null);
+    if (isR2Configured() && saveResult?.fileName) {
+      const voPath = getVoiceoverFilePath(cacheKey);
+      if (voPath) uploadVoiceover(cacheKey, voPath, null).catch(() => {});
+    }
+    res.json({ ok: true, cache_key: cacheKey, bed_used: bedUsed });
+  } catch (err) {
+    console.error('Feature produce failed:', err.message);
+    trackError('feature_produce_failed', err.message, { component: 'feature-producer', extra: { dancerId, type } });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/features/:dancerId/audio/:type', authenticate, (req, res) => {
+  const { dancerId, type } = req.params;
+  if (type !== 'intro' && type !== 'outro') return res.status(400).json({ error: 'type must be intro or outro' });
+  const cacheKey = featureCacheKey(dancerId, type);
+  const filePath = getVoiceoverFilePath(cacheKey);
+  if (!filePath) return res.status(404).json({ error: 'Not produced yet' });
+  res.set('Content-Type', 'audio/mpeg');
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(filePath);
+});
+
+app.get('/api/features/:dancerId/status', authenticate, requireDJ, (req, res) => {
+  const { dancerId } = req.params;
+  const introKey = featureCacheKey(dancerId, 'intro');
+  const outroKey = featureCacheKey(dancerId, 'outro');
+  const introVO = getVoiceover(introKey);
+  const outroVO = getVoiceover(outroKey);
+  res.json({
+    intro: { exists: !!introVO, script: introVO?.script || null, cache_key: introKey },
+    outro: { exists: !!outroVO, script: outroVO?.script || null, cache_key: outroKey },
+  });
 });
 
 app.post('/api/voiceovers/stitch-chunks', authenticate, requireDJ, async (req, res) => {

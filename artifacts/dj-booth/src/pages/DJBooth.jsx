@@ -28,7 +28,8 @@ import {
   SlidersHorizontal,
   HelpCircle,
   Ban,
-  Drum
+  Drum,
+  Star
 } from 'lucide-react';
 import AudioEngine from '@/components/dj/AudioEngine';
 import MusicLibrary from '@/components/dj/MusicLibrary';
@@ -44,6 +45,7 @@ import ManualAnnouncementPlayer from '@/components/dj/ManualAnnouncementPlayer';
 import RemoteView from '@/components/dj/RemoteView';
 import DJOptions from '@/components/dj/DJOptions';
 import CustomSoundboard from '@/components/dj/CustomSoundboard';
+import FeatureEntertainerPanel from '@/components/dj/FeatureEntertainerPanel';
 
 const DEFAULT_SONGS_PER_SET = 2;
 
@@ -4620,6 +4622,7 @@ export default function DJBooth() {
             { id: 'options',       icon: SlidersHorizontal,label: 'Options',   always: true  },
             { id: 'announcements', icon: Mic,              label: 'Announce',  kiosk: true   },
             { id: 'sfx',           icon: Drum,             label: 'SFX',       kiosk: true   },
+            { id: 'feature',       icon: Star,             label: 'Feature',   always: true  },
           ].filter(t => t.always || (!remoteMode && t.kiosk)).map(({ id, icon: Icon, label }) => (
             <button
               key={id}
@@ -5326,6 +5329,18 @@ export default function DJBooth() {
 
                 {/* Custom Sounds */}
                 <CustomSoundboard volume={volume} sfxBoost={sfxBoost} />
+              </div>
+            )}
+
+            {activeTab === 'feature' && (
+              <div className="h-full overflow-y-auto">
+                <FeatureEntertainerPanel
+                  dancers={dancers}
+                  onRefreshDancers={async () => {
+                    await queryClient.invalidateQueries({ queryKey: ['dancers'] });
+                    await queryClient.refetchQueries({ queryKey: ['dancers'] });
+                  }}
+                />
               </div>
             )}
           </div>
