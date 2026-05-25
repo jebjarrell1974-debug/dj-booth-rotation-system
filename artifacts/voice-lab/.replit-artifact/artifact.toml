@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/voice-lab/"
+title = "ElevenLabs Voice Lab"
+version = "1.0.0"
+id = "artifacts/voice-lab"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/voice-lab/" ]
+localPort = 21474
+
+[services.development]
+run = "pnpm --filter @workspace/voice-lab run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/voice-lab", "run", "build" ]
+publicDir = "artifacts/voice-lab/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21474"
+BASE_PATH = "/voice-lab/"
