@@ -785,6 +785,82 @@ echo "udev rules installed: 95-djbooth-monitor-hotplug + 96-djbooth-touch-map (s
 
 fi # end IS_HOMEBASE display skip
 
+# ── Openbox session install (lightweight WM replacing GNOME for kiosk) ───────
+# Goal: drop gnome-shell out of the X session entirely. It is the source of
+# every "frozen mouse + touch" incident (stuck input grabs from workspace-switch
+# gestures, dispatcher races, etc). Openbox is a minimal stacking WM that does
+# nothing except draw windows — no gestures, no overview, no compositor effects.
+#
+# GNOME stays INSTALLED on every unit. We only change the DEFAULT GDM session.
+# Rollback in 30s from SSH:  bash ~/djbooth-rollback-to-gnome.sh && sudo reboot
+#
+# Files installed:
+#   /usr/share/xsessions/openbox.desktop  (provided by apt package — required for GDM to offer the session)
+#   ~/.config/openbox/autostart           (our launcher: display config, touch map, kiosk, crowd display, watcher)
+#   ~/.config/openbox/rc.xml              (minimal openbox config — no keybindings, no menu, decor=no for all windows)
+#   ~/djbooth-rollback-to-gnome.sh        (one-command rollback)
+#   ~/djbooth-rollback-to-openbox.sh      (re-apply openbox after a rollback)
+#   /var/lib/AccountsService/users/<user> (default session = openbox)
+if [ "$IS_HOMEBASE" != "true" ]; then
+  echo "[openbox] Installing openbox session as kiosk WM (GNOME stays as fallback)..."
+
+  # Install openbox apt package (provides /usr/share/xsessions/openbox.desktop)
+  if ! dpkg -l openbox 2>/dev/null | grep -q '^ii'; then
+    sudo apt-get install -y openbox 2>&1 | tail -3
+  fi
+
+  # Verify GDM will see the session — fail loudly if the xsession desktop file is missing
+  if [ ! -f /usr/share/xsessions/openbox.desktop ]; then
+    echo "[openbox] WARNING: /usr/share/xsessions/openbox.desktop missing after apt install — GDM will not offer openbox. Skipping session switch."
+  else
+    OB_USER=$(whoami)
+    OB_HOME="/home/$OB_USER"
+
+    mkdir -p "$OB_HOME/.config/openbox"
+
+    # Install autostart from bundle
+    OB_AUTOSTART_SRC="$APP_DIR/public/public/openbox-autostart.sh"
+    if [ -f "$OB_AUTOSTART_SRC" ]; then
+      cp "$OB_AUTOSTART_SRC" "$OB_HOME/.config/openbox/autostart"
+      chmod +x "$OB_HOME/.config/openbox/autostart"
+      echo "[openbox] Autostart installed at ~/.config/openbox/autostart"
+    else
+      echo "[openbox] WARNING: openbox-autostart.sh not found in bundle — skipping autostart install"
+    fi
+
+    # Install rc.xml from bundle
+    OB_RCXML_SRC="$APP_DIR/public/public/openbox-rc.xml"
+    if [ -f "$OB_RCXML_SRC" ]; then
+      cp "$OB_RCXML_SRC" "$OB_HOME/.config/openbox/rc.xml"
+      echo "[openbox] rc.xml installed at ~/.config/openbox/rc.xml"
+    else
+      echo "[openbox] WARNING: openbox-rc.xml not found in bundle — skipping rc.xml install"
+    fi
+
+    # Install rollback scripts in $HOME for easy SSH access
+    for RB in djbooth-rollback-to-gnome.sh djbooth-rollback-to-openbox.sh; do
+      if [ -f "$APP_DIR/public/public/$RB" ]; then
+        cp "$APP_DIR/public/public/$RB" "$OB_HOME/$RB"
+        chmod +x "$OB_HOME/$RB"
+        echo "[openbox] Rollback script installed: ~/$RB"
+      fi
+    done
+
+    # Flip default GDM session to openbox.
+    # AccountsService is the post-GDM-3.x mechanism; ~/.dmrc is no longer read.
+    sudo mkdir -p /var/lib/AccountsService/users
+    sudo tee "/var/lib/AccountsService/users/$OB_USER" > /dev/null << OBACCTEOF
+[User]
+Session=openbox
+XSession=openbox
+SystemAccount=false
+OBACCTEOF
+    echo "[openbox] Default GDM session for $OB_USER = openbox (rollback: bash ~/djbooth-rollback-to-gnome.sh)"
+  fi
+else
+  echo "[openbox] Homebase — skipping openbox install (no kiosk display)"
+fi
+
 echo "[boot-update] Setting up boot-time auto-update (service + cron backup)..."
 if [ "$IS_HOMEBASE" != "true" ]; then
   BOOT_USER=$(whoami)

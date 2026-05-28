@@ -319,6 +319,38 @@ else
   echo "WARNING: $TOUCH_MAP_SRC not found — run ~/djbooth-update.sh after setup to install touch mapping"
 fi
 
+echo "[9.5/12] Installing openbox session (kiosk WM, GNOME stays as fallback)..."
+# Openbox replaces gnome-shell in the X session — eliminates frozen-input bugs
+# from gnome-shell's input grabs / workspace-switch gestures. GNOME stays
+# installed; switch back via ~/djbooth-rollback-to-gnome.sh.
+sudo apt-get install -y openbox 2>&1 | tail -3
+if [ -f /usr/share/xsessions/openbox.desktop ]; then
+  mkdir -p "$UNIT_HOME/.config/openbox"
+  if [ -f "$APP_DIR/public/public/openbox-autostart.sh" ]; then
+    cp "$APP_DIR/public/public/openbox-autostart.sh" "$UNIT_HOME/.config/openbox/autostart"
+    chmod +x "$UNIT_HOME/.config/openbox/autostart"
+  fi
+  if [ -f "$APP_DIR/public/public/openbox-rc.xml" ]; then
+    cp "$APP_DIR/public/public/openbox-rc.xml" "$UNIT_HOME/.config/openbox/rc.xml"
+  fi
+  for RB in djbooth-rollback-to-gnome.sh djbooth-rollback-to-openbox.sh; do
+    if [ -f "$APP_DIR/public/public/$RB" ]; then
+      cp "$APP_DIR/public/public/$RB" "$UNIT_HOME/$RB"
+      chmod +x "$UNIT_HOME/$RB"
+    fi
+  done
+  sudo mkdir -p /var/lib/AccountsService/users
+  sudo tee "/var/lib/AccountsService/users/$UNIT_USER" > /dev/null << OBACCTEOF
+[User]
+Session=openbox
+XSession=openbox
+SystemAccount=false
+OBACCTEOF
+  echo "Openbox session installed and set as default (GNOME stays as fallback)"
+else
+  echo "WARNING: openbox xsession file not found after install — GDM will not offer openbox"
+fi
+
 echo "[10/12] Setting up passwordless sudo..."
 NOPASSWD_FILE="/etc/sudoers.d/010_${UNIT_USER}-nopasswd"
 if [ ! -f "$NOPASSWD_FILE" ]; then
