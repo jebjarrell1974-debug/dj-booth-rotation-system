@@ -427,7 +427,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
               stability: voiceSettings.stability,
               similarity_boost: voiceSettings.similarity_boost,
               style: voiceSettings.style,
-              speed: voiceSettings.speed,
+              // ElevenLabs rejects speed outside [0.7, 1.2] with a 400; clamp defensively
+              // so an out-of-range VOICE_SETTINGS value can never break generation again.
+              speed: Math.max(0.7, Math.min(1.2, voiceSettings.speed ?? 1.0)),
               use_speaker_boost: voiceSettings.use_speaker_boost !== false,
             }
           }),
