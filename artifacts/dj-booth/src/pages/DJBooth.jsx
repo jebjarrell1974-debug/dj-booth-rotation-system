@@ -195,6 +195,8 @@ export default function DJBooth() {
   const lastAudioActivityRef = useRef(Date.now());
   const playbackExpectedRef = useRef(false);
   const watchdogRecoveringRef = useRef(false);
+  const ctxSuspendCountRef = useRef(0);
+  const watchdogFailCountRef = useRef(0);
   const diagLogRef = useRef([]);
   const prePickHitsRef = useRef(0);
   const prePickMissesRef = useRef(0);
@@ -3916,7 +3918,39 @@ export default function DJBooth() {
     if (remoteMode) return;
     const WATCHDOG_INTERVAL = 3000;
     const SILENCE_THRESHOLD = 5000;
-    
+    const CTX_SUSPEND_RELOAD_COUNT = 4;   // ~12s of stuck-suspended audio context
+    const WATCHDOG_FAIL_RELOAD_COUNT = 3; // track-swap recovery failed this many cycles
+    const SELFHEAL_RELOAD_COOLDOWN_MS = 120000;
+
+    // Last-resort self-heal: when audio is wedged and the track-swap recovery
+    // below cannot restore sound — Chromium suspended the Web Audio context
+    // (the May 28 2026 "002 silent, server healthy" failure), GPU process death,
+    // or USB-audio re-enumeration — reload the kiosk to rebuild audio from
+    // scratch. Loop-guarded via sessionStorage so a unit that can't recover
+    // (e.g. server down) won't reload-storm. After reload the DJ must log back
+    // in and tap Start (token persists in localStorage; rotation does not
+    // auto-resume because everStarted resets to false on mount).
+    const selfHealReload = (reason, detail = {}) => {
+      let last = 0;
+      try { last = Number(sessionStorage.getItem('djbooth_selfheal_reload_at') || 0); } catch {}
+      if (Date.now() - last < SELFHEAL_RELOAD_COOLDOWN_MS) {
+        console.error('🩺 SELF-HEAL: would reload (' + reason + ') but reloaded <2min ago — skipping to avoid loop');
+        return;
+      }
+      console.error('🩺 SELF-HEAL: reloading kiosk to recover audio — reason=' + reason, detail);
+      try { logDiag('selfheal_reload', { reason, ...detail }); } catch {}
+      try {
+        const token = localStorage.getItem('djbooth_token');
+        fetch('/api/playback-errors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ trackName: currentTrackRef.current, dancerName: null, reason: 'selfheal_reload_' + reason })
+        }).catch(() => {});
+      } catch {}
+      try { sessionStorage.setItem('djbooth_selfheal_reload_at', String(Date.now())); } catch {}
+      setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
+    };
+
     const watchdogCheck = async () => {
       if (!playbackExpectedRef.current) return;
       // Don't fire dead-air alerts when no dancers are on rotation. The
@@ -3929,6 +3963,25 @@ export default function DJBooth() {
       if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
       if (initialLoadGraceRef.current) return;
+
+      // Self-heal tier-0: detect a hard-suspended Web Audio context. Nudge
+      // resume each tick; if it stays suspended across several checks despite
+      // resume() (the May 28 2026 002 silent-booth failure), reload the kiosk.
+      {
+        const ctx = audioContextRef.current;
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+          ctxSuspendCountRef.current += 1;
+          if (ctxSuspendCountRef.current >= CTX_SUSPEND_RELOAD_COUNT) {
+            const suspendTicks = ctxSuspendCountRef.current;
+            ctxSuspendCountRef.current = 0;
+            selfHealReload('ctx_suspended', { suspendTicks });
+            return;
+          }
+        } else {
+          ctxSuspendCountRef.current = 0;
+        }
+      }
       
       const silentFor = Date.now() - lastAudioActivityRef.current;
       if (silentFor < SILENCE_THRESHOLD) return;
@@ -4097,6 +4150,14 @@ export default function DJBooth() {
           console.error('🐕 WATCHDOG: ALL recovery attempts failed — trying resume as last resort');
           try { audioEngineRef.current?.resume(); } catch(e) {}
           lastAudioActivityRef.current = Date.now();
+          watchdogFailCountRef.current += 1;
+          if (watchdogFailCountRef.current >= WATCHDOG_FAIL_RELOAD_COUNT) {
+            const failCycles = watchdogFailCountRef.current;
+            watchdogFailCountRef.current = 0;
+            selfHealReload('recovery_failed', { failCycles });
+          }
+        } else {
+          watchdogFailCountRef.current = 0;
         }
       } catch (err) {
         console.error('🐕 WATCHDOG: Recovery error:', err);
@@ -4859,7 +4920,9 @@ export default function DJBooth() {
                     for (const name of displayedSongs) {
                       let track = tracks.find(t => t.name === name);
                       if (!track) track = await resolveTrackByName(name);
+                      // Never drop: keep name-only so it resolves at playtime (see onSaveAll).
                       if (track) resolved.push(track);
+                      else if (name) resolved.push({ name, path: name });
                     }
                     if (resolved.length > 0) {
                       const updated = { ...rotationSongsRef.current, [dancerId]: resolved };
@@ -4927,7 +4990,14 @@ export default function DJBooth() {
                         if (!track) {
                           track = await resolveTrackByName(name);
                         }
+                        // NEVER drop the DJ's pick. If it can't be matched right now,
+                        // keep it as a name-only entry so it resolves at playtime
+                        // (handleTrackEnd resolves name-only tracks just before playing,
+                        // and dancerSongCount counts it). Dropping it here silently
+                        // shortened the set, so the DJ's chosen song never played and the
+                        // dancer could be cut early to the next set.
                         if (track) resolved.push(track);
+                        else if (name) resolved.push({ name, path: name });
                       }
                       updatedSongs[dancerId] = resolved;
                       if (resolved.length > 0) {
