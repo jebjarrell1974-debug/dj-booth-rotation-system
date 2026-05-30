@@ -347,7 +347,7 @@ export default function Configuration() {
                 stability: voiceSettings.stability,
                 similarity_boost: voiceSettings.similarity_boost,
                 style: voiceSettings.style,
-                speed: voiceSettings.speed,
+                speed: Math.max(0.7, Math.min(1.2, voiceSettings.speed ?? 1.0)),
               }
             })
           });
