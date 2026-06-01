@@ -1153,6 +1153,18 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   else
     echo ""
     echo "WARNING: Service failed to start. Rolling back..."
+    # CRITICAL DATA-LOSS FIX: the backup above intentionally SKIPS
+    # music/voiceovers/node_modules (far too large to copy). The previous rollback
+    # did `rm -rf "$APP_DIR"` then restored that backup — which DELETED the live
+    # music (25k songs), voiceovers, and node_modules, since they were never in the
+    # backup. That wiped the entire music library on every failed update and forced
+    # a full R2 re-download. Carry those three across the swap so a failed update
+    # can NEVER destroy them again.
+    for _keep in music voiceovers node_modules; do
+      if [ -e "$APP_DIR/$_keep" ] && [ ! -e "$BACKUP_DIR/$_keep" ]; then
+        mv "$APP_DIR/$_keep" "$BACKUP_DIR/$_keep" 2>/dev/null || true
+      fi
+    done
     rm -rf "$APP_DIR"
     mv "$BACKUP_DIR" "$APP_DIR"
     sudo systemctl restart "$SERVICE_NAME"
