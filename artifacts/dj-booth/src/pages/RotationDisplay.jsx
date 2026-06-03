@@ -300,8 +300,8 @@ export default function RotationDisplay() {
           </>
         ) : (
           <>
-            <p className="stage-label font-bold tracking-widest uppercase mb-2" style={{ ...LABEL_STYLE, fontSize: '5vw' }}>
-              Currently On Stage
+            <p className="stage-label font-bold tracking-widest uppercase mb-2" style={{ ...LABEL_STYLE, fontSize: '5vw', ...(currentDancer?.entertainer_type === 'feature' ? { color: '#d8b4fe', textShadow: '0 0 24px rgba(168,85,247,0.7)' } : {}) }}>
+              {currentDancer?.entertainer_type === 'feature' ? 'Feature Show' : 'Currently On Stage'}
             </p>
             <FitName
               key={currentDancerId}
@@ -340,21 +340,26 @@ export default function RotationDisplay() {
                   animation: shouldScroll ? `scrollList ${scrollDuration}s linear infinite` : 'none',
                 }}
               >
-                {listItems.map((dancer, i) => (
+                {listItems.map((dancer, i) => {
+                  const isFeature = dancer.entertainer_type === 'feature';
+                  return (
                   <div key={`${dancer.id}-${i}`} style={{ textAlign: 'center', width: '100%' }}>
                     <h3
-                      className="next-name font-bold text-white uppercase"
+                      className="next-name font-bold uppercase"
                       style={{
                         fontSize: `${NEXT_LIST_FONT_VW}vw`,
                         lineHeight: 1.15,
                         letterSpacing: '0.05em',
                         whiteSpace: 'nowrap',
+                        color: isFeature ? '#d8b4fe' : '#fff',
+                        textShadow: isFeature ? '0 0 18px rgba(168,85,247,0.7)' : 'none',
                       }}
                     >
-                      {dancer.name}
+                      {isFeature ? `★ FEATURE — ${dancer.name}` : dancer.name}
                     </h3>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );

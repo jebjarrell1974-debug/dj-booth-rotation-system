@@ -72,7 +72,17 @@ function buildDefaultOutroScript(d) {
   return lines.join(' ');
 }
 
-export default function FeatureEntertainerPanel({ dancers, onRefreshDancers }) {
+export default function FeatureEntertainerPanel({
+  dancers,
+  onRefreshDancers,
+  rotation = [],
+  currentDancerIndex = 0,
+  songsPerSet = 0,
+  breakSongsPerSet = 0,
+  placedFeatures = {},
+  onPlaceFeature,
+  onCancelFeature,
+}) {
   const features = useMemo(
     () => (dancers || []).filter(d => d.entertainer_type === 'feature').sort((a, b) => a.name.localeCompare(b.name)),
     [dancers]
@@ -106,6 +116,8 @@ export default function FeatureEntertainerPanel({ dancers, onRefreshDancers }) {
 
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(null);
+
+  const [selectedSet, setSelectedSet] = useState('');
 
   useEffect(() => {
     fetch('/api/features/beds', { headers: authHeaders() })
@@ -146,6 +158,19 @@ export default function FeatureEntertainerPanel({ dancers, onRefreshDancers }) {
       setFolderTracks([]);
     }
   }, [selectedId, selected?.feature_awards, selected?.feature_titles, selected?.feature_websites, selected?.feature_notes, selected?.feature_music_folder]);
+
+  // Default the set selection: keep an already-placed set, else auto-pick when she
+  // only has one, else force the DJ to choose.
+  useEffect(() => {
+    const placed = selectedId ? (placedFeatures?.[selectedId] || null) : null;
+    if (placed?.chosenSetName && folderTracks.includes(placed.chosenSetName)) {
+      setSelectedSet(placed.chosenSetName);
+    } else if (folderTracks.length === 1) {
+      setSelectedSet(folderTracks[0]);
+    } else {
+      setSelectedSet('');
+    }
+  }, [selectedId, folderTracks, placedFeatures]);
 
   const createFeature = useCallback(async () => {
     const name = newName.trim();
@@ -278,6 +303,30 @@ export default function FeatureEntertainerPanel({ dancers, onRefreshDancers }) {
       setLoadingShow(false);
     }
   }, [selected, pickedFolder, onRefreshDancers]);
+
+  const placement = selected ? (placedFeatures?.[selected.id] || null) : null;
+
+  const slotOptions = useMemo(() => {
+    if (!selected) return [];
+    const rotWithout = (rotation || []).filter(id => id !== selected.id);
+    const n = rotWithout.length;
+    if (n === 0) return [];
+    // Match the booth's CIRCULAR play order: walk from the current dancer forward,
+    // wrapping to the front. pos is 1-based (1 = next on stage).
+    const curId = (rotation || [])[currentDancerIndex] ?? null;
+    let baseIdx = curId != null ? rotWithout.indexOf(curId) : -1;
+    if (baseIdx === -1) baseIdx = Math.min(currentDancerIndex || 0, n - 1);
+    const setMin = (Number(songsPerSet) || 0) * 3.5 + (Number(breakSongsPerSet) || 0) * 3.5;
+    const out = [{ label: 'Next on stage', pos: 1, minutes: Math.round(setMin * 0.5) }];
+    for (let k = 1; k <= n - 1; k++) {
+      const d = (dancers || []).find(x => x.id === rotWithout[(baseIdx + k) % n]);
+      if (!d) continue;
+      out.push({ label: `After ${d.name}`, pos: k + 1, minutes: Math.round(k * setMin + setMin * 0.5) });
+    }
+    return out;
+  }, [selected, rotation, currentDancerIndex, songsPerSet, breakSongsPerSet, dancers]);
+
+  const fmtMin = (m) => (m >= 60 ? `~${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `~${m} min`);
 
   return (
     <div className="h-full flex flex-col gap-4 text-white">
@@ -467,15 +516,80 @@ export default function FeatureEntertainerPanel({ dancers, onRefreshDancers }) {
                   </div>
                 )}
                 {folderTracks.length > 0 && (
-                  <div className="text-xs text-gray-400 max-h-32 overflow-auto border border-[#1e293b] rounded p-2">
-                    {folderTracks.map(t => (
-                      <div key={t} className="flex items-center gap-1 truncate">
-                        <Music className="w-3 h-3 flex-shrink-0" /> {t}
-                      </div>
-                    ))}
+                  <>
+                    <div className="text-xs text-gray-400">Pick the set for her next show:</div>
+                    <div className="text-xs max-h-32 overflow-auto border border-[#1e293b] rounded p-2 flex flex-col gap-1">
+                      {folderTracks.map(t => (
+                        <label
+                          key={t}
+                          className={`flex items-center gap-2 truncate cursor-pointer rounded px-1 py-0.5 ${
+                            selectedSet === t ? 'bg-purple-500/20 text-purple-200' : 'text-gray-400 hover:bg-[#151528]'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="feature-set"
+                            checked={selectedSet === t}
+                            onChange={() => setSelectedSet(t)}
+                            className="accent-purple-500 flex-shrink-0"
+                          />
+                          <Music className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{t}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="text-xs text-gray-500">Each file is one complete set. Pick the one she'll perform, then place her in the line-up below.</div>
+              </div>
+
+              {/* SHOWTIME — place her in the upcoming line-up */}
+              <div className="bg-[#0a0a1a] border border-[#1e293b] rounded-lg p-3 flex flex-col gap-2">
+                <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Showtime — Place {selected.name}</div>
+                {placement && (
+                  <div className="flex items-center justify-between gap-2 bg-purple-500/10 border border-purple-500/30 rounded p-2">
+                    <div className="text-sm text-purple-200 min-w-0">
+                      In the line-up{placement.chosenSetName ? <> — set <strong className="break-all">{placement.chosenSetName}</strong></> : null}. She'll auto-leave after her set.
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => onCancelFeature && onCancelFeature(selected.id)}
+                      className="bg-red-500/80 hover:bg-red-600 text-white flex-shrink-0"
+                    >
+                      Cancel
+                    </Button>
                   </div>
                 )}
-                <div className="text-xs text-gray-500">When she's promoted, her set will be the tracks in this folder played in order (usually one long file).</div>
+                {folderTracks.length === 0 ? (
+                  <div className="text-xs text-amber-400">Load a music folder above first — that's where her sets come from.</div>
+                ) : (
+                  <>
+                    {!selectedSet && <div className="text-xs text-amber-400">Pick which set plays (above) to enable placement.</div>}
+                    {!introExists && <div className="text-xs text-amber-400/80">Heads up: no intro produced yet — she'll get a generated one.</div>}
+                    {!outroExists && <div className="text-xs text-amber-400/80">Heads up: no outro produced yet — she'll get a generated one.</div>}
+                    <div className="text-xs text-gray-400">{placement ? 'Move her to a different spot:' : 'Drop her into the upcoming line-up:'}</div>
+                    <div className="flex flex-col gap-1 max-h-48 overflow-auto">
+                      {slotOptions.length === 0 && (
+                        <div className="text-xs text-gray-500 italic">Start a rotation first, then place her into it.</div>
+                      )}
+                      {slotOptions.map(s => (
+                        <div key={s.pos} className="flex items-center justify-between gap-2 border border-[#1e293b] rounded p-2">
+                          <div className="text-sm truncate">
+                            {s.label} <span className="text-gray-500">({fmtMin(s.minutes)})</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            disabled={!selectedSet || !onPlaceFeature}
+                            onClick={() => onPlaceFeature(selected.id, selectedSet, s.pos, { introExists, outroExists })}
+                            className="bg-purple-500 hover:bg-purple-600 text-white flex-shrink-0"
+                          >
+                            {placement ? 'Move here' : 'Place here'}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-gray-500">Intro plays, the chosen set runs start-to-finish, then her outro — and she auto-leaves the rotation. Times are rough estimates.</div>
+                  </>
+                )}
               </div>
             </>
           )}

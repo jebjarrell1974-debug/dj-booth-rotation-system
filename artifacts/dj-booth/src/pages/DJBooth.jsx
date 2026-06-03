@@ -168,6 +168,14 @@ export default function DJBooth() {
   const currentDancerIndexRef = useRef(0);
   const currentSongNumberRef = useRef(1);
   const rotationSongsRef = useRef(rotationSongs);
+  // Feature Entertainer placements. Source of truth for "which armed set + produced
+  // audio belongs to a feature placed into the upcoming rotation". Keyed by dancer id:
+  //   { [featureId]: { chosenSetName, introExists, outroExists } }
+  // A feature lives in rotationRef like any dancer once placed, but her show details
+  // live here (NOT in rotationSongs) so normal re-pick/cooldown logic can't clobber them.
+  // She is auto-removed from both on show completion.
+  const placedFeaturesRef = useRef({});
+  const [placedFeatures, setPlacedFeatures] = useState({});
   // Monotonic version token guarding async rotationSongs writes (Rule 1 flip-to-bottom
   // re-pick + Rule 5 instant re-roll). Bumped at the START of any operation that wipes
   // or replaces queue state; async callbacks capture the version at dispatch and only
@@ -2070,6 +2078,154 @@ export default function DJBooth() {
   }, [activeStage, rotation, updateStageMutation, queryClient]);
   updateStageStateRef.current = updateStageState;
 
+  // ── Feature Entertainer show ──────────────────────────────────────────────
+  // Produced intro/outro live behind an authenticated endpoint, so the audio
+  // engine can't fetch them directly. Pull the file with the booth token, wrap
+  // it as an object URL, and feed it through the normal prefetched-announcement
+  // path (the same blob-URL shape the dynamic announcements already use).
+  const fetchFeatureAudioUrl = useCallback(async (featureId, type) => {
+    try {
+      const token = localStorage.getItem('djbooth_token');
+      const res = await fetch(`/api/features/${featureId}/audio/${type}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    } catch (err) {
+      console.warn(`⚠️ Feature ${type} fetch failed:`, err.message);
+      return null;
+    }
+  }, []);
+
+  // A feature show = produced INTRO (over ducked music) → her ONE chosen set file
+  // played start-to-finish. Genre 'FEATURE' forces the full-length (3600s) cap so a
+  // 20-minute set is never cut. Returns the set track actually started. The OUTRO
+  // and auto-removal are handled by the departure path in handleTrackEnd/handleSkip.
+  const playFeatureArrival = useCallback(async (featureDancer) => {
+    const placed = placedFeaturesRef.current[featureDancer.id] || null;
+    let setTrack = null;
+    if (placed?.chosenSetName) {
+      setTrack = await resolveTrackByName(placed.chosenSetName);
+    }
+    if (!setTrack?.url) {
+      // Backward-compat: unplaced feature (added straight into rotation) → her folder/playlist.
+      const fb = await getDancerTracks(featureDancer);
+      setTrack = fb?.[0] || null;
+    }
+
+    if (announcementsEnabled) {
+      audioEngineRef.current?.duck();
+      await waitForDuck();
+      let introUrl = await fetchFeatureAudioUrl(featureDancer.id, 'intro');
+      if (!introUrl) {
+        const fm = getFeatureMeta(featureDancer);
+        introUrl = await prefetchAnnouncement('feature_intro', featureDancer.name, null, 1, fm);
+      }
+      if (introUrl) {
+        lastAudioActivityRef.current = Date.now();
+        await playPrefetchedAnnouncement(introUrl);
+      }
+    }
+
+    lastAudioActivityRef.current = Date.now();
+    if (setTrack?.url) {
+      console.log('🌟 FEATURE show set starting:', setTrack.name, '(full-length, no cut)');
+      const ok = await playTrack(setTrack.url, true, setTrack.name, 'FEATURE');
+      if (!ok) await playFallbackTrack(true);
+    } else {
+      console.warn('⚠️ FEATURE: no set track resolved — falling back');
+      await playFallbackTrack(true);
+    }
+    if (announcementsEnabled) audioEngineRef.current?.unduck();
+    return setTrack;
+  }, [announcementsEnabled, resolveTrackByName, getDancerTracks, getFeatureMeta, prefetchAnnouncement, playPrefetchedAnnouncement, playTrack, playFallbackTrack, fetchFeatureAudioUrl]);
+  const playFeatureArrivalRef = useRef(null);
+  playFeatureArrivalRef.current = playFeatureArrival;
+
+  // Clean a feature out of both the placement map and rotationSongs scratch.
+  const clearFeaturePlacement = useCallback((featureId) => {
+    if (placedFeaturesRef.current[featureId]) {
+      const next = { ...placedFeaturesRef.current };
+      delete next[featureId];
+      placedFeaturesRef.current = next;
+      setPlacedFeatures(next);
+    }
+    if (rotationSongsRef.current[featureId]) {
+      const songs = { ...rotationSongsRef.current };
+      delete songs[featureId];
+      rotationSongsRef.current = songs;
+      setRotationSongs(songs);
+    }
+  }, []);
+
+  // DJ ARMS a feature (chosen set + produced-audio flags) and PLACES her at a
+  // PLAY POSITION in the upcoming line-up (1 = next on stage). She becomes a
+  // one-time rotation entry; her show details live in placedFeaturesRef.
+  // Rotation is CIRCULAR — play order runs from the current dancer forward and
+  // wraps to index 0 — so we rebuild the array with the current dancer re-seated
+  // at index 0 and the rest following in true play order with the feature spliced
+  // in at the requested position. This keeps "Next on stage" correct even when the
+  // current dancer is not sitting at array index 0 (manual reorder / resume).
+  const placeFeatureAtSlot = useCallback(async (featureId, chosenSetName, playPos, audioFlags = {}) => {
+    const cur = rotationRef.current || [];
+    const curIdx = currentDancerIndexRef.current || 0;
+    const currentId = cur.length > 0 ? (cur[curIdx] ?? null) : null;
+    const withoutFeature = cur.filter(id => id !== featureId);
+    const n = withoutFeature.length;
+
+    // Upcoming play order = everyone EXCEPT the current dancer, starting right
+    // after her and wrapping around.
+    let baseIdx = currentId != null ? withoutFeature.indexOf(currentId) : -1;
+    if (baseIdx === -1) baseIdx = Math.min(curIdx, Math.max(0, n - 1));
+    const after = [];
+    for (let k = 1; k <= n - 1; k++) after.push(withoutFeature[(baseIdx + k) % n]);
+
+    // playPos is 1-based: 1 = next on stage. Clamp to [1 .. after.length + 1].
+    const pos = Math.max(1, Math.min(playPos, after.length + 1));
+    after.splice(pos - 1, 0, featureId);
+
+    // Re-seat the current dancer at index 0 so the stored array matches play order.
+    const next = currentId != null ? [currentId, ...after] : [...after];
+    const newIdx = 0;
+
+    const placement = { chosenSetName: chosenSetName || null, introExists: !!audioFlags.introExists, outroExists: !!audioFlags.outroExists };
+    const nextPlaced = { ...placedFeaturesRef.current, [featureId]: placement };
+    placedFeaturesRef.current = nextPlaced;
+    setPlacedFeatures(nextPlaced);
+
+    setRotation(next);
+    rotationRef.current = next;
+    setCurrentDancerIndex(newIdx);
+    currentDancerIndexRef.current = newIdx;
+    await updateStageStateRef.current?.(newIdx, next);
+    saveRotationRef.current?.(next);
+    fetch('/api/stage/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rotation_order: next, current_dancer_index: newIdx, is_active: true })
+    }).catch(() => {});
+    console.log(`🌟 Feature placed at play position ${pos}:`, chosenSetName);
+    return pos;
+  }, []);
+
+  const cancelFeaturePlacement = useCallback(async (featureId) => {
+    const cur = rotationRef.current || [];
+    const next = cur.filter(id => id !== featureId);
+    clearFeaturePlacement(featureId);
+    setRotation(next);
+    rotationRef.current = next;
+    await updateStageStateRef.current?.(currentDancerIndexRef.current || 0, next);
+    saveRotationRef.current?.(next);
+    fetch('/api/stage/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rotation_order: next, current_dancer_index: currentDancerIndexRef.current || 0, is_active: true })
+    }).catch(() => {});
+    console.log('🌟 Feature placement cancelled:', featureId);
+  }, [clearFeaturePlacement]);
+
   saveRotationRef.current = async (newRot) => {
     try {
       if (activeStage) {
@@ -2158,7 +2314,10 @@ export default function DJBooth() {
     
     const dancer = dnc.find(d => d.id === cleanRotation[0]);
     console.log('🎤 BeginRotation: First dancer:', dancer?.name);
-    if (dancer) {
+    if (dancer && getFeatureMeta(dancer)) {
+      console.log('🌟 BeginRotation: first dancer is FEATURE — running feature show');
+      await playFeatureArrivalRef.current(dancer);
+    } else if (dancer) {
       let dancerTracks = selectedSongs[cleanRotation[0]];
       console.log('🎵 BeginRotation: Selected tracks for', dancer.name, ':', dancerTracks?.map(t => t.name));
       let firstTrack = dancerTracks?.[0];
@@ -2752,18 +2911,19 @@ export default function DJBooth() {
           }
         }
       } else {
+        const _finishingFeature = dancer.entertainer_type === 'feature';
         const breakKey = `after-${rot[idx]}`;
         let breakSongs = interstitialSongsRef.current[breakKey] || [];
 
-        if (skipBreaks) {
-          // Hard skip — clear any queued break songs for this transition and fall through
-          // to the next-dancer path (intro + song 1, no break music).
+        if (skipBreaks || _finishingFeature) {
+          // Hard skip (or a finishing FEATURE) — clear any queued break songs for this
+          // transition and fall through to the next-dancer path (no break music).
           breakSongs = [];
           const cleared = { ...interstitialSongsRef.current };
           delete cleared[breakKey];
           interstitialSongsRef.current = cleared;
         }
-        if (!skipBreaks && breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+        if (!skipBreaks && !_finishingFeature && breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -2955,6 +3115,9 @@ export default function DJBooth() {
           const vipDancer = dnc.find(d => d.id === finishedDancerId);
           console.log('👑 HandleSkip: dancer going to VIP holding:', vipDancer?.name);
           toast(`${vipDancer?.name || 'Entertainer'} is now In VIP`, { icon: '👑' });
+        } else if (_finishingFeature) {
+          clearFeaturePlacement(finishedDancerId);
+          console.log('🌟 HandleSkip: FEATURE show complete — auto-removing', dancer.name);
         } else {
           newRotation.push(finishedDancerId);
         }
@@ -2979,7 +3142,11 @@ export default function DJBooth() {
         const _skipTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
 
-        const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
+        const outroPromise = !announcementsEnabled
+          ? Promise.resolve(null)
+          : _finishingFeature
+            ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
+            : prefetchAnnouncement('outro', dancer.name, null, 1);
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
@@ -3046,6 +3213,14 @@ export default function DJBooth() {
           await playPrefetchedAnnouncement(outroUrl);
         }
 
+        const _arrivalFeature = getFeatureMeta(nextDancer);
+        if (_arrivalFeature) {
+          console.log('🌟 HandleSkip: next dancer is FEATURE — running feature show');
+          nextTrack = await playFeatureArrivalRef.current(nextDancer);
+          lastAudioActivityRef.current = Date.now();
+          lastTransitionMsRef.current = Date.now() - _skipTransStart;
+          logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip', feature: true });
+        } else {
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
@@ -3078,10 +3253,7 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const _fm = getFeatureMeta(nextDancer);
-          const _introType = _fm ? 'feature_intro' : 'intro';
-          if (_fm) console.log('🌟 Natural flip: next dancer is FEATURE — using feature_intro');
-          const introPromise = prefetchAnnouncement(_introType, nextDancer.name, null, 1, _fm);
+          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3089,6 +3261,7 @@ export default function DJBooth() {
             await playPrefetchedAnnouncement(introUrl);
           }
           audioEngineRef.current?.unduck();
+        }
         }
 
         const finalRot = rotationRef.current;
@@ -3359,6 +3532,12 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
+        const _piFeature = getFeatureMeta(nextDancer);
+        if (_piFeature) {
+          console.log('🌟 Post-interstitial: next dancer is FEATURE — running feature show');
+          nextTrack = await playFeatureArrivalRef.current(nextDancer);
+          lastAudioActivityRef.current = Date.now();
+        } else {
         const commercialPlayed = await playCommercialIfDue();
         if (commercialPlayed) {
           transitionStartTimeRef.current = Date.now();
@@ -3375,15 +3554,13 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          const _fm = getFeatureMeta(nextDancer);
-          const _introType = _fm ? 'feature_intro' : 'intro';
-          if (_fm) console.log('🌟 Post-interstitial: next dancer is FEATURE — using feature_intro');
-          const announcementPromise = prefetchAnnouncement(_introType, nextDancer.name, null, 1, _fm);
+          const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           lastAudioActivityRef.current = Date.now();
           await playPrefetchedAnnouncement(announcementUrl);
           audioEngineRef.current?.unduck();
+        }
         }
 
         const liveRot = rotationRef.current;
@@ -3535,10 +3712,12 @@ export default function DJBooth() {
           }
         }
       } else {
+        const _finishingFeature = dancer.entertainer_type === 'feature';
         const breakKey = `after-${rot[idx]}`;
         let breakSongs = interstitialSongsRef.current[breakKey] || [];
+        if (_finishingFeature) breakSongs = [];
 
-        if (breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+        if (!_finishingFeature && breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -3740,6 +3919,9 @@ export default function DJBooth() {
           const vipDancer = dnc.find(d => d.id === finishedDancerId);
           console.log('👑 HandleTrackEnd: dancer going to VIP holding:', vipDancer?.name);
           toast(`${vipDancer?.name || 'Entertainer'} is now In VIP`, { icon: '👑' });
+        } else if (_finishingFeature) {
+          clearFeaturePlacement(finishedDancerId);
+          console.log('🌟 HandleTrackEnd: FEATURE show complete — auto-removing', dancer.name);
         } else {
           newRotation.push(finishedDancerId);
         }
@@ -3774,7 +3956,11 @@ export default function DJBooth() {
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
-        const outroPromise = announcementsEnabled ? prefetchAnnouncement('outro', dancer.name, null, 1) : Promise.resolve(null);
+        const outroPromise = !announcementsEnabled
+          ? Promise.resolve(null)
+          : _finishingFeature
+            ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
+            : prefetchAnnouncement('outro', dancer.name, null, 1);
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
@@ -3841,6 +4027,14 @@ export default function DJBooth() {
           await playPrefetchedAnnouncement(outroUrl);
         }
 
+        const _arrivalFeature = getFeatureMeta(nextDancer);
+        if (_arrivalFeature) {
+          console.log('🌟 HandleTrackEnd: next dancer is FEATURE — running feature show');
+          nextTrack = await playFeatureArrivalRef.current(nextDancer);
+          lastAudioActivityRef.current = Date.now();
+          lastTransitionMsRef.current = Date.now() - _teTransStart;
+          logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end', feature: true });
+        } else {
         lastAudioActivityRef.current = Date.now();
         if (nextTrack && nextTrack.url) {
           console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
@@ -3873,10 +4067,7 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const _fm = getFeatureMeta(nextDancer);
-          const _introType = _fm ? 'feature_intro' : 'intro';
-          if (_fm) console.log('🌟 Natural flip: next dancer is FEATURE — using feature_intro');
-          const introPromise = prefetchAnnouncement(_introType, nextDancer.name, null, 1, _fm);
+          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3884,6 +4075,7 @@ export default function DJBooth() {
             await playPrefetchedAnnouncement(introUrl);
           }
           audioEngineRef.current?.unduck();
+        }
         }
 
         const finalRot = rotationRef.current;
@@ -5406,6 +5598,13 @@ export default function DJBooth() {
               <div className="h-full overflow-y-auto">
                 <FeatureEntertainerPanel
                   dancers={dancers}
+                  rotation={rotation}
+                  currentDancerIndex={currentDancerIndex}
+                  songsPerSet={songsPerSet}
+                  breakSongsPerSet={breakSongsPerSet}
+                  placedFeatures={placedFeatures}
+                  onPlaceFeature={placeFeatureAtSlot}
+                  onCancelFeature={cancelFeaturePlacement}
                   onRefreshDancers={async () => {
                     await queryClient.invalidateQueries({ queryKey: ['dancers'] });
                     await queryClient.refetchQueries({ queryKey: ['dancers'] });
