@@ -138,7 +138,7 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-const CURRENT_VOICE_VERSION = 'V13';
+const CURRENT_VOICE_VERSION = 'V14';
 
 const hashPhonetic = (str) => {
   let h = 5381;
@@ -464,7 +464,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   // Feature entertainers use their own cache version namespace so their voiceovers stay
   // separate from regular dancer voiceovers and can be invalidated independently (bump
   // FEATURE_VOICE_VERSION when changing the feature_intro prompt).
-  const FEATURE_VOICE_VERSION = 'FEATURE_V1';
+  const FEATURE_VOICE_VERSION = 'FEATURE_V2';
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1, phonetic = null) => {
     const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';
