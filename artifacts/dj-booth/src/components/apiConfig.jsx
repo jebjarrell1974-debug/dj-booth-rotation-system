@@ -12,6 +12,11 @@ const STORAGE_KEYS = {
   clubSpecials: 'djbooth_club_specials',
 };
 
+// Lauren — the production voice. Baked into the app so it ships with every update
+// and can never be mistyped on a kiosk touchscreen. To change the voice later, edit
+// this one line and push an update — do NOT type voice IDs into the booth by hand.
+export const FORCED_VOICE_ID = 'DODLEQrClDo8wCz460ld';
+
 const DEFAULTS = {
   openaiApiKey: '',
   elevenLabsApiKey: '',
@@ -60,7 +65,7 @@ function readFromStorage() {
     ...local,
     openaiApiKey: local.openaiApiKey || sd.openaiApiKey || '',
     elevenLabsApiKey: local.elevenLabsApiKey || sd.elevenLabsApiKey || '',
-    elevenLabsVoiceId: local.elevenLabsVoiceId || sd.elevenLabsVoiceId || '',
+    elevenLabsVoiceId: FORCED_VOICE_ID,
     scriptModel: local.scriptModel || sd.scriptModel || 'gpt-4.1',
   };
 }

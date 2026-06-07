@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Star, Trash2, Play, Square, Loader2, Save, Sparkles, Folder, Music } from 'lucide-react';
+import { getApiConfig, FORCED_VOICE_ID } from '@/components/apiConfig';
 
 function authHeaders() {
   const token = localStorage.getItem('djbooth_token');
@@ -11,11 +12,10 @@ function authHeaders() {
 
 function getElevenLabsConfig() {
   try {
-    const apiKey = localStorage.getItem('elevenLabsApiKey') || '';
-    const voiceId = localStorage.getItem('elevenLabsVoiceId') || '';
-    return { apiKey, voiceId };
+    const cfg = getApiConfig();
+    return { apiKey: cfg.elevenLabsApiKey || '', voiceId: FORCED_VOICE_ID };
   } catch {
-    return { apiKey: '', voiceId: '' };
+    return { apiKey: '', voiceId: FORCED_VOICE_ID };
   }
 }
 

@@ -138,7 +138,7 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-const CURRENT_VOICE_VERSION = 'V14';
+const CURRENT_VOICE_VERSION = 'V15';
 
 const hashPhonetic = (str) => {
   let h = 5381;

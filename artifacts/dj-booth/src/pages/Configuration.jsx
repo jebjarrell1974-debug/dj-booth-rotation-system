@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import { toast } from 'sonner';
-import { getApiConfig, saveApiConfig, loadApiConfig } from '@/components/apiConfig';
+import { getApiConfig, saveApiConfig, loadApiConfig, FORCED_VOICE_ID } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 
 const LOCKED_LEVEL = 4;
@@ -28,7 +28,7 @@ export default function Configuration() {
   const [unlockError, setUnlockError] = useState('');
 
   const [elevenLabsKey, setElevenLabsKey] = useState('');
-  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState('21m00Tcm4TlvDq8ikWAM');
+  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(FORCED_VOICE_ID);
   const [openaiKey, setOpenaiKey] = useState('');
   const [announcementsEnabled, setAnnouncementsEnabled] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -81,7 +81,7 @@ export default function Configuration() {
   useEffect(() => {
     loadApiConfig().then(cfg => {
       setElevenLabsKey(cfg.elevenLabsApiKey);
-      setElevenLabsVoiceId(cfg.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM');
+      setElevenLabsVoiceId(FORCED_VOICE_ID);
       setOpenaiKey(cfg.openaiApiKey);
       setAnnouncementsEnabled(cfg.announcementsEnabled);
       setClubName(cfg.clubName || '');
@@ -903,12 +903,12 @@ export default function Configuration() {
                 <Label htmlFor="voiceid" className="text-gray-400">ElevenLabs Voice ID</Label>
                 <Input
                   id="voiceid"
-                  value={elevenLabsVoiceId}
-                  onChange={(e) => setElevenLabsVoiceId(e.target.value)}
-                  placeholder="21m00Tcm4TlvDq8ikWAM"
-                  className="bg-[#08081a] border-[#1e293b]"
+                  value={FORCED_VOICE_ID}
+                  readOnly
+                  disabled
+                  className="bg-[#08081a] border-[#1e293b] opacity-70 cursor-not-allowed"
                 />
-                <p className="text-xs text-gray-500">Find voice IDs in your ElevenLabs dashboard</p>
+                <p className="text-xs text-gray-500">Set automatically by the app update and locked so it can't be mistyped on the kiosk. To change the voice, contact support.</p>
               </div>
 
               <div className="space-y-2">

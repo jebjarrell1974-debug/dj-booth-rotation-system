@@ -535,13 +535,19 @@ app.post('/api/audit/event', authenticate, requireDJ, (req, res) => {
   res.json({ ok: true });
 });
 
+// Production voice (Lauren). Baked in so every unit gets it via update — never typed
+// on a kiosk. To change the voice, edit this one line and ship an update.
+const FORCED_VOICE_ID = 'DODLEQrClDo8wCz460ld';
+
 app.get('/api/config/defaults', (req, res) => {
   // Precedence is INTENTIONALLY different for secrets vs. user-chosen settings:
   //  - API keys (secrets): ENV/fleet is authoritative, so a fleet key rotation is
   //    never masked by a stale DB value; the stored DB value only fills a gap.
-  //  - Voice ID / script model (UI choices): the STORED (DB) value WINS; env is only
-  //    a seed for a fresh unit. This fixes the bug where a fleet-pushed
-  //    ELEVENLABS_VOICE_ID in .env made the Voice ID field un-editable (kept reverting).
+  //  - Script model (UI choice): the STORED (DB) value WINS; env is only a seed for
+  //    a fresh unit.
+  //  - Voice ID: NOT user-editable. It is baked into the app (FORCED_VOICE_ID) and
+  //    shipped via update, so it can never be mistyped on a kiosk or reverted by a
+  //    stale .env. Change it in code + push an update, never by typing on the booth.
   const defaults = {};
   let stored = {};
   try { stored = getClientSettings(); } catch {}
@@ -552,9 +558,9 @@ app.get('/api/config/defaults', (req, res) => {
   if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
   else if (stored.djbooth_elevenlabs_key) defaults.elevenLabsApiKey = stored.djbooth_elevenlabs_key;
 
-  // User choices — stored (UI) wins, env only seeds a fresh unit.
-  if (stored.djbooth_elevenlabs_voice_id) defaults.elevenLabsVoiceId = stored.djbooth_elevenlabs_voice_id;
-  else if (process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
+  // Voice ID — authoritative, baked into the app. A per-unit typo or stale .env
+  // can never override it.
+  defaults.elevenLabsVoiceId = FORCED_VOICE_ID;
   if (stored.djbooth_script_model) defaults.scriptModel = stored.djbooth_script_model;
   else if (process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
 
