@@ -1326,7 +1326,7 @@ export default function RotationPlaylistManager({
                             }`}
                           >
                             <div
-                              className={`px-2 py-2.5 border-b flex items-center gap-0.5 cursor-pointer transition-colors ${
+                              className={`px-2 py-2.5 border-b flex items-center gap-1.5 cursor-pointer transition-colors ${
                                 selectedDancerId === dancer.id
                                   ? 'border-[#00d4ff] bg-[#00d4ff]/10'
                                   : 'border-[#1e293b] hover:bg-[#1a1a35]'
@@ -1356,10 +1356,9 @@ export default function RotationPlaylistManager({
                                 </p>
                               </div>
                               {isRotationActive && index === currentDancerIndex && localRotation.length > 1 && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="w-10 h-10 text-orange-400 hover:text-orange-200 hover:bg-orange-900/30 flex-shrink-0"
+                                <button
+                                  type="button"
+                                  className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500 bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors"
                                   title="Skip to next dancer (ends her set, resets songs, she goes to bottom)"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1369,14 +1368,14 @@ export default function RotationPlaylistManager({
                                     onSkipCurrentDancer?.();
                                   }}
                                 >
-                                  <SkipForward className="w-5 h-5" />
-                                </Button>
+                                  <SkipForward className="w-4 h-4 flex-shrink-0" />
+                                  <span className="text-sm font-bold">Skip</span>
+                                </button>
                               )}
                               {isRotationActive && index !== currentDancerIndex && localRotation.length > 1 && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="w-10 h-10 text-yellow-500 hover:text-yellow-300 hover:bg-yellow-900/30 flex-shrink-0"
+                                <button
+                                  type="button"
+                                  className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-yellow-600 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 transition-colors"
                                   title="Skip to bottom of rotation"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1386,17 +1385,17 @@ export default function RotationPlaylistManager({
                                     onSkipDancer?.(dancer.id);
                                   }}
                                 >
-                                  <SkipForward className="w-5 h-5" />
-                                </Button>
+                                  <SkipForward className="w-4 h-4 flex-shrink-0" />
+                                  <span className="text-sm font-bold">Skip</span>
+                                </button>
                               )}
                               {isRotationActive && onMoveDancerToTop && index !== currentDancerIndex && localRotation.length > 2 && (() => {
                                 const nextIdx = (currentDancerIndex + 1) % localRotation.length;
                                 if (index === nextIdx) return null;
                                 return (
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="w-10 h-10 text-cyan-400 hover:text-cyan-200 hover:bg-cyan-900/30 flex-shrink-0"
+                                  <button
+                                    type="button"
+                                    className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
                                     title="TOP — move to next on stage (does not interrupt current dancer)"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1406,23 +1405,24 @@ export default function RotationPlaylistManager({
                                       onMoveDancerToTop(dancer.id);
                                     }}
                                   >
-                                    <ChevronsUp className="w-5 h-5" />
-                                  </Button>
+                                    <ChevronsUp className="w-4 h-4 flex-shrink-0" />
+                                    <span className="text-sm font-bold">Top</span>
+                                  </button>
                                 );
                               })()}
                               {isRotationActive && onSendToVip && !dancerVipMap[dancer.id] && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className={`w-10 h-10 flex-shrink-0 ${pendingVipMap[dancer.id] ? 'text-yellow-400 bg-yellow-900/30' : 'text-yellow-600 hover:text-yellow-400 hover:bg-yellow-900/30'}`}
+                                <button
+                                  type="button"
+                                  className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border transition-colors ${pendingVipMap[dancer.id] ? 'border-yellow-400 bg-yellow-400/30 text-yellow-300' : 'border-yellow-500 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'}`}
                                   title={pendingVipMap[dancer.id] ? 'VIP pending — will enter after this set' : 'Send to VIP after current set'}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setVipModalDancerId(dancer.id);
                                   }}
                                 >
-                                  <Crown className="w-5 h-5" />
-                                </Button>
+                                  <Crown className="w-4 h-4 flex-shrink-0" />
+                                  <span className="text-sm font-bold">VIP</span>
+                                </button>
                               )}
                               <Button
                                 size="icon"
