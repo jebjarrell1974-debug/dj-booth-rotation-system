@@ -536,33 +536,36 @@ app.post('/api/audit/event', authenticate, requireDJ, (req, res) => {
 });
 
 app.get('/api/config/defaults', (req, res) => {
-  // Stored client settings (set in the UI, persisted to the DB) take PRIORITY.
-  // Env vars are only a SEED/fallback for keys that have never been set in the UI.
-  // Previously env won, which made the ElevenLabs Voice ID field un-editable on units
-  // whose .env carried a fleet-pushed ELEVENLABS_VOICE_ID — the field kept reverting.
+  // Precedence is INTENTIONALLY different for secrets vs. user-chosen settings:
+  //  - API keys (secrets): ENV/fleet is authoritative, so a fleet key rotation is
+  //    never masked by a stale DB value; the stored DB value only fills a gap.
+  //  - Voice ID / script model (UI choices): the STORED (DB) value WINS; env is only
+  //    a seed for a fresh unit. This fixes the bug where a fleet-pushed
+  //    ELEVENLABS_VOICE_ID in .env made the Voice ID field un-editable (kept reverting).
   const defaults = {};
-  try {
-    const stored = getClientSettings();
-    const keyMap = {
-      djbooth_openai_key: 'openaiApiKey',
-      djbooth_elevenlabs_key: 'elevenLabsApiKey',
-      djbooth_elevenlabs_voice_id: 'elevenLabsVoiceId',
-      djbooth_script_model: 'scriptModel',
-      djbooth_club_name: 'clubName',
-      djbooth_club_open_hour: 'clubOpenHour',
-      djbooth_club_close_hour: 'clubCloseHour',
-      djbooth_energy_override: 'energyOverride',
-      djbooth_announcements_enabled: 'announcementsEnabled',
-      djbooth_club_specials: 'clubSpecials',
-    };
-    for (const [storageKey, configKey] of Object.entries(keyMap)) {
-      if (stored[storageKey]) defaults[configKey] = stored[storageKey];
-    }
-  } catch {}
-  if (!defaults.openaiApiKey && process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!defaults.elevenLabsApiKey && process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
-  if (!defaults.elevenLabsVoiceId && process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
-  if (!defaults.scriptModel && process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
+  let stored = {};
+  try { stored = getClientSettings(); } catch {}
+
+  // Secrets — env wins, stored only fills the gap.
+  if (process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
+  else if (stored.djbooth_openai_key) defaults.openaiApiKey = stored.djbooth_openai_key;
+  if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+  else if (stored.djbooth_elevenlabs_key) defaults.elevenLabsApiKey = stored.djbooth_elevenlabs_key;
+
+  // User choices — stored (UI) wins, env only seeds a fresh unit.
+  if (stored.djbooth_elevenlabs_voice_id) defaults.elevenLabsVoiceId = stored.djbooth_elevenlabs_voice_id;
+  else if (process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
+  if (stored.djbooth_script_model) defaults.scriptModel = stored.djbooth_script_model;
+  else if (process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
+
+  // UI-only fields (no env source).
+  if (stored.djbooth_club_name) defaults.clubName = stored.djbooth_club_name;
+  if (stored.djbooth_club_open_hour) defaults.clubOpenHour = stored.djbooth_club_open_hour;
+  if (stored.djbooth_club_close_hour) defaults.clubCloseHour = stored.djbooth_club_close_hour;
+  if (stored.djbooth_energy_override) defaults.energyOverride = stored.djbooth_energy_override;
+  if (stored.djbooth_announcements_enabled) defaults.announcementsEnabled = stored.djbooth_announcements_enabled;
+  if (stored.djbooth_club_specials) defaults.clubSpecials = stored.djbooth_club_specials;
+
   res.json(defaults);
 });
 
