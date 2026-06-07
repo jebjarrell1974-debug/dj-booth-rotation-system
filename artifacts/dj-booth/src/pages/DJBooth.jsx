@@ -2166,6 +2166,12 @@ export default function DJBooth() {
     const cur = rotationRef.current || [];
     const curIdx = currentDancerIndexRef.current || 0;
     const currentId = cur.length > 0 ? (cur[curIdx] ?? null) : null;
+    // Guard: once she's the on-stage dancer her show has started — moving her would
+    // double-add her to the line-up. Placement is locked until the set ends.
+    if (currentId === featureId) {
+      console.warn('🌟 placeFeatureAtSlot: feature is currently on stage — move ignored');
+      return null;
+    }
     const withoutFeature = cur.filter(id => id !== featureId);
     const n = withoutFeature.length;
 
@@ -2206,6 +2212,13 @@ export default function DJBooth() {
 
   const cancelFeaturePlacement = useCallback(async (featureId) => {
     const cur = rotationRef.current || [];
+    // Guard: don't yank a feature who is currently on stage — that would break the
+    // running set / outro transition. Cancel is only valid before her show starts.
+    const curId = cur[currentDancerIndexRef.current || 0] ?? null;
+    if (curId === featureId) {
+      console.warn('🌟 cancelFeaturePlacement: feature is on stage — cancel ignored');
+      return;
+    }
     const next = cur.filter(id => id !== featureId);
     clearFeaturePlacement(featureId);
     setRotation(next);

@@ -305,6 +305,10 @@ export default function FeatureEntertainerPanel({
   }, [selected, pickedFolder, onRefreshDancers]);
 
   const placement = selected ? (placedFeatures?.[selected.id] || null) : null;
+  // Once she's the on-stage dancer her show has started — placement is locked
+  // (moving would double-add her; cancelling would break the running set/outro).
+  const curId = (rotation || [])[currentDancerIndex] ?? null;
+  const isOnStage = !!selected && selected.id === curId;
 
   const slotOptions = useMemo(() => {
     if (!selected) return [];
@@ -548,18 +552,24 @@ export default function FeatureEntertainerPanel({
                 {placement && (
                   <div className="flex items-center justify-between gap-2 bg-purple-500/10 border border-purple-500/30 rounded p-2">
                     <div className="text-sm text-purple-200 min-w-0">
-                      In the line-up{placement.chosenSetName ? <> — set <strong className="break-all">{placement.chosenSetName}</strong></> : null}. She'll auto-leave after her set.
+                      {isOnStage
+                        ? <>On stage now — her show is running. She'll auto-leave when it ends.</>
+                        : <>In the line-up{placement.chosenSetName ? <> — set <strong className="break-all">{placement.chosenSetName}</strong></> : null}. She'll auto-leave after her set.</>}
                     </div>
-                    <Button
-                      size="sm"
-                      onClick={() => onCancelFeature && onCancelFeature(selected.id)}
-                      className="bg-red-500/80 hover:bg-red-600 text-white flex-shrink-0"
-                    >
-                      Cancel
-                    </Button>
+                    {!isOnStage && (
+                      <Button
+                        size="sm"
+                        onClick={() => onCancelFeature && onCancelFeature(selected.id)}
+                        className="bg-red-500/80 hover:bg-red-600 text-white flex-shrink-0"
+                      >
+                        Cancel
+                      </Button>
+                    )}
                   </div>
                 )}
-                {folderTracks.length === 0 ? (
+                {isOnStage ? (
+                  <div className="text-xs text-purple-300">Her show is live on stage right now — placement is locked until it ends.</div>
+                ) : folderTracks.length === 0 ? (
                   <div className="text-xs text-amber-400">Load a music folder above first — that's where her sets come from.</div>
                 ) : (
                   <>

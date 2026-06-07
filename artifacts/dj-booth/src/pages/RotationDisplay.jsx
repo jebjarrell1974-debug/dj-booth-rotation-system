@@ -344,6 +344,21 @@ export default function RotationDisplay() {
                   const isFeature = dancer.entertainer_type === 'feature';
                   return (
                   <div key={`${dancer.id}-${i}`} style={{ textAlign: 'center', width: '100%' }}>
+                    {isFeature && (
+                      <div
+                        className="font-bold uppercase"
+                        style={{
+                          fontSize: `${NEXT_LIST_FONT_VW * 0.42}vw`,
+                          lineHeight: 1.1,
+                          letterSpacing: '0.12em',
+                          whiteSpace: 'nowrap',
+                          color: '#d8b4fe',
+                          textShadow: '0 0 14px rgba(168,85,247,0.7)',
+                        }}
+                      >
+                        ★ FEATURE SHOW COMING UP ★
+                      </div>
+                    )}
                     <h3
                       className="next-name font-bold uppercase"
                       style={{
@@ -355,7 +370,7 @@ export default function RotationDisplay() {
                         textShadow: isFeature ? '0 0 18px rgba(168,85,247,0.7)' : 'none',
                       }}
                     >
-                      {isFeature ? `FEATURE SHOW COMING UP — ${dancer.name}` : dancer.name}
+                      {dancer.name}
                     </h3>
                   </div>
                   );
