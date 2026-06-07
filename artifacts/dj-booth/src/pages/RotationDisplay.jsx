@@ -355,7 +355,7 @@ export default function RotationDisplay() {
                         textShadow: isFeature ? '0 0 18px rgba(168,85,247,0.7)' : 'none',
                       }}
                     >
-                      {isFeature ? `★ FEATURE — ${dancer.name}` : dancer.name}
+                      {isFeature ? `FEATURE SHOW COMING UP — ${dancer.name}` : dancer.name}
                     </h3>
                   </div>
                   );
