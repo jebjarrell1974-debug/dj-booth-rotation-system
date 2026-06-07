@@ -531,14 +531,12 @@ export default function DJBooth() {
 
   useEffect(() => {
     if (!configLoaded) return;
-    saveApiConfig({
-      openaiApiKey: openaiKey,
-      elevenLabsApiKey: elevenLabsKey,
-      elevenLabsVoiceId: voiceId,
-      announcementsEnabled,
-      scriptModel,
-    });
-  }, [openaiKey, elevenLabsKey, voiceId, announcementsEnabled, scriptModel, configLoaded]);
+    // The booth view only edits the announcements on/off toggle. It must NOT
+    // re-save the API keys / voice ID / script model it merely loaded at mount —
+    // doing so clobbered edits made on the Configuration screen (e.g. the
+    // ElevenLabs Voice ID kept reverting to the value loaded here at startup).
+    saveApiConfig({ announcementsEnabled });
+  }, [announcementsEnabled, configLoaded]);
 
 
   useEffect(() => {

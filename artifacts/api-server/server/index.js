@@ -254,7 +254,10 @@ app.get('/api/fleet-env', (req, res) => {
   }
   const FLEET_KEYS = [
     'PORT', 'NODE_ENV', 'FLEET_SERVER_URL',
-    'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID',
+    // ELEVENLABS_VOICE_ID is intentionally NOT fleet-synced. The voice is chosen
+    // per-unit in the UI (Configuration → ElevenLabs Voice ID) and stored in each
+    // unit's DB. Pushing a central voice ID here used to override the UI field.
+    'ELEVENLABS_API_KEY',
     'OPENAI_API_KEY', 'AUPHONIC_API_KEY',
     'R2_ACCOUNT_ID', 'R2_BUCKET_NAME', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
     'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'
@@ -533,11 +536,11 @@ app.post('/api/audit/event', authenticate, requireDJ, (req, res) => {
 });
 
 app.get('/api/config/defaults', (req, res) => {
+  // Stored client settings (set in the UI, persisted to the DB) take PRIORITY.
+  // Env vars are only a SEED/fallback for keys that have never been set in the UI.
+  // Previously env won, which made the ElevenLabs Voice ID field un-editable on units
+  // whose .env carried a fleet-pushed ELEVENLABS_VOICE_ID — the field kept reverting.
   const defaults = {};
-  if (process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
-  if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
-  if (process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
-  if (process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
   try {
     const stored = getClientSettings();
     const keyMap = {
@@ -553,11 +556,13 @@ app.get('/api/config/defaults', (req, res) => {
       djbooth_club_specials: 'clubSpecials',
     };
     for (const [storageKey, configKey] of Object.entries(keyMap)) {
-      if (stored[storageKey] && !defaults[configKey]) {
-        defaults[configKey] = stored[storageKey];
-      }
+      if (stored[storageKey]) defaults[configKey] = stored[storageKey];
     }
   } catch {}
+  if (!defaults.openaiApiKey && process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!defaults.elevenLabsApiKey && process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+  if (!defaults.elevenLabsVoiceId && process.env.ELEVENLABS_VOICE_ID) defaults.elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
+  if (!defaults.scriptModel && process.env.SCRIPT_MODEL) defaults.scriptModel = process.env.SCRIPT_MODEL;
   res.json(defaults);
 });
 
