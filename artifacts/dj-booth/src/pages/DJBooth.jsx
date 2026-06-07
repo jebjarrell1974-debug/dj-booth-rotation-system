@@ -229,6 +229,7 @@ export default function DJBooth() {
   const interstitialIndexRef = useRef(0);
   const [activeBreakInfo, setActiveBreakInfo] = useState(null);
   const handleSkipRef = useRef(null);
+  const deactivateAndReplaceRef = useRef(null);
   const beginRotationRef = useRef(null);
   const stopRotationRef = useRef(null);
   const saveRotationRef = useRef(null);
@@ -1032,17 +1033,12 @@ export default function DJBooth() {
                   console.warn('⚠️ Remote deactivate: no auth token available');
                   return;
                 }
-                const hdrs = { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` };
-                const res = await fetch('/api/music/block', {
-                  method: 'POST',
-                  headers: hdrs,
-                  body: JSON.stringify({ trackName: cmd.payload.trackName })
-                });
-                if (res.ok) {
-                  console.log('🚫 Remote deactivated track:', cmd.payload.trackName);
-                  handleSkipRef.current?.();
+                // Same behavior as the booth screen: block + replace-in-place, no count against her.
+                const result = await deactivateAndReplaceRef.current?.(cmd.payload.trackName, authToken);
+                if (result?.ok) {
+                  console.log('🚫 Remote deactivated track (replaced in place):', cmd.payload.trackName);
                 } else {
-                  console.warn('⚠️ Remote deactivate: block request failed', res.status);
+                  console.warn('⚠️ Remote deactivate: failed', result?.error);
                 }
               } catch (err) {
                 console.warn('⚠️ Remote deactivate failed:', err.message);
@@ -3285,6 +3281,96 @@ export default function DJBooth() {
   }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
 
+  // Shared deactivate behavior for BOTH the booth screen and the remote/phone control.
+  // Deactivating a song must ALWAYS: block it server-side, pull it out of every pre-picked
+  // set, and play a FRESH song in the SAME slot WITHOUT counting against the entertainer's
+  // song count. If deactivating emptied the slot (e.g. it was her last queued song), pick a
+  // brand-new replacement so her set continues instead of ending early.
+  const deactivateAndReplace = useCallback(async (trackName, authToken) => {
+    if (!trackName) return { ok: false, error: 'No song currently playing' };
+    const token = authToken || localStorage.getItem('djbooth_token');
+    const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+    let res;
+    try {
+      res = await fetch('/api/music/block', { method: 'POST', headers, body: JSON.stringify({ trackName }) });
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, error: data.error || 'Failed to deactivate' };
+    }
+
+    const idx = currentDancerIndexRef.current;
+    const rot = rotationRef.current || [];
+    const currentDancerId = rot[idx];
+    const dancer = (dancersRef.current || []).find(d => d.id === currentDancerId);
+    // The deactivated song is the one playing now; it sits at slot (currentSongNumber - 1) in
+    // the current entertainer's pre-picked set. We replay THIS slot with a fresh song so the
+    // deactivated song does NOT advance her count.
+    const targetSlot = Math.max(0, currentSongNumberRef.current - 1);
+
+    // Always pick a BRAND-NEW replacement for that slot (not just when the slot is empty).
+    // getDancerTracks already excludes everything currently assigned (including the song being
+    // deactivated, still in the ref at this point) plus cooldowns, so the first returned track
+    // is a fresh, slot-appropriate pick.
+    let replacement = null;
+    try {
+      const picker = getDancerTracksRef.current;
+      const fresh = (picker && dancer) ? await picker(dancer, [trackName], false, 5000) : [];
+      replacement = (fresh || []).find(t => t?.name && t.name !== trackName) || null;
+      if (replacement) console.log(`🔁 Deactivate: fresh replacement for slot ${targetSlot}:`, replacement.name);
+    } catch (err) {
+      console.warn('⚠️ Deactivate replacement pick failed:', err.message);
+    }
+
+    // Rebuild every pre-picked set: drop the blocked song everywhere so the cache can't replay
+    // it. For the CURRENT entertainer, SUBSTITUTE the fresh replacement at the playing slot
+    // (in place) — this keeps the rest of her queue intact and guarantees the slot is filled,
+    // so her set never ends early.
+    const cleaned = {};
+    for (const [dId, songs] of Object.entries(rotationSongsRef.current)) {
+      const arr = songs || [];
+      if (dId === currentDancerId && replacement) {
+        // Index-preserving rebuild: do NOT compact the current dancer's array, or targetSlot
+        // could shift. Defensively blank any OTHER stray occurrence of the blocked song (in
+        // practice it only appears at targetSlot), then overwrite the playing slot in place.
+        const next = [...arr];
+        for (let i = 0; i < next.length; i++) {
+          if (i !== targetSlot && next[i]?.name === trackName) next[i] = undefined;
+        }
+        next[targetSlot] = replacement;
+        cleaned[dId] = next;
+      } else {
+        cleaned[dId] = arr.filter(t => t?.name !== trackName);
+      }
+    }
+    rotationSongsRef.current = cleaned;
+    setRotationSongs(cleaned);
+
+    const slotTrack = cleaned[currentDancerId] && cleaned[currentDancerId][targetSlot];
+    const slotHasTrack = !!(slotTrack && slotTrack.name);
+
+    if (slotHasTrack) {
+      // Step the counter back one so the replacement plays in the SAME slot; handleSkip
+      // re-increments it, leaving her net song count unchanged.
+      if (currentSongNumberRef.current > 0) {
+        currentSongNumberRef.current = currentSongNumberRef.current - 1;
+        setCurrentSongNumber(currentSongNumberRef.current);
+      }
+      handleSkipRef.current?.();
+    } else {
+      // Safety net: we couldn't secure a replacement AND the slot is empty (essentially only
+      // possible if the library returns nothing). Keep audio alive with a fallback track rather
+      // than letting handleSkip fall into the end-of-set branch and cut her show short.
+      console.error('⚠️ Deactivate: no replacement secured for empty slot — playing fallback to avoid ending set early');
+      try { await playFallbackTrack(true); } catch { handleSkipRef.current?.(); }
+    }
+    return { ok: true };
+  }, [playFallbackTrack]);
+  deactivateAndReplaceRef.current = deactivateAndReplace;
+
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
   const [deactivatePin, setDeactivatePin] = useState('');
   const deactivatePinInputRef = useRef(null);
@@ -3324,37 +3410,13 @@ export default function DJBooth() {
     setDeactivatePin('');
     const trackName = currentTrack;
     if (!trackName) return;
-    try {
-      const token = localStorage.getItem('djbooth_token');
-      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-      const res = await fetch('/api/music/block', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ trackName })
-      });
-      if (res.ok) {
-        toast.success(`Deactivated: ${trackName}`);
-        // Purge this song from all pre-picked rotation sets so it can't sneak in via the cache
-        const cleaned = {};
-        for (const [dancerId, songs] of Object.entries(rotationSongsRef.current)) {
-          const filtered = (songs || []).filter(t => t?.name !== trackName);
-          cleaned[dancerId] = filtered;
-        }
-        rotationSongsRef.current = cleaned;
-        setRotationSongs(cleaned);
-        if (currentSongNumberRef.current > 0) {
-          currentSongNumberRef.current = currentSongNumberRef.current - 1;
-          setCurrentSongNumber(currentSongNumberRef.current);
-        }
-        handleSkipRef.current?.();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || 'Failed to deactivate');
-      }
-    } catch (err) {
-      toast.error('Failed to deactivate: ' + err.message);
+    const result = await deactivateAndReplace(trackName);
+    if (result.ok) {
+      toast.success(`Deactivated: ${trackName}`);
+    } else {
+      toast.error(result.error || 'Failed to deactivate');
     }
-  }, [currentTrack, deactivatePin]);
+  }, [currentTrack, deactivatePin, deactivateAndReplace]);
 
   const handleTrackEnd = useCallback(async () => {
     if (playingCommercialRef.current) {
