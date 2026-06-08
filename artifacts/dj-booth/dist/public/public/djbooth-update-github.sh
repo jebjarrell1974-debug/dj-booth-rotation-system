@@ -988,22 +988,27 @@ if [ -f "$UNFREEZE_SRC" ]; then
 fi
 
 # ── USB autosuspend disable for Siliconworks SiW touch controller ────────────
-# Cheap HID controllers misbehave coming out of USB autosuspend (resume storms
-# can cause X input grab → frozen mouse + touch). Pin power state to "on".
-# Vendor 1fd2 / Product 9101 = Siliconworks SiW HID Touch Controller.
+# HID touch controllers can misbehave coming out of USB autosuspend (resume
+# storms can cause X input grab → frozen mouse + touch). Pin power state to "on".
+# Vendor 1fd2 = Siliconworks SiW HID Touch Controller. The panels report
+# different product IDs across firmware (9101 on some units, b101 on 003), so we
+# pin power state for ALL 1fd2 touch controllers regardless of product ID — the
+# earlier 9101-only rule never matched 003's b101 panel.
 sudo tee /etc/udev/rules.d/97-djbooth-touch-power.rules > /dev/null << TPEOF
 # Disable USB autosuspend on the Siliconworks SiW touch controller to prevent
 # resume-storm HID events that can lock up X input on the booth units.
-ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1fd2", ATTR{idProduct}=="9101", ATTR{power/control}="on"
+# Matches all vendor 1fd2 (Siliconworks) touch controllers — covers product IDs
+# 9101 and b101 (and any future firmware variant) on a single line.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1fd2", ATTR{power/control}="on"
 TPEOF
 sudo udevadm control --reload-rules 2>/dev/null || true
 # Apply immediately to any currently-attached device, no replug needed.
 for d in /sys/bus/usb/devices/*/; do
-  if [ "$(cat "$d/idVendor" 2>/dev/null)" = "1fd2" ] && [ "$(cat "$d/idProduct" 2>/dev/null)" = "9101" ]; then
+  if [ "$(cat "$d/idVendor" 2>/dev/null)" = "1fd2" ]; then
     echo on | sudo tee "$d/power/control" > /dev/null 2>&1 || true
   fi
 done
-echo "USB autosuspend disabled for Siliconworks SiW touch controller"
+echo "USB autosuspend disabled for Siliconworks SiW touch controller (all 1fd2 products)"
 
 CURRENT_USER=$(whoami)
 NOPASSWD_FILE="/etc/sudoers.d/010_${CURRENT_USER}-nopasswd"

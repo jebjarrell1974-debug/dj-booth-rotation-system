@@ -354,6 +354,13 @@ export default function DancerRoster({
                 </div>
               )}
               {addError && <p className="text-sm text-red-400">{addError}</p>}
+              {!isAdding && (!newDancerName.trim() || (!newIsFeature && newDancerPin.length !== 5)) && (
+                <p className="text-sm text-amber-400">
+                  {!newDancerName.trim()
+                    ? 'Enter a stage name to save.'
+                    : `PIN must be 5 digits to save (${newDancerPin.length}/5 entered).`}
+                </p>
+              )}
               <Button
                 onClick={handleAdd}
                 disabled={isAdding || !newDancerName.trim() || (!newIsFeature && newDancerPin.length !== 5)}
