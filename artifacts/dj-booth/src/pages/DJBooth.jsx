@@ -109,10 +109,21 @@ export default function DJBooth() {
   const timeDisplayRef = useRef(null);
   const remoteTimeDisplayRef = useRef(null);
   const [volume, setVolume] = useState(0.8);
-  const [voiceGain, setVoiceGain] = useState(() => {
-    try { return parseFloat(localStorage.getItem('djbooth_voice_gain')) || 1.5; } catch { return 1.5; }
-  });
+  // Boot preset: every reboot/turn-on starts at 80% music / 80% voice. We deliberately
+  // do NOT restore the saved djbooth_voice_gain here — the operator wants a fixed 80%
+  // starting point each night (current voice is loud). Live adjustments still work and
+  // persist within the session, but the next boot resets to 80%.
+  const [voiceGain, setVoiceGain] = useState(0.8);
   const updateThrottleRef = useRef(0);
+
+  // Seed the audio engine with the 80% boot preset so the ACTUAL output (not just the
+  // on-screen %) starts at 80% music / 80% voice every boot. setVolume/setVoiceGain write
+  // the engine's internal refs even before the AudioContext exists, so these values are
+  // applied when the context is created at Start.
+  useEffect(() => {
+    audioEngineRef.current?.setVolume(0.8);
+    audioEngineRef.current?.setVoiceGain(0.8);
+  }, []);
   
   // Rotation state
   const [rotation, setRotation] = useState([]);
