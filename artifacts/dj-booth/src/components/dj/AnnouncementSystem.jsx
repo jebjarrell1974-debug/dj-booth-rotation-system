@@ -138,7 +138,7 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-const CURRENT_VOICE_VERSION = 'V15';
+const CURRENT_VOICE_VERSION = 'V16';
 
 const hashPhonetic = (str) => {
   let h = 5381;
@@ -388,6 +388,16 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
     const SPELL_OUT = new Set(['VIP', 'DJ', 'MC', 'ATM', 'ID', 'VR', 'TV', 'AC', 'DC', 'OK', 'UV']);
     let ttsText = script;
+    // ── HARDWIRED VIP RULE — the voice must NEVER pronounce "vip" as a word ──────
+    // Always spell it V.I.P. This runs FIRST and is intentionally broad: it catches
+    // every casing (vip / Vip / VIP) AND every trailing form — singular, plural with
+    // a plain "s" (vips / VIPs), and possessive with a straight OR curly apostrophe
+    // (vip's / VIP's). The earlier SPELL_OUT pass only allowed an apostrophe-s, so
+    // plain plurals like "VIPs" leaked through and were read as the word "vip".
+    ttsText = ttsText.replace(
+      /\bvip(['\u2019]?s)?\b/gi,
+      (_m, suffix) => 'V.I.P.' + (suffix || '')
+    );
     // Case-insensitive normalize: catch "vip", "Vip", "VIP", "vip's" etc.
     // and spell them out directly. ElevenLabs reads "vip" as a word otherwise.
     for (const acronym of SPELL_OUT) {
