@@ -2,7 +2,10 @@ import { spawn } from 'child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync, unlinkSync, statSync } from 'fs';
 import { join, extname } from 'path';
 import { runFfmpeg, getAudioDuration } from './promo-mixer.js';
+import { getMusicTracks } from './db.js';
 import { trackError } from './error-tracker.js';
+
+const FEATURE_BED_GENRE = 'Promo Beds';
 
 const AUDIO_EXT = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']);
 const BED_DUCK_VOL = 0.18;
@@ -101,16 +104,20 @@ export async function produceFeatureAudio({
   if (!voiceBuffer || !voiceBuffer.length) throw new Error('voice audio is empty');
   if (mode !== 'intro' && mode !== 'outro') throw new Error('mode must be intro or outro');
 
-  const beds = listFeatureBeds(musicPath);
-  if (!beds.length) {
-    throw new Error('No bed files found in music/feature-beds/ — add at least one mp3.');
+  // Beds now come from the "Promo Beds" music genre (DB), not the music/feature-beds/ folder.
+  // A random Promo Bed is chosen for each intro/outro production.
+  const { tracks: beds } = getMusicTracks({ genre: FEATURE_BED_GENRE, limit: 200 });
+  if (!beds || !beds.length) {
+    throw new Error(`No "${FEATURE_BED_GENRE}" tracks in the music library — add beds to the ${FEATURE_BED_GENRE} genre.`);
   }
-  let bed = beds[0];
+  let bed = beds[Math.floor(Math.random() * beds.length)];
   if (bedFileName) {
-    const found = beds.find(b => b.name === bedFileName);
+    const found = beds.find(b => b.name === bedFileName || b.path === bedFileName);
     if (found) bed = found;
-  } else {
-    bed = beds[Math.floor(Math.random() * beds.length)];
+  }
+  const bedFilePath = join(musicPath, bed.path);
+  if (!existsSync(bedFilePath)) {
+    throw new Error(`Promo Bed file missing on disk: ${bedFilePath}`);
   }
 
   const tmpDir = '/tmp';
@@ -122,7 +129,7 @@ export async function produceFeatureAudio({
     writeFileSync(voiceTmp, voiceBuffer);
     await mixFeatureAudio({
       voiceFilePath: voiceTmp,
-      bedFilePath: bed.path,
+      bedFilePath,
       outputPath: outTmp,
       mode,
     });

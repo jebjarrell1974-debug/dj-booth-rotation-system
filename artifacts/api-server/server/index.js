@@ -846,9 +846,10 @@ app.post('/api/voiceovers/mix-promo/:cacheKey', authenticate, requireDJ, (req, r
 // ============================================================
 app.get('/api/features/beds', authenticate, requireDJ, (req, res) => {
   try {
-    ensureFeatureBedsFolder(MUSIC_PATH);
-    const beds = listFeatureBeds(MUSIC_PATH).map(b => ({ name: b.name }));
-    res.json({ beds, folder: MUSIC_PATH ? 'feature-beds' : null });
+    // Beds now come from the "Promo Beds" music genre (DB), not the feature-beds/ folder.
+    const { tracks } = getMusicTracks({ genre: 'Promo Beds', limit: 200 });
+    const beds = (tracks || []).map(b => ({ name: b.name }));
+    res.json({ beds, folder: 'Promo Beds' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

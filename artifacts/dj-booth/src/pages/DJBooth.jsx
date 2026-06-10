@@ -239,6 +239,10 @@ export default function DJBooth() {
   const playingInterstitialBreakKeyRef = useRef(null);
   const interstitialIndexRef = useRef(0);
   const [activeBreakInfo, setActiveBreakInfo] = useState(null);
+  // FEATURE SHOW setup window: holds the upcoming feature's id while the pre-feature break
+  // is playing, so the on-screen "Add Setup Song" / "Start Her Set Now" controls can show.
+  const featureSetupActiveRef = useRef(null);
+  const [featureSetupActive, setFeatureSetupActive] = useState(null);
   const handleSkipRef = useRef(null);
   const deactivateAndReplaceRef = useRef(null);
   const beginRotationRef = useRef(null);
@@ -2109,6 +2113,9 @@ export default function DJBooth() {
   // 20-minute set is never cut. Returns the set track actually started. The OUTRO
   // and auto-removal are handled by the departure path in handleTrackEnd/handleSkip.
   const playFeatureArrival = useCallback(async (featureDancer) => {
+    // Her show is starting — close the pre-feature setup window (hides the setup buttons).
+    featureSetupActiveRef.current = null;
+    setFeatureSetupActive(null);
     const placed = placedFeaturesRef.current[featureDancer.id] || null;
     let setTrack = null;
     if (placed?.chosenSetName) {
@@ -2162,6 +2169,12 @@ export default function DJBooth() {
       delete songs[featureId];
       rotationSongsRef.current = songs;
       setRotationSongs(songs);
+    }
+    // If this feature was the one in the pre-feature setup window (e.g. canceled before her
+    // arrival ran), close the setup window so the on-screen buttons don't get stuck visible.
+    if (featureSetupActiveRef.current === featureId) {
+      featureSetupActiveRef.current = null;
+      setFeatureSetupActive(null);
     }
   }, []);
 
@@ -2769,6 +2782,10 @@ export default function DJBooth() {
         playingInterstitialBreakKeyRef.current = null;
         interstitialIndexRef.current = 0;
         setActiveBreakInfo(null);
+        // Hard skip abandons the break — also close any pre-feature setup window so the
+        // on-screen setup buttons disappear immediately.
+        featureSetupActiveRef.current = null;
+        setFeatureSetupActive(null);
         const clearedInterstitials = { ...interstitialSongsRef.current };
         delete clearedInterstitials[breakKey];
         interstitialSongsRef.current = clearedInterstitials;
@@ -2933,15 +2950,26 @@ export default function DJBooth() {
         const breakKey = `after-${rot[idx]}`;
         let breakSongs = interstitialSongsRef.current[breakKey] || [];
 
-        if (skipBreaks || _finishingFeature) {
-          // Hard skip (or a finishing FEATURE) — clear any queued break songs for this
-          // transition and fall through to the next-dancer path (no break music).
+        if (skipBreaks) {
+          // Hard skip ("Next Entertainer") — abandon all break music and fall through to the
+          // next dancer immediately. A finishing FEATURE is NOT a hard skip: she still gets
+          // one post-feature break song (handled via _wantBreakCount below).
           breakSongs = [];
           const cleared = { ...interstitialSongsRef.current };
           delete cleared[breakKey];
           interstitialSongsRef.current = cleared;
         }
-        if (!skipBreaks && !_finishingFeature && breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+
+        // FEATURE SHOW: upcoming dancer is the feature → normal break(s) + 1 setup song and
+        // on-screen setup controls. Finishing feature → exactly 1 post-feature break song.
+        const _upcomingId = rot[(idx + 1) % rot.length];
+        const _upcomingDancer = dnc.find(d => d.id === _upcomingId);
+        const _upcomingIsFeature = !skipBreaks && !_finishingFeature && _upcomingDancer?.entertainer_type === 'feature';
+        const _wantBreakCount = skipBreaks
+          ? 0
+          : (_finishingFeature ? 1 : (breakSongsPerSetRef.current + (_upcomingIsFeature ? 1 : 0)));
+
+        if (breakSongs.length === 0 && _wantBreakCount > 0) {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -2962,7 +2990,7 @@ export default function DJBooth() {
               method: 'POST',
               headers,
               body: JSON.stringify({
-                count: breakSongsPerSetRef.current,
+                count: _wantBreakCount,
                 excludeNames,
                 genres: activeGenres,
                 dancerPlaylist: []
@@ -2983,12 +3011,26 @@ export default function DJBooth() {
           }
         }
 
+        // Open the on-screen setup window for the whole pre-feature break.
+        if (_upcomingIsFeature && breakSongs.length > 0) {
+          featureSetupActiveRef.current = _upcomingId;
+          setFeatureSetupActive(_upcomingId);
+        }
+
         if (breakSongs.length > 0) {
           console.log('🎵 HandleSkip: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
 
           const flippedRotation = [...rotationRef.current];
           const [finishedId] = flippedRotation.splice(idx, 1);
-          flippedRotation.push(finishedId);
+          if (_finishingFeature) {
+            // Feature show complete — auto-remove her (do NOT return her to the bottom).
+            // The single post-feature break song selected above plays now; the rotation
+            // resumes with the next dancer when that break song ends.
+            clearFeaturePlacement(finishedId);
+            console.log('🌟 HandleSkip: FEATURE show complete — auto-removing', dancer.name, '(post-feature break playing)');
+          } else {
+            flippedRotation.push(finishedId);
+          }
           setRotation(flippedRotation);
           rotationRef.current = flippedRotation;
           setCurrentDancerIndex(0);
@@ -3008,7 +3050,7 @@ export default function DJBooth() {
           // songsPerSet is read fresh inside getDancerTracks via songsPerSetRef.current, so
           // the current system default is honored automatically (also satisfies the "reset
           // her songs-per-set to current system default" half of Rule 1).
-          const finishedDancerForRepick = dnc.find(d => d.id === finishedId);
+          const finishedDancerForRepick = _finishingFeature ? null : dnc.find(d => d.id === finishedId);
           if (finishedDancerForRepick) {
             const _repickVer = ++rotationAssignmentVersionRef.current;
             getDancerTracks(finishedDancerForRepick, [], true, 5000)
@@ -3086,7 +3128,9 @@ export default function DJBooth() {
           }
 
           if (announcementsEnabled) {
-            const announcementPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+            const announcementPromise = _finishingFeature
+              ? fetchFeatureAudioUrl(finishedId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
+              : prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
             const announcementDone = playPrefetchedAnnouncement(announcementUrl);
@@ -3304,6 +3348,98 @@ export default function DJBooth() {
     }
   }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
   handleSkipRef.current = handleSkip;
+
+  // FEATURE SETUP controls (shown on the booth's main screen only while the pre-feature
+  // break is playing). "Add Setup Song" appends one fresh song to the live break queue so
+  // the DJ gets more time to set up the feature; "Start Her Set Now" cuts the setup short
+  // and jumps straight to her intro.
+  const addFeatureSetupSong = useCallback(async () => {
+    if (!playingInterstitialRef.current || !featureSetupActiveRef.current) return;
+    const breakKey = playingInterstitialBreakKeyRef.current;
+    if (!breakKey) return;
+    try {
+      const token = localStorage.getItem('djbooth_token');
+      const cooldowns = songCooldownRef.current || {};
+      const nowMs = Date.now();
+      const cooldownNames = Object.entries(cooldowns)
+        .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
+        .map(([n]) => n);
+      const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
+      const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
+      const excludeAll = [...new Set([...cooldownNames, ...assignedNames, ...allBreakNames])];
+      const _ds = djOptionsRef.current?.dayShift;
+      const _dsOn = isDayShiftActive(_ds);
+      const _dsGenres = _ds?.genres || [];
+      const activeGenres = (_dsOn && _dsGenres.length > 0)
+        ? _dsGenres
+        : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
+      const res = await fetch('/api/music/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ count: 1, excludeNames: excludeAll, genres: activeGenres, dancerPlaylist: [] }),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!res.ok) throw new Error(`select failed (${res.status})`);
+      const data = await res.json();
+      const name = data.tracks?.[0]?.name;
+      if (!name) { toast('No song available to add'); return; }
+      const cur = interstitialSongsRef.current[breakKey] || [];
+      const updated = [...cur, name];
+      interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updated };
+      setInterstitialSongsState({ ...interstitialSongsRef.current });
+      setInterstitialRemoteVersion(v => v + 1);
+      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
+      setActiveBreakInfo({ songs: updated, currentIndex: Math.max(0, interstitialIndexRef.current - 1), breakKey });
+      console.log('🌟 Setup: added setup song', name, '→ queue now', updated.length);
+      toast('Setup song added 🎵');
+    } catch (err) {
+      console.warn('⚠️ Add setup song failed:', err.message);
+      toast('Could not add setup song');
+    }
+  }, []);
+
+  const startFeatureSetNow = useCallback(async () => {
+    const featureId = featureSetupActiveRef.current;
+    if (!featureId) return;
+    if (!playingInterstitialRef.current) return;
+    if (transitionInProgressRef.current) return;
+    transitionInProgressRef.current = true;
+    transitionStartTimeRef.current = Date.now();
+    lastAudioActivityRef.current = Date.now();
+    try {
+      const breakKey = playingInterstitialBreakKeyRef.current;
+      // Tear down the interstitial so a natural break-song end can't double-fire handleTrackEnd.
+      playingInterstitialRef.current = false;
+      playingInterstitialBreakKeyRef.current = null;
+      interstitialIndexRef.current = 0;
+      setActiveBreakInfo(null);
+      if (breakKey) {
+        const cleared = { ...interstitialSongsRef.current };
+        delete cleared[breakKey];
+        interstitialSongsRef.current = cleared;
+        setInterstitialSongsState(cleared);
+        setInterstitialRemoteVersion(v => v + 1);
+        try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(cleared)); } catch {}
+      }
+      const featureDancer = dancersRef.current.find(d => d.id === featureId);
+      if (!featureDancer) {
+        console.warn('⚠️ Start feature now: feature dancer not found — falling back');
+        await playFallbackTrack(true);
+        return;
+      }
+      console.log('🌟 Start feature now: jumping straight to', featureDancer.name, 'intro');
+      // The feature is already at rotation index 0 from the pre-feature break flip.
+      await playFeatureArrivalRef.current(featureDancer);
+      currentSongNumberRef.current = 1;
+      setCurrentSongNumber(1);
+      lastAudioActivityRef.current = Date.now();
+    } catch (err) {
+      console.error('🚨 Start feature now failed:', err);
+      try { audioEngineRef.current?.resume(); } catch {}
+    } finally {
+      transitionInProgressRef.current = false;
+    }
+  }, [playFallbackTrack]);
 
   // Shared deactivate behavior for BOTH the booth screen and the remote/phone control.
   // Deactivating a song must ALWAYS: block it server-side, pull it out of every pre-picked
@@ -3799,9 +3935,19 @@ export default function DJBooth() {
         const _finishingFeature = dancer.entertainer_type === 'feature';
         const breakKey = `after-${rot[idx]}`;
         let breakSongs = interstitialSongsRef.current[breakKey] || [];
-        if (_finishingFeature) breakSongs = [];
 
-        if (!_finishingFeature && breakSongs.length === 0 && breakSongsPerSetRef.current > 0) {
+        // FEATURE SHOW: is the dancer about to take the stage the feature? If so, play the
+        // normal break song(s) PLUS one extra "setup" song before her intro, and turn on the
+        // on-screen setup controls. A FINISHING feature instead gets exactly ONE post-feature
+        // break song before the rotation resumes.
+        const _upcomingId = rot[(idx + 1) % rot.length];
+        const _upcomingDancer = dnc.find(d => d.id === _upcomingId);
+        const _upcomingIsFeature = !_finishingFeature && _upcomingDancer?.entertainer_type === 'feature';
+        const _wantBreakCount = _finishingFeature
+          ? 1
+          : (breakSongsPerSetRef.current + (_upcomingIsFeature ? 1 : 0));
+
+        if (breakSongs.length === 0 && _wantBreakCount > 0) {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -3822,7 +3968,7 @@ export default function DJBooth() {
               method: 'POST',
               headers,
               body: JSON.stringify({
-                count: breakSongsPerSetRef.current,
+                count: _wantBreakCount,
                 excludeNames,
                 genres: activeGenres,
                 dancerPlaylist: []
@@ -3843,12 +3989,26 @@ export default function DJBooth() {
           }
         }
 
+        // Open the on-screen setup window for the whole pre-feature break.
+        if (_upcomingIsFeature && breakSongs.length > 0) {
+          featureSetupActiveRef.current = _upcomingId;
+          setFeatureSetupActive(_upcomingId);
+        }
+
         if (breakSongs.length > 0) {
           console.log('🎵 HandleTrackEnd: Playing', breakSongs.length, 'break song(s) after', dancer.name, '| Songs:', breakSongs);
           
           const flippedRotation = [...rotationRef.current];
           const [finishedId] = flippedRotation.splice(idx, 1);
-          flippedRotation.push(finishedId);
+          if (_finishingFeature) {
+            // Feature show complete — auto-remove her (do NOT return her to the bottom).
+            // The single post-feature break song selected above plays now; the rotation
+            // resumes with the next dancer when that break song ends.
+            clearFeaturePlacement(finishedId);
+            console.log('🌟 HandleTrackEnd: FEATURE show complete — auto-removing', dancer.name, '(post-feature break playing)');
+          } else {
+            flippedRotation.push(finishedId);
+          }
           const _expectedNextName = dnc.find(d => d.id === flippedRotation[0])?.name;
           logDiag('break_flip_rotation', {
             finished: dancer.name,
@@ -3878,7 +4038,7 @@ export default function DJBooth() {
           // songsPerSet is read fresh inside getDancerTracks via songsPerSetRef.current, so
           // the current system default is honored automatically (also satisfies the "reset
           // her songs-per-set to current system default" half of Rule 1).
-          const finishedDancerForRepick = dnc.find(d => d.id === finishedId);
+          const finishedDancerForRepick = _finishingFeature ? null : dnc.find(d => d.id === finishedId);
           if (finishedDancerForRepick) {
             const _repickVer = ++rotationAssignmentVersionRef.current;
             getDancerTracks(finishedDancerForRepick, [], true, 5000)
@@ -3956,7 +4116,9 @@ export default function DJBooth() {
           }
 
           if (announcementsEnabled) {
-            const announcementPromise = prefetchAnnouncement('outro', dancer.name, null, 1);
+            const announcementPromise = _finishingFeature
+              ? fetchFeatureAudioUrl(finishedId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
+              : prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
             const announcementDone = playPrefetchedAnnouncement(announcementUrl);
@@ -4767,7 +4929,29 @@ export default function DJBooth() {
                     <p className="text-sm text-white truncate">{currentTrack || 'Select a track'}</p>
                   </div>
                 </div>
-                
+
+                {featureSetupActive && isRotationActive && (
+                  <div className="mb-2 rounded-lg border-2 border-[#00d4ff] bg-[#00d4ff]/10 p-3">
+                    <p className="text-sm font-bold text-[#00d4ff] mb-2">
+                      🌟 FEATURE SETUP — {dancers.find(d => d.id === featureSetupActive)?.name || 'Feature'} is next
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1 h-14 text-base font-bold bg-[#1e293b] hover:bg-[#334155] text-[#00d4ff] border border-[#00d4ff]"
+                        onClick={addFeatureSetupSong}
+                      >
+                        + Add Setup Song
+                      </Button>
+                      <Button
+                        className="flex-1 h-14 text-base font-bold bg-[#00d4ff] hover:bg-[#22d3ee] text-black"
+                        onClick={startFeatureSetNow}
+                      >
+                        ▶ Start Her Set Now
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <Button
                     size="icon"
