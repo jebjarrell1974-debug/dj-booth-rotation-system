@@ -12,6 +12,22 @@ xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 xset s noblank 2>/dev/null || true
 
+# Reset hardware (OS) output volume to 80% on every boot.
+# Power loss / unclean shutdown can wipe the ALSA mixer back to default. The operator
+# wants the USB sound card pinned at 80% every session. The card INDEX drifts across
+# units/boots, so detect it by name ("USB Audio") and try the common control names.
+USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
+if [ -n "$USB_CARD" ]; then
+  for CTL in PCM Speaker Master; do
+    if amixer -c "$USB_CARD" sset "$CTL" 80% unmute >/dev/null 2>&1; then
+      echo "$(date): [openbox-autostart] USB audio card $USB_CARD '$CTL' -> 80%" >> /tmp/openbox-autostart.log
+      break
+    fi
+  done
+else
+  echo "$(date): [openbox-autostart] no USB audio card found for 80% volume preset" >> /tmp/openbox-autostart.log
+fi
+
 # Apply per-unit display config (rotation, primary, etc).
 # xrandr rotation is session-only, MUST run on every session start.
 if [ -x "$HOME/.djbooth-display-config.sh" ]; then
