@@ -13,6 +13,10 @@ const BED_LEAD_IN_SEC = 1.5;
 const BED_TAIL_INTRO_SEC = 0.8;
 const BED_TAIL_OUTRO_SEC = 4.0;
 const OUTRO_FADE_SEC = 3.0;
+// Raw ElevenLabs voice sits well below full scale, so against the full-level bed bookends
+// (and vs. normal raw-voice announcements) the feature voice came out ~50% too quiet.
+// Boost the spoken track ~+6 dB inside the mix; a final limiter catches any peaks.
+const VOICE_GAIN = 2.0;
 
 export function listFeatureBeds(musicPath) {
   if (!musicPath) return [];
@@ -78,8 +82,9 @@ export async function mixFeatureAudio({ voiceFilePath, bedFilePath, outputPath, 
 
   const filter = [
     ...bedChain,
-    `[1:a]adelay=${voiceStartMs}|${voiceStartMs}[voice_del]`,
-    `${bedFinalLabel}[voice_del]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]`,
+    `[1:a]volume=${VOICE_GAIN},adelay=${voiceStartMs}|${voiceStartMs}[voice_del]`,
+    `${bedFinalLabel}[voice_del]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mixed]`,
+    `[mixed]alimiter=limit=0.95:level=false[out]`,
   ].join(';');
 
   await runFfmpeg([

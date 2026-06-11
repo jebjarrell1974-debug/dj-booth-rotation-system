@@ -1243,6 +1243,19 @@ if [ "$IS_HOMEBASE_VAL" != "true" ] && [ -n "$WIFI_CONN" ]; then
   fi
 fi
 
+# Pin USB sound card to 80% so an UPDATE also restores OS volume (matches the per-boot
+# preset in openbox-autostart.sh). Card index drifts across units → detect it by name.
+USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
+if [ -n "$USB_CARD" ]; then
+  for CTL in PCM Speaker Master; do
+    if amixer -c "$USB_CARD" sset "$CTL" 80% unmute >/dev/null 2>&1; then
+      echo "USB audio card $USB_CARD '$CTL' -> 80%"
+      break
+    fi
+  done
+  sudo alsactl store >/dev/null 2>&1 || true
+fi
+
 STAMP_TS=$(date -u +%s)000
 STAMP_SHA="${COMMIT_SHA:-unknown}"
 SHORT_STAMP="${SHORT_SHA:-unknown}"

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Star, Trash2, Play, Square, Loader2, Save, Sparkles, Folder, Music } from 'lucide-react';
 import { getApiConfig, FORCED_VOICE_ID } from '@/components/apiConfig';
+import { VOICE_SETTINGS } from '@/utils/energyLevels';
 
 function authHeaders() {
   const token = localStorage.getItem('djbooth_token');
@@ -19,9 +20,61 @@ function getElevenLabsConfig() {
   }
 }
 
-async function elevenLabsTTS(script) {
-  const { apiKey, voiceId } = getElevenLabsConfig();
-  if (!apiKey || !voiceId) throw new Error('ElevenLabs API key / voice ID not configured in Options');
+// Feature intro/outro voice now uses the SAME pipeline as normal entertainer
+// announcements: eleven_v3 + LOCKED_LEVEL (4) voice settings + chunk-and-stitch.
+// The server stitch endpoint tail-trims each chunk (kills the dead-air gaps that
+// made features sound "patchy/spotty") and applies atempo=1.2 (the pace/energy a
+// normal intro has). eleven_v3 ignores voice_settings.speed, so tempo is server-side.
+const FEATURE_VOICE_LEVEL = 4;
+
+// Acronyms spelled out so ElevenLabs never reads them as words (e.g. "V.I.P.").
+// Canonical copy lives in AnnouncementSystem.jsx SPELL_OUT — keep the two in sync.
+const SPELL_OUT = new Set(['VIP', 'DJ', 'MC', 'ATM', 'ID', 'VR', 'TV', 'AC', 'DC', 'OK', 'UV']);
+
+function prepareTTSText(script, pronunciationMap = {}) {
+  let ttsText = String(script || '');
+  ttsText = ttsText.replace(/\bvip(['\u2019]?s)?\b/gi, (_m, suffix) => 'V.I.P.' + (suffix || ''));
+  for (const acronym of SPELL_OUT) {
+    const spelled = acronym.split('').join('.') + '.';
+    ttsText = ttsText.replace(
+      new RegExp(`\\b${acronym}('[Ss])?\\b`, 'gi'),
+      (_m, suffix) => spelled + (suffix || '')
+    );
+  }
+  ttsText = ttsText.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
+    const base = match.replace(/'[Ss]$/, '');
+    const suffix = match.slice(base.length);
+    if (SPELL_OUT.has(base)) return base.split('').join('.') + '.' + suffix;
+    return base.charAt(0) + base.slice(1).toLowerCase() + suffix;
+  });
+  for (const [name, phonetic] of Object.entries(pronunciationMap)) {
+    ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'gi'), phonetic);
+  }
+  return ttsText;
+}
+
+function splitScriptIntoChunks(script, targetWords = 40) {
+  const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];
+  const chunks = [];
+  let current = [];
+  let wordCount = 0;
+  for (const sentence of sentences) {
+    const words = sentence.trim().split(/\s+/).length;
+    if (wordCount + words > targetWords && current.length > 0) {
+      chunks.push(current.join(' ').trim());
+      current = [sentence.trim()];
+      wordCount = words;
+    } else {
+      current.push(sentence.trim());
+      wordCount += words;
+    }
+  }
+  if (current.length > 0) chunks.push(current.join(' ').trim());
+  return chunks.filter(c => c.length > 0);
+}
+
+async function ttsChunk(text, apiKey, voiceId) {
+  const vs = VOICE_SETTINGS[FEATURE_VOICE_LEVEL];
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -30,9 +83,16 @@ async function elevenLabsTTS(script) {
       'Accept': 'audio/mpeg',
     },
     body: JSON.stringify({
-      text: script,
-      model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.4, similarity_boost: 0.75, style: 0.6, use_speaker_boost: true },
+      text,
+      model_id: 'eleven_v3',
+      voice_settings: {
+        stability: vs.stability,
+        similarity_boost: vs.similarity_boost,
+        style: vs.style,
+        // ElevenLabs rejects speed outside [0.7, 1.2]; clamp defensively.
+        speed: Math.max(0.7, Math.min(1.2, vs.speed ?? 1.0)),
+        use_speaker_boost: vs.use_speaker_boost !== false,
+      },
     }),
   });
   if (!res.ok) {
@@ -44,6 +104,35 @@ async function elevenLabsTTS(script) {
   const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
+}
+
+async function elevenLabsTTS(script, dancer = null) {
+  const { apiKey, voiceId } = getElevenLabsConfig();
+  if (!apiKey || !voiceId) throw new Error('ElevenLabs API key / voice ID not configured in Options');
+
+  // Pronounce the feature's name correctly — her name is the most important word of the night.
+  const pronunciationMap = {};
+  const ph = (dancer?.phonetic_name || '').trim();
+  if (dancer?.name && ph) {
+    pronunciationMap[dancer.name] = ph;
+    pronunciationMap[dancer.name + "'s"] = ph + "'s";
+  }
+  const preparedText = prepareTTSText(script, pronunciationMap);
+
+  // Chunk → TTS each → server stitch (tail-trim + atempo=1.2). Identical to normal intros.
+  const chunks = splitScriptIntoChunks(preparedText);
+  const chunkBase64s = [];
+  for (const chunk of chunks) {
+    chunkBase64s.push(await ttsChunk(chunk, apiKey, voiceId));
+  }
+  const stitchRes = await fetch('/api/voiceovers/stitch-chunks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ chunks: chunkBase64s }),
+  });
+  if (!stitchRes.ok) throw new Error(`Stitch failed: ${stitchRes.status}`);
+  const { audio_base64 } = await stitchRes.json();
+  return audio_base64;
 }
 
 function buildDefaultIntroScript(d) {
@@ -243,7 +332,7 @@ export default function FeatureEntertainerPanel({
     const setBusy = mode === 'intro' ? setProducingIntro : setProducingOutro;
     setBusy(true);
     try {
-      const audio_base64 = await elevenLabsTTS(script);
+      const audio_base64 = await elevenLabsTTS(script, selected);
       const res = await fetch(`/api/features/${selected.id}/produce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
