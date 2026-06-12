@@ -3,6 +3,7 @@ import { boothApi } from '@/api/serverApi';
 import DJOptions from '@/components/dj/DJOptions';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
+import { prepareTTSText } from '@/utils/ttsText';
 import { getApiConfig } from '@/components/apiConfig';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import {
@@ -270,7 +271,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
       const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: 'POST',
         headers: { Accept: 'audio/mpeg', 'Content-Type': 'application/json', 'xi-api-key': apiKey },
-        body: JSON.stringify({ text: script, model_id: 'eleven_v3', voice_settings: { stability: vs.stability, similarity_boost: vs.similarity_boost, style: vs.style, speed: Math.max(0.7, Math.min(1.2, vs.speed ?? 1.0)), use_speaker_boost: vs.use_speaker_boost !== false } }),
+        body: JSON.stringify({ text: prepareTTSText(script), model_id: 'eleven_v3', voice_settings: { stability: vs.stability, similarity_boost: vs.similarity_boost, style: vs.style, speed: Math.max(0.7, Math.min(1.2, vs.speed ?? 1.0)), use_speaker_boost: vs.use_speaker_boost !== false } }),
         signal: AbortSignal.timeout(30000),
       });
       if (!ttsRes.ok) throw new Error(`ElevenLabs ${ttsRes.status}`);

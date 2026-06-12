@@ -4,6 +4,7 @@ import { Play, Trash2, Plus, Loader2, Megaphone, X, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiConfig } from '@/components/apiConfig';
 import { VOICE_SETTINGS } from '@/utils/energyLevels';
+import { prepareTTSText } from '@/utils/ttsText';
 import { trackElevenLabsCall } from '@/utils/apiCostTracker';
 
 const LOCKED_LEVEL = 4;
@@ -73,7 +74,7 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
         'xi-api-key': apiKey,
       },
       body: JSON.stringify({
-        text: script,
+        text: prepareTTSText(script),
         model_id: 'eleven_v3',
         voice_settings: {
           stability: voiceSettings.stability,

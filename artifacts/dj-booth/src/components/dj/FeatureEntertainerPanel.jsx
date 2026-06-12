@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Star, Trash2, Play, Square, Loader2, Save, Sparkles, Folder, Music } from 'lucide-react';
 import { getApiConfig, FORCED_VOICE_ID } from '@/components/apiConfig';
 import { VOICE_SETTINGS } from '@/utils/energyLevels';
+import { prepareTTSText } from '@/utils/ttsText';
 
 function authHeaders() {
   const token = localStorage.getItem('djbooth_token');
@@ -26,32 +27,6 @@ function getElevenLabsConfig() {
 // made features sound "patchy/spotty") and applies atempo=1.2 (the pace/energy a
 // normal intro has). eleven_v3 ignores voice_settings.speed, so tempo is server-side.
 const FEATURE_VOICE_LEVEL = 4;
-
-// Acronyms spelled out so ElevenLabs never reads them as words (e.g. "V.I.P.").
-// Canonical copy lives in AnnouncementSystem.jsx SPELL_OUT — keep the two in sync.
-const SPELL_OUT = new Set(['VIP', 'DJ', 'MC', 'ATM', 'ID', 'VR', 'TV', 'AC', 'DC', 'OK', 'UV']);
-
-function prepareTTSText(script, pronunciationMap = {}) {
-  let ttsText = String(script || '');
-  ttsText = ttsText.replace(/\bvip(['\u2019]?s)?\b/gi, (_m, suffix) => 'V.I.P.' + (suffix || ''));
-  for (const acronym of SPELL_OUT) {
-    const spelled = acronym.split('').join('.') + '.';
-    ttsText = ttsText.replace(
-      new RegExp(`\\b${acronym}('[Ss])?\\b`, 'gi'),
-      (_m, suffix) => spelled + (suffix || '')
-    );
-  }
-  ttsText = ttsText.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
-    const base = match.replace(/'[Ss]$/, '');
-    const suffix = match.slice(base.length);
-    if (SPELL_OUT.has(base)) return base.split('').join('.') + '.' + suffix;
-    return base.charAt(0) + base.slice(1).toLowerCase() + suffix;
-  });
-  for (const [name, phonetic] of Object.entries(pronunciationMap)) {
-    ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'gi'), phonetic);
-  }
-  return ttsText;
-}
 
 function splitScriptIntoChunks(script, targetWords = 40) {
   const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];

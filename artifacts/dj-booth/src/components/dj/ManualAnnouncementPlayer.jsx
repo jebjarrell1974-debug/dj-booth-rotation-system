@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { getApiConfig } from '@/components/apiConfig';
 import { localIntegrations } from '@/api/localEntities';
 import { VOICE_SETTINGS } from '@/utils/energyLevels';
+import { prepareTTSText } from '@/utils/ttsText';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const LOCKED_LEVEL = 4;
@@ -197,7 +198,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
         'xi-api-key': apiKey,
       },
       body: JSON.stringify({
-        text: script,
+        text: prepareTTSText(script),
         model_id: 'eleven_v3',
         voice_settings: {
           stability: voiceSettings.stability,

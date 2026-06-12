@@ -12,6 +12,7 @@ import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/ap
 import { toast } from 'sonner';
 import { getApiConfig, saveApiConfig, loadApiConfig, FORCED_VOICE_ID } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+import { prepareTTSText } from '@/utils/ttsText';
 
 const LOCKED_LEVEL = 4;
 
@@ -341,7 +342,7 @@ export default function Configuration() {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              text: script,
+              text: prepareTTSText(script),
               model_id: 'eleven_v3',
               voice_settings: {
                 stability: voiceSettings.stability,

@@ -6,6 +6,7 @@ import { Mic, Download, Wifi, WifiOff, Loader2, Check, AlertCircle, HardDrive } 
 import { localIntegrations } from '@/api/localEntities';
 import { getApiConfig } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
+import { prepareTTSText } from '@/utils/ttsText';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 
 const getAuthHeaders = () => {
@@ -386,38 +387,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         pronunciationMap[name + "'s"] = phonetic + "'s";
       }
     }
-    const SPELL_OUT = new Set(['VIP', 'DJ', 'MC', 'ATM', 'ID', 'VR', 'TV', 'AC', 'DC', 'OK', 'UV']);
-    let ttsText = script;
-    // ── HARDWIRED VIP RULE — the voice must NEVER pronounce "vip" as a word ──────
-    // Always spell it V.I.P. This runs FIRST and is intentionally broad: it catches
-    // every casing (vip / Vip / VIP) AND every trailing form — singular, plural with
-    // a plain "s" (vips / VIPs), and possessive with a straight OR curly apostrophe
-    // (vip's / VIP's). The earlier SPELL_OUT pass only allowed an apostrophe-s, so
-    // plain plurals like "VIPs" leaked through and were read as the word "vip".
-    ttsText = ttsText.replace(
-      /\bvip(['\u2019]?s)?\b/gi,
-      (_m, suffix) => 'V.I.P.' + (suffix || '')
-    );
-    // Case-insensitive normalize: catch "vip", "Vip", "VIP", "vip's" etc.
-    // and spell them out directly. ElevenLabs reads "vip" as a word otherwise.
-    for (const acronym of SPELL_OUT) {
-      const spelled = acronym.split('').join('.') + '.';
-      ttsText = ttsText.replace(
-        new RegExp(`\\b${acronym}('[Ss])?\\b`, 'gi'),
-        (_m, suffix) => spelled + (suffix || '')
-      );
-    }
-    // Existing all-caps pass: handles other acronyms (USA → Usa) and any
-    // SPELL_OUT entry that somehow wasn't caught above.
-    ttsText = ttsText.replace(/\b([A-Z]{2,}(?:'[Ss])?)\b/g, (match) => {
-      const base = match.replace(/'[Ss]$/, '');
-      const suffix = match.slice(base.length);
-      if (SPELL_OUT.has(base)) return base.split('').join('.') + '.' + suffix;
-      return base.charAt(0) + base.slice(1).toLowerCase() + suffix;
-    });
-    for (const [name, phonetic] of Object.entries(pronunciationMap)) {
-      ttsText = ttsText.replace(new RegExp(`\\b${name}\\b`, 'gi'), phonetic);
-    }
+    // Canonical TTS text prep (VIP→V.I.P. + acronyms + phonetic names). LAW lives
+    // in @/utils/ttsText so this never drifts from the other announcement paths.
+    const ttsText = prepareTTSText(script, pronunciationMap);
 
     return await withRetry(async () => {
       const controller = new AbortController();
