@@ -22,6 +22,79 @@ const getAuthHeaders = () => {
 const VIBE_OPTIONS = ['Hype', 'Chill', 'Sexy', 'Party', 'Classy', 'Latin', 'Urban'];
 const LENGTH_OPTIONS = ['15s', '30s', '45s', '60s'];
 
+// --- Calendar awareness for promo dates -------------------------------------
+// The promo script's day-of-week must be computed FROM THE ACTUAL CALENDAR, not
+// guessed by the LLM. The model has no reliable year context and will pick the
+// wrong year (e.g. "July 16-17" -> 2024's Tue/Wed instead of 2026's Thu/Fri).
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_LOOKUP = {
+  january: 0, jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3, may: 4,
+  june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7, september: 8, sep: 8, sept: 8,
+  october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11,
+};
+const ordinal = (n) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
+
+// Best-effort parse of a free-text event date into one or two concrete dates and
+// return an authoritative phrase like "Thursday, July 16th and Friday, July 17th, 2026".
+// Returns null if the text can't be parsed (caller falls back to year context only).
+const resolveEventDates = (dateStr, today = new Date()) => {
+  if (!dateStr || !dateStr.trim()) return null;
+  const str = dateStr.trim();
+  const yearMatch = str.match(/\b(20\d{2})\b/);
+  let year = yearMatch ? parseInt(yearMatch[1], 10) : null;
+
+  let month = null;
+  const days = [];
+
+  // "July 16-17" / "Jul 16 & 17" / "July 16 to 17" / "July 16, 2026"
+  const monthNameRe = /([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*(?:[-–—]|to|thru|through|&|and)\s*(\d{1,2})(?:st|nd|rd|th)?)?/i;
+  const mn = str.match(monthNameRe);
+  if (mn && MONTH_LOOKUP[mn[1].toLowerCase()] !== undefined) {
+    month = MONTH_LOOKUP[mn[1].toLowerCase()];
+    days.push(parseInt(mn[2], 10));
+    if (mn[3]) days.push(parseInt(mn[3], 10));
+  } else {
+    // Numeric "7/16", "7/16-17", "7/16/26"
+    const numRe = /\b(\d{1,2})\/(\d{1,2})(?:\s*[-–—]\s*(\d{1,2}))?(?:\/(\d{2,4}))?/;
+    const num = str.match(numRe);
+    if (num) {
+      month = parseInt(num[1], 10) - 1;
+      days.push(parseInt(num[2], 10));
+      if (num[3]) days.push(parseInt(num[3], 10));
+      if (num[4] && !year) {
+        const y = parseInt(num[4], 10);
+        year = y < 100 ? 2000 + y : y;
+      }
+    }
+  }
+
+  if (month === null || month < 0 || month > 11 || days.length === 0) return null;
+
+  // No explicit year: assume the next upcoming occurrence from today.
+  if (!year) {
+    year = today.getFullYear();
+    const firstTry = new Date(year, month, days[0]);
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (firstTry < todayMidnight) year += 1;
+  }
+
+  const resolved = [];
+  for (const d of days) {
+    const dt = new Date(year, month, d);
+    // Reject impossible dates (e.g. Feb 30 rolls over to March).
+    if (dt.getMonth() !== month || dt.getDate() !== d) return null;
+    resolved.push(`${DAY_NAMES[dt.getDay()]}, ${MONTH_NAMES[month]} ${ordinal(d)}`);
+  }
+
+  if (resolved.length === 2) return `${resolved[0]} and ${resolved[1]}, ${year}`;
+  return `${resolved[0]}, ${year}`;
+};
+
 export default function ManualAnnouncementPlayer({ onPlay }) {
   const queryClient = useQueryClient();
 
@@ -95,12 +168,21 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
 
   const buildPromoPrompt = (form) => {
     const maxWords = LENGTH_WORD_LIMITS[form.length] || 75;
+    const today = new Date();
+    const todayStr = `${DAY_NAMES[today.getDay()]}, ${MONTH_NAMES[today.getMonth()]} ${ordinal(today.getDate())}, ${today.getFullYear()}`;
+    const resolvedDates = resolveEventDates(form.date, today);
     const parts = [
       `You are a professional strip club DJ creating a promo voiceover script.`,
       `Write a ${form.length || '30s'} promo with a ${(form.vibe || 'Hype').toLowerCase()} vibe.`,
       `Event/Promo: ${form.event_name}`,
+      `(Reference only — today's date is ${todayStr}; the current year is ${today.getFullYear()}.)`,
     ];
-    if (form.date) parts.push(`Date: ${form.date}`);
+    if (resolvedDates) {
+      parts.push(`Date: ${form.date}`);
+      parts.push(`EVENT DATE(S) — already resolved from the calendar. Say these EXACT day names; do NOT recompute or change the weekday: ${resolvedDates}.`);
+    } else if (form.date) {
+      parts.push(`Date: ${form.date} (assume the current year, ${today.getFullYear()}, unless the text states otherwise).`);
+    }
     if (form.time) parts.push(`Time: ${form.time}`);
     if (form.venue) parts.push(`Venue: ${form.venue}`);
     if (form.details) parts.push(`Details: ${form.details}`);

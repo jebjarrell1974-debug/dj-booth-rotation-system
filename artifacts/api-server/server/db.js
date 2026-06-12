@@ -843,7 +843,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   return pool.slice(0, count);
 }
 
-export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = {}) {
+export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [], strictPlaylist = false } = {}) {
   // When a dancer has a playlist, pick ONLY from that playlist — never random library songs.
   // folders_only mode sends dancerPlaylist=[] so it falls through to the random library path below.
   if (dancerPlaylist.length > 0) {
@@ -921,6 +921,12 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
 
     // No playlist tracks exist in the DB at all — only legitimate reason to use random library
     if (freshTracks.length === 0 && cooldownTracks.length === 0) {
+      // strictPlaylist (remote reroll): NEVER fall back off-playlist. Return [] so the caller
+      // keeps the current song instead of swapping in a random library track.
+      if (strictPlaylist) {
+        console.warn(`⚠️ selectTracksForSet: strictPlaylist — no usable playlist tracks survived (all missing/excluded); returning [] (no off-playlist fallback)`);
+        return [];
+      }
       console.warn(`⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library`);
       return getRandomTracks(count, [...excludeSet], genres);
     }

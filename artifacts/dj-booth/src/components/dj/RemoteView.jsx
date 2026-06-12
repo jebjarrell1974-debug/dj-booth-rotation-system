@@ -163,6 +163,16 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
   const rerollSong = async (dancerId, songIdx) => {
     const key = `${dancerId}-${songIdx}`;
+    // FAIL-CLOSED reroll: only ever swap in another song from HER OWN list, never a random one.
+    // Pool = union of what's shown in the rotation editor (her current set) AND her saved
+    // persistent playlist. dancer.playlist alone could be empty/stale, which previously made the
+    // server fall back to a random off-playlist library track (silently, since count=1 doesn't log).
+    const rerollDancer = dancers?.find(d => d.id === dancerId);
+    const persistentPlaylist = Array.isArray(rerollDancer?.playlist) ? rerollDancer.playlist : [];
+    const shownSongs = getSongs(dancerId) || [];
+    const dancerPlaylist = [...new Set([...shownSongs, ...persistentPlaylist].filter(Boolean))];
+    // No known songs for her → cannot reroll safely (empty playlist => server picks random). Do nothing.
+    if (dancerPlaylist.length === 0) return;
     setRerolling(prev => ({ ...prev, [key]: true }));
     try {
       const allAssigned = [];
@@ -171,14 +181,14 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
           if (id !== dancerId || i !== songIdx) allAssigned.push(n);
         });
       });
-      const genres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
-      const rerollDancer = dancers?.find(d => d.id === dancerId);
-      const dancerPlaylist = rerollDancer?.playlist || [];
       const token = localStorage.getItem('djbooth_token');
       const res = await fetch('/api/music/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ count: 1, excludeNames: [...new Set(allAssigned)], genres, dancerPlaylist }),
+        // Intentionally NOT sending `genres`: passing genres lets the server use its genre-folder
+        // (Rule 7) / random-library fallback, which can return a song OUTSIDE her playlist. With
+        // genres omitted + a real playlist, the server stays strictly inside her songs.
+        body: JSON.stringify({ count: 1, excludeNames: [...new Set(allAssigned)], dancerPlaylist, strictPlaylist: true }),
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {

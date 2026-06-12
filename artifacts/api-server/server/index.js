@@ -1875,13 +1875,14 @@ app.get('/api/music/track-by-name/:name', authenticate, (req, res) => {
 });
 
 app.post('/api/music/select', authenticate, (req, res) => {
-  const { count = 2, excludeNames = [], genres = [], dancerPlaylist = [] } = req.body || {};
+  const { count = 2, excludeNames = [], genres = [], dancerPlaylist = [], strictPlaylist = false } = req.body || {};
   try {
     const tracks = selectTracksForSet({
       count: Math.min(count, 20),
       excludeNames: excludeNames || [],
       genres: genres || [],
-      dancerPlaylist: dancerPlaylist || []
+      dancerPlaylist: dancerPlaylist || [],
+      strictPlaylist: !!strictPlaylist
     });
     res.json({ tracks: tracks.map(t => ({ ...t, url: `/api/music/stream/${t.id}` })) });
   } catch (err) {
