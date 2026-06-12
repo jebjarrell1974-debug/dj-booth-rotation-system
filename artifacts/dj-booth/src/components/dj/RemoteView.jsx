@@ -63,6 +63,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const currentTrack = liveBoothState?.currentTrack || '';
   const currentSongNumber = liveBoothState?.currentSongNumber || 0;
   const songsPerSet = liveBoothState?.songsPerSet || 3;
+  const boothStateLoaded = !!liveBoothState;
   const announcementsEnabled = liveBoothState?.announcementsEnabled !== false;
   const rotationList = liveBoothState?.rotation || [];
   const currentDancerIndex = liveBoothState?.currentDancerIndex || 0;
@@ -392,15 +393,21 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
               {/* Announce toggle */}
               <button
-                onClick={() => boothApi.sendCommand('toggleAnnouncements')}
+                onClick={() => { if (boothStateLoaded) boothApi.sendCommand('toggleAnnouncements'); }}
+                disabled={!boothStateLoaded}
                 className={`h-14 rounded-xl border flex items-center justify-center gap-2 font-semibold text-lg active:opacity-80 flex-shrink-0 ${
-                  announcementsEnabled
+                  !boothStateLoaded
+                    ? 'bg-[#1e293b] border-[#2e2e5a] text-gray-600 opacity-60 cursor-not-allowed'
+                    : announcementsEnabled
                     ? 'bg-[#00d4ff]/15 border-[#00d4ff]/40 text-[#00d4ff]'
                     : 'bg-[#1e293b] border-[#2e2e5a] text-gray-500'
                 }`}
               >
-                {announcementsEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-                {announcementsEnabled ? 'Voice On' : 'Voice Off'}
+                {!boothStateLoaded
+                  ? <><Mic className="w-5 h-5" />Voice …</>
+                  : announcementsEnabled
+                  ? <><Mic className="w-5 h-5" />Voice On</>
+                  : <><MicOff className="w-5 h-5" />Voice Off</>}
               </button>
 
               {/* Deactivate song */}

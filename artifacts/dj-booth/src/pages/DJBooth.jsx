@@ -547,12 +547,18 @@ export default function DJBooth() {
 
   useEffect(() => {
     if (!configLoaded) return;
+    // The remote (iPad) must NEVER persist announcementsEnabled. It toggles voice
+    // via sendCommand('toggleAnnouncements') and only displays liveBoothState — it
+    // never goes through this save path, so its own copy is stuck at the default
+    // (true). Letting it run here clobbered the shared server config back to "true"
+    // on every remote login. The booth owns this field; the remote only commands it.
+    if (remoteMode) return;
     // The booth view only edits the announcements on/off toggle. It must NOT
     // re-save the API keys / voice ID / script model it merely loaded at mount —
     // doing so clobbered edits made on the Configuration screen (e.g. the
     // ElevenLabs Voice ID kept reverting to the value loaded here at startup).
     saveApiConfig({ announcementsEnabled });
-  }, [announcementsEnabled, configLoaded]);
+  }, [announcementsEnabled, configLoaded, remoteMode]);
 
 
   useEffect(() => {
