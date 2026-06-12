@@ -3081,45 +3081,7 @@ export default function DJBooth() {
           playingInterstitialBreakKeyRef.current = breakKey;
           interstitialIndexRef.current = 1;
           let firstBreakName = breakSongs[0];
-
-          const fbCooldowns = songCooldownRef.current || {};
-          const fbNowMs = Date.now();
-          const fbOnCooldown = fbCooldowns[firstBreakName] && (fbNowMs - fbCooldowns[firstBreakName]) < COOLDOWN_MS;
-          if (fbOnCooldown) {
-            console.log('⏭️ HandleSkip: First break song on cooldown, finding replacement:', firstBreakName);
-            try {
-              const fbToken = localStorage.getItem('djbooth_token');
-              const fbCooldownNames = Object.entries(fbCooldowns).filter(([, ts]) => ts && (fbNowMs - ts) < COOLDOWN_MS).map(([n]) => n);
-              const fbAssignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
-              const fbAllBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
-              const fbExcludeAll = [...new Set([...fbCooldownNames, ...fbAssignedNames, ...fbAllBreakNames])];
-              const _dsFB = djOptionsRef.current?.dayShift;
-              const _dsFBOn = isDayShiftActive(_dsFB);
-              const _dsFBGenres = _dsFB?.genres || [];
-              const fbActiveGenres = (_dsFBOn && _dsFBGenres.length > 0)
-                ? _dsFBGenres
-                : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
-              const fbRes = await fetch('/api/music/select', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(fbToken ? { Authorization: `Bearer ${fbToken}` } : {}) },
-                body: JSON.stringify({ count: 1, excludeNames: fbExcludeAll, genres: fbActiveGenres, dancerPlaylist: [] }),
-                signal: AbortSignal.timeout(5000)
-              });
-              if (fbRes.ok) {
-                const fbData = await fbRes.json();
-                if (fbData.tracks?.length > 0) {
-                  firstBreakName = fbData.tracks[0].name;
-                  const updatedBreakSongs = [...breakSongs];
-                  updatedBreakSongs[0] = firstBreakName;
-                  breakSongs = updatedBreakSongs;
-                  interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updatedBreakSongs };
-                  console.log('🎵 HandleSkip: Replaced cooldown break song with:', firstBreakName);
-                }
-              }
-            } catch (err) {
-              console.warn('⚠️ HandleSkip: First break song replacement failed:', err.message);
-            }
-          }
+          // DJ-set break songs always play exactly as configured — never swap on cooldown.
 
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
@@ -3218,7 +3180,7 @@ export default function DJBooth() {
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
-        const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
+        const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t && (t.url || t.name));
         if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
@@ -3229,7 +3191,7 @@ export default function DJBooth() {
         // system plays random ones" bug when DJ picks a track that's been recently played.
         const nextDancerId = newRotation[newIdx];
         const djSavedNext = djSavedSongsRef.current[nextDancerId];
-        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t?.url);
+        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t && (t.url || t.name));
         if (djSavedNextValid) {
           delete djSavedSongsRef.current[nextDancerId];
           console.log(`🎵 HandleSkip: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
@@ -3265,6 +3227,10 @@ export default function DJBooth() {
               : Promise.resolve([])
         ]);
         let nextTrack = freshTracks?.[0];
+        if (nextTrack && !nextTrack.url && nextTrack.name) {
+          const _rt = await resolveTrackByName(nextTrack.name);
+          if (_rt?.url) { nextTrack = _rt; if (Array.isArray(freshTracks)) freshTracks[0] = _rt; }
+        }
 
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         if (prePicked && prePicked.length > 0) {
@@ -3647,44 +3613,7 @@ export default function DJBooth() {
         let nextBreakName = breakSongs[breakIdx];
         let nextBreakTrack;
         interstitialIndexRef.current = breakIdx + 1;
-
-        const cooldowns = songCooldownRef.current || {};
-        const nowMs = Date.now();
-        const isOnCooldown = cooldowns[nextBreakName] && (nowMs - cooldowns[nextBreakName]) < COOLDOWN_MS;
-        if (isOnCooldown) {
-          console.log('⏭️ HandleTrackEnd: Break song on cooldown, finding replacement:', nextBreakName);
-          try {
-            const token = localStorage.getItem('djbooth_token');
-            const cooldownNames = Object.entries(cooldowns).filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS).map(([n]) => n);
-            const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
-            const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
-            const excludeAll = [...new Set([...cooldownNames, ...assignedNames, ...allBreakNames])];
-            const _dsCool = djOptionsRef.current?.dayShift;
-            const _dsCoolOn = isDayShiftActive(_dsCool);
-            const _dsCoolGenres = _dsCool?.genres || [];
-            const activeGenres = (_dsCoolOn && _dsCoolGenres.length > 0)
-              ? _dsCoolGenres
-              : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
-            const res = await fetch('/api/music/select', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-              body: JSON.stringify({ count: 1, excludeNames: excludeAll, genres: activeGenres, dancerPlaylist: [] }),
-              signal: AbortSignal.timeout(5000)
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.tracks?.length > 0) {
-                nextBreakName = data.tracks[0].name;
-                const updatedBreakSongs = [...breakSongs];
-                updatedBreakSongs[breakIdx] = nextBreakName;
-                interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updatedBreakSongs };
-                console.log('🎵 HandleTrackEnd: Replaced cooldown break song with:', nextBreakName);
-              }
-            }
-          } catch (err) {
-            console.warn('⚠️ HandleTrackEnd: Break song replacement failed:', err.message);
-          }
-        }
+        // DJ-set break songs always play exactly as configured — never swap on cooldown.
 
         setActiveBreakInfo({ songs: breakSongs, currentIndex: breakIdx, breakKey });
 
@@ -3747,13 +3676,25 @@ export default function DJBooth() {
 
       try {
         lastAudioActivityRef.current = Date.now();
-        const existingTracks = rotationSongsRef.current[newRotation[newIdx]];
+        const _piDancerId = newRotation[newIdx];
+        const _piDjSaved = djSavedSongsRef.current[_piDancerId];
+        const _piDjSavedValid = _piDjSaved && _piDjSaved.length >= songsPerSetRef.current && _piDjSaved.every(t => t && (t.url || t.name));
+        if (_piDjSavedValid) {
+          delete djSavedSongsRef.current[_piDancerId];
+          console.log(`🎵 Post-interstitial: next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${_piDjSaved.map(t => t.name).join(', ')}]`);
+          logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: _piDjSaved.map(t => t.name), trigger: 'post_interstitial' });
+        }
+        const existingTracks = rotationSongsRef.current[_piDancerId];
         const _postCd = songCooldownRef.current || {};
         const _postNow = Date.now();
         const _postValid = existingTracks && existingTracks.length >= songsPerSetRef.current &&
           existingTracks.every(t => !_postCd[t.name] || ((_postNow - _postCd[t.name]) >= COOLDOWN_MS));
-        let freshTracks = _postValid ? existingTracks : await getDancerTracks(nextDancer);
+        let freshTracks = _piDjSavedValid ? _piDjSaved : (_postValid ? existingTracks : await getDancerTracks(nextDancer));
         let nextTrack = freshTracks?.[0];
+        if (nextTrack && !nextTrack.url && nextTrack.name) {
+          const _rt = await resolveTrackByName(nextTrack.name);
+          if (_rt?.url) { nextTrack = _rt; if (Array.isArray(freshTracks)) freshTracks[0] = _rt; }
+        }
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
@@ -4069,45 +4010,7 @@ export default function DJBooth() {
           playingInterstitialBreakKeyRef.current = breakKey;
           interstitialIndexRef.current = 1;
           let firstBreakName = breakSongs[0];
-
-          const teCooldowns = songCooldownRef.current || {};
-          const teNowMs = Date.now();
-          const teOnCooldown = teCooldowns[firstBreakName] && (teNowMs - teCooldowns[firstBreakName]) < COOLDOWN_MS;
-          if (teOnCooldown) {
-            console.log('⏭️ HandleTrackEnd: First break song on cooldown, finding replacement:', firstBreakName);
-            try {
-              const teToken = localStorage.getItem('djbooth_token');
-              const teCooldownNames = Object.entries(teCooldowns).filter(([, ts]) => ts && (teNowMs - ts) < COOLDOWN_MS).map(([n]) => n);
-              const teAssignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
-              const teAllBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
-              const teExcludeAll = [...new Set([...teCooldownNames, ...teAssignedNames, ...teAllBreakNames])];
-              const _dsTE = djOptionsRef.current?.dayShift;
-              const _dsTEOn = isDayShiftActive(_dsTE);
-              const _dsTEGenres = _dsTE?.genres || [];
-              const teActiveGenres = (_dsTEOn && _dsTEGenres.length > 0)
-                ? _dsTEGenres
-                : (djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : []);
-              const teRes = await fetch('/api/music/select', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(teToken ? { Authorization: `Bearer ${teToken}` } : {}) },
-                body: JSON.stringify({ count: 1, excludeNames: teExcludeAll, genres: teActiveGenres, dancerPlaylist: [] }),
-                signal: AbortSignal.timeout(5000)
-              });
-              if (teRes.ok) {
-                const teData = await teRes.json();
-                if (teData.tracks?.length > 0) {
-                  firstBreakName = teData.tracks[0].name;
-                  const updatedBreakSongs = [...breakSongs];
-                  updatedBreakSongs[0] = firstBreakName;
-                  breakSongs = updatedBreakSongs;
-                  interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updatedBreakSongs };
-                  console.log('🎵 HandleTrackEnd: Replaced cooldown break song with:', firstBreakName);
-                }
-              }
-            } catch (err) {
-              console.warn('⚠️ HandleTrackEnd: First break song replacement failed:', err.message);
-            }
-          }
+          // DJ-set break songs always play exactly as configured — never swap on cooldown.
 
           setActiveBreakInfo({ songs: breakSongs, currentIndex: 0, breakKey });
           let firstBreakTrack = tracks.find(t => t.name === firstBreakName && t.url);
@@ -4216,7 +4119,7 @@ export default function DJBooth() {
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
-        const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t.url);
+        const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t && (t.url || t.name));
         if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
@@ -4227,7 +4130,7 @@ export default function DJBooth() {
         // system plays random ones" bug when DJ picks a track that's been recently played.
         const nextDancerId = newRotation[newIdx];
         const djSavedNext = djSavedSongsRef.current[nextDancerId];
-        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t?.url);
+        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t && (t.url || t.name));
         if (djSavedNextValid) {
           delete djSavedSongsRef.current[nextDancerId];
           console.log(`🎵 HandleTrackEnd: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
@@ -4263,6 +4166,10 @@ export default function DJBooth() {
               : Promise.resolve([])
         ]);
         let nextTrack = freshTracks?.[0];
+        if (nextTrack && !nextTrack.url && nextTrack.name) {
+          const _rt = await resolveTrackByName(nextTrack.name);
+          if (_rt?.url) { nextTrack = _rt; if (Array.isArray(freshTracks)) freshTracks[0] = _rt; }
+        }
 
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         if (prePicked && prePicked.length > 0) {
