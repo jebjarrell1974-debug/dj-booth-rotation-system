@@ -738,24 +738,46 @@ export default function DJBooth() {
   const getDancerTracksRef = useRef(null);
 
   // Send a dancer to In VIP — removes from rotation, stores with timer
+  // durationMs is ADDITIVE: it is added to any existing VIP time rather than replacing it.
+  //  - dancer already in VIP  -> extend her remaining countdown by durationMs
+  //  - dancer on stage         -> add to her pending (after-set) VIP duration
+  //  - otherwise               -> send her to VIP now for durationMs
   const sendDancerToVip = useCallback((dancerId, durationMs) => {
+    if (!durationMs || durationMs <= 0) return;
+    const idStr = String(dancerId);
     const isOnStage = rotationRef.current[currentDancerIndexRef.current] === dancerId && isRotationActiveRef.current;
-    const _vipDancerName = dancersRef.current.find(d => d.id === dancerId)?.name;
+    const _vipDancerName = dancersRef.current.find(d => String(d.id) === idStr)?.name;
+    const activeEntry = dancerVipMapRef.current[idStr];
+    const addMins = Math.round(durationMs / 60000);
     logDiag('vip_send', {
       dancer: _vipDancerName,
       durationMs,
       onStage: isOnStage,
       transitionInProgress: transitionInProgressRef.current,
+      mode: activeEntry ? 'extend_active' : (isOnStage ? 'add_pending' : 'new'),
     });
+    // Already in VIP → extend her remaining time (add to current expiry)
+    if (activeEntry) {
+      const base = Math.max(activeEntry.expiresAt || Date.now(), Date.now());
+      const expiresAt = base + durationMs;
+      const newMap = { ...dancerVipMapRef.current, [idStr]: { expiresAt, duration: (activeEntry.duration || 0) + durationMs } };
+      dancerVipMapRef.current = newMap;
+      setDancerVipMap(newMap);
+      try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
+      toast(`${_vipDancerName || 'Entertainer'} VIP extended +${addMins} min`, { icon: '👑' });
+      return;
+    }
     if (isOnStage) {
-      pendingVipRef.current = { ...pendingVipRef.current, [dancerId]: durationMs };
+      // Queue for after her current set — add to any existing pending duration
+      const existing = pendingVipRef.current[idStr] || 0;
+      const total = existing + durationMs;
+      pendingVipRef.current = { ...pendingVipRef.current, [idStr]: total };
       setPendingVipState({ ...pendingVipRef.current });
       try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(pendingVipRef.current)); } catch {}
-      const dancer = dancersRef.current.find(d => d.id === dancerId);
-      toast(`${dancer?.name || 'Entertainer'} going to VIP after this set`, { icon: '👑' });
+      toast(`${_vipDancerName || 'Entertainer'} going to VIP after this set (${Math.round(total / 60000)} min)`, { icon: '👑' });
     } else {
       const expiresAt = Date.now() + durationMs;
-      const newMap = { ...dancerVipMapRef.current, [dancerId]: { expiresAt, duration: durationMs } };
+      const newMap = { ...dancerVipMapRef.current, [idStr]: { expiresAt, duration: durationMs } };
       dancerVipMapRef.current = newMap;
       setDancerVipMap(newMap);
       try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
@@ -768,8 +790,7 @@ export default function DJBooth() {
       setCurrentDancerIndex(adjustedIdx);
       currentDancerIndexRef.current = adjustedIdx;
       if (isRotationActiveRef.current) updateStageStateRef.current?.(adjustedIdx, newRot);
-      const dancer = dancersRef.current.find(d => d.id === dancerId);
-      toast(`${dancer?.name || 'Entertainer'} sent to VIP`, { icon: '👑' });
+      toast(`${_vipDancerName || 'Entertainer'} sent to VIP (${addMins} min)`, { icon: '👑' });
     }
   }, []);
 

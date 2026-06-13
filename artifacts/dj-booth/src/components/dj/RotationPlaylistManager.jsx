@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable, useMouseSensor } from '@hello-pa
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw } from 'lucide-react';
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TRACKS_PER_PAGE = 200;
@@ -188,6 +188,8 @@ export default function RotationPlaylistManager({
   });
   // In VIP modal state
   const [vipModalDancerId, setVipModalDancerId] = useState(null);
+  const [vipAddMs, setVipAddMs] = useState(0);
+  useEffect(() => { setVipAddMs(0); }, [vipModalDancerId]);
   const [vipCountdowns, setVipCountdowns] = useState({});
 
   // Tick VIP countdowns every second
@@ -1787,16 +1789,28 @@ export default function RotationPlaylistManager({
                     </div>
                     <div className="flex items-center justify-between gap-2 pl-1">
                       <p className="text-xs text-yellow-400 truncate">Returns in {timeStr}</p>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Release from VIP"
-                        aria-label={`Release ${dancer.name} from VIP`}
-                        className="text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 flex-shrink-0 h-7 w-7 p-0"
-                        onClick={() => onReleaseFromVip?.(dancerId)}
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Add VIP time"
+                          aria-label={`Add VIP time for ${dancer.name}`}
+                          className="text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 h-7 w-7 p-0"
+                          onClick={() => setVipModalDancerId(dancerId)}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Release from VIP"
+                          aria-label={`Release ${dancer.name} from VIP`}
+                          className="text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 h-7 w-7 p-0"
+                          onClick={() => onReleaseFromVip?.(dancerId)}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1809,11 +1823,16 @@ export default function RotationPlaylistManager({
       {/* VIP Duration Modal */}
       {vipModalDancerId !== null && (() => {
         const dancer = (dancers || []).find(d => String(d.id) === String(vipModalDancerId));
-        const isPending = pendingVipMap[vipModalDancerId];
+        const isActive = !!dancerVipMap[vipModalDancerId];
+        const isPending = !!pendingVipMap[vipModalDancerId];
+        const addMins = Math.round(vipAddMs / 60000);
+        const aH = Math.floor(addMins / 60), aM = addMins % 60;
+        const addLabel = addMins === 0 ? '—' : (aH > 0 ? `${aH}h${aM ? ` ${aM}m` : ''}` : `${aM}m`);
+        const closeVip = () => setVipModalDancerId(null);
         return (
           <div
             className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center"
-            onClick={() => setVipModalDancerId(null)}
+            onClick={closeVip}
           >
             <div
               className="bg-[#0a0a1a] border border-yellow-500/40 rounded-2xl p-6 w-80 shadow-2xl"
@@ -1825,36 +1844,41 @@ export default function RotationPlaylistManager({
                 </div>
                 <div>
                   <p className="text-white font-semibold">{dancer?.name}</p>
-                  <p className="text-xs text-yellow-400">Send to VIP</p>
+                  <p className="text-xs text-yellow-400">{isActive ? 'Extend VIP' : 'Send to VIP'}</p>
                 </div>
               </div>
-              {isPending ? (
-                <div className="text-center py-2 mb-4">
-                  <p className="text-yellow-400 text-sm">VIP pending — she'll enter after her current set.</p>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 mb-4">She'll finish her current set, then enter VIP. How long?</p>
-              )}
-              {!isPending && (
-                <div className="grid grid-cols-3 gap-2 mb-4">
-                  {[15, 30, 60].map(mins => (
-                    <button
-                      key={mins}
-                      className="bg-[#151528] border border-[#1e293b] hover:border-yellow-500/50 hover:bg-yellow-900/20 rounded-xl py-3 text-white font-semibold text-sm transition-all"
-                      onClick={() => {
-                        onSendToVip?.(vipModalDancerId, mins * 60 * 1000);
-                        setVipModalDancerId(null);
-                        toast(`👑 ${dancer?.name} will enter VIP after this set (${mins} min)`);
-                      }}
-                    >
-                      {mins < 60 ? `${mins}m` : '1h'}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <p className="text-sm text-gray-400 mb-4">
+                {isActive
+                  ? 'She\u2019s in VIP. Add more time to her countdown.'
+                  : isPending
+                    ? 'VIP pending \u2014 she enters after this set. Add more time below.'
+                    : 'She\u2019ll finish her current set, then enter VIP. How long?'}
+              </p>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[15, 30, 60].map(mins => (
+                  <button
+                    key={mins}
+                    className="bg-[#151528] border border-[#1e293b] hover:border-yellow-500/50 hover:bg-yellow-900/20 rounded-xl py-3 text-white font-semibold text-sm transition-all"
+                    onClick={() => setVipAddMs(v => v + mins * 60 * 1000)}
+                  >
+                    +{mins < 60 ? `${mins}m` : '1h'}
+                  </button>
+                ))}
+              </div>
+              <div className="text-center text-yellow-300 text-sm font-semibold mb-3">Total: {addLabel}</div>
+              <button
+                disabled={vipAddMs === 0}
+                className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-xl py-3 mb-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (vipAddMs > 0) onSendToVip?.(vipModalDancerId, vipAddMs);
+                  closeVip();
+                }}
+              >
+                {isActive ? 'Extend VIP' : 'Send to VIP'}{addMins > 0 ? ` (+${addLabel})` : ''}
+              </button>
               <button
                 className="w-full text-xs text-gray-500 hover:text-gray-300 py-2 transition-colors"
-                onClick={() => setVipModalDancerId(null)}
+                onClick={closeVip}
               >
                 Cancel
               </button>

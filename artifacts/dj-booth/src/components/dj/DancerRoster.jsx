@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -81,6 +81,8 @@ export default function DancerRoster({
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [vipPickerDancerId, setVipPickerDancerId] = useState(null);
+  const [vipAddMs, setVipAddMs] = useState(0);
+  useEffect(() => { setVipAddMs(0); }, [vipPickerDancerId]);
 
   const gridRef = useRef(null);
 
@@ -463,39 +465,60 @@ export default function DancerRoster({
                 </Button>
               )}
 
-              {!isOnStage && (vipPickerDancerId === dancer.id ? (
+              {!isOnStage && (vipPickerDancerId === dancer.id ? (() => {
+                const isActiveVip = !!dancerVipMap[String(dancer.id)];
+                const addMins = Math.round(vipAddMs / 60000);
+                const aH = Math.floor(addMins / 60), aM = addMins % 60;
+                const lbl = addMins === 0 ? '—' : (aH > 0 ? `${aH}h${aM ? ` ${aM}m` : ''}` : `${aM}m`);
+                return (
                 <div className="w-full mb-2">
-                  <p className="text-[10px] text-yellow-400 text-center mb-1">VIP timeout duration:</p>
-                  <div className="grid grid-cols-4 gap-1 mb-1">
-                    {[15, 30, 45, 60].map(mins => (
+                  <p className="text-[10px] text-yellow-400 text-center mb-1">{isActiveVip ? 'Add VIP time:' : 'VIP timeout:'}</p>
+                  <div className="grid grid-cols-3 gap-1 mb-1">
+                    {[15, 30, 60].map(mins => (
                       <button
                         key={mins}
                         className="text-[10px] py-1 rounded bg-yellow-900/40 hover:bg-yellow-700/60 text-yellow-300 border border-yellow-700/50 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSendToVip?.(dancer.id, mins * 60 * 1000);
-                          setVipPickerDancerId(null);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); setVipAddMs(v => v + mins * 60 * 1000); }}
                       >
-                        {mins}m
+                        +{mins < 60 ? `${mins}m` : '1h'}
                       </button>
                     ))}
                   </div>
+                  <p className="text-[10px] text-center text-yellow-300 mb-1">Total: {lbl}</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      disabled={vipAddMs === 0}
+                      className="text-[10px] py-1 rounded bg-yellow-600/80 hover:bg-yellow-500 text-black font-semibold border border-yellow-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      onClick={(e) => { e.stopPropagation(); if (vipAddMs > 0) onSendToVip?.(dancer.id, vipAddMs); setVipPickerDancerId(null); }}
+                    >
+                      {isActiveVip ? 'Extend' : 'Send'}
+                    </button>
+                    <button
+                      className="text-[10px] py-1 rounded text-gray-500 hover:text-gray-300 border border-[#2e3a4e] transition-colors"
+                      onClick={(e) => { e.stopPropagation(); setVipPickerDancerId(null); }}
+                    >
+                      cancel
+                    </button>
+                  </div>
+                </div>
+                );
+              })() : dancerVipMap[String(dancer.id)] ? (
+                <div className="w-full mb-2 grid grid-cols-2 gap-1">
                   <button
-                    className="w-full text-[10px] py-1 rounded text-gray-500 hover:text-gray-300 transition-colors"
-                    onClick={(e) => { e.stopPropagation(); setVipPickerDancerId(null); }}
+                    className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-yellow-900/30 hover:bg-yellow-800/50 border border-yellow-600/40 text-yellow-400 text-xs font-medium transition-colors"
+                    title="Add VIP time"
+                    onClick={(e) => { e.stopPropagation(); setVipPickerDancerId(dancer.id); }}
                   >
-                    cancel
+                    <Plus className="w-3 h-3" /> Time
+                  </button>
+                  <button
+                    className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-yellow-900/20 hover:bg-yellow-800/40 border border-yellow-700/40 text-yellow-500 text-xs transition-colors"
+                    title="Release from VIP"
+                    onClick={(e) => { e.stopPropagation(); onReleaseFromVip?.(String(dancer.id)); }}
+                  >
+                    Release
                   </button>
                 </div>
-              ) : dancerVipMap[String(dancer.id)] ? (
-                <button
-                  className="w-full mb-2 flex items-center justify-center gap-1 py-1.5 rounded-md bg-yellow-900/30 hover:bg-yellow-800/50 border border-yellow-600/40 text-yellow-400 text-xs font-medium transition-colors"
-                  title="Tap to release from VIP"
-                  onClick={(e) => { e.stopPropagation(); onReleaseFromVip?.(String(dancer.id)); }}
-                >
-                  <span>👑</span> In VIP — release
-                </button>
               ) : pendingVipState[String(dancer.id)] ? (
                 <button
                   className="w-full mb-2 flex items-center justify-center gap-1 py-1.5 rounded-md bg-yellow-900/20 hover:bg-yellow-800/30 border border-yellow-700/30 text-yellow-600 text-xs transition-colors"

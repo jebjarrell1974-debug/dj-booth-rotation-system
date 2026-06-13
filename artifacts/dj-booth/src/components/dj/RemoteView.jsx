@@ -29,6 +29,9 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [expandedDancer, setExpandedDancer] = useState(null);
   const [vipPickerFor, setVipPickerFor] = useState(null);
+  const [vipExtendFor, setVipExtendFor] = useState(null);
+  const [vipAddMs, setVipAddMs] = useState(0);
+  useEffect(() => { setVipAddMs(0); }, [vipPickerFor, vipExtendFor]);
   const [soundBoost, setSoundBoost] = useState(1.0);
 
   const [libSearch, setLibSearch] = useState('');
@@ -562,22 +565,37 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                             </button>
                           </div>
                         </div>
-                        {showVipPicker && (
-                          <div className="px-3 pb-3 flex items-center gap-2">
-                            <span className="text-xs text-yellow-400 flex-shrink-0">VIP duration:</span>
-                            {[{ label: '15m', ms: 15 * 60 * 1000 }, { label: '30m', ms: 30 * 60 * 1000 }, { label: '1h', ms: 60 * 60 * 1000 }].map(({ label, ms }) => (
-                              <button key={label}
-                                onClick={() => { boothApi.sendCommand('sendToVip', { dancerId: dancer.id, durationMs: ms }); setVipPickerFor(null); }}
-                                className="flex-1 h-10 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-base font-bold active:bg-yellow-500/30">
-                                {label}
+                        {showVipPicker && (() => {
+                          const addMins = Math.round(vipAddMs / 60000);
+                          const h = Math.floor(addMins / 60), m = addMins % 60;
+                          const lbl = addMins === 0 ? '—' : (h > 0 ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`);
+                          return (
+                          <div className="px-3 pb-3 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-yellow-400 flex-shrink-0">Add:</span>
+                              {[{ label: '+15m', ms: 15 * 60 * 1000 }, { label: '+30m', ms: 30 * 60 * 1000 }, { label: '+1h', ms: 60 * 60 * 1000 }].map(({ label, ms }) => (
+                                <button key={label}
+                                  onClick={() => setVipAddMs(v => v + ms)}
+                                  className="flex-1 h-10 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-base font-bold active:bg-yellow-500/30">
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-yellow-300 flex-shrink-0">Total: {lbl}</span>
+                              <button disabled={vipAddMs === 0}
+                                onClick={() => { if (vipAddMs > 0) boothApi.sendCommand('sendToVip', { dancerId: dancer.id, durationMs: vipAddMs }); setVipPickerFor(null); }}
+                                className="flex-1 h-10 rounded-xl bg-yellow-500 text-black text-base font-bold active:bg-yellow-400 disabled:opacity-30">
+                                Send to VIP
                               </button>
-                            ))}
-                            <button onClick={() => setVipPickerFor(null)}
-                              className="flex-1 h-10 rounded-xl bg-[#1e293b] text-gray-400 text-base active:bg-[#2e2e5a]">
-                              Cancel
-                            </button>
+                              <button onClick={() => setVipPickerFor(null)}
+                                className="flex-1 h-10 rounded-xl bg-[#1e293b] text-gray-400 text-base active:bg-[#2e2e5a]">
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -596,19 +614,57 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                           const minsLeft = Math.floor(msLeft / 60000);
                           const secsLeft = Math.floor((msLeft % 60000) / 1000);
                           return (
-                            <div key={dancerId} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-yellow-500/30 bg-yellow-900/10">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: vipDancer.color || '#00d4ff' }}>
-                                {vipDancer.name?.charAt(0).toUpperCase()}
+                            <div key={dancerId} className="px-3 py-2.5 rounded-xl border border-yellow-500/30 bg-yellow-900/10">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: vipDancer.color || '#00d4ff' }}>
+                                  {vipDancer.name?.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-base font-semibold text-white">{vipDancer.name}</div>
+                                  <div className="text-xs text-yellow-400">Returns in {minsLeft}:{String(secsLeft).padStart(2, '0')}</div>
+                                </div>
+                                <button
+                                  onClick={() => setVipExtendFor(vipExtendFor === vipDancer.id ? null : vipDancer.id)}
+                                  className={`px-3 h-10 rounded-xl border text-sm font-semibold flex-shrink-0 ${vipExtendFor === vipDancer.id ? 'bg-yellow-500/25 border-yellow-500/50 text-yellow-200' : 'bg-yellow-500/15 border-yellow-500/30 text-yellow-300'} active:bg-yellow-500/25`}>
+                                  +Time
+                                </button>
+                                <button
+                                  onClick={() => boothApi.sendCommand('releaseFromVip', { dancerId: vipDancer.id })}
+                                  className="px-3 h-10 rounded-xl bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-semibold active:bg-green-500/25 flex-shrink-0">
+                                  Release
+                                </button>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-base font-semibold text-white">{vipDancer.name}</div>
-                                <div className="text-xs text-yellow-400">Returns in {minsLeft}:{String(secsLeft).padStart(2, '0')}</div>
-                              </div>
-                              <button
-                                onClick={() => boothApi.sendCommand('releaseFromVip', { dancerId: vipDancer.id })}
-                                className="px-3 h-10 rounded-xl bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-semibold active:bg-green-500/25 flex-shrink-0">
-                                Release
-                              </button>
+                              {vipExtendFor === vipDancer.id && (() => {
+                                const addMins = Math.round(vipAddMs / 60000);
+                                const h = Math.floor(addMins / 60), m = addMins % 60;
+                                const lbl = addMins === 0 ? '—' : (h > 0 ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`);
+                                return (
+                                <div className="mt-2 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-yellow-400 flex-shrink-0">Add:</span>
+                                    {[15, 30, 60].map(mm => (
+                                      <button key={mm}
+                                        onClick={() => setVipAddMs(v => v + mm * 60 * 1000)}
+                                        className="flex-1 h-10 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-base font-bold active:bg-yellow-500/30">
+                                        +{mm < 60 ? `${mm}m` : '1h'}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-yellow-300 flex-shrink-0">Total: {lbl}</span>
+                                    <button disabled={vipAddMs === 0}
+                                      onClick={() => { if (vipAddMs > 0) boothApi.sendCommand('sendToVip', { dancerId: vipDancer.id, durationMs: vipAddMs }); setVipExtendFor(null); }}
+                                      className="flex-1 h-10 rounded-xl bg-yellow-500 text-black text-base font-bold active:bg-yellow-400 disabled:opacity-30">
+                                      Extend
+                                    </button>
+                                    <button onClick={() => setVipExtendFor(null)}
+                                      className="flex-1 h-10 rounded-xl bg-[#1e293b] text-gray-400 text-base active:bg-[#2e2e5a]">
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                                );
+                              })()}
                             </div>
                           );
                         })}
