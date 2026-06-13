@@ -2444,6 +2444,7 @@ export default function DJBooth() {
     // or queue to start after the current song ends.
     rotationSongsRef.current = {};
     setRotationSongs({});
+    try { localStorage.removeItem('djbooth_planned_assignments'); } catch {}
 
     const isPlaying = audioEngineRef.current?.isPlaying;
     if (isPlaying) {
@@ -4582,6 +4583,7 @@ export default function DJBooth() {
     currentSongNumberRef.current = 1;
     setRotationSongs({});
     rotationSongsRef.current = {};
+    try { localStorage.removeItem('djbooth_planned_assignments'); } catch {}
     restoredSongsRef.current = false;
     rotationPendingRef.current = false;
     setRotationPending(false);

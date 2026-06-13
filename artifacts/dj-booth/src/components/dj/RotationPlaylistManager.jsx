@@ -168,7 +168,23 @@ export default function RotationPlaylistManager({
     : null;
   const playlistSongs = selectedPlaylistDancer?.playlist || [];
   const [localRotation, setLocalRotation] = useState(rotation);
-  const [songAssignments, setSongAssignments] = useState({});
+  // Restore the manager's displayed song picks across remounts (tab switch) and
+  // full page/kiosk reloads. Without this, the rotation tab unmounts on tab
+  // change and the auto-assign effect re-rolls every dancer's songs — wiping the
+  // DJ's chosen picks. Display-layer only; playback uses the parent's
+  // rotationSongs/djSavedSongsRef which are unaffected.
+  const [songAssignments, setSongAssignments] = useState(() => {
+    try {
+      const saved = localStorage.getItem('djbooth_planned_assignments');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
+          return parsed.assignments;
+        }
+      }
+    } catch {}
+    return {};
+  });
   const [interstitialSongs, setInterstitialSongs] = useState(() => {
     if (savedInterstitials && Object.keys(savedInterstitials).length > 0) return savedInterstitials;
     try {
@@ -211,7 +227,19 @@ export default function RotationPlaylistManager({
 
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
-  const djOverridesRef = React.useRef(new Set());
+  // Restore the "DJ edited these — don't re-roll/clobber them" markers alongside
+  // the displayed picks so a second Save All (after a tab switch) still reports
+  // the DJ's overrides, and the active restore block keeps skipping them.
+  const djOverridesRef = React.useRef((() => {
+    try {
+      const saved = localStorage.getItem('djbooth_planned_assignments');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.overrides)) return new Set(parsed.overrides);
+      }
+    } catch {}
+    return new Set();
+  })());
   const prevCurrentDancerIdRef = React.useRef(null);
   const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
@@ -248,6 +276,15 @@ export default function RotationPlaylistManager({
   useEffect(() => {
     songAssignmentsRef.current = songAssignments;
     onSongAssignmentsChange?.(songAssignments);
+    // Persist the displayed picks + DJ-edit markers so a remount (tab switch) or
+    // full reload restores them instead of re-rolling. Cleared by the parent on
+    // Start Rotation / Clear All (djbooth_planned_assignments).
+    try {
+      localStorage.setItem('djbooth_planned_assignments', JSON.stringify({
+        assignments: songAssignments,
+        overrides: [...djOverridesRef.current],
+      }));
+    } catch {}
   }, [songAssignments]);
 
   useEffect(() => {
