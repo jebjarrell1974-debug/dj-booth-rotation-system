@@ -681,7 +681,7 @@ chromium \
   --disable-features=TranslateUI,BackgroundMediaSuspend,MediaSessionService \
   --autoplay-policy=no-user-gesture-required \
   --disable-background-media-suspend \
-  --force-device-scale-factor=0.94 &
+  --force-device-scale-factor=0.85 &
 
 # Poll for window, then move + fullscreen.
 # Just calling fullscreen would fullscreen on whatever monitor it opened on — must move first.
