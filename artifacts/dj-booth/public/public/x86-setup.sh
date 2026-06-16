@@ -196,6 +196,25 @@ WaylandEnable=false
 GDMEOF
 echo "GNOME auto-login + X11 session configured"
 
+# Stop gnome-keyring from hooking GDM autologin. Under autologin no password reaches
+# PAM, so pam_gnome_keyring leaves the login keyring locked and the gcr-prompter pops a
+# password dialog that BLOCKS the kiosk on first boot (hit on unit 004, Jun 2026).
+# Removing these lines from the autologin PAM stack prevents that. gdm-autologin is a
+# dpkg conffile, so this edit is preserved across package upgrades.
+if [ -f /etc/pam.d/gdm-autologin ]; then
+  sudo sed -i '/pam_gnome_keyring/d' /etc/pam.d/gdm-autologin
+  echo "Removed pam_gnome_keyring from gdm-autologin"
+fi
+
+# Keep GDM as the active display manager (NOT lightdm) so the whole fleet stays uniform.
+# A stray lightdm install can repoint this symlink; force it back to GDM. Auto-detects
+# gdm.service vs gdm3.service. No-op on a unit already on GDM.
+GDM_UNIT=$(ls /lib/systemd/system/gdm*.service /usr/lib/systemd/system/gdm*.service 2>/dev/null | grep -E '/gdm3?\.service$' | head -1)
+if [ -n "$GDM_UNIT" ]; then
+  sudo ln -sf "$GDM_UNIT" /etc/systemd/system/display-manager.service
+  echo "display-manager.service -> $GDM_UNIT"
+fi
+
 # Install xrandr for second display (crowd rotation screen) management
 sudo apt install -y x11-xserver-utils 2>/dev/null || true
 
@@ -338,6 +357,25 @@ echo "[9.5/12] Installing openbox session (kiosk WM, GNOME stays as fallback)...
 # from gnome-shell's input grabs / workspace-switch gestures. GNOME stays
 # installed; switch back via ~/djbooth-rollback-to-gnome.sh.
 sudo apt-get install -y openbox 2>&1 | tail -3
+
+# Prevent the kiosk / crowd-display DOUBLE-LAUNCH. Debian's openbox session also runs the
+# freedesktop autostart entries (~/.config/autostart/*.desktop), so BOTH those AND
+# ~/.config/openbox/autostart would launch the same scripts -> "Opening in existing
+# browser session" race -> RotationChromium stuck at 10x10 px (hit on unit 004, Jun 2026).
+# Shadowing the `xdg-autostart` command with a no-op in /usr/local/bin (earlier in PATH
+# than the system one) makes ~/.config/openbox/autostart the SINGLE launcher under openbox.
+# The .desktop entries are left in place so the GNOME fallback session still autostarts the
+# kiosk. /usr/local/bin is not apt-owned, so this survives openbox upgrades (unlike editing
+# /usr/lib/.../openbox-autostart, which an upgrade would revert).
+sudo tee /usr/local/bin/xdg-autostart > /dev/null << 'XDGEOF'
+#!/bin/sh
+# NEON AI DJ no-op: under openbox the kiosk is launched by ~/.config/openbox/autostart,
+# not by freedesktop XDG autostart. See x86-setup.sh for rationale.
+exit 0
+XDGEOF
+sudo chmod +x /usr/local/bin/xdg-autostart
+echo "xdg-autostart shadowed (single-source kiosk launch under openbox)"
+
 if [ -f /usr/share/xsessions/openbox.desktop ]; then
   mkdir -p "$UNIT_HOME/.config/openbox"
   if [ -f "$APP_DIR/public/public/openbox-autostart.sh" ]; then

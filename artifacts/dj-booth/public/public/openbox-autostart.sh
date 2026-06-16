@@ -45,6 +45,20 @@ fi
 if [ -x "$HOME/djbooth-kiosk.sh" ]; then
   nohup bash "$HOME/djbooth-kiosk.sh" > /tmp/kiosk.log 2>&1 &
   disown
+else
+  # Fallback for a FRESHLY-provisioned unit before the updater has generated
+  # djbooth-kiosk.sh. Without this, shadowing xdg-autostart would leave a brand-new unit
+  # with no main kiosk until its first update + reboot. Launch Chromium directly so first
+  # boot still shows the kiosk. No-op on configured units (002/003) which have kiosk.sh.
+  echo "$(date): [openbox-autostart] djbooth-kiosk.sh missing — launching Chromium directly (first-boot fallback)" >> /tmp/openbox-autostart.log
+  nohup chromium --kiosk --noerrdialogs --disable-infobars \
+    --force-device-scale-factor=0.85 --autoplay-policy=no-user-gesture-required \
+    --disable-background-media-suspend \
+    --disable-features=BackgroundMediaSuspend,MediaSessionService \
+    --disable-session-crashed-bubble \
+    --password-store=basic \
+    http://localhost:3001 > /tmp/kiosk.log 2>&1 &
+  disown
 fi
 
 # Launch crowd display
