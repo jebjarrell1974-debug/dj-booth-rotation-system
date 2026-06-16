@@ -138,6 +138,20 @@ echo "Service started"
 echo "[8/12] Installing Chromium and setting up kiosk..."
 sudo apt install -y chromium 2>/dev/null || sudo apt install -y chromium-browser 2>/dev/null || true
 
+# Ensure Chromium can reach the PipeWire/PulseAudio socket so USB-DAC audio works.
+# Without XDG_RUNTIME_DIR in Chromium's launch environment, the pipewire-alsa plugin
+# can't find the audio socket and the kiosk plays NO sound (first hit on unit 004,
+# Jun 2026). Files in /etc/chromium.d/ are sourced by the chromium launcher on every
+# start, so this applies no matter how the kiosk is launched. The := guards mean a
+# correct value already in the environment is never clobbered.
+sudo mkdir -p /etc/chromium.d
+sudo tee /etc/chromium.d/pipewire-audio > /dev/null << 'AUDIOEOF'
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export PULSE_SERVER="${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+AUDIOEOF
+echo "Chromium PipeWire audio env installed (/etc/chromium.d/pipewire-audio)"
+
 sudo hostnamectl set-hostname "$UNIT_USER"
 grep -q "$UNIT_USER" /etc/hosts || echo "127.0.1.1 $UNIT_USER" | sudo tee -a /etc/hosts > /dev/null
 

@@ -8,12 +8,17 @@
 > a few stale facts that are preserved verbatim by user request and corrected here.
 
 - **LAST UPDATED:** June 16, 2026
-- **Latest commit on GitHub (`main`):** `7b2fa14` — "VIP countdown timer restored
-  (full-width, never clipped); Rotation tab shows placed features distinctly;
-  replit.md +unit 004"
+- **Latest push:** new-unit audio fix in `x86-setup.sh` + Claude Code operating
+  rules (§12) + unit 004 bring-up status & stability gate (§13). (Prior commit
+  `7b2fa14` — VIP countdown timer + rotation-tab feature display + replit.md unit 004.)
 - **Repo:** https://github.com/jebjarrell1974-debug/dj-booth-rotation-system (PUBLIC)
-- **Editing model:** Replit Agent makes ALL changes (code, builds, GitHub pushes,
-  Dell-unit commands). Claude Code never edits — diagnosis + monitoring only.
+- **Editing model:** Replit Agent makes ALL repo changes (code, builds, GitHub
+  pushes) and ALL commands on LIVE units (002 / 003 / homebase). Claude Code is
+  read-only on the repo and on live units — diagnosis + monitoring. **Exception
+  (Jun 16, 2026): Claude Code MAY apply hands-on fixes directly on the NOT-YET-LIVE
+  sandbox unit 004**, then hand every durable fix to the Replit Agent to bake into
+  the repo (see §12 operating rules). It still never edits the repo and never runs
+  changes on 002 / 003.
 
 ---
 
@@ -56,7 +61,7 @@ auth, Telegram alerting, and centralized fleet management with R2 content sync.
 |------|------|-------|
 | **002** | Live booth: touch + kiosk + crowd display | HDMI-2 = kiosk (1920×1080), HDMI-1 = crowd display (portrait, rotated left). Primary test unit for new pushes. |
 | **003** | Live booth: touch + kiosk + crowd display | Same HDMI layout as 002. The **"known good" reference unit — protect it.** Auto-update DISABLED; user updates it MANUALLY at his chosen cadence. |
-| **004** | NEW unit (Jun 16, 2026) | **Not yet in a venue / not deployed.** No HDMI/touch layout confirmed. Safe sandbox — currently used to try the latest push. Treat as not-yet-live until assigned a venue. |
+| **004** | NEW unit (Jun 16, 2026) | **Not yet in a venue / not deployed.** No HDMI/touch layout confirmed. Safe hands-on sandbox for Claude Code. **Has a stability gate to pass before going live — see §13.** Treat as not-yet-live until assigned a venue. |
 | **homebase** | Update source / staging | Openbox appliance, **no touchscreen, no kiosk monitor** (often off). Other units pull updates FROM homebase first, then GitHub fallback. Smoke-tests only — touch/kiosk verification impossible here. |
 
 ## 4. Current deploy state & cadence
@@ -214,4 +219,77 @@ These topic files hold root-cause depth for the above: `update-rollback-data-los
 `tts-paths-law`, `voice-switch-elevenlabs`, `touchscreen-freeze-recovery`,
 `fleet-desktop-wm`, `siw-touch-autosuspend-rule`, `dell-update-script-paths`,
 `github-push-operational`, `unit-credentials-and-scripts`, `api-server-active-tree`,
-`config-precedence-and-clobber`, `low-cache-rate-alert`, `collaboration-model`.
+`config-precedence-and-clobber`, `low-cache-rate-alert`, `collaboration-model`,
+`new-unit-provisioning`.
+
+## 12. Operating rules for Claude Code (tuning)
+
+Read this file at the start of every session — it's the source of truth. If anything
+here conflicts with `replit.md`, **this file wins**.
+
+1. **Diagnose freely. For fixes, prefer user-owned config over package-owned files.**
+   Put fixes in `~/.config`, `/etc/chromium.d`, or systemd / NetworkManager drop-ins —
+   NOT in apt-owned paths like `/usr/lib` or `/usr/share`. An `apt upgrade` silently
+   reverts distro files, so a fix there *looks* done but evaporates later. (Concrete
+   example: the 004 double-launch fix that commented out
+   `/usr/lib/.../openbox-autostart` will be undone by the next openbox upgrade — §13.)
+2. **Every persistent fix must be reproducible in the repo, not just live on a unit.**
+   Express it as a concrete edit to `x86-setup.sh`, `djbooth-update-github.sh`, or a
+   bundled script, and hand it to the Replit Agent to commit. A fix that lives only on
+   one machine is lost on reimage and never reaches unit 005.
+3. **Don't introduce fleet divergence silently.** Switching the display manager,
+   purging packages other units keep, or changing the autostart mechanism is a
+   fleet-wide decision — raise it, don't apply it to one unit. **Keep the fleet on
+   GDM + openbox session + GNOME-installed-as-fallback. Do NOT standardize on lightdm.**
+4. **After any change touching display / audio / network / keyring, cold-reboot and
+   confirm UNATTENDED recovery**, stating pass/fail for each: (a) single kiosk window
+   at 0,0 1920×1080, (b) single rotation window, (c) audio through the USB DAC,
+   (d) Wi-Fi remote access reconnected.
+5. **Destructive ops** (apt purge, DM swap, editing system files): state the exact
+   commands and the rollback first. You MAY run them on the **not-yet-live unit 004**.
+   **NEVER on live 002 / 003** — hand those to the Replit Agent and the
+   "002-first-for-a-full-night" cadence.
+6. **Keep your reporting format** — root cause → fix → "bake into setup for the next
+   unit." It's genuinely good. Just make sure rule 2 actually happens for every fix.
+
+## 13. Unit 004 bring-up: status & stability gate
+
+The 12-phase `x86-setup.sh` ran on 004 (Tailscale `100.64.87.105`). Three first-boot
+problems surfaced — here's each one's root cause and where the durable fix stands:
+
+1. **No USB-DAC audio.** Chromium's launch env lacked `XDG_RUNTIME_DIR`, so pipewire-alsa
+   couldn't find the audio socket. **RESOLVED for all future units:** the Replit Agent
+   baked `/etc/chromium.d/pipewire-audio` (exports `XDG_RUNTIME_DIR`, `PULSE_SERVER`,
+   `DBUS_SESSION_BUS_ADDRESS`) into `x86-setup.sh`. 004 already carries the equivalent
+   hand-fix.
+2. **gnome-keyring gcr-prompter blocks Chromium on first boot.** Under GDM autologin no
+   password reaches PAM, so the login keyring stays locked and pops a dialog. 004 was
+   hand-fixed by removing the keyring. **CAUTION — Wi-Fi risk:** NetworkManager may store
+   the Wi-Fi PSK in that keyring; removing it can break Wi-Fi reconnect after a reboot,
+   and Wi-Fi is 004's remote-access path. **Gate item:** confirm Wi-Fi remote access
+   survives a reboot. If it doesn't, store Wi-Fi secrets system-wide (`psk-flags=0`,
+   root-owned `/etc/NetworkManager/system-connections`) so they don't depend on a keyring.
+3. **Double-launch of kiosk / crowd display** → "Opening in existing browser session"
+   race → RotationChromium stuck at 10×10 px. Root cause: BOTH the XDG
+   `~/.config/autostart/*.desktop` entries AND `~/.config/openbox/autostart` launch the
+   same scripts (Debian's openbox-session also runs `xdg-autostart`). 004 was hand-fixed
+   by commenting out the xdg-autostart block in `/usr/lib/.../openbox-autostart`.
+   **CAUTION — that file is apt-owned; an openbox upgrade reverts it and the double-launch
+   returns.** Durable fix is **pending** and must also change the updater (which runs on
+   live units → 002-first cadence): add a `flock -n` guard to the launcher scripts, or
+   stop emitting the XDG duplicates so `~/.config/openbox/autostart` is the only launcher.
+   **Open question to answer BEFORE touching shared scripts:** why do live 002 / 003 NOT
+   double-launch but 004 does? (Most likely a newer Debian/openbox on 004.)
+
+**Fleet display-manager decision (Jun 16, 2026):** keep new units on **GDM + openbox +
+GNOME-as-fallback** to match 002 / 003 / homebase. The lightdm switch on 004 was a
+side-effect of an aggressive GNOME purge, not a design choice. Under autologin → openbox,
+gnome-shell never runs, so keeping GNOME installed is harmless and preserves
+`djbooth-rollback-to-gnome.sh` as a real escape hatch (that rollback is broken on a
+GNOME-purged unit).
+
+**★ STABILITY GATE — 004 must pass this before it goes to a venue.** Reboot it several
+times and confirm, unattended on every reboot: (a) single KioskChromium at 0,0
+1920×1080, (b) single RotationChromium, (c) audio through the USB DAC, (d) Wi-Fi remote
+access reconnects with no hands. Only when all four are green every reboot is 004
+venue-ready.
