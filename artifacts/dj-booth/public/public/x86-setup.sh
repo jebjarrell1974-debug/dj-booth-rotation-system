@@ -206,6 +206,29 @@ if [ -f /etc/pam.d/gdm-autologin ]; then
   echo "Removed pam_gnome_keyring from gdm-autologin"
 fi
 
+# Durably suppress the gnome-keyring D-Bus service activation files so the gcr-prompter can
+# never be auto-started to pop a password dialog over the kiosk (hit on unit 004, Jun 2026).
+# We use `dpkg-divert --rename` instead of `rm` because these files are apt-owned: a plain
+# delete is silently restored by any gnome-keyring package upgrade, re-breaking the kiosk on
+# a unit we can't see. A diversion is honored by dpkg on every future upgrade, so the
+# suppression survives. Idempotent — re-running re-asserts the same diversion.
+#
+# Confirmed SAFE on unit 004: Wi-Fi uses nmcli psk-flags=0 — the PSK lives on disk in
+# /etc/NetworkManager/system-connections/*.nmconnection and is read at boot with no keyring
+# or D-Bus lookup, so suppressing the keyring does NOT break Wi-Fi reconnect.
+#
+# FLEET RULE: always add venue Wi-Fi with
+#   sudo nmcli device wifi connect 'SSID' password 'PWD'
+# NEVER via the GNOME Network Manager GUI — the GUI may default to psk-flags=1 (keyring
+# storage), which WOULD break reconnection once the keyring is suppressed.
+for svc in \
+  org.gnome.keyring.service \
+  org.gnome.keyring.PrivatePrompter.service \
+  org.gnome.keyring.SystemPrompter.service; do
+  sudo dpkg-divert --quiet --local --rename --add "/usr/share/dbus-1/services/$svc" >/dev/null 2>&1 || true
+  echo "Suppressed (dpkg-divert) /usr/share/dbus-1/services/$svc"
+done
+
 # Keep GDM as the active display manager (NOT lightdm) so the whole fleet stays uniform.
 # A stray lightdm install can repoint this symlink; force it back to GDM. Auto-detects
 # gdm.service vs gdm3.service. No-op on a unit already on GDM.
