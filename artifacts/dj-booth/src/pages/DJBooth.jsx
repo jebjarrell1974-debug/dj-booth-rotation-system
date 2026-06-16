@@ -5243,6 +5243,9 @@ export default function DJBooth() {
                 dancers={dancers}
                 rotation={rotation}
                 tracks={tracks}
+                placedFeatures={placedFeatures}
+                onPlaceFeature={placeFeatureAtSlot}
+                onCancelFeature={cancelFeaturePlacement}
                 djOptions={djOptions}
                 songCooldowns={playedSongsMap}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}

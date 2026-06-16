@@ -150,7 +150,10 @@ export default function RotationPlaylistManager({
   dancerVipMap = {},
   pendingVipMap = {},
   onSendToVip,
-  onReleaseFromVip
+  onReleaseFromVip,
+  placedFeatures = {},
+  onPlaceFeature,
+  onCancelFeature
 }) {
   const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const [searchQuery, setSearchQuery] = useState('');
@@ -1350,6 +1353,7 @@ export default function RotationPlaylistManager({
                     const assigned = songAssignments[dancer.id] || [];
                     const breakKey = `after-${dancer.id}`;
                     const breakSongs = interstitialSongs[breakKey] || [];
+                    const feature = placedFeatures[dancer.id] || null;
                     
                     return (
                       <React.Fragment key={dancer.id}>
@@ -1386,15 +1390,20 @@ export default function RotationPlaylistManager({
                                 {dancer.name.charAt(0).toUpperCase()}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-white font-semibold text-sm truncate">{dancer.name}</p>
-                                <p className="text-xs text-gray-500">
-                                  {assigned.length > 0
-                                    ? `${assigned.length} song${assigned.length !== 1 ? 's' : ''}`
-                                    : 'No songs assigned'}
-                                  {selectedDancerId === dancer.id && ' — tap songs to add'}
+                                <p className="text-white font-semibold text-sm truncate flex items-center gap-1.5">
+                                  {feature && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40 flex-shrink-0">🌟 FEATURE</span>}
+                                  <span className="truncate">{dancer.name}</span>
+                                </p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {feature
+                                    ? (feature.chosenSetName ? `Feature set: ${feature.chosenSetName}` : 'Feature — set not chosen')
+                                    : assigned.length > 0
+                                      ? `${assigned.length} song${assigned.length !== 1 ? 's' : ''}`
+                                      : 'No songs assigned'}
+                                  {!feature && selectedDancerId === dancer.id && ' — tap songs to add'}
                                 </p>
                               </div>
-                              {isRotationActive && index === currentDancerIndex && localRotation.length > 1 && (
+                              {!feature && isRotationActive && index === currentDancerIndex && localRotation.length > 1 && (
                                 <button
                                   type="button"
                                   className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500 bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors"
@@ -1411,7 +1420,7 @@ export default function RotationPlaylistManager({
                                   <span className="text-sm font-bold">Skip</span>
                                 </button>
                               )}
-                              {isRotationActive && index !== currentDancerIndex && localRotation.length > 1 && (
+                              {!feature && isRotationActive && index !== currentDancerIndex && localRotation.length > 1 && (
                                 <button
                                   type="button"
                                   className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-yellow-600 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 transition-colors"
@@ -1428,7 +1437,7 @@ export default function RotationPlaylistManager({
                                   <span className="text-sm font-bold">Skip</span>
                                 </button>
                               )}
-                              {isRotationActive && onMoveDancerToTop && index !== currentDancerIndex && localRotation.length > 2 && (() => {
+                              {!feature && isRotationActive && onMoveDancerToTop && index !== currentDancerIndex && localRotation.length > 2 && (() => {
                                 const nextIdx = (currentDancerIndex + 1) % localRotation.length;
                                 if (index === nextIdx) return null;
                                 return (
@@ -1449,7 +1458,7 @@ export default function RotationPlaylistManager({
                                   </button>
                                 );
                               })()}
-                              {isRotationActive && onSendToVip && !dancerVipMap[dancer.id] && (
+                              {!feature && isRotationActive && onSendToVip && !dancerVipMap[dancer.id] && (
                                 <button
                                   type="button"
                                   className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border transition-colors ${pendingVipMap[dancer.id] ? 'border-yellow-400 bg-yellow-400/30 text-yellow-300' : 'border-yellow-500 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'}`}
@@ -1463,16 +1472,60 @@ export default function RotationPlaylistManager({
                                   <span className="text-sm font-bold">VIP</span>
                                 </button>
                               )}
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="w-10 h-10 text-gray-500 hover:text-red-400 hover:bg-[#1e293b] flex-shrink-0"
-                                onClick={(e) => { e.stopPropagation(); handleRemoveFromRotation(dancer.id); }}
-                              >
-                                <X className="w-5 h-5" />
-                              </Button>
+                              {feature && !(isRotationActive && index === currentDancerIndex) && (() => {
+                                const nextIdx = isRotationActive && localRotation.length > 0 ? (currentDancerIndex + 1) % localRotation.length : -1;
+                                return (
+                                  <>
+                                    {index !== nextIdx && (
+                                      <button
+                                        type="button"
+                                        className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                                        title="Move feature to next on stage"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onPlaceFeature?.(dancer.id, feature.chosenSetName, 1, { introExists: feature.introExists, outroExists: feature.outroExists });
+                                        }}
+                                      >
+                                        <ChevronsUp className="w-4 h-4 flex-shrink-0" />
+                                        <span className="text-sm font-bold">Next</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+                                      title="Hold — take the feature out of the line-up (stays armed in the Feature panel)"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onCancelFeature?.(dancer.id);
+                                      }}
+                                    >
+                                      <Clock className="w-4 h-4 flex-shrink-0" />
+                                      <span className="text-sm font-bold">Hold</span>
+                                    </button>
+                                  </>
+                                );
+                              })()}
+                              {!feature && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-10 h-10 text-gray-500 hover:text-red-400 hover:bg-[#1e293b] flex-shrink-0"
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveFromRotation(dancer.id); }}
+                                >
+                                  <X className="w-5 h-5" />
+                                </Button>
+                              )}
                             </div>
 
+                            {feature ? (
+                              <div className="px-3 py-2">
+                                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-fuchsia-900/10 border-fuchsia-500/30">
+                                  <span className="text-sm font-bold w-4 flex-shrink-0 text-fuchsia-300">★</span>
+                                  <span className="text-sm truncate flex-1 text-fuchsia-200">{feature.chosenSetName || 'Set not chosen — pick one in the Feature panel'}</span>
+                                </div>
+                                <p className="text-[10px] text-gray-500 mt-1 px-1">Feature show — intro, this set, then outro, then she auto-leaves. Manage in the Feature panel.</p>
+                              </div>
+                            ) : (
                             <Droppable droppableId={`songs-${dancer.id}`} type="song">
                               {(songProvided, songSnapshot) => (
                                 <div
@@ -1543,6 +1596,7 @@ export default function RotationPlaylistManager({
                                 </div>
                               )}
                             </Droppable>
+                            )}
                           </div>
                         )}
                       </Draggable>
@@ -1818,14 +1872,11 @@ export default function RotationPlaylistManager({
                 const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
                 return (
                   <div key={dancerId} className="px-2 py-2">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1.5">
                       <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
                         {dancer.name.charAt(0).toUpperCase()}
                       </div>
                       <p className="text-sm font-medium text-white leading-none truncate flex-1 min-w-0">{dancer.name}</p>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pl-1">
-                      <p className="text-xs text-yellow-400 truncate">Returns in {timeStr}</p>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <Button
                           size="sm"
@@ -1849,6 +1900,7 @@ export default function RotationPlaylistManager({
                         </Button>
                       </div>
                     </div>
+                    <p className="text-sm font-semibold text-yellow-400 leading-none pl-1 whitespace-nowrap tabular-nums">Returns in {timeStr}</p>
                   </div>
                 );
               })}
