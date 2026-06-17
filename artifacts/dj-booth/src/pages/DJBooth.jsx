@@ -3194,12 +3194,16 @@ export default function DJBooth() {
         const _skipTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'skip' });
 
-        const outroPromise = !announcementsEnabled
+        // "Next Entertainer" hard-skip (skipBreaks): do NOT play an outro for the
+        // entertainer being skipped — go straight to the next dancer's song 1 + intro.
+        // Only prefetch/duck for the outro on a natural set-end advance.
+        const playOutro = announcementsEnabled && !skipBreaks;
+        const outroPromise = !playOutro
           ? Promise.resolve(null)
           : _finishingFeature
             ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
             : prefetchAnnouncement('outro', dancer.name, null, 1);
-        if (announcementsEnabled) audioEngineRef.current?.duck();
+        if (playOutro) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t && (t.url || t.name));
@@ -3264,7 +3268,7 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        if (announcementsEnabled) {
+        if (playOutro) {
           const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
           await playPrefetchedAnnouncement(outroUrl);
         }
