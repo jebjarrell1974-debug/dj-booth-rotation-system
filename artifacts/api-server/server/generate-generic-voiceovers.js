@@ -30,7 +30,8 @@ if (!ELEVENLABS_API_KEY) {
 
 // Self-contained: the table is normally created by fleet-db.js, but keep this so
 // the generator still works if run before the server has initialised the schema.
-// Schema matches fleet-db.js (no UNIQUE constraint — upsert is done manually).
+// Schema matches fleet-db.js (incl. UNIQUE(dancer_name, recording_type)); the
+// upsert below is still done manually so it works regardless of who created the table.
 db.exec(`
   CREATE TABLE IF NOT EXISTS voice_recordings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +42,8 @@ db.exec(`
     processed_size INTEGER DEFAULT 0,
     raw_size INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
-    recorded_at INTEGER NOT NULL
+    recorded_at INTEGER NOT NULL,
+    UNIQUE(dancer_name, recording_type)
   )
 `);
 
