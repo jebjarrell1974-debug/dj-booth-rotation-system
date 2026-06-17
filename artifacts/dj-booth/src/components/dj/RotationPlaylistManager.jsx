@@ -1849,35 +1849,39 @@ export default function RotationPlaylistManager({
       {/* In VIP sidebar — sibling of the Library+Rotation wrapper (NOT inside it),
           so the flex parent reserves a guaranteed 260px slot for VIP that no amount
           of break songs / dancer rows / button additions can ever steal.
-          Card layout: row 1 = avatar + name, row 2 = "Returns in <time>" + icon-only
-          Release button. Stacked layout prevents the timer text from being clipped on
+          Card layout (stacked, full-width): row 1 = avatar + full name (wraps, never
+          truncated so booth staff can always read it), row 2 = icon-only controls
+          (+ add time, ↺ release), row 3 = "Returns in <time>". The entry list scrolls
+          like the rotation list when several VIPs are active. Prevents name clipping on
           smaller booth screens (1440x900 on 003). */}
       {Object.keys(dancerVipMap).length > 0 && (
-        <div className="w-[210px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2">
-          <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20">
+        <div className="w-[210px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2 flex flex-col">
+          <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden flex flex-col min-h-0 flex-1">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20 flex-shrink-0">
               <Crown className="w-4 h-4 text-yellow-400" />
               <span className="text-xs font-semibold text-yellow-400 uppercase tracking-wider">In VIP</span>
               <span className="text-xs text-yellow-500/60 ml-1">({Object.keys(dancerVipMap).length})</span>
             </div>
-            <div className="divide-y divide-yellow-500/10">
-              {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
-                const dancer = (dancers || []).find(d => String(d.id) === String(dancerId));
-                if (!dancer) return null;
-                const ms = vipCountdowns[dancerId] ?? (vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0);
-                const totalMins = Math.floor(ms / 60000);
-                const secs = Math.floor((ms % 60000) / 1000);
-                const hrs = Math.floor(totalMins / 60);
-                const mins = totalMins % 60;
-                const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
-                return (
-                  <div key={dancerId} className="px-2 py-2">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
-                        {dancer.name.charAt(0).toUpperCase()}
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="divide-y divide-yellow-500/10">
+                {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
+                  const dancer = (dancers || []).find(d => String(d.id) === String(dancerId));
+                  if (!dancer) return null;
+                  const ms = vipCountdowns[dancerId] ?? (vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0);
+                  const totalMins = Math.floor(ms / 60000);
+                  const secs = Math.floor((ms % 60000) / 1000);
+                  const hrs = Math.floor(totalMins / 60);
+                  const mins = totalMins % 60;
+                  const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
+                  return (
+                    <div key={dancerId} className="px-2 py-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                          {dancer.name.charAt(0).toUpperCase()}
+                        </div>
+                        <p className="text-sm font-medium text-white leading-tight flex-1 min-w-0 break-words">{dancer.name}</p>
                       </div>
-                      <p className="text-sm font-medium text-white leading-none truncate flex-1 min-w-0">{dancer.name}</p>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-2 mb-1.5">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1899,12 +1903,12 @@ export default function RotationPlaylistManager({
                           <RotateCcw className="w-3.5 h-3.5" />
                         </Button>
                       </div>
+                      <p className="text-sm font-semibold text-yellow-400 leading-none pl-1 whitespace-nowrap tabular-nums">Returns in {timeStr}</p>
                     </div>
-                    <p className="text-sm font-semibold text-yellow-400 leading-none pl-1 whitespace-nowrap tabular-nums">Returns in {timeStr}</p>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
           </div>
         </div>
       )}
