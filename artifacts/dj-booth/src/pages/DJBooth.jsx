@@ -4203,13 +4203,14 @@ export default function DJBooth() {
         setRotationSongs(updatedSongs);
         rotationSongsRef.current = updatedSongs;
 
-        if (announcementsEnabled) {
-          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
-          await playPrefetchedAnnouncement(outroUrl);
-        }
-
         const _arrivalFeature = getFeatureMeta(nextDancer);
         if (_arrivalFeature) {
+          // Feature arrival: let the outro finish first, then run the feature show
+          // (it manages its own intro/bed and ducking). Behavior unchanged.
+          if (announcementsEnabled) {
+            const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+            await playPrefetchedAnnouncement(outroUrl);
+          }
           console.log('🌟 HandleTrackEnd: next dancer is FEATURE — running feature show');
           nextTrack = await playFeatureArrivalRef.current(nextDancer);
           lastAudioActivityRef.current = Date.now();
@@ -4217,18 +4218,35 @@ export default function DJBooth() {
           logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end', feature: true });
         } else {
         lastAudioActivityRef.current = Date.now();
-        if (nextTrack && nextTrack.url) {
-          console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
-          logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
-          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          if (!trackOk) await playFallbackTrack(true);
-        } else {
-          logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
-          await playFallbackTrack(true);
-        }
-
         if (announcementsEnabled) {
+          // Start the incoming entertainer's first song UNDER the outro so the music never
+          // drops to silence between sets. Mirrors the within-set + break-song overlap:
+          // begin the outro, then ~SONG_OVERLAP_DELAY_MS later bring in the next song while
+          // she's still talking, then wait out the rest of the outro before unducking.
+          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+          const announcementDone = playPrefetchedAnnouncement(outroUrl);
+          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
+          if (nextTrack && nextTrack.url) {
+            console.log('🎵 HandleTrackEnd: Switching to next dancer during outro:', nextDancer.name, 'track:', nextTrack.name);
+            logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
+            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
+            if (!trackOk) await playFallbackTrack(false);
+          } else {
+            logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
+            await playFallbackTrack(false);
+          }
+          await announcementDone;
           audioEngineRef.current?.unduck();
+        } else {
+          if (nextTrack && nextTrack.url) {
+            console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+            logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
+            const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+            if (!trackOk) await playFallbackTrack(true);
+          } else {
+            logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
+            await playFallbackTrack(true);
+          }
         }
 
         lastAudioActivityRef.current = Date.now();

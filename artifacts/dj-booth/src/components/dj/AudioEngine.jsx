@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 
-const MAX_SONG_DURATION = 180;
+const MAX_SONG_DURATION = 190;
 const MAX_FEATURE_DURATION = 3600;
 const TRANSITION_LEAD_TIME = 15;
 const CROSSFADE_DURATION = 5;
