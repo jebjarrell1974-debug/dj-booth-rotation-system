@@ -1,21 +1,36 @@
-import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// IMPORTANT: write through the SAME database the running server serves from
+// (db.js → DB_PATH/djbooth.db). The generic recordings are read by fleet-db.js
+// via this exact connection, so the generator MUST use it too. An earlier
+// version opened its own ../fleet.db — a dead file the server never reads — so
+// regenerations silently did nothing and stale audio (e.g. "vip" instead of
+// V.I.P.) lived on forever. Run this with the same env as the server so DB_PATH
+// resolves to the unit's real database.
+import db, { getClientSettings } from './db.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// MUST match FORCED_VOICE_ID in index.js — the app's single authoritative voice.
+// The booth client forces this voice for every announcement (a per-unit .env or
+// settings typo can't override it), so the generic fallback pool must use the
+// exact same voice or the backup outros would sound like a different person.
+// The env ELEVENLABS_VOICE_ID is intentionally NOT used: it is absent on units
+// and, in dev, points at a different voice.
+const FORCED_VOICE_ID = 'DODLEQrClDo8wCz460ld';
+const ELEVENLABS_VOICE_ID = FORCED_VOICE_ID;
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
+// API key: env first (loaded from the unit's .env via the service EnvironmentFile),
+// then stored client settings as a fallback so a manual run still works.
+let ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+if (!ELEVENLABS_API_KEY) {
+  try { ELEVENLABS_API_KEY = getClientSettings()?.djbooth_elevenlabs_key; } catch {}
+}
 
-if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
-  console.error('Missing ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID');
+if (!ELEVENLABS_API_KEY) {
+  console.error('Missing ELEVENLABS_API_KEY (checked env and stored settings)');
   process.exit(1);
 }
 
-const fleetDbPath = join(__dirname, '..', 'fleet.db');
-const db = new Database(fleetDbPath);
-
+// Self-contained: the table is normally created by fleet-db.js, but keep this so
+// the generator still works if run before the server has initialised the schema.
+// Schema matches fleet-db.js (no UNIQUE constraint — upsert is done manually).
 db.exec(`
   CREATE TABLE IF NOT EXISTS voice_recordings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,10 +41,17 @@ db.exec(`
     processed_size INTEGER DEFAULT 0,
     raw_size INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
-    recorded_at INTEGER NOT NULL,
-    UNIQUE(dancer_name, recording_type)
+    recorded_at INTEGER NOT NULL
   )
 `);
+
+// script_text lets us rebuild ONLY the lines whose script actually changed, so
+// editing one generic line never re-spends ElevenLabs credits on the others.
+try {
+  db.exec('ALTER TABLE voice_recordings ADD COLUMN script_text TEXT');
+} catch {
+  // column already exists — fine
+}
 
 const VOICE_SETTINGS = {
   stability: 0.45,
@@ -114,51 +136,90 @@ async function generateTTS(text) {
   return Buffer.from(arrayBuffer);
 }
 
-const insertStmt = db.prepare(`
-  INSERT OR REPLACE INTO voice_recordings 
-  (dancer_name, recording_type, processed_audio, raw_audio, processed_size, raw_size, duration_ms, recorded_at)
-  VALUES (?, ?, ?, NULL, ?, 0, 0, ?)
+const findExisting = db.prepare(
+  'SELECT id, script_text FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?'
+);
+const updateAudio = db.prepare(`
+  UPDATE voice_recordings
+  SET processed_audio = ?, raw_audio = NULL, processed_size = ?, raw_size = 0, duration_ms = 0, recorded_at = ?, script_text = ?
+  WHERE dancer_name = ? AND recording_type = ?
 `);
+const insertAudio = db.prepare(`
+  INSERT INTO voice_recordings
+  (dancer_name, recording_type, processed_audio, raw_audio, processed_size, raw_size, duration_ms, recorded_at, script_text)
+  VALUES (?, ?, ?, NULL, ?, 0, 0, ?, ?)
+`);
+const backfillScript = db.prepare(
+  'UPDATE voice_recordings SET script_text = ? WHERE dancer_name = ? AND recording_type = ?'
+);
+
+// Manual upsert (the table has no UNIQUE constraint — mirrors fleet-db.js).
+function saveGeneric(recType, script, audio) {
+  const existing = findExisting.get('__generic__', recType);
+  if (existing) {
+    updateAudio.run(audio, audio.length, Date.now(), script, '__generic__', recType);
+  } else {
+    insertAudio.run('__generic__', recType, audio, audio.length, Date.now(), script);
+  }
+}
+
+// Matches a spelled-out acronym in the script (V.I.P., D.J., …). Legacy rows
+// recorded before script tracking are only rebuilt if their current script
+// contains one of these — those are the lines that could have been baked with
+// the wrong pronunciation. Everything else is left alone to save credits.
+const DOTTED_ACRONYM = /\b(?:[A-Z]\.){2,}/;
 
 async function main() {
   const types = Object.keys(GENERIC_SCRIPTS);
   let total = 0;
-  let success = 0;
+  for (const type of types) total += GENERIC_SCRIPTS[type].length;
 
-  for (const type of types) {
-    total += GENERIC_SCRIPTS[type].length;
-  }
+  let rebuilt = 0, tracked = 0, unchanged = 0, failed = 0;
 
-  console.log(`Generating ${total} generic voiceovers...`);
+  console.log(`Checking ${total} generic voiceovers (rebuilding only changed lines)...`);
 
   for (const type of types) {
     const scripts = GENERIC_SCRIPTS[type];
     for (let i = 0; i < scripts.length; i++) {
       const recType = `${type}_${i + 1}`;
       const script = scripts[i];
+      const existing = findExisting.get('__generic__', recType);
 
-      const existing = db.prepare('SELECT id FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?').get('__generic__', recType);
       if (existing) {
-        console.log(`  ✅ ${recType} already exists, skipping`);
-        success++;
-        continue;
+        const stored = existing.script_text;
+        if (stored === script) {
+          unchanged++;
+          continue;
+        }
+        if (stored == null && !DOTTED_ACRONYM.test(script)) {
+          // Legacy recording with no spelled-out acronym → assume the existing
+          // audio is correct; just record the script so future edits are tracked.
+          backfillScript.run(script, '__generic__', recType);
+          tracked++;
+          console.log(`  🏷️  ${recType} legacy (no acronym) — kept audio, tracked script`);
+          continue;
+        }
+        console.log(stored == null
+          ? `  ♻️  ${recType} legacy with acronym — rebuilding for correct pronunciation`
+          : `  ♻️  ${recType} script changed — rebuilding`);
+      } else {
+        console.log(`  🎤 ${recType} new — generating`);
       }
 
       try {
-        console.log(`  🎤 Generating ${recType}...`);
         const audio = await generateTTS(script);
-        insertStmt.run('__generic__', recType, audio, audio.length, Date.now());
-        success++;
+        saveGeneric(recType, script, audio);
+        rebuilt++;
         console.log(`  ✅ ${recType} saved (${(audio.length / 1024).toFixed(1)}KB)`);
         await new Promise(r => setTimeout(r, 500));
       } catch (err) {
+        failed++;
         console.error(`  ❌ ${recType} failed: ${err.message}`);
       }
     }
   }
 
-  console.log(`\nDone! ${success}/${total} voiceovers generated and saved.`);
-  db.close();
+  console.log(`\nDone. Rebuilt ${rebuilt}, kept+tracked ${tracked}, unchanged ${unchanged}, failed ${failed} (of ${total}).`);
 }
 
 main().catch(err => {
