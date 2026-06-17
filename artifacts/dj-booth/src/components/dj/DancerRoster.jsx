@@ -218,7 +218,8 @@ export default function DancerRoster({
     }
   };
 
-  const sortedDancers = [...dancers].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const rosterDancers = dancers.filter(d => d.entertainer_type !== 'feature');
+  const sortedDancers = [...rosterDancers].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   const activeDancers = sortedDancers.filter(d => d.is_active);
 
   const firstIdByLetter = useMemo(() => {

@@ -45,6 +45,26 @@ fi
 if [ -x "$HOME/djbooth-kiosk.sh" ]; then
   nohup bash "$HOME/djbooth-kiosk.sh" > /tmp/kiosk.log 2>&1 &
   disown
+else
+  # Minimal BOOTSTRAP kiosk for a FRESHLY-provisioned unit before the updater has generated
+  # the full djbooth-kiosk.sh. Without this, shadowing xdg-autostart would leave a brand-new
+  # unit with no main kiosk until its first update + reboot. The updater replaces this with
+  # the geometry/touch-aware djbooth-kiosk.sh within ~45s (boot cron); the next reboot then
+  # takes the primary branch above. No-op on configured units (002/003) which have kiosk.sh.
+  # Backgrounded subshell so the health-wait never stalls the crowd-display launch below.
+  # --password-store=basic keeps a gnome-keyring prompt from blocking the bootstrap window.
+  echo "$(date): [openbox-autostart] djbooth-kiosk.sh missing — bootstrap Chromium (first-boot fallback)" >> /tmp/openbox-autostart.log
+  (
+    # Wait for the server to answer (cap ~120s) so we don't land on an error page.
+    for i in $(seq 1 60); do curl -sf http://localhost:3001/__health >/dev/null 2>&1 && break; sleep 2; done
+    chromium --kiosk --no-first-run --noerrdialogs --disable-infobars \
+      --disable-session-crashed-bubble --disable-translate \
+      --disable-features=TranslateUI,BackgroundMediaSuspend,MediaSessionService \
+      --autoplay-policy=no-user-gesture-required --disable-background-media-suspend \
+      --force-device-scale-factor=0.85 --password-store=basic \
+      http://localhost:3001 > /tmp/kiosk.log 2>&1
+  ) &
+  disown
 fi
 
 # Launch crowd display
