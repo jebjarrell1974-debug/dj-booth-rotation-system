@@ -22,7 +22,11 @@ xset s noblank 2>/dev/null || true
 VOL_PCT=80
 if [ -r "$HOME/.djbooth-volume" ]; then
   _vp=$(tr -dc '0-9' < "$HOME/.djbooth-volume" | head -c 3)
-  [ -n "$_vp" ] && VOL_PCT="$_vp"
+  if [ -n "$_vp" ] && [ "$_vp" -ge 1 ] 2>/dev/null && [ "$_vp" -le 100 ] 2>/dev/null; then
+    VOL_PCT="$_vp"
+  else
+    echo "$(date): [openbox-autostart] ~/.djbooth-volume invalid ('$_vp'), using default 80%" >> /tmp/openbox-autostart.log
+  fi
 fi
 USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
 if [ -n "$USB_CARD" ]; then
