@@ -1243,13 +1243,20 @@ if [ "$IS_HOMEBASE_VAL" != "true" ] && [ -n "$WIFI_CONN" ]; then
   fi
 fi
 
-# Pin USB sound card to 80% so an UPDATE also restores OS volume (matches the per-boot
+# Pin USB sound card on UPDATE too so the OS volume is restored (matches the per-boot
 # preset in openbox-autostart.sh). Card index drifts across units → detect it by name.
+# Per-unit override: ~/.djbooth-volume (integer percent, e.g. "100") wins; else default 80.
+# Per-unit-local file (never synced/pushed) so each unit can hold a different level.
+VOL_PCT=80
+if [ -r "$HOME/.djbooth-volume" ]; then
+  _vp=$(tr -dc '0-9' < "$HOME/.djbooth-volume" | head -c 3)
+  [ -n "$_vp" ] && VOL_PCT="$_vp"
+fi
 USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
 if [ -n "$USB_CARD" ]; then
   for CTL in PCM Speaker Master; do
-    if amixer -c "$USB_CARD" sset "$CTL" 80% unmute >/dev/null 2>&1; then
-      echo "USB audio card $USB_CARD '$CTL' -> 80%"
+    if amixer -c "$USB_CARD" sset "$CTL" "${VOL_PCT}%" unmute >/dev/null 2>&1; then
+      echo "USB audio card $USB_CARD '$CTL' -> ${VOL_PCT}%"
       break
     fi
   done

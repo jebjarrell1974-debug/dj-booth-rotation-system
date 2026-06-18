@@ -12,20 +12,28 @@ xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 xset s noblank 2>/dev/null || true
 
-# Reset hardware (OS) output volume to 80% on every boot.
+# Reset hardware (OS) output volume on every boot.
 # Power loss / unclean shutdown can wipe the ALSA mixer back to default. The operator
-# wants the USB sound card pinned at 80% every session. The card INDEX drifts across
-# units/boots, so detect it by name ("USB Audio") and try the common control names.
+# wants the USB sound card pinned to a fixed level every session. The card INDEX drifts
+# across units/boots, so detect it by name ("USB Audio") and try the common control names.
+# Per-unit override: if ~/.djbooth-volume exists, use the integer percent inside it
+# (e.g. "100"); otherwise default to 80. This keeps the level per-unit-local (never synced)
+# so a unit can run a different hardware volume without changing any other unit.
+VOL_PCT=80
+if [ -r "$HOME/.djbooth-volume" ]; then
+  _vp=$(tr -dc '0-9' < "$HOME/.djbooth-volume" | head -c 3)
+  [ -n "$_vp" ] && VOL_PCT="$_vp"
+fi
 USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
 if [ -n "$USB_CARD" ]; then
   for CTL in PCM Speaker Master; do
-    if amixer -c "$USB_CARD" sset "$CTL" 80% unmute >/dev/null 2>&1; then
-      echo "$(date): [openbox-autostart] USB audio card $USB_CARD '$CTL' -> 80%" >> /tmp/openbox-autostart.log
+    if amixer -c "$USB_CARD" sset "$CTL" "${VOL_PCT}%" unmute >/dev/null 2>&1; then
+      echo "$(date): [openbox-autostart] USB audio card $USB_CARD '$CTL' -> ${VOL_PCT}%" >> /tmp/openbox-autostart.log
       break
     fi
   done
 else
-  echo "$(date): [openbox-autostart] no USB audio card found for 80% volume preset" >> /tmp/openbox-autostart.log
+  echo "$(date): [openbox-autostart] no USB audio card found for ${VOL_PCT}% volume preset" >> /tmp/openbox-autostart.log
 fi
 
 # Apply per-unit display config (rotation, primary, etc).
