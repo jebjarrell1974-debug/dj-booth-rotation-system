@@ -1057,28 +1057,32 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
     echo "Display trigger set — crowd screen will reload via djbooth-display-watcher"
   else
     echo "WARNING: Server did not respond after restart — attempting direct browser launch as fallback"
-    # Safety net: if boot update ran but browsers never launched (e.g. polkit dialog blocked startup),
-    # launch them directly here rather than leaving the screens blank.
-    export DISPLAY=:0
-    pkill -f "chromium" 2>/dev/null || true
-    sleep 2
-    rm -f "$HOME/.config/chromium/SingletonLock" \
-          "$HOME/.config/chromium/SingletonCookie" \
-          "$HOME/.config/chromium/SingletonSocket"
-    if [ -x "$HOME/djbooth-kiosk.sh" ]; then
-      bash "$HOME/djbooth-kiosk.sh" &
-      disown
-      echo "DJ kiosk launch triggered"
-    fi
-    # Restart or start the display watcher, then signal it
-    pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
-    sleep 1
-    if [ -x "$HOME/djbooth-display-watcher.sh" ]; then
-      bash "$HOME/djbooth-display-watcher.sh" &
-      disown
+    if [ "$IS_HOMEBASE" = "true" ]; then
+      echo "Homebase mode — skipping browser fallback launch"
+    else
+      # Safety net: if boot update ran but browsers never launched (e.g. polkit dialog blocked startup),
+      # launch them directly here rather than leaving the screens blank.
+      export DISPLAY=:0
+      pkill -f "chromium" 2>/dev/null || true
       sleep 2
-      touch /tmp/djbooth-display-trigger
-      echo "Display watcher restarted and crowd screen trigger set"
+      rm -f "$HOME/.config/chromium/SingletonLock" \
+            "$HOME/.config/chromium/SingletonCookie" \
+            "$HOME/.config/chromium/SingletonSocket"
+      if [ -x "$HOME/djbooth-kiosk.sh" ]; then
+        bash "$HOME/djbooth-kiosk.sh" &
+        disown
+        echo "DJ kiosk launch triggered"
+      fi
+      # Restart or start the display watcher, then signal it
+      pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
+      sleep 1
+      if [ -x "$HOME/djbooth-display-watcher.sh" ]; then
+        bash "$HOME/djbooth-display-watcher.sh" &
+        disown
+        sleep 2
+        touch /tmp/djbooth-display-trigger
+        echo "Display watcher restarted and crowd screen trigger set"
+      fi
     fi
   fi
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
