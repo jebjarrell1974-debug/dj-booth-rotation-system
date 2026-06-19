@@ -53,6 +53,17 @@ if [ -x /usr/local/bin/djbooth-touch-map.sh ]; then
   /usr/local/bin/djbooth-touch-map.sh autostart >> /tmp/openbox-autostart.log 2>&1 || true
 fi
 
+# Homebase / no-kiosk opt-out: skip launching the kiosk, crowd display, and watcher so the
+# operator can actually use the desktop. Triggered by IS_HOMEBASE=true in the app .env
+# (homebase already sets this) OR a per-unit ~/.djbooth-no-kiosk marker (manual opt-out on
+# any unit, never synced). Live booths (002/003/004) have neither, so they are unaffected.
+IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$HOME/djbooth/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '[:space:]')
+if [ "$IS_HOMEBASE" = "true" ] || [ -f "$HOME/.djbooth-no-kiosk" ]; then
+  _why="IS_HOMEBASE=$IS_HOMEBASE"; [ -f "$HOME/.djbooth-no-kiosk" ] && _why="$_why marker=yes"
+  echo "$(date): [openbox-autostart] kiosk disabled ($_why) — skipping kiosk + crowd display launch" >> /tmp/openbox-autostart.log
+  exit 0
+fi
+
 # Launch DJ kiosk
 if [ -x "$HOME/djbooth-kiosk.sh" ]; then
   nohup bash "$HOME/djbooth-kiosk.sh" > /tmp/kiosk.log 2>&1 &
