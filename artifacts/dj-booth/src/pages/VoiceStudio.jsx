@@ -738,7 +738,10 @@ export default function VoiceStudio() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({
           model: config.scriptModel || 'gpt-4.1',
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            { role: 'system', content: `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. Use this as your date reference — when computing day of week or year from any date, use this as your anchor. Do not guess or infer the year.` },
+            { role: 'user', content: prompt }
+          ],
           max_tokens: 200,
           temperature: 0.9,
         }),
