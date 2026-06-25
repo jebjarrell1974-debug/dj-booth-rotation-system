@@ -752,6 +752,24 @@ export function getMusicGenres(excludeDjOnly = false) {
   return readDb.prepare(sql).all(...params);
 }
 
+// Given an array of song names (e.g. a dancer's saved playlist), return only the
+// names that are NOT in a DJ-only folder. Names not found in the library are kept
+// (we only remove names we can positively identify as DJ-only). Used to scrub
+// legacy entertainer playlists so DJ-only songs disappear from their view and can't
+// be re-saved — they already never auto-play (see selectTracksForSet).
+export function filterDjOnlyFromNames(names) {
+  if (!Array.isArray(names) || names.length === 0) return names || [];
+  const namePlaceholders = names.map(() => '?').join(',');
+  const rows = readDb.prepare(
+    `SELECT DISTINCT name FROM music_tracks
+     WHERE name COLLATE NOCASE IN (${namePlaceholders})
+       AND genre COLLATE NOCASE IN (${DJ_ONLY_PLACEHOLDERS})`
+  ).all(...names, ...DJ_ONLY_GENRES);
+  if (rows.length === 0) return names;
+  const djOnlySet = new Set(rows.map(r => String(r.name).toLowerCase()));
+  return names.filter(n => !djOnlySet.has(String(n).toLowerCase()));
+}
+
 export function getMusicTrackById(id) {
   return readDb.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
 }

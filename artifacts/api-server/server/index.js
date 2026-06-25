@@ -14,7 +14,7 @@ import {
   clearAllVoiceovers, cleanupOrphanedVoiceovers,
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
-  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB,
+  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB, filterDjOnlyFromNames,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
@@ -683,7 +683,7 @@ app.get('/api/playlist', authenticate, (req, res) => {
   if (req.session.role === 'dancer') {
     const dancer = getDancer(req.session.dancer_id);
     if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
-    return res.json({ playlist: dancer.playlist });
+    return res.json({ playlist: filterDjOnlyFromNames(dancer.playlist) });
   }
   return res.status(400).json({ error: 'Use entertainer session' });
 });
@@ -692,7 +692,7 @@ app.put('/api/playlist', authenticate, (req, res) => {
   if (req.session.role !== 'dancer') return res.status(403).json({ error: 'Entertainer access only' });
   const { playlist } = req.body;
   if (!Array.isArray(playlist)) return res.status(400).json({ error: 'Playlist must be an array' });
-  const cleanPlaylist = playlist.filter(name => !/dirty/i.test(name));
+  const cleanPlaylist = filterDjOnlyFromNames(playlist.filter(name => !/dirty/i.test(name)));
   const dancer = updateDancer(req.session.dancer_id, { playlist: cleanPlaylist });
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   res.json({ playlist: dancer.playlist });
