@@ -1815,20 +1815,20 @@ app.get('/api/music/tracks', authenticate, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 100, 5000);
   const search = req.query.search || '';
   const genre = req.query.genre || '';
-  const excludeDirty = req.session.role === 'dancer';
-  const result = getMusicTracks({ page, limit, search, genre, excludeDirty });
-  const genres = getMusicGenres();
+  const isDancer = req.session.role === 'dancer';
+  const result = getMusicTracks({ page, limit, search, genre, excludeDirty: isDancer, excludeDjOnly: isDancer });
+  const genres = getMusicGenres(isDancer);
   res.json({ ...result, genres });
 });
 
 app.get('/api/music/genres', authenticate, (req, res) => {
-  res.json({ genres: getMusicGenres() });
+  res.json({ genres: getMusicGenres(req.session.role === 'dancer') });
 });
 
 app.get('/api/music/stats', authenticate, (req, res) => {
   res.json({
     totalTracks: getMusicTrackCount(),
-    genres: getMusicGenres(),
+    genres: getMusicGenres(req.session.role === 'dancer'),
     lastScan: getLastScanTime(),
     musicPath: MUSIC_PATH || '(not configured)'
   });

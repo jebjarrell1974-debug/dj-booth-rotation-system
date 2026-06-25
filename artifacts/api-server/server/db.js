@@ -710,11 +710,21 @@ export function getBlockedTracks() {
   return readDb.prepare("SELECT MIN(id) as id, name, MIN(genre) as genre, MIN(blocked_at) as blocked_at FROM music_tracks WHERE blocked = 1 GROUP BY name ORDER BY blocked_at DESC").all();
 }
 
-export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '', excludeDirty = false } = {}) {
+// Folders reserved for DJ/Manager only: hidden from entertainer screens and never
+// pulled by automatic rotation. DJ/Manager can still hand-pick songs from them and,
+// once saved into rotation, the system plays them like any other song.
+export const DJ_ONLY_GENRES = ['FEATURE', 'Z DJ ONLY'];
+const DJ_ONLY_PLACEHOLDERS = DJ_ONLY_GENRES.map(() => '?').join(',');
+
+export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '', excludeDirty = false, excludeDjOnly = false } = {}) {
   let where = ['blocked = 0'];
   let params = [];
   if (excludeDirty) {
     where.push("name NOT LIKE '%dirty%' COLLATE NOCASE");
+  }
+  if (excludeDjOnly) {
+    where.push(`genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`);
+    params.push(...DJ_ONLY_GENRES);
   }
   if (search) {
     where.push('(name LIKE ? OR path LIKE ?)');
@@ -731,8 +741,15 @@ export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '',
   return { tracks, total, page, totalPages: Math.ceil(total / limit) };
 }
 
-export function getMusicGenres() {
-  return readDb.prepare("SELECT genre as name, COUNT(DISTINCT name) as count FROM music_tracks WHERE genre IS NOT NULL AND genre != '' AND blocked = 0 GROUP BY genre ORDER BY genre ASC").all();
+export function getMusicGenres(excludeDjOnly = false) {
+  let sql = "SELECT genre as name, COUNT(DISTINCT name) as count FROM music_tracks WHERE genre IS NOT NULL AND genre != '' AND blocked = 0";
+  const params = [];
+  if (excludeDjOnly) {
+    sql += ` AND genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`;
+    params.push(...DJ_ONLY_GENRES);
+  }
+  sql += " GROUP BY genre ORDER BY genre ASC";
+  return readDb.prepare(sql).all(...params);
 }
 
 export function getMusicTrackById(id) {
@@ -794,6 +811,8 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
     conditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
     params.push(...genres);
   }
+  conditions.push(`t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`);
+  params.push(...DJ_ONLY_GENRES);
 
   const where = conditions.join(' AND ');
   params.push(count * 4);
@@ -817,6 +836,8 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
       fallbackConditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
       fallbackParams.push(...genres);
     }
+    fallbackConditions.push(`t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`);
+    fallbackParams.push(...DJ_ONLY_GENRES);
     const fbWhere = fallbackConditions.join(' AND ');
     fallbackParams.push((count - pool.length) * 4);
     const fallback = readDb.prepare(
@@ -878,11 +899,14 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     const notFoundInDB = [];
     for (const trackName of dancerPlaylist) {
       if (excludeSet.has(trackName)) continue;
+      // DJ-only folders never auto-play, even if a legacy dancer playlist still lists one.
+      // (Explicit DJ/Manager hand-picks resolve via getMusicTrackByName, not this path.)
       const track = readDb.prepare(
         `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
          FROM music_tracks t
-         WHERE t.name = ? AND t.blocked = 0`
-      ).get(trackName);
+         WHERE t.name = ? AND t.blocked = 0
+           AND t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`
+      ).get(trackName, ...DJ_ONLY_GENRES);
       if (!track) { notFoundInDB.push(trackName); continue; }
       if (recentlyPlayedSet.has(trackName)) {
         cooldownTracks.push({ ...track, lastPlayed: lastPlayedMap[trackName] || '' });
@@ -899,8 +923,9 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
           `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
            FROM music_tracks t
            WHERE LOWER(t.name) = LOWER(?) AND t.blocked = 0
+             AND t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})
            LIMIT 1`
-        ).get(trackName);
+        ).get(trackName, ...DJ_ONLY_GENRES);
         if (!fuzzyTrack) { stillNotFound.push(trackName); continue; }
         console.log(`✅ selectTracksForSet: fuzzy matched "${trackName}" → "${fuzzyTrack.name}"`);
         const onCooldown = readDb.prepare(
