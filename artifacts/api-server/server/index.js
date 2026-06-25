@@ -14,7 +14,7 @@ import {
   clearAllVoiceovers, cleanupOrphanedVoiceovers,
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
-  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB, filterDjOnlyFromNames,
+  getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB, filterDjOnlyFromNames, scrubDjOnlyFromAllPlaylists,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
@@ -665,7 +665,10 @@ app.post('/api/dancers', authenticate, requireDJ, (req, res) => {
 });
 
 app.put('/api/dancers/:id', authenticate, requireDJ, (req, res) => {
-  const dancer = updateDancer(req.params.id, req.body);
+  const body = (req.body && Array.isArray(req.body.playlist))
+    ? { ...req.body, playlist: filterDjOnlyFromNames(req.body.playlist) }
+    : req.body;
+  const dancer = updateDancer(req.params.id, body);
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   if (req.body.pin !== undefined) {
     invalidateDancerSessions(req.params.id);
@@ -2543,6 +2546,12 @@ if (isDirectRun) {
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
     updateBootStep('server', 'done', `Port ${PORT}`);
+    try {
+      const scrubbed = scrubDjOnlyFromAllPlaylists();
+      if (scrubbed > 0) console.log(`🧹 Scrubbed DJ-only songs from ${scrubbed} entertainer playlist(s)`);
+    } catch (e) {
+      console.warn('⚠️ DJ-only playlist scrub failed:', e.message);
+    }
     initMusicScanner();
     startMonitoring();
     startHeartbeat(() => {

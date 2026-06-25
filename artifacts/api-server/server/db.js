@@ -770,6 +770,26 @@ export function filterDjOnlyFromNames(names) {
   return names.filter(n => !djOnlySet.has(String(n).toLowerCase()));
 }
 
+// Idempotent cleanup: physically remove any DJ-only song names from every dancer's
+// saved playlist in the DB. Called once at server startup so each unit self-cleans on
+// the next restart. Only removes names positively identified as DJ-only; everything
+// else is left untouched. Returns the number of dancer rows changed.
+export function scrubDjOnlyFromAllPlaylists() {
+  const dancers = db.prepare('SELECT id, playlist FROM dancers').all();
+  let changed = 0;
+  for (const dancer of dancers) {
+    let playlist = [];
+    try { playlist = JSON.parse(dancer.playlist || '[]'); } catch { continue; }
+    if (!Array.isArray(playlist) || playlist.length === 0) continue;
+    const cleaned = filterDjOnlyFromNames(playlist);
+    if (cleaned.length !== playlist.length) {
+      db.prepare('UPDATE dancers SET playlist = ? WHERE id = ?').run(JSON.stringify(cleaned), dancer.id);
+      changed++;
+    }
+  }
+  return changed;
+}
+
 export function getMusicTrackById(id) {
   return readDb.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
 }
