@@ -17,11 +17,28 @@ echo "$(date): Watchdog monitoring started"
 export DISPLAY=:0
 export XAUTHORITY="$HOME/.Xauthority"
 
+# Homebase / no-kiosk opt-out: on homebase (or any unit carrying a ~/.djbooth-no-kiosk
+# marker) the watchdog must NEVER launch the kiosk — the operator uses the desktop to
+# manage music. It still monitors server health below. Mirrors the guard in
+# openbox-autostart.sh. Live booths (002/003) have neither IS_HOMEBASE=true nor the
+# marker, so they are completely unaffected.
+IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$HOME/djbooth/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '[:space:]')
+KIOSK_DISABLED=false
+if [ "$IS_HOMEBASE" = "true" ] || [ -f "$HOME/.djbooth-no-kiosk" ]; then
+  KIOSK_DISABLED=true
+  _why="IS_HOMEBASE=$IS_HOMEBASE"; [ -f "$HOME/.djbooth-no-kiosk" ] && _why="$_why marker=yes"
+  echo "$(date): kiosk launching DISABLED ($_why) — watchdog will monitor server health only"
+fi
+
 # Canonical kiosk launcher — single source of truth.
 # Uses --app + --window-position + wmctrl (NOT --kiosk, which ignores window-position on Linux).
 KIOSK_LAUNCHER="$HOME/djbooth-kiosk.sh"
 
 launch_kiosk() {
+  if [ "$KIOSK_DISABLED" = true ]; then
+    echo "$(date): launch_kiosk suppressed (kiosk disabled on this unit)"
+    return 0
+  fi
   echo "$(date): launching kiosk via $KIOSK_LAUNCHER"
   rm -f ~/.config/chromium/SingletonLock ~/.config/chromium/SingletonCookie ~/.config/chromium/SingletonSocket
   if [ -x "$KIOSK_LAUNCHER" ]; then
@@ -35,7 +52,9 @@ launch_kiosk() {
 # Startup kiosk check — autostart desktop entries can fail silently (Singleton locks,
 # X session timing, etc). Verify the kiosk Chromium is running and launch if not.
 # Detect by --class=KioskChromium (set by the launcher script).
-if ! pgrep -f "KioskChromium" > /dev/null 2>&1; then
+if [ "$KIOSK_DISABLED" = true ]; then
+  echo "$(date): Startup kiosk launch skipped (kiosk disabled on this unit)"
+elif ! pgrep -f "KioskChromium" > /dev/null 2>&1; then
   echo "$(date): Kiosk Chromium not running at startup — waiting for server then launching"
   # Inline subshell (function not visible across bash -c boundary)
   bash -c "
