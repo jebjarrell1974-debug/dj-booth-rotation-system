@@ -83,16 +83,18 @@ const resolveEventDates = (dateStr, today = new Date()) => {
     if (firstTry < todayMidnight) year += 1;
   }
 
-  const resolved = [];
+  const monthName = MONTH_NAMES[month];
+  const ordinals = [];
   for (const d of days) {
     const dt = new Date(year, month, d);
     // Reject impossible dates (e.g. Feb 30 rolls over to March).
     if (dt.getMonth() !== month || dt.getDate() !== d) return null;
-    resolved.push(`${DAY_NAMES[dt.getDay()]}, ${MONTH_NAMES[month]} ${ordinal(d)}`);
+    ordinals.push(ordinal(d));
   }
 
-  if (resolved.length === 2) return `${resolved[0]} and ${resolved[1]}, ${year}`;
-  return `${resolved[0]}, ${year}`;
+  // Spoken form with NO day of the week (e.g. "July 3rd and 4th").
+  if (ordinals.length === 2) return `${monthName} ${ordinals[0]} and ${ordinals[1]}`;
+  return `${monthName} ${ordinals[0]}`;
 };
 
 export default function ManualAnnouncementPlayer({ onPlay }) {
@@ -178,10 +180,11 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       `(Reference only — today's date is ${todayStr}; the current year is ${today.getFullYear()}.)`,
     ];
     if (resolvedDates) {
-      parts.push(`Date: ${form.date}`);
-      parts.push(`EVENT DATE(S) — already resolved from the calendar. Say these EXACT day names; do NOT recompute or change the weekday: ${resolvedDates}.`);
+      parts.push(`EVENT DATE(S) — say this EXACT date and do NOT add a day of the week (no "Friday", "Saturday", etc.): ${resolvedDates}.`);
     } else if (form.date) {
-      parts.push(`Date: ${form.date} (assume the current year, ${today.getFullYear()}, unless the text states otherwise).`);
+      parts.push(`Date: say it as given and do NOT add a day of the week (no "Friday", "Saturday", etc.): ${form.date}.`);
+    } else {
+      parts.push(`No date was provided — do NOT mention, add, or invent any date or day of the week anywhere in the script.`);
     }
     if (form.time) parts.push(`Time: ${form.time}`);
     if (form.venue) parts.push(`Venue: ${form.venue}`);
@@ -191,7 +194,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       `No labels, brackets, stage directions, or explanations. Just the spoken words.`,
       `Use commas for breath pauses, ellipsis for drawn-out pauses.`,
       `Keep it punchy, engaging, and club-appropriate.`,
-      `When referring to the event date, always say the full day and date (for example: "Saturday, May 30th" or "Saturday the 30th"). Never say "this Saturday", "next Saturday", "upcoming", "coming up soon", or any other relative date phrasing — the script may play weeks before the event, so relative phrasing will be wrong.`,
+      `When referring to the event date, say only the date itself (for example: "May 30th" or "July 3rd and 4th") and NEVER say a day of the week (no "Friday", "Saturday", etc.). Never say "this Saturday", "next Saturday", "upcoming", "coming up soon", or any other relative date phrasing — the script may play weeks before the event, so relative phrasing will be wrong.`,
       `Maximum ${maxWords} words. End with a complete sentence followed by a period.`
     );
     return parts.join('\n');

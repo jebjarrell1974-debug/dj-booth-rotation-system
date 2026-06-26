@@ -66,7 +66,7 @@ USE_HOMEBASE_BUNDLE=false
 
 LOCAL_IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
 HOMEBASE_URL=$(grep "^FLEET_SERVER_URL=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
-HOMEBASE_URL="${HOMEBASE_URL:-http://100.109.73.27:3001}"
+HOMEBASE_URL="${HOMEBASE_URL:-http://100.64.87.105:3001}"
 
 if [ "$LOCAL_IS_HOMEBASE" != "true" ] && [ "$DJBOOTH_SKIP_HOMEBASE" != "1" ]; then
   echo "  Trying homebase at $HOMEBASE_URL..."
@@ -233,7 +233,7 @@ echo "[4.5/7] Ensuring fleet environment variables..."
 ENV_FILE="$APP_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
   echo "Creating .env with fleet defaults..."
-  FLEET_SERVER="http://100.109.73.27:3001"
+  FLEET_SERVER="http://100.64.87.105:3001"
   echo "Fetching fleet config from homebase..."
   HTTP_CODE=$(curl -sf -o "$ENV_FILE" -w "%{http_code}" "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ] && [ -s "$ENV_FILE" ]; then
@@ -243,11 +243,11 @@ if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
 PORT=3001
 NODE_ENV=production
-FLEET_SERVER_URL=http://100.109.73.27:3001
+FLEET_SERVER_URL=http://100.64.87.105:3001
 ENVEOF
   fi
 else
-  FLEET_SERVER="http://100.109.73.27:3001"
+  FLEET_SERVER="http://100.64.87.105:3001"
   FLEET_ENV=$(curl -sf "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "")
   if [ -n "$FLEET_ENV" ]; then
     # ELEVENLABS_VOICE_ID intentionally excluded — voice is per-unit (set in the UI), not fleet-synced.
@@ -263,7 +263,7 @@ else
     done
   fi
   grep -q "^NODE_ENV=" "$ENV_FILE" || echo "NODE_ENV=production" >> "$ENV_FILE"
-  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.109.73.27:3001" >> "$ENV_FILE"
+  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.64.87.105:3001" >> "$ENV_FILE"
 fi
 
 echo "[6/8] Building frontend..."
@@ -1057,28 +1057,32 @@ if [ "$DJBOOTH_BOOT_UPDATE" = "1" ]; then
     echo "Display trigger set — crowd screen will reload via djbooth-display-watcher"
   else
     echo "WARNING: Server did not respond after restart — attempting direct browser launch as fallback"
-    # Safety net: if boot update ran but browsers never launched (e.g. polkit dialog blocked startup),
-    # launch them directly here rather than leaving the screens blank.
-    export DISPLAY=:0
-    pkill -f "chromium" 2>/dev/null || true
-    sleep 2
-    rm -f "$HOME/.config/chromium/SingletonLock" \
-          "$HOME/.config/chromium/SingletonCookie" \
-          "$HOME/.config/chromium/SingletonSocket"
-    if [ -x "$HOME/djbooth-kiosk.sh" ]; then
-      bash "$HOME/djbooth-kiosk.sh" &
-      disown
-      echo "DJ kiosk launch triggered"
-    fi
-    # Restart or start the display watcher, then signal it
-    pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
-    sleep 1
-    if [ -x "$HOME/djbooth-display-watcher.sh" ]; then
-      bash "$HOME/djbooth-display-watcher.sh" &
-      disown
+    if [ "$IS_HOMEBASE" = "true" ]; then
+      echo "Homebase mode — skipping browser fallback launch"
+    else
+      # Safety net: if boot update ran but browsers never launched (e.g. polkit dialog blocked startup),
+      # launch them directly here rather than leaving the screens blank.
+      export DISPLAY=:0
+      pkill -f "chromium" 2>/dev/null || true
       sleep 2
-      touch /tmp/djbooth-display-trigger
-      echo "Display watcher restarted and crowd screen trigger set"
+      rm -f "$HOME/.config/chromium/SingletonLock" \
+            "$HOME/.config/chromium/SingletonCookie" \
+            "$HOME/.config/chromium/SingletonSocket"
+      if [ -x "$HOME/djbooth-kiosk.sh" ]; then
+        bash "$HOME/djbooth-kiosk.sh" &
+        disown
+        echo "DJ kiosk launch triggered"
+      fi
+      # Restart or start the display watcher, then signal it
+      pkill -f "djbooth-display-watcher.sh" 2>/dev/null || true
+      sleep 1
+      if [ -x "$HOME/djbooth-display-watcher.sh" ]; then
+        bash "$HOME/djbooth-display-watcher.sh" &
+        disown
+        sleep 2
+        touch /tmp/djbooth-display-trigger
+        echo "Display watcher restarted and crowd screen trigger set"
+      fi
     fi
   fi
 elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
@@ -1243,13 +1247,24 @@ if [ "$IS_HOMEBASE_VAL" != "true" ] && [ -n "$WIFI_CONN" ]; then
   fi
 fi
 
-# Pin USB sound card to 80% so an UPDATE also restores OS volume (matches the per-boot
+# Pin USB sound card on UPDATE too so the OS volume is restored (matches the per-boot
 # preset in openbox-autostart.sh). Card index drifts across units → detect it by name.
+# Per-unit override: ~/.djbooth-volume (integer percent, e.g. "100") wins; else default 80.
+# Per-unit-local file (never synced/pushed) so each unit can hold a different level.
+VOL_PCT=80
+if [ -r "$HOME/.djbooth-volume" ]; then
+  _vp=$(tr -dc '0-9' < "$HOME/.djbooth-volume" | head -c 3)
+  if [ -n "$_vp" ] && [ "$_vp" -ge 1 ] 2>/dev/null && [ "$_vp" -le 100 ] 2>/dev/null; then
+    VOL_PCT="$_vp"
+  else
+    echo "~/.djbooth-volume invalid ('$_vp'), using default 80%"
+  fi
+fi
 USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
 if [ -n "$USB_CARD" ]; then
   for CTL in PCM Speaker Master; do
-    if amixer -c "$USB_CARD" sset "$CTL" 80% unmute >/dev/null 2>&1; then
-      echo "USB audio card $USB_CARD '$CTL' -> 80%"
+    if amixer -c "$USB_CARD" sset "$CTL" "${VOL_PCT}%" unmute >/dev/null 2>&1; then
+      echo "USB audio card $USB_CARD '$CTL' -> ${VOL_PCT}%"
       break
     fi
   done

@@ -12,20 +12,32 @@ xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 xset s noblank 2>/dev/null || true
 
-# Reset hardware (OS) output volume to 80% on every boot.
+# Reset hardware (OS) output volume on every boot.
 # Power loss / unclean shutdown can wipe the ALSA mixer back to default. The operator
-# wants the USB sound card pinned at 80% every session. The card INDEX drifts across
-# units/boots, so detect it by name ("USB Audio") and try the common control names.
+# wants the USB sound card pinned to a fixed level every session. The card INDEX drifts
+# across units/boots, so detect it by name ("USB Audio") and try the common control names.
+# Per-unit override: if ~/.djbooth-volume exists, use the integer percent inside it
+# (e.g. "100"); otherwise default to 80. This keeps the level per-unit-local (never synced)
+# so a unit can run a different hardware volume without changing any other unit.
+VOL_PCT=80
+if [ -r "$HOME/.djbooth-volume" ]; then
+  _vp=$(tr -dc '0-9' < "$HOME/.djbooth-volume" | head -c 3)
+  if [ -n "$_vp" ] && [ "$_vp" -ge 1 ] 2>/dev/null && [ "$_vp" -le 100 ] 2>/dev/null; then
+    VOL_PCT="$_vp"
+  else
+    echo "$(date): [openbox-autostart] ~/.djbooth-volume invalid ('$_vp'), using default 80%" >> /tmp/openbox-autostart.log
+  fi
+fi
 USB_CARD=$(aplay -l 2>/dev/null | grep -i 'USB Audio' | head -1 | sed -n 's/^card \([0-9]\+\):.*/\1/p')
 if [ -n "$USB_CARD" ]; then
   for CTL in PCM Speaker Master; do
-    if amixer -c "$USB_CARD" sset "$CTL" 80% unmute >/dev/null 2>&1; then
-      echo "$(date): [openbox-autostart] USB audio card $USB_CARD '$CTL' -> 80%" >> /tmp/openbox-autostart.log
+    if amixer -c "$USB_CARD" sset "$CTL" "${VOL_PCT}%" unmute >/dev/null 2>&1; then
+      echo "$(date): [openbox-autostart] USB audio card $USB_CARD '$CTL' -> ${VOL_PCT}%" >> /tmp/openbox-autostart.log
       break
     fi
   done
 else
-  echo "$(date): [openbox-autostart] no USB audio card found for 80% volume preset" >> /tmp/openbox-autostart.log
+  echo "$(date): [openbox-autostart] no USB audio card found for ${VOL_PCT}% volume preset" >> /tmp/openbox-autostart.log
 fi
 
 # Apply per-unit display config (rotation, primary, etc).
@@ -39,6 +51,17 @@ fi
 # Touchscreen map (backup trigger — kiosk launcher also calls this)
 if [ -x /usr/local/bin/djbooth-touch-map.sh ]; then
   /usr/local/bin/djbooth-touch-map.sh autostart >> /tmp/openbox-autostart.log 2>&1 || true
+fi
+
+# Homebase / no-kiosk opt-out: skip launching the kiosk, crowd display, and watcher so the
+# operator can actually use the desktop. Triggered by IS_HOMEBASE=true in the app .env
+# (homebase already sets this) OR a per-unit ~/.djbooth-no-kiosk marker (manual opt-out on
+# any unit, never synced). Live booths (002/003/004) have neither, so they are unaffected.
+IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$HOME/djbooth/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '[:space:]')
+if [ "$IS_HOMEBASE" = "true" ] || [ -f "$HOME/.djbooth-no-kiosk" ]; then
+  _why="IS_HOMEBASE=$IS_HOMEBASE"; [ -f "$HOME/.djbooth-no-kiosk" ] && _why="$_why marker=yes"
+  echo "$(date): [openbox-autostart] kiosk disabled ($_why) — skipping kiosk + crowd display launch" >> /tmp/openbox-autostart.log
+  exit 0
 fi
 
 # Launch DJ kiosk

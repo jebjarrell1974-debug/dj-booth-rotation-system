@@ -720,7 +720,10 @@ export default function VoiceStudio() {
     let prompt = '';
     if (currentItem.category === 'promo' && currentItem.promoData) {
       const p = currentItem.promoData;
-      prompt = `Write a short, high-energy DJ radio promo script (${p.length || '30s'} worth of speech, ${p.vibe || 'Hype'} vibe) for: Event "${p.event_name}", Date: ${p.date || 'TBD'}, Time: ${p.time || 'TBD'}, Venue: ${p.venue || 'the club'}, Details: ${p.details || 'none'}. Write ONLY the script text the DJ should read out loud. No stage directions. Make it punchy and exciting.`;
+      const dateLine = (p.date && p.date.trim())
+        ? `Date: speak it in natural spoken form (e.g. "July 3rd and 4th") but do NOT add a day of the week (no "Friday", "Saturday", etc.): ${p.date.trim()}.`
+        : `No date was provided — do NOT mention, add, or invent any date or day of the week.`;
+      prompt = `Write a short, high-energy DJ radio promo script (${p.length || '30s'} worth of speech, ${p.vibe || 'Hype'} vibe) for: Event "${p.event_name}", Time: ${p.time || 'TBD'}, Venue: ${p.venue || 'the club'}, Details: ${p.details || 'none'}. ${dateLine} Write ONLY the script text the DJ should read out loud. No stage directions. Make it punchy and exciting.`;
     } else if (currentItem.category === 'transition') {
       const isTransition = (currentItem.baseType || currentItem.type).startsWith('transition');
       prompt = isTransition
@@ -739,7 +742,7 @@ export default function VoiceStudio() {
         body: JSON.stringify({
           model: config.scriptModel || 'gpt-4.1',
           messages: [
-            { role: 'system', content: `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. Use this as your date reference — when computing day of week or year from any date, use this as your anchor. Do not guess or infer the year.` },
+            { role: 'system', content: `Today is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}. Use this only as a reference for the current year if needed. Do not guess or infer a year, and never add a day of the week (no "Friday", "Saturday", etc.) to any date.` },
             { role: 'user', content: prompt }
           ],
           max_tokens: 200,
