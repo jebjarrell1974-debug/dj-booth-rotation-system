@@ -996,14 +996,16 @@ export default function RotationPlaylistManager({
             takes its fixed 210px. Wrapping them in this flex-1 container guarantees
             VIP can never be pushed off-screen by content inside Library or Rotation
             (e.g. break songs being added to entertainer cards).
-            DYNAMIC SQUEEZE: when VIP is open (>=1 dancer in timeout), Library
-            shrinks from w-2/5 → w-1/3 and Rotation grows from w-3/5 → w-2/3.
-            That extra ~7% reclaimed for the rotation column ensures the four
-            44px → now 40px action buttons (Skip/Top/Crown/Remove) on each
-            entertainer row never get clipped by the card's overflow-hidden,
-            which was the day-shift "screen cut off on the right" complaint. */}
+            FIXED LAYOUT (no dynamic resize on VIP changes): the VIP sidebar is now
+            ALWAYS rendered (it shows an empty state when nobody's in VIP), and
+            Library/Rotation are pinned at w-1/3 / w-2/3 regardless of VIP count.
+            The three-column geometry never shifts when girls go in/out of VIP,
+            which fixes the booth "VIP column shoved off the right edge" bug — that
+            was a flex reflow race where the main area sometimes failed to shrink
+            when the VIP sidebar mounted/unmounted. The room for VIP is taken from
+            the music library, not the rotation column. */}
         <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
-        <div ref={libraryPanelRef} className={`${Object.keys(dancerVipMap || {}).length > 0 ? 'w-1/3' : 'w-2/5'} border-r border-[#1e293b] flex flex-col min-w-0`}>
+        <div ref={libraryPanelRef} className="w-1/3 border-r border-[#1e293b] flex flex-col min-w-0">
           <div className="p-4 border-b border-[#1e293b]">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
@@ -1182,7 +1184,7 @@ export default function RotationPlaylistManager({
           )}
         </div>
 
-        <div className={`${Object.keys(dancerVipMap || {}).length > 0 ? 'w-2/3' : 'w-3/5'} flex flex-col min-w-0 min-h-0 overflow-hidden`}>
+        <div className="w-2/3 flex flex-col min-w-0 min-h-0 overflow-hidden">
           <div className="p-4 border-b border-[#1e293b] flex-shrink-0 min-w-0">
             <div className="flex items-center justify-between mb-2">
               <div>
@@ -1854,14 +1856,19 @@ export default function RotationPlaylistManager({
           (+ add time, ↺ release), row 3 = "Returns in <time>". The entry list scrolls
           like the rotation list when several VIPs are active. Prevents name clipping on
           smaller booth screens (1440x900 on 003). */}
-      {Object.keys(dancerVipMap).length > 0 && (
-        <div className="w-[210px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2 flex flex-col">
+      <div className="w-[210px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2 flex flex-col">
           <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden flex flex-col min-h-0 flex-1">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20 flex-shrink-0">
               <Crown className="w-4 h-4 text-yellow-400" />
               <span className="text-xs font-semibold text-yellow-400 uppercase tracking-wider">In VIP</span>
               <span className="text-xs text-yellow-500/60 ml-1">({Object.keys(dancerVipMap).length})</span>
             </div>
+            {Object.keys(dancerVipMap).length === 0 ? (
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-3 text-center">
+                <Crown className="w-6 h-6 text-yellow-500/30 mb-2" />
+                <p className="text-[11px] text-yellow-500/40 leading-snug">No one in VIP</p>
+              </div>
+            ) : (
             <ScrollArea className="flex-1 min-h-0">
               <div className="divide-y divide-yellow-500/10">
                 {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
@@ -1909,9 +1916,9 @@ export default function RotationPlaylistManager({
                 })}
               </div>
             </ScrollArea>
+            )}
           </div>
         </div>
-      )}
 
       {/* VIP Duration Modal */}
       {vipModalDancerId !== null && (() => {
