@@ -90,14 +90,14 @@ const GENERIC_SCRIPTS = {
   ],
   outro: [
     "All right fellas, that was incredible on the main stage. She's available for private dances now — one on one, make that connection. Don't let somebody else grab her first.",
-    "That was beautiful, gentlemen. Main stage is done... but if you want more, she's heading to V.I.P. Go see her.",
+    "That was beautiful, gentlemen. Main stage is done... but if you want more, she's available for a little one-on-one time. Go see her.",
     "Show some love, fellas. Main stage is done, but your chance for a private dance is just getting started. Don't let her slip away.",
-    "That was lovely, gentlemen. If you want more of that... she's heading to V.I.P. for that one-on-one experience. Trust me, it's worth every dollar.",
+    "That was lovely, gentlemen. If you want more of that... she's available right now for that one-on-one experience. Trust me, it's worth every dollar.",
     "Everybody give it up. Now listen... if that had you in your feelings, imagine what a private dance would do. She's available right now. Go find her.",
-    "That was special, gentlemen. If you want the real experience... she's heading to V.I.P. First come, first served, fellas.",
+    "That was special, gentlemen. If you want the real experience... she's available for a little private conversation. First come, first served, fellas.",
     "Main stage is wrapped, but the night ain't over. She's taking private dances — and gentlemen, that's where the magic happens.",
     "That was fire, fellas. She just put on a show. Now she's available for private dances... face to face, one on one. Don't be the one who missed out.",
-    "Stage show is done, but the real fun is in V.I.P. She's waiting — the question is, are you coming?",
+    "Stage show is done, but the real fun is a little private time with her. She's waiting — the question is, are you coming?",
     "She just danced for all of you... now she can dance for just one of you. Private dances available right now. Go treat yourself.",
   ],
   transition: [

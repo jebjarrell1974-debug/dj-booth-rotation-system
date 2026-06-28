@@ -155,7 +155,7 @@ TTS FORMATTING (this text is read aloud by a speech engine):
 - Em dash for emphasis breaks: "she's coming — and she's worth every dollar"
 - Periods between thoughts, not run-on sentences
 - No all caps — it makes the engine shout
-- Write numbers as words, "V I P" with spaces between letters
+- Write numbers as words, and spell out any acronyms with spaces between letters (for example "D J")
 - Use contractions: "don't", "she's", "let's"
 - Sentences between five and fourteen words
 
@@ -407,22 +407,22 @@ One to two sentences. Cool and conversational, not a big entrance. ${isGeneric ?
 
 ${displayName} just finished her set on the main stage.${genericNote}
 
-Wrap it up, acknowledge her set, then push the V I P and private dances — this is the upsell moment. Be creative with the private dance sell. Do not ask for applause or cheering. Do NOT mention any day of the week, club name, or time-specific references.
+Wrap it up, acknowledge her set, then push private dances and one-on-one time — this is the upsell moment. Be creative with the private dance sell. Do not ask for applause or cheering. Do NOT mention any day of the week, club name, or time-specific references.
 
 EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never reuse the same structure):
 "All right fellas, that was ${displayName} tearing it up on the main stage. She's available for private dances now — one on one, get her body on your body, make that connection. Don't let somebody else grab her first."
-"The beautiful ${displayName}, gentlemen. Main stage is done... but if you want more, she's heading to V I P. You can't buy love — but you can rent it for three minutes. Go see her."
+"The beautiful ${displayName}, gentlemen. Main stage is done... but if you want more, she's available for a little one-on-one time. You can't buy love — but you can rent it for three minutes. Go see her."
 "Show some love for ${displayName}, fellas. Main stage is done, but your chance for a private dance is just getting started. Don't let her slip away."
-"That was the lovely ${displayName}, gentlemen. If you want more of that... she's heading to V I P for that one-on-one experience. Trust me, it's worth every dollar."
+"That was the lovely ${displayName}, gentlemen. If you want more of that... she's available right now for that one-on-one experience. Trust me, it's worth every dollar."
 "${displayName}, everybody. Now listen... if that had you in your feelings, imagine what a private dance would do. She's available right now. Go find her."
-"${displayName}, everybody. That was special. If you want the real experience... she's heading to V I P. First come, first served, fellas."
+"${displayName}, everybody. That was special. If you want the real experience... she's available for a little private conversation. First come, first served, fellas."
 "${displayName}, gentlemen. Main stage is wrapped, but the night ain't over. She's taking private dances — and gentlemen, that's where the magic happens."
 "That was fire, fellas. ${displayName} just put on a show. Now she's available for private dances... face to face, one on one. Don't be the one who missed out."
-"The beautiful ${displayName}, gentlemen. Stage show is done, but the real fun is in V I P. She's waiting — the question is, are you coming?"
+"The beautiful ${displayName}, gentlemen. Stage show is done, but the real fun is a little private time with her. She's waiting — the question is, are you coming?"
 "That was ${displayName}, fellas. She just danced for all of you... now she can dance for just one of you. Private dances available right now. Go treat yourself."
 "${displayName}, ladies and gentlemen. What a set. If you want more, grab her for a private dance — that one-on-one time hits different. Trust me."
-"The stunning ${displayName}, gentlemen. Main stage is done, fellas, but she's not going home. V I P is calling. Make your move."
-"That's ${displayName}, right there. She left it all on that stage. Now imagine what she can do in V I P... just you and her. Go see her, gentlemen."
+"The stunning ${displayName}, gentlemen. Main stage is done, fellas, but she's not going home. A little one-on-one time is calling. Make your move."
+"That's ${displayName}, right there. She left it all on that stage. Now imagine what she can do during a little private time... just you and her. Go see her, gentlemen."
 "${displayName} just showed you what she's about, boys. She's heading to the floor — grab her for a private dance before someone else does."
 "${displayName}, everyone. Absolutely incredible. She's done on the main stage, but she's available for private dances. Don't think about it too long... she stays busy."
 
@@ -457,6 +457,7 @@ ${shift.excitement}`;
     closingBlock,
     `BEHAVIOR: ${behaviorRule}`,
     `STYLE DIRECTION FOR THIS ONE: ${finalStyleVibe}`,
+    `HARD RULE — NEVER say the word or letters "VIP" (or "V I P") anywhere in the spoken text. This is absolute. If the specials, upsell, or anything else would mention VIP, instead say "one-on-one time", "private time", or "a little private conversation". Vary the phrasing naturally between announcements.`,
   );
 
   parts.push(`OUTPUT FORMAT:

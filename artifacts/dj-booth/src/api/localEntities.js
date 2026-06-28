@@ -294,9 +294,9 @@ export const localIntegrations = {
       return prompt.includes('STAGE INTRODUCTION') 
         ? 'Coming to the main stage right now, get those eyes up and get ready. Show her some love and make it rain.'
         : prompt.includes('STAGE TRANSITION') 
-        ? 'That was incredible. She is available for VIP right now if you want that one-on-one time. Meanwhile, keep your eyes on the main stage because we have another beauty coming your way.'
+        ? 'That was incredible. She is available right now for a little one-on-one time, so if you want her, now is the moment. Meanwhile, keep your eyes on the main stage because we have another beauty coming your way.'
         : prompt.includes('STAGE EXIT')
-        ? 'Give it up one more time. She just left it all on that stage. She is available for VIP right now, so if you liked what you saw, go see her.'
+        ? 'Give it up one more time. She just left it all on that stage. She is available right now for a little private time, so if you liked what you saw, go see her.'
         : 'She is still going on the main stage. Do not let up. Keep those tips coming.';
     }
   }
