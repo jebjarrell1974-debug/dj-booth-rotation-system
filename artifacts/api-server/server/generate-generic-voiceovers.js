@@ -171,6 +171,12 @@ function saveGeneric(recType, script, audio) {
 // the wrong pronunciation. Everything else is left alone to save credits.
 const DOTTED_ACRONYM = /\b(?:[A-Z]\.){2,}/;
 
+// FORCE_REBUILD=1 (or --force) regenerates EVERY generic line from scratch,
+// ignoring the script-diff / legacy-keep shortcuts. Use this to purge stale
+// audio (e.g. a clip recorded long ago that still speaks "VIP") that the normal
+// incremental run would leave untouched because its tracked script now matches.
+const FORCE_REBUILD = process.env.FORCE_REBUILD === '1' || process.argv.includes('--force');
+
 async function main() {
   const types = Object.keys(GENERIC_SCRIPTS);
   let total = 0;
@@ -178,7 +184,9 @@ async function main() {
 
   let rebuilt = 0, tracked = 0, unchanged = 0, failed = 0;
 
-  console.log(`Checking ${total} generic voiceovers (rebuilding only changed lines)...`);
+  console.log(FORCE_REBUILD
+    ? `FORCE rebuild: regenerating ALL ${total} generic voiceovers from scratch...`
+    : `Checking ${total} generic voiceovers (rebuilding only changed lines)...`);
 
   for (const type of types) {
     const scripts = GENERIC_SCRIPTS[type];
@@ -187,7 +195,7 @@ async function main() {
       const script = scripts[i];
       const existing = findExisting.get('__generic__', recType);
 
-      if (existing) {
+      if (existing && !FORCE_REBUILD) {
         const stored = existing.script_text;
         if (stored === script) {
           unchanged++;
@@ -204,6 +212,8 @@ async function main() {
         console.log(stored == null
           ? `  ♻️  ${recType} legacy with acronym — rebuilding for correct pronunciation`
           : `  ♻️  ${recType} script changed — rebuilding`);
+      } else if (existing && FORCE_REBUILD) {
+        console.log(`  ♻️  ${recType} force-rebuild — regenerating`);
       } else {
         console.log(`  🎤 ${recType} new — generating`);
       }

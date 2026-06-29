@@ -723,7 +723,7 @@ export default function VoiceStudio() {
       const dateLine = (p.date && p.date.trim())
         ? `Date: speak it in natural spoken form (e.g. "July 3rd and 4th") but do NOT add a day of the week (no "Friday", "Saturday", etc.): ${p.date.trim()}.`
         : `No date was provided — do NOT mention, add, or invent any date or day of the week.`;
-      prompt = `Write a short, high-energy DJ radio promo script (${p.length || '30s'} worth of speech, ${p.vibe || 'Hype'} vibe) for: Event "${p.event_name}", Time: ${p.time || 'TBD'}, Venue: ${p.venue || 'the club'}, Details: ${p.details || 'none'}. ${dateLine} Write ONLY the script text the DJ should read out loud. No stage directions. Make it punchy and exciting.`;
+      prompt = `Write a short, high-energy DJ radio promo script (${p.length || '30s'} worth of speech, ${p.vibe || 'Hype'} vibe) for: Event "${p.event_name}", Time: ${p.time || 'TBD'}, Venue: ${p.venue || 'the club'}, Details: ${p.details || 'none'}. ${dateLine} CRITICAL: Reproduce any hours, days, opening times, prices, ages, or addresses from Time and Details EXACTLY as written — never summarize, round, merge, or generalize them. If hours differ by day, keep each day's hours distinct. Never say "every day", "all week", "daily", or "all night" unless the details literally say so. Write ONLY the script text the DJ should read out loud. No stage directions. Make it punchy and exciting.`;
     } else if (currentItem.category === 'transition') {
       const isTransition = (currentItem.baseType || currentItem.type).startsWith('transition');
       prompt = isTransition

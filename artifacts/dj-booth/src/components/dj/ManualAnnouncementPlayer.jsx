@@ -194,6 +194,7 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
       `No labels, brackets, stage directions, or explanations. Just the spoken words.`,
       `Use commas for breath pauses, ellipsis for drawn-out pauses.`,
       `Keep it punchy, engaging, and club-appropriate.`,
+      `Reproduce any hours, days, opening times, prices, ages, or addresses from the details EXACTLY as written — never summarize, round, merge, or generalize them. If hours differ by day, keep each day's hours distinct. Never say "every day", "all week", "daily", or "all night" unless the details literally say so.`,
       `When referring to the event date, say only the date itself (for example: "May 30th" or "July 3rd and 4th") and NEVER say a day of the week (no "Friday", "Saturday", etc.). Never say "this Saturday", "next Saturday", "upcoming", "coming up soon", or any other relative date phrasing — the script may play weeks before the event, so relative phrasing will be wrong.`,
       `Maximum ${maxWords} words. End with a complete sentence followed by a period.`
     );

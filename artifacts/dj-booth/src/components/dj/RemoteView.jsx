@@ -255,6 +255,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
         `Write the script as flowing spoken text — exactly what would be read over the mic.`,
         `No labels, brackets, or stage directions. Just the spoken words.`,
         `Use commas for breath pauses. Keep it punchy and club-appropriate.`,
+        `Reproduce any hours, days, opening times, prices, ages, or addresses from the details EXACTLY as written — never summarize, round, merge, or generalize them. If hours differ by day, keep each day's hours distinct. Never say "every day", "all week", "daily", or "all night" unless the details literally say so.`,
         `When referring to any event date, always say the full day and date (for example: "Saturday, May 30th" or "Saturday the 30th"). Never say "this Saturday", "next Saturday", "upcoming", "coming up soon", or any other relative date phrasing — the script may play weeks before the event, so relative phrasing will be wrong.`,
       ].filter(Boolean).join('\n');
 
