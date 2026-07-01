@@ -4353,7 +4353,12 @@ export default function DJBooth() {
       // reset), so without this guard the watchdog reports stale dancer/track
       // info during the empty-rotation autoplay window. See replit.md
       // "Dead-air false-positive investigation" (May 3 2026).
-      if (!isRotationActiveRef.current || rotationRef.current.length === 0) return;
+      // When no dancers are on rotation, only proceed if there's a DJ-curated
+      // autoplay queue to (re)start — that's the authoritative idle source. With
+      // an empty queue there's nothing to play, so suppress (and avoid false
+      // dead-air alerts). Telemetry/alerts for the no-rotation case are gated
+      // separately below so recovery runs quietly.
+      if ((!isRotationActiveRef.current || rotationRef.current.length === 0) && autoplayQueueRef.current.length === 0) return;
       if (watchdogRecoveringRef.current) return;
       if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
@@ -4391,12 +4396,21 @@ export default function DJBooth() {
         }
       }
       
-      console.warn('🐕 WATCHDOG: No audio activity for', Math.round(silentFor/1000), 's — emergency recovery!');
-      const _wdDancer = dancersRef.current?.find(d => String(d.id) === String(rotationRef.current[currentDancerIndexRef.current]));
-      const _wdDancerName = _wdDancer?.name || null;
-      const _wdTrack = currentTrackRef.current;
-      lastWatchdogRef.current = { at: Date.now(), silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack };
-      logDiag('watchdog_fired', { silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack });
+      const noRotationRecovery = !isRotationActiveRef.current || rotationRef.current.length === 0;
+      if (noRotationRecovery) {
+        // Idle autoplay (no dancers): quietly (re)start audio from the DJ-curated
+        // queue. This is NOT a dead-air failure, so suppress the alert/diag/error
+        // telemetry — the dancer/track context would be stale and would trip
+        // false dead-air alerts.
+        console.log('🐕 WATCHDOG: Idle for', Math.round(silentFor/1000), 's — restarting DJ-curated autoplay queue');
+      } else {
+        console.warn('🐕 WATCHDOG: No audio activity for', Math.round(silentFor/1000), 's — emergency recovery!');
+        const _wdDancer = dancersRef.current?.find(d => String(d.id) === String(rotationRef.current[currentDancerIndexRef.current]));
+        const _wdDancerName = _wdDancer?.name || null;
+        const _wdTrack = currentTrackRef.current;
+        lastWatchdogRef.current = { at: Date.now(), silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack };
+        logDiag('watchdog_fired', { silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack });
+      }
       watchdogRecoveringRef.current = true;
       transitionInProgressRef.current = true;
       transitionStartTimeRef.current = Date.now();
@@ -4415,15 +4429,18 @@ export default function DJBooth() {
         const wdDancer = dancersRef.current?.find(d => String(d.id) === String(wdDancerId));
         const wdDancerName = wdDancer?.name || null;
 
-        // Log the playback error
-        try {
-          const token = localStorage.getItem('djbooth_token');
-          fetch('/api/playback-errors', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            body: JSON.stringify({ trackName: failedSong, dancerName: wdDancerName, reason: 'watchdog_silence' })
-          }).catch(() => {});
-        } catch {}
+        // Log the playback error — only for real dead-air (rotation active).
+        // In idle autoplay recovery there is no failure to report.
+        if (!noRotationRecovery) {
+          try {
+            const token = localStorage.getItem('djbooth_token');
+            fetch('/api/playback-errors', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: JSON.stringify({ trackName: failedSong, dancerName: wdDancerName, reason: 'watchdog_silence' })
+            }).catch(() => {});
+          } catch {}
+        }
 
         // Update rotation display to show the track the watchdog actually plays
         const updateWatchdogRotationUI = (recoveredTrack) => {
