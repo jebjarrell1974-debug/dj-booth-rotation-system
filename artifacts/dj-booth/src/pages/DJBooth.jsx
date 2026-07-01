@@ -4443,6 +4443,27 @@ export default function DJBooth() {
 
         let recovered = false;
 
+        // Zeroth: when there are NO entertainers up, the DJ-curated autoplay queue
+        // is the authoritative source of what should play. The watchdog is the only
+        // thing that (re)starts audio while idle (cold start / dead-air recovery),
+        // so it MUST honor the curated queue here BEFORE falling back to random —
+        // otherwise the DJ's picks never play when the booth sits with no dancers.
+        // Reuses playFromAutoplayQueue (same logic Skip / track-end use) so the queue
+        // shifts, refills, and records identically. Gated on !isRotationActive so a
+        // live show is completely unaffected.
+        if (!recovered && !isRotationActiveRef.current && autoplayQueueRef.current.length > 0) {
+          try {
+            const ok = await playFromAutoplayQueue(false);
+            if (ok !== false) {
+              console.log('🐕 WATCHDOG: Autoplay-queue recovery succeeded');
+              lastAudioActivityRef.current = Date.now();
+              recovered = true;
+            }
+          } catch (e) {
+            console.error('🐕 WATCHDOG: Autoplay-queue recovery failed:', e.message);
+          }
+        }
+
         // First: try songs from the current dancer's playlist
         if (wdDancerId && !recovered) {
           const cooldowns = songCooldownRef.current || {};
@@ -4565,7 +4586,7 @@ export default function DJBooth() {
     
     const intervalId = setInterval(watchdogCheck, WATCHDOG_INTERVAL);
     return () => clearInterval(intervalId);
-  }, [tracks, recordSongPlayed]);
+  }, [tracks, recordSongPlayed, playFromAutoplayQueue]);
 
   // Rotation management
   const addToRotation = async (dancerId) => {
