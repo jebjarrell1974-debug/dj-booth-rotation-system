@@ -1840,23 +1840,35 @@ app.get('/api/music/stats', authenticate, (req, res) => {
 app.get('/api/dj-options', authenticate, requireDJ, (req, res) => {
   const activeGenres = getSetting('dj_active_genres');
   const musicMode = getSetting('dj_music_mode');
+  const dayShift = getSetting('dj_day_shift');
   res.json({
     activeGenres: activeGenres ? JSON.parse(activeGenres) : [],
     musicMode: musicMode || 'dancer_first',
+    ...(dayShift ? { dayShift: JSON.parse(dayShift) } : {}),
   });
 });
 
 app.put('/api/dj-options', authenticate, requireDJ, (req, res) => {
-  const { activeGenres, musicMode } = req.body;
+  const { activeGenres, musicMode, dayShift } = req.body;
   if (activeGenres !== undefined) {
     setSetting('dj_active_genres', JSON.stringify(activeGenres));
   }
   if (musicMode !== undefined) {
     setSetting('dj_music_mode', musicMode);
   }
+  if (dayShift !== undefined) {
+    setSetting('dj_day_shift', JSON.stringify(dayShift));
+  }
+  // Always broadcast the COMPLETE, currently-stored option set (reading stored
+  // values for any field the caller didn't send). The booth replaces its whole
+  // options object on receipt, so a partial payload here would wipe fields it
+  // didn't include — that is exactly what silently cleared the Day Shift folder
+  // selection after a rotation/save.
+  const storedDayShift = getSetting('dj_day_shift');
   broadcastSSE('djOptions', {
     activeGenres: activeGenres !== undefined ? activeGenres : JSON.parse(getSetting('dj_active_genres') || '[]'),
     musicMode: musicMode !== undefined ? musicMode : (getSetting('dj_music_mode') || 'dancer_first'),
+    ...(storedDayShift ? { dayShift: JSON.parse(storedDayShift) } : {}),
   });
   res.json({ ok: true });
 });
