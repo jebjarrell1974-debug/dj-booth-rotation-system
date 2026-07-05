@@ -676,6 +676,7 @@ chromium \
   --user-data-dir=/tmp/chromium-kiosk \
   --window-position=${KX},${KY} \
   --window-size=${KW},${KH} \
+  --disable-gpu --disable-gpu-compositing \
   --no-first-run --noerrdialogs --disable-infobars \
   --disable-session-crashed-bubble --disable-translate \
   --disable-features=TranslateUI,BackgroundMediaSuspend,MediaSessionService \
