@@ -27,20 +27,47 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
 fi
 export DISPLAY="${DISPLAY:-:0}"
 
-echo "== 1/6  Closing any booth windows hijacking the desktop =="
-pkill -f 'chromium.*localhost:3001'      2>/dev/null || true
-pkill -f 'djbooth-kiosk.sh'              2>/dev/null || true
-pkill -f 'djbooth-rotation-display.sh'   2>/dev/null || true
-pkill -f 'djbooth-display-watcher.sh'    2>/dev/null || true
+echo "== 1/8  Making homebase permanent (this is the fix that finally sticks) =="
+# ROOT CAUSE: on every boot, djbooth-update.service ran the boot updater, which
+# ignored IS_HOMEBASE (a variable it never assigned) and re-installed the kiosk +
+# flipped the session back to openbox. Two safeguards close that for good:
+#   1. a ~/.djbooth-no-kiosk marker (honored by the updater, openbox-autostart, watchdog)
+#   2. replacing the on-disk boot updater with the fixed version
+touch "$HOME_DIR/.djbooth-no-kiosk"
+RAW_UPDATER="https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/public/public/djbooth-update-github.sh"
+if curl -fsSL "$RAW_UPDATER" -o "$HOME_DIR/djbooth-update.sh.new" 2>/dev/null; then
+  mv "$HOME_DIR/djbooth-update.sh.new" "$HOME_DIR/djbooth-update.sh"
+  chmod +x "$HOME_DIR/djbooth-update.sh"
+  echo "   Boot updater replaced with the homebase-safe version."
+else
+  rm -f "$HOME_DIR/djbooth-update.sh.new" 2>/dev/null || true
+  echo "   WARNING: could not download updater — the no-kiosk marker still protects this unit."
+fi
 
-echo "== 2/6  Removing leftover kiosk auto-start entries =="
+echo "== 2/8  Setting the desktop session to GNOME (so it survives reboots) =="
+sudo mkdir -p /var/lib/AccountsService/users
+printf '[User]\nSession=gnome-xorg\nXSession=gnome-xorg\nSystemAccount=false\n' \
+  | sudo tee "/var/lib/AccountsService/users/$USER_NAME" >/dev/null
+
+echo "== 3/8  Closing any booth windows hijacking the desktop =="
+# Kill the relaunchers FIRST (they loop), then the browser windows they spawn.
+pkill -f 'djbooth-display-watcher.sh'    2>/dev/null || true
+pkill -f 'djbooth-rotation-display.sh'   2>/dev/null || true
+pkill -f 'djbooth-kiosk.sh'              2>/dev/null || true
+sleep 1
+pkill -f 'chromium.*localhost:3001'      2>/dev/null || true
+pkill -f 'chromium.*RotationDisplay'     2>/dev/null || true
+pkill -f 'chromium.*chromium-rotation'   2>/dev/null || true
+
+echo "== 4/8  Removing leftover kiosk auto-start entries =="
 rm -f "$HOME_DIR/.config/autostart/djbooth-kiosk.desktop" \
       "$HOME_DIR/.config/autostart/djbooth-rotation-display.desktop" \
       "$HOME_DIR/.config/autostart/djbooth-display-watcher.desktop" \
       "$HOME_DIR/.config/autostart/djbooth-touch-map.desktop" \
+      "$HOME_DIR/.config/autostart/djbooth-keyring-unlock.desktop" \
       "$HOME_DIR/.config/autostart/squeekboard.desktop" 2>/dev/null || true
 
-echo "== 3/6  Stopping the login-keyring password nag =="
+echo "== 5/8  Stopping the login-keyring password nag =="
 # Suppress the gnome-keyring session components for this user (user-scoped,
 # reversible, no sudo). With auto-login there is no password to unlock the
 # keyring, so it nags every boot. Our browser shortcut uses --password-store=basic
@@ -56,11 +83,11 @@ rm -f "$HOME_DIR/.local/share/keyrings/login.keyring" \
       "$HOME_DIR/.local/share/keyrings/Default_keyring.keyring" \
       "$HOME_DIR/.local/share/keyrings/default" 2>/dev/null || true
 
-echo "== 4/6  Ensuring the Fleet Music folder exists =="
+echo "== 6/8  Ensuring the Fleet Music folder exists =="
 MUSIC_DIR="$HOME_DIR/djbooth/music"
 mkdir -p "$MUSIC_DIR"
 
-echo "== 5/6  Installing desktop shortcuts =="
+echo "== 7/8  Installing desktop shortcuts =="
 APPS_DIR="$HOME_DIR/.local/share/applications"
 DESK_DIR="$HOME_DIR/Desktop"
 mkdir -p "$APPS_DIR" "$DESK_DIR"
@@ -131,7 +158,7 @@ for L in neon-ai-dj fleet-music push-music-to-fleet; do
   gio set "$DESK_DIR/$L.desktop" metadata::trusted true 2>/dev/null || true
 done
 
-echo "== 6/6  Enabling desktop icons + pinning shortcuts to the dock =="
+echo "== 8/8  Enabling desktop icons + pinning shortcuts to the dock =="
 # Desktop icons (best effort — needs the DING extension; harmless if unavailable)
 sudo apt-get install -y gnome-shell-extension-desktop-icons-ng >/dev/null 2>&1 || true
 gnome-extensions enable ding@rastersoft.com 2>/dev/null || true
