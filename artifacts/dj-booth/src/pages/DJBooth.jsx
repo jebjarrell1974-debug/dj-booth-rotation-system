@@ -48,6 +48,10 @@ import CustomSoundboard from '@/components/dj/CustomSoundboard';
 import FeatureEntertainerPanel from '@/components/dj/FeatureEntertainerPanel';
 
 const DEFAULT_SONGS_PER_SET = 2;
+// Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
+// stop accepting presses in the final N seconds of a track (an announcement is about
+// to fire at track end) and while the transition/announcement itself is running.
+const SKIP_LOCKOUT_SECONDS = 10;
 
 function auditEvent(action, details) {
   const token = localStorage.getItem('djbooth_token');
@@ -209,6 +213,12 @@ export default function DJBooth() {
 
   const rotationRef = useRef([]);
   const dancersRef = useRef([]);
+  // Skip lockout: while an announcement is imminent (last SKIP_LOCKOUT_SECONDS of a
+  // track with announcements on) or a transition/announcement is in progress, the
+  // Next Entertainer / skip buttons are disabled and presses are ignored. Prevents
+  // the "pressed Next seconds before the outro fired" race (wrong-name outro + dead air).
+  const [skipLocked, setSkipLocked] = useState(false);
+  const skipLockedRef = useRef(false);
   const transitionInProgressRef = useRef(false);
   const transitionStartTimeRef = useRef(0);
   const lastAudioActivityRef = useRef(Date.now());
@@ -564,6 +574,21 @@ export default function DJBooth() {
   useEffect(() => {
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     const interval = setInterval(() => {
+      // Booth-side skip lockout (remote computes its own from liveBoothState)
+      if (!remoteMode) {
+        const durL = durationRef.current || 0;
+        let tL = currentTimeRef.current || 0;
+        if (isPlayingRef.current) tL = Math.min(tL + (performance.now() - lastTimeStampRef.current) / 1000, durL);
+        const remL = durL - tL;
+        const locked = isRotationActiveRef.current && (
+          transitionInProgressRef.current ||
+          (announcementsEnabledRef.current && isPlayingRef.current && durL > 0 && remL > 0 && remL <= SKIP_LOCKOUT_SECONDS)
+        );
+        if (locked !== skipLockedRef.current) {
+          skipLockedRef.current = locked;
+          setSkipLocked(locked);
+        }
+      }
       if (!timeDisplayRef.current) return;
       const dur = durationRef.current || 0;
       if (dur > 0) {
@@ -601,9 +626,26 @@ export default function DJBooth() {
     if (!remoteMode) return;
     const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     const interval = setInterval(() => {
-      if (!remoteTimeDisplayRef.current) return;
       const dur = liveBoothState?.trackDuration || 0;
       const timeAt = liveBoothState?.trackTimeAt || 0;
+      // Remote-side skip lockout: mirror the booth's lock from broadcast state plus
+      // a locally-computed "announcement imminent" window so it reacts in real time.
+      {
+        let remR = -1;
+        if (dur > 0 && timeAt > 0) {
+          const elapsedR = liveBoothState?.isPlaying ? (Date.now() - timeAt) / 1000 : 0;
+          remR = Math.max(0, dur - Math.min((liveBoothState?.trackTime || 0) + elapsedR, dur));
+        }
+        const lockedR = !!liveBoothState?.isRotationActive && (
+          !!liveBoothState?.skipLocked ||
+          (!!liveBoothState?.announcementsEnabled && !!liveBoothState?.isPlaying && remR > 0 && remR <= SKIP_LOCKOUT_SECONDS)
+        );
+        if (lockedR !== skipLockedRef.current) {
+          skipLockedRef.current = lockedR;
+          setSkipLocked(lockedR);
+        }
+      }
+      if (!remoteTimeDisplayRef.current) return;
       if (dur > 0 && timeAt > 0) {
         const elapsed = liveBoothState?.isPlaying ? (Date.now() - timeAt) / 1000 : 0;
         const currentPos = Math.min((liveBoothState?.trackTime || 0) + elapsed, dur);
@@ -1247,6 +1289,7 @@ export default function DJBooth() {
           isPlaying,
           rotation,
           announcementsEnabled,
+          skipLocked: skipLockedRef.current,
           rotationSongs: mergedSongs,
           interstitialSongs: interstitialSongsRef.current || {},
           breakSongIndex: activeBreakInfo?.currentIndex ?? null,
@@ -2738,6 +2781,9 @@ export default function DJBooth() {
     // opts.skipBreaks (bool): when true, bypass break songs and go straight to next dancer's intro + song 1.
     // Used by the top-level "Next Entertainer" button which is meant to be an immediate hard advance.
     const skipBreaks = opts && typeof opts === 'object' && opts.skipBreaks === true;
+    // opts.bypassLockout (bool): trusted internal flows (deactivate-and-replace) must
+    // never be silently swallowed by the skip lockout — only user button presses are.
+    const bypassLockout = opts && typeof opts === 'object' && opts.bypassLockout === true;
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
     lastSkipTimeRef.current = now;
@@ -2754,6 +2800,23 @@ export default function DJBooth() {
     if (watchdogRecoveringRef.current) {
       console.log('⏳ HandleSkip: Watchdog recovery in progress, skipping');
       return;
+    }
+    // Skip lockout: an announcement fires at track end — a skip landing in the final
+    // seconds races it (outro announces the wrong situation + dead air). Ignore the
+    // press; the button is visually disabled during this window too.
+    if (!bypassLockout && isRotationActiveRef.current && announcementsEnabledRef.current && isPlayingRef.current) {
+      const durG = durationRef.current || 0;
+      let tG = currentTimeRef.current || 0;
+      tG = Math.min(tG + (performance.now() - lastTimeStampRef.current) / 1000, durG);
+      const remG = durG - tG;
+      if (durG > 0 && remG > 0 && remG <= SKIP_LOCKOUT_SECONDS) {
+        console.log(`🔒 HandleSkip: Locked — track ends in ${remG.toFixed(1)}s and an announcement is armed, press ignored`);
+        logDiag('skip_locked', { remaining: Math.round(remG * 10) / 10, skipBreaks });
+        // Don't let a rejected locked press consume the 2s debounce — the button must
+        // work on the very first press after the announcement finishes.
+        lastSkipTimeRef.current = 0;
+        return;
+      }
     }
     if (transitionInProgressRef.current) {
       const elapsed = Date.now() - transitionStartTimeRef.current;
@@ -3517,13 +3580,13 @@ export default function DJBooth() {
         currentSongNumberRef.current = currentSongNumberRef.current - 1;
         setCurrentSongNumber(currentSongNumberRef.current);
       }
-      handleSkipRef.current?.();
+      handleSkipRef.current?.({ bypassLockout: true });
     } else {
       // Safety net: we couldn't secure a replacement AND the slot is empty (essentially only
       // possible if the library returns nothing). Keep audio alive with a fallback track rather
       // than letting handleSkip fall into the end-of-set branch and cut her show short.
       console.error('⚠️ Deactivate: no replacement secured for empty slot — playing fallback to avoid ending set early');
-      try { await playFallbackTrack(true); } catch { handleSkipRef.current?.(); }
+      try { await playFallbackTrack(true); } catch { handleSkipRef.current?.({ bypassLockout: true }); }
     }
     return { ok: true };
   }, [playFallbackTrack]);
@@ -4887,7 +4950,9 @@ export default function DJBooth() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-white hover:bg-[#1e293b] h-8 px-2"
+                    className="text-white hover:bg-[#1e293b] h-8 px-2 disabled:opacity-30"
+                    disabled={skipLocked}
+                    title={skipLocked ? 'Announcement in progress — skip re-enables when it finishes' : 'Skip'}
                     onClick={() => boothApi.sendCommand('skip')}
                   >
                     <SkipForward className="w-4 h-4" />
@@ -4952,7 +5017,9 @@ export default function DJBooth() {
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="w-7 h-7 text-white hover:bg-[#1e293b]"
+                    className="w-7 h-7 text-white hover:bg-[#1e293b] disabled:opacity-30"
+                    disabled={skipLocked}
+                    title={skipLocked ? 'Announcement in progress — skip re-enables when it finishes' : 'Skip'}
                     onClick={handleSkip}
                   >
                     <SkipForward className="w-4 h-4" />
@@ -5520,6 +5587,7 @@ export default function DJBooth() {
                 }}
                 announcementsEnabled={announcementsEnabled}
                 onAnnouncementsToggle={(enabled) => setAnnouncementsEnabled(enabled)}
+                skipLocked={skipLocked}
                 currentDancerIndex={currentDancerIndex}
                 commercialCounter={commercialCounterRef.current}
                 availablePromos={availablePromos}
@@ -5528,6 +5596,9 @@ export default function DJBooth() {
                 onSkipCurrentDancer={() => {
                   if (!isRotationActiveRef.current) return;
                   if (rotationRef.current.length <= 1) return;
+                  // Lockout check BEFORE the 999 sentinel: a rejected press must never
+                  // leave a stale sentinel that corrupts the next natural track end.
+                  if (skipLockedRef.current) return;
                   // Force song number past any set size so handleSkip takes the end-of-set
                   // path — it flips rotation, resets her songs, plays break songs if queued,
                   // and gives the next dancer a full intro.
@@ -5544,6 +5615,7 @@ export default function DJBooth() {
                   // stale sentinel that would corrupt the next legitimate skip.
                   if (!isRotationActiveRef.current) return;
                   if (rotationRef.current.length <= 1) return;
+                  if (skipLockedRef.current) return;
                   handleSkipRef.current?.({ skipBreaks: true });
                 }}
                 onSkipDancer={(dancerId) => {

@@ -65,6 +65,14 @@ TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
 USE_HOMEBASE_BUNDLE=false
 
 LOCAL_IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
+# Canonical homebase flag used by every kiosk/display/openbox guard below.
+# BUG FIX: the guards check $IS_HOMEBASE but only $LOCAL_IS_HOMEBASE was ever read
+# from .env, and the boot service does NOT export IS_HOMEBASE — so on a homebase unit
+# every guard saw an empty value, treated it as a normal booth, and re-installed the
+# kiosk + reset the session to openbox on every boot. Assign it here (trimmed), and
+# also honor a ~/.djbooth-no-kiosk marker as a belt-and-suspenders opt-out.
+IS_HOMEBASE=$(echo "$LOCAL_IS_HOMEBASE" | tr -d '[:space:]')
+if [ -f "$HOME/.djbooth-no-kiosk" ]; then IS_HOMEBASE=true; fi
 HOMEBASE_URL=$(grep "^FLEET_SERVER_URL=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
 HOMEBASE_URL="${HOMEBASE_URL:-http://100.64.87.105:3001}"
 

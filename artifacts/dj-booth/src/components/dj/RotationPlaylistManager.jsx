@@ -129,6 +129,7 @@ export default function RotationPlaylistManager({
   onSkipDancer,
   onSkipCurrentDancer,
   onSkipEntertainerNow,
+  skipLocked = false,
   onMoveDancerToTop,
   onDancerDragReorder,
   currentDancerIndex,
@@ -1268,17 +1269,32 @@ export default function RotationPlaylistManager({
                 )}
                 {isRotationActive && rotationDancers.length > 1 && (
                   <Button
+                    disabled={skipLocked}
                     onClick={() => {
+                      if (skipLocked) return;
                       const now = Date.now();
                       if (now - lastSkipEntertainerNowTimeRef.current < 2000) return;
                       lastSkipEntertainerNowTimeRef.current = now;
                       onSkipEntertainerNow?.();
                     }}
-                    title="End current entertainer's set immediately and bring up the next entertainer (no break songs)"
-                    className="ml-16 bg-orange-500 hover:bg-orange-600 text-black font-bold border-2 border-orange-300"
+                    title={skipLocked
+                      ? "Announcement in progress — this button comes back the moment she's done talking"
+                      : "End current entertainer's set immediately and bring up the next entertainer (no break songs)"}
+                    className={`ml-16 font-bold border-2 ${skipLocked
+                      ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed opacity-70'
+                      : 'bg-orange-500 hover:bg-orange-600 text-black border-orange-300'}`}
                   >
-                    <SkipForward className="w-4 h-4 mr-2" />
-                    Next Entertainer
+                    {skipLocked ? (
+                      <>
+                        <Mic className="w-4 h-4 mr-2 animate-pulse" />
+                        Announcing…
+                      </>
+                    ) : (
+                      <>
+                        <SkipForward className="w-4 h-4 mr-2" />
+                        Next Entertainer
+                      </>
+                    )}
                   </Button>
                 )}
             </div>
@@ -1408,10 +1424,16 @@ export default function RotationPlaylistManager({
                               {!feature && isRotationActive && index === currentDancerIndex && localRotation.length > 1 && (
                                 <button
                                   type="button"
-                                  className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-orange-500 bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors"
-                                  title="Skip to next dancer (ends her set, resets songs, she goes to bottom)"
+                                  disabled={skipLocked}
+                                  className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border transition-colors ${skipLocked
+                                    ? 'border-gray-600 bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                                    : 'border-orange-500 bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'}`}
+                                  title={skipLocked
+                                    ? 'Announcement in progress — skip re-enables when it finishes'
+                                    : 'Skip to next dancer (ends her set, resets songs, she goes to bottom)'}
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    if (skipLocked) return;
                                     const now = Date.now();
                                     if (now - lastSkipCurrentDancerTimeRef.current < 2000) return;
                                     lastSkipCurrentDancerTimeRef.current = now;
