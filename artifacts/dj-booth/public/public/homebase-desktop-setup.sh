@@ -84,7 +84,9 @@ rm -f "$HOME_DIR/.local/share/keyrings/login.keyring" \
       "$HOME_DIR/.local/share/keyrings/default" 2>/dev/null || true
 
 echo "== 6/8  Ensuring the Fleet Music folder exists =="
-MUSIC_DIR="$HOME_DIR/djbooth/music"
+# The operator's real music library lives in ~/Music (this is also what the server
+# stores as music_path). Do NOT point at ~/djbooth/music — that dir may exist empty.
+MUSIC_DIR="$HOME_DIR/Music"
 mkdir -p "$MUSIC_DIR"
 
 echo "== 7/8  Installing desktop shortcuts =="
@@ -110,7 +112,7 @@ Version=1.0
 Type=Application
 Name=Fleet Music
 Comment=Add or remove music for the whole fleet
-Exec=nautilus "$MUSIC_DIR"
+Exec=xdg-open "$MUSIC_DIR"
 Icon=folder-music
 Terminal=false
 Categories=AudioVideo;
