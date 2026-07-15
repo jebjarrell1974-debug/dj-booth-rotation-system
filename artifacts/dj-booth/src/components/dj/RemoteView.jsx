@@ -485,7 +485,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                 <div className="flex items-center gap-2">
                   <button onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })} className="w-16 h-16 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Minus className="w-6 h-6" /></button>
                   <div className="flex-1 text-center font-bold text-2xl text-[#a855f7]">{Math.round(currentVoiceGain * 100)}%</div>
-                  <button onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(3, currentVoiceGain + 0.1) })} className="w-16 h-16 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Plus className="w-6 h-6" /></button>
+                  <button onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(1.2, currentVoiceGain + 0.1) })} className="w-16 h-16 rounded-xl bg-[#1e293b] flex items-center justify-center active:bg-[#2e2e5a]"><Plus className="w-6 h-6" /></button>
                 </div>
               </div>
 

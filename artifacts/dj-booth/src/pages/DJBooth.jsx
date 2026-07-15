@@ -1019,7 +1019,7 @@ export default function DJBooth() {
           break;
         case 'setVoiceGain':
           if (cmd.payload.gain != null) {
-            const g = Math.max(0.5, Math.min(3, Math.round(cmd.payload.gain * 20) / 20));
+            const g = Math.max(0.5, Math.min(1.2, Math.round(cmd.payload.gain * 20) / 20));
             setVoiceGain(g);
             audioEngineRef.current?.setVoiceGain(g);
             try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
@@ -5074,13 +5074,13 @@ export default function DJBooth() {
                     </div>
                     <button
                       onClick={() => {
-                        const g = Math.min(3, voiceGain + 0.1);
+                        const g = Math.min(1.2, voiceGain + 0.1);
                         setVoiceGain(g);
                         audioEngineRef.current?.setVoiceGain(g);
                         try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
             try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
                       }}
-                      disabled={Math.round(voiceGain * 100) >= 300}
+                      disabled={Math.round(voiceGain * 100) >= 120}
                       className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
