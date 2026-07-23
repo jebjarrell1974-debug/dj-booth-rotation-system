@@ -33,6 +33,7 @@ import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicSca
 import fleetRoutes from './fleet-routes.js';
 import aichatRoutes from './aichat-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music, uploadSoundboardFile, deleteSoundboardFileFromR2, syncSoundboardToR2, syncSoundboardFromR2 } from './r2sync.js';
+import { publishUpdateBundle } from './r2update.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos, runFfmpeg, getAudioDuration } from './promo-mixer.js';
@@ -2546,6 +2547,22 @@ async function initR2Sync() {
     console.error('☁️ R2 soundboard sync error:', err.message);
   } finally {
     bootStatus.ready = true;
+  }
+
+  // Homebase publishes the fleet update bundle to R2 (background — not boot-critical).
+  if (process.env.IS_HOMEBASE === 'true') {
+    publishUpdateBundle({ sha: getCommitSha() })
+      .then(result => {
+        if (result.published) {
+          console.log(`☁️ R2 update bundle published: commit ${String(result.commit).slice(0, 7)}, ${result.size} bytes`);
+        } else {
+          console.log(`☁️ R2 update bundle not published: ${result.reason}`);
+        }
+      })
+      .catch(err => {
+        console.error('☁️ R2 update bundle publish error:', err.message);
+        trackError('r2_update_publish_failed', err.message, { component: 'r2update' });
+      });
   }
 }
 

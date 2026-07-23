@@ -106,6 +106,33 @@ if [ "$LOCAL_IS_HOMEBASE" != "true" ] && [ "$DJBOOTH_SKIP_HOMEBASE" != "1" ]; th
   fi
 fi
 
+# --- R2 update source (private, no GitHub needed) ---
+# Uses the app's own node + @aws-sdk to pull updates/latest.tar.gz from R2,
+# sha256-verified against updates/manifest.json. Bundle layout is identical to
+# the homebase bundle (flat app dir), so it reuses USE_HOMEBASE_BUNDLE=true.
+if [ "$USE_HOMEBASE_BUNDLE" = "false" ] && [ "$DJBOOTH_SKIP_R2" != "1" ]; then
+  if grep -q "^R2_ACCESS_KEY_ID=" "$APP_DIR/.env" 2>/dev/null \
+     && [ -f "$APP_DIR/server/r2update-fetch.js" ] \
+     && [ -d "$APP_DIR/node_modules/@aws-sdk/client-s3" ]; then
+    echo "  Trying R2 update bundle..."
+    R2_RESULT=$( (set -a; . "$APP_DIR/.env"; set +a; \
+      node "$APP_DIR/server/r2update-fetch.js" bundle "$TMPFILE") 2>/tmp/djbooth-r2-fetch.err || echo "" )
+    if [ -n "$R2_RESULT" ] && [ -s "$TMPFILE" ]; then
+      COMMIT_SHA=$(echo "$R2_RESULT" | grep -o '"commit":"[^"]*"' | cut -d'"' -f4 || echo "")
+      SHORT_SHA="${COMMIT_SHA:0:7}"
+      FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
+      echo "  Downloaded from R2: ${FILESIZE} bytes (SHA: ${SHORT_SHA:-unknown}, sha256 verified)"
+      USE_HOMEBASE_BUNDLE=true
+    else
+      echo "  R2 bundle unavailable ($(tail -1 /tmp/djbooth-r2-fetch.err 2>/dev/null || echo 'no details')) — falling back to GitHub..."
+      rm -f "$TMPFILE"
+      TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
+    fi
+  else
+    echo "  R2 update source not available on this unit (missing creds, helper, or aws-sdk) — using GitHub..."
+  fi
+fi
+
 if [ "$USE_HOMEBASE_BUNDLE" = "false" ]; then
   echo "  Downloading from GitHub..."
   HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMPFILE" "https://github.com/${GITHUB_REPO}/archive/refs/heads/${BRANCH}.tar.gz" 2>/dev/null || echo "000")
