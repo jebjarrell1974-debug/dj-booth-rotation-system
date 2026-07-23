@@ -239,8 +239,14 @@ else
 fi
 
 if [ "$_GH_SELF_OK" = "true" ]; then
-  cp "$_GH_SCRIPT_TMP" "$HOME/djbooth-update.sh"
-  chmod +x "$HOME/djbooth-update.sh"
+  # ATOMIC replace: never cp over the running script in place — bash reads scripts
+  # incrementally, so an in-place overwrite (same inode, truncate+write) makes the
+  # RUNNING shell read shifted bytes and die with a bogus syntax error mid-update.
+  # Writing a sibling temp file and mv-ing it (same filesystem = atomic rename, new
+  # inode) leaves the running instance reading its original, already-open content.
+  cp "$_GH_SCRIPT_TMP" "$HOME/djbooth-update.sh.new"
+  chmod +x "$HOME/djbooth-update.sh.new"
+  mv -f "$HOME/djbooth-update.sh.new" "$HOME/djbooth-update.sh"
   rm -f "$_GH_SCRIPT_TMP"
   echo "Update script self-updated from GitHub"
 else
@@ -252,8 +258,10 @@ else
     UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}public/djbooth-update-github.sh"
   fi
   if [ -n "$UPDATE_SCRIPT_SRC" ]; then
-    cp "$UPDATE_SCRIPT_SRC" "$HOME/djbooth-update.sh"
-    chmod +x "$HOME/djbooth-update.sh"
+    # Same atomic-rename rule as above: never overwrite the running script in place.
+    cp "$UPDATE_SCRIPT_SRC" "$HOME/djbooth-update.sh.new"
+    chmod +x "$HOME/djbooth-update.sh.new"
+    mv -f "$HOME/djbooth-update.sh.new" "$HOME/djbooth-update.sh"
     echo "Update script self-updated from bundle (GitHub was unreachable)"
   fi
 fi
