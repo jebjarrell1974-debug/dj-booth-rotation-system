@@ -198,6 +198,10 @@ export default function DJBooth() {
   // overwriting a newer queue (e.g. DJ taps songsPerSet 3→5→4 in rapid succession).
   const rotationAssignmentVersionRef = useRef(0);
   const djSavedSongsRef = useRef({});
+  // Tracks WHICH djSavedSongsRef entries are explicit DJ picks (Save All / reroll /
+  // drag edits) vs auto flip-to-bottom repicks. Auto repicks must NEVER overwrite a
+  // manual DJ pick — "always play exactly what the DJ picked" (Jul 24 live bug on 002).
+  const djSavedManualRef = useRef({});
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
   const songsPerSetMountedRef = useRef(false);
@@ -2825,7 +2829,7 @@ export default function DJBooth() {
       transitionInProgressRef.current = false;
     }
     
-    if (!isRotationActiveRef.current) {
+    if (!isRotationActiveRef.current || rotationRef.current.length === 0) {
       if (rotationPendingRef.current) {
         console.log('⏭️ HandleSkip: Rotation pending — starting rotation now');
         await beginRotation();
@@ -3142,12 +3146,22 @@ export default function DJBooth() {
           // the current system default is honored automatically (also satisfies the "reset
           // her songs-per-set to current system default" half of Rule 1).
           const finishedDancerForRepick = _finishingFeature ? null : dnc.find(d => d.id === finishedId);
-          if (finishedDancerForRepick) {
+          if (finishedDancerForRepick && djSavedManualRef.current[finishedId]) {
+            // DJ explicitly saved songs for this dancer (Save All) — do NOT auto re-pick.
+            // Her DJ-saved set plays on her next turn exactly as picked (Jul 24 bug:
+            // auto repick was clobbering Save All picks with system picks).
+            console.log(`🎵 Flip-to-bottom: keeping DJ-saved songs for ${finishedDancerForRepick.name} — skipping auto re-pick`);
+            logDiag?.('flip_repick_skipped_dj_saved', { dancer: finishedDancerForRepick.name });
+          } else if (finishedDancerForRepick) {
             const _repickVer = ++rotationAssignmentVersionRef.current;
             getDancerTracks(finishedDancerForRepick, [], true, 5000)
               .then(repicked => {
                 if (_repickVer !== rotationAssignmentVersionRef.current) {
                   console.log(`🚫 Flip-to-bottom re-pick stale (ver ${_repickVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
+                  return;
+                }
+                if (djSavedManualRef.current[finishedId]) {
+                  console.log(`🚫 Flip-to-bottom re-pick discarded — DJ saved songs for ${finishedDancerForRepick.name} while re-pick was in flight`);
                   return;
                 }
                 if (repicked && repicked.length > 0) {
@@ -3269,8 +3283,8 @@ export default function DJBooth() {
         if (playOutro) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
-        const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t && (t.url || t.name));
-        if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
+        const djSavedValid = djSaved && djSaved.length >= 1 && djSaved.every(t => t && (t.url || t.name));
+        if (djSavedValid) { delete djSavedSongsRef.current[finishedDancerId]; delete djSavedManualRef.current[finishedDancerId]; }
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
@@ -3280,9 +3294,10 @@ export default function DJBooth() {
         // system plays random ones" bug when DJ picks a track that's been recently played.
         const nextDancerId = newRotation[newIdx];
         const djSavedNext = djSavedSongsRef.current[nextDancerId];
-        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t && (t.url || t.name));
+        const djSavedNextValid = djSavedNext && djSavedNext.length >= 1 && djSavedNext.every(t => t && (t.url || t.name));
         if (djSavedNextValid) {
           delete djSavedSongsRef.current[nextDancerId];
+          delete djSavedManualRef.current[nextDancerId];
           console.log(`🎵 HandleSkip: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: djSavedNext.map(t => t.name), trigger: 'skip' });
         }
@@ -3656,7 +3671,7 @@ export default function DJBooth() {
       transitionInProgressRef.current = false;
     }
     
-    if (!isRotationActiveRef.current) {
+    if (!isRotationActiveRef.current || rotationRef.current.length === 0) {
       if (rotationPendingRef.current) {
         console.log('🎵 HandleTrackEnd: Rotation was pending — starting rotation now');
         await beginRotation();
@@ -3767,9 +3782,10 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         const _piDancerId = newRotation[newIdx];
         const _piDjSaved = djSavedSongsRef.current[_piDancerId];
-        const _piDjSavedValid = _piDjSaved && _piDjSaved.length >= songsPerSetRef.current && _piDjSaved.every(t => t && (t.url || t.name));
+        const _piDjSavedValid = _piDjSaved && _piDjSaved.length >= 1 && _piDjSaved.every(t => t && (t.url || t.name));
         if (_piDjSavedValid) {
           delete djSavedSongsRef.current[_piDancerId];
+          delete djSavedManualRef.current[_piDancerId];
           console.log(`🎵 Post-interstitial: next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${_piDjSaved.map(t => t.name).join(', ')}]`);
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: _piDjSaved.map(t => t.name), trigger: 'post_interstitial' });
         }
@@ -3857,8 +3873,13 @@ export default function DJBooth() {
     
     const dancer = dnc.find(d => d.id === rot[idx]);
     if (!dancer) {
-      console.warn('⚠️ HandleTrackEnd: dancer not found, falling back to random');
       transitionInProgressRef.current = false;
+      if (autoplayQueueRef.current.length > 0) {
+        console.warn('⚠️ HandleTrackEnd: dancer not found — playing from DJ autoplay queue');
+        const ok = await playFromAutoplayQueue(true);
+        if (ok !== false) return;
+      }
+      console.warn('⚠️ HandleTrackEnd: dancer not found, falling back to random');
       await playFallbackTrack(true);
       return;
     }
@@ -4075,12 +4096,22 @@ export default function DJBooth() {
           // the current system default is honored automatically (also satisfies the "reset
           // her songs-per-set to current system default" half of Rule 1).
           const finishedDancerForRepick = _finishingFeature ? null : dnc.find(d => d.id === finishedId);
-          if (finishedDancerForRepick) {
+          if (finishedDancerForRepick && djSavedManualRef.current[finishedId]) {
+            // DJ explicitly saved songs for this dancer (Save All) — do NOT auto re-pick.
+            // Her DJ-saved set plays on her next turn exactly as picked (Jul 24 bug:
+            // auto repick was clobbering Save All picks with system picks).
+            console.log(`🎵 Flip-to-bottom: keeping DJ-saved songs for ${finishedDancerForRepick.name} — skipping auto re-pick`);
+            logDiag?.('flip_repick_skipped_dj_saved', { dancer: finishedDancerForRepick.name });
+          } else if (finishedDancerForRepick) {
             const _repickVer = ++rotationAssignmentVersionRef.current;
             getDancerTracks(finishedDancerForRepick, [], true, 5000)
               .then(repicked => {
                 if (_repickVer !== rotationAssignmentVersionRef.current) {
                   console.log(`🚫 Flip-to-bottom re-pick stale (ver ${_repickVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
+                  return;
+                }
+                if (djSavedManualRef.current[finishedId]) {
+                  console.log(`🚫 Flip-to-bottom re-pick discarded — DJ saved songs for ${finishedDancerForRepick.name} while re-pick was in flight`);
                   return;
                 }
                 if (repicked && repicked.length > 0) {
@@ -4208,8 +4239,8 @@ export default function DJBooth() {
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
-        const djSavedValid = djSaved && djSaved.length >= songsPerSetRef.current && djSaved.every(t => t && (t.url || t.name));
-        if (djSavedValid) delete djSavedSongsRef.current[finishedDancerId];
+        const djSavedValid = djSaved && djSaved.length >= 1 && djSaved.every(t => t && (t.url || t.name));
+        if (djSavedValid) { delete djSavedSongsRef.current[finishedDancerId]; delete djSavedManualRef.current[finishedDancerId]; }
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
@@ -4219,9 +4250,10 @@ export default function DJBooth() {
         // system plays random ones" bug when DJ picks a track that's been recently played.
         const nextDancerId = newRotation[newIdx];
         const djSavedNext = djSavedSongsRef.current[nextDancerId];
-        const djSavedNextValid = djSavedNext && djSavedNext.length >= songsPerSetRef.current && djSavedNext.every(t => t && (t.url || t.name));
+        const djSavedNextValid = djSavedNext && djSavedNext.length >= 1 && djSavedNext.every(t => t && (t.url || t.name));
         if (djSavedNextValid) {
           delete djSavedSongsRef.current[nextDancerId];
+          delete djSavedManualRef.current[nextDancerId];
           console.log(`🎵 HandleTrackEnd: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: djSavedNext.map(t => t.name), trigger: 'track_end' });
         }
@@ -4531,7 +4563,7 @@ export default function DJBooth() {
         // Reuses playFromAutoplayQueue (same logic Skip / track-end use) so the queue
         // shifts, refills, and records identically. Gated on !isRotationActive so a
         // live show is completely unaffected.
-        if (!recovered && !isRotationActiveRef.current && autoplayQueueRef.current.length > 0) {
+        if (!recovered && (!isRotationActiveRef.current || rotationRef.current.length === 0) && autoplayQueueRef.current.length > 0) {
           try {
             const ok = await playFromAutoplayQueue(false);
             if (ok !== false) {
@@ -5528,6 +5560,7 @@ export default function DJBooth() {
                       updatedSongs[dancerId] = resolved;
                       if (resolved.length > 0) {
                         djSavedSongsRef.current[dancerId] = resolved;
+                        djSavedManualRef.current[dancerId] = true;
                         console.log(`🎵 DJ saved ${resolved.length} song(s) for dancer ${dancerId} — will survive next transition`);
                       }
                     }
@@ -5733,6 +5766,7 @@ export default function DJBooth() {
                   // Also drop djSavedSongsRef entries so old DJ-saved picks don't bypass
                   // the new fresh selection (Rule 5: re-roll means re-roll, not "use stale").
                   djSavedSongsRef.current = {};
+                  djSavedManualRef.current = {};
                   console.log(`🔄 songsPerSet → ${n}: re-rolling all ${rotation.length} queued dancer set(s) (Rule 5, ver=${_rerollVer})`);
                   logDiag?.('songs_per_set_reroll_all', { newCount: n, dancers: rotation.length, ver: _rerollVer });
 
