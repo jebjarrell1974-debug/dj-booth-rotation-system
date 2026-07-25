@@ -197,11 +197,23 @@ export default function DJBooth() {
   // write back if it still matches. Prevents stale results from a prior reroll/flip
   // overwriting a newer queue (e.g. DJ taps songsPerSet 3→5→4 in rapid succession).
   const rotationAssignmentVersionRef = useRef(0);
-  const djSavedSongsRef = useRef({});
+  // DJ-saved picks survive kiosk relaunch (watchdog restarts chromium mid-night):
+  // restore from localStorage at mount, persist via persistDjSaved() on every mutation.
+  const djSavedSongsRef = useRef((() => {
+    try { return JSON.parse(localStorage.getItem('djbooth_dj_saved_songs')) || {}; } catch { return {}; }
+  })());
   // Tracks WHICH djSavedSongsRef entries are explicit DJ picks (Save All / reroll /
   // drag edits) vs auto flip-to-bottom repicks. Auto repicks must NEVER overwrite a
   // manual DJ pick — "always play exactly what the DJ picked" (Jul 24 live bug on 002).
-  const djSavedManualRef = useRef({});
+  const djSavedManualRef = useRef((() => {
+    try { return JSON.parse(localStorage.getItem('djbooth_dj_saved_manual')) || {}; } catch { return {}; }
+  })());
+  const persistDjSaved = () => {
+    try {
+      localStorage.setItem('djbooth_dj_saved_songs', JSON.stringify(djSavedSongsRef.current));
+      localStorage.setItem('djbooth_dj_saved_manual', JSON.stringify(djSavedManualRef.current));
+    } catch {}
+  };
   const [songsPerSet, setSongsPerSet] = useState(DEFAULT_SONGS_PER_SET);
   const songsPerSetRef = useRef(DEFAULT_SONGS_PER_SET);
   const songsPerSetMountedRef = useRef(false);
@@ -1176,6 +1188,15 @@ export default function DJBooth() {
             });
             setRotationSongs(newSongs);
             rotationSongsRef.current = newSongs;
+            // Remote (phone) edits are USER actions — mark them DJ-saved so auto
+            // pre-pick/cooldown/flip filters can never clobber them (Jul 25 override law).
+            Object.keys(cmd.payload.assignments).forEach(dancerId => {
+              if (Array.isArray(newSongs[dancerId]) && newSongs[dancerId].length > 0) {
+                djSavedSongsRef.current[dancerId] = newSongs[dancerId];
+                djSavedManualRef.current[dancerId] = true;
+              }
+            });
+            persistDjSaved();
             console.log('🎵 Remote updateSongAssignments: updated songs for', Object.keys(cmd.payload.assignments).length, 'entertainers');
             // Async-resolve any name-only tracks (no URL) so display always matches playback
             (async () => {
@@ -2244,6 +2265,11 @@ export default function DJBooth() {
       rotationSongsRef.current = songs;
       setRotationSongs(songs);
     }
+    if (djSavedSongsRef.current[featureId] || djSavedManualRef.current[featureId]) {
+      delete djSavedSongsRef.current[featureId];
+      delete djSavedManualRef.current[featureId];
+      persistDjSaved();
+    }
     // If this feature was the one in the pre-feature setup window (e.g. canceled before her
     // arrival ran), close the setup window so the on-screen buttons don't get stuck visible.
     if (featureSetupActiveRef.current === featureId) {
@@ -3169,6 +3195,7 @@ export default function DJBooth() {
                   rotationSongsRef.current = updated;
                   setRotationSongs(updated);
                   djSavedSongsRef.current[finishedId] = repicked;
+                  persistDjSaved();
                   console.log(`🔄 Flip-to-bottom re-pick: ${finishedDancerForRepick.name} → [${repicked.map(t => t.name).join(', ')}]`);
                   logDiag?.('flip_to_bottom_repick', { dancer: finishedDancerForRepick.name, got: repicked.length });
                 }
@@ -3284,7 +3311,12 @@ export default function DJBooth() {
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= 1 && djSaved.every(t => t && (t.url || t.name));
-        if (djSavedValid) { delete djSavedSongsRef.current[finishedDancerId]; delete djSavedManualRef.current[finishedDancerId]; }
+        // Do NOT consume (delete) the DJ-saved flags here — the finished dancer hasn't
+        // PLAYED these picks yet; they ride to her bottom slot and the flags must
+        // survive a full rotation cycle so cooldown/length filters can't clobber them.
+        // Consumption happens only when her saved set actually STARTS playing
+        // (next-dancer / post-interstitial sites). Early consumption here was the
+        // Jul 25 "rerolled + saved, still played old songs" root cause.
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
@@ -3298,6 +3330,7 @@ export default function DJBooth() {
         if (djSavedNextValid) {
           delete djSavedSongsRef.current[nextDancerId];
           delete djSavedManualRef.current[nextDancerId];
+          persistDjSaved();
           console.log(`🎵 HandleSkip: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: djSavedNext.map(t => t.name), trigger: 'skip' });
         }
@@ -3318,7 +3351,7 @@ export default function DJBooth() {
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _ev = validPrePicks && validPrePicks.length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
+          (() => { const _ev = djSavedNextValid ? (validPrePicks && validPrePicks.length >= 1) : (validPrePicks && validPrePicks.length >= songsPerSetRef.current); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer
@@ -3786,14 +3819,26 @@ export default function DJBooth() {
         if (_piDjSavedValid) {
           delete djSavedSongsRef.current[_piDancerId];
           delete djSavedManualRef.current[_piDancerId];
+          persistDjSaved();
           console.log(`🎵 Post-interstitial: next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${_piDjSaved.map(t => t.name).join(', ')}]`);
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: _piDjSaved.map(t => t.name), trigger: 'post_interstitial' });
         }
         const existingTracks = rotationSongsRef.current[_piDancerId];
         const _postCd = songCooldownRef.current || {};
         const _postNow = Date.now();
-        const _postValid = existingTracks && existingTracks.length >= songsPerSetRef.current &&
-          existingTracks.every(t => !_postCd[t.name] || ((_postNow - _postCd[t.name]) >= COOLDOWN_MS));
+        // DJ-saved picks bypass the cooldown/length re-validation entirely — the DJ's
+        // explicit choice always wins over auto filters (Jul 25 override law).
+        const _piManual = !!djSavedManualRef.current[_piDancerId];
+        if (_piManual && !_piDjSavedValid) {
+          // Picks live in rotationSongs but the saved-ref was lost (e.g. relaunch race):
+          // consume the manual flag now — her set starts here.
+          delete djSavedManualRef.current[_piDancerId];
+          persistDjSaved();
+        }
+        const _postValid = existingTracks && (_piManual
+          ? existingTracks.length >= 1
+          : (existingTracks.length >= songsPerSetRef.current &&
+             existingTracks.every(t => !_postCd[t.name] || ((_postNow - _postCd[t.name]) >= COOLDOWN_MS))));
         let freshTracks = _piDjSavedValid ? _piDjSaved : (_postValid ? existingTracks : await getDancerTracks(nextDancer));
         let nextTrack = freshTracks?.[0];
         if (nextTrack && !nextTrack.url && nextTrack.name) {
@@ -4119,6 +4164,7 @@ export default function DJBooth() {
                   rotationSongsRef.current = updated;
                   setRotationSongs(updated);
                   djSavedSongsRef.current[finishedId] = repicked;
+                  persistDjSaved();
                   console.log(`🔄 Flip-to-bottom re-pick: ${finishedDancerForRepick.name} → [${repicked.map(t => t.name).join(', ')}]`);
                   logDiag?.('flip_to_bottom_repick', { dancer: finishedDancerForRepick.name, got: repicked.length });
                 }
@@ -4240,7 +4286,12 @@ export default function DJBooth() {
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
         const djSavedValid = djSaved && djSaved.length >= 1 && djSaved.every(t => t && (t.url || t.name));
-        if (djSavedValid) { delete djSavedSongsRef.current[finishedDancerId]; delete djSavedManualRef.current[finishedDancerId]; }
+        // Do NOT consume (delete) the DJ-saved flags here — the finished dancer hasn't
+        // PLAYED these picks yet; they ride to her bottom slot and the flags must
+        // survive a full rotation cycle so cooldown/length filters can't clobber them.
+        // Consumption happens only when her saved set actually STARTS playing
+        // (next-dancer / post-interstitial sites). Early consumption here was the
+        // Jul 25 "rerolled + saved, still played old songs" root cause.
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
         rotationSongsRef.current = scratchSongs;
@@ -4254,6 +4305,7 @@ export default function DJBooth() {
         if (djSavedNextValid) {
           delete djSavedSongsRef.current[nextDancerId];
           delete djSavedManualRef.current[nextDancerId];
+          persistDjSaved();
           console.log(`🎵 HandleTrackEnd: Next dancer ${nextDancer.name} using DJ-saved songs (bypassing cooldown): [${djSavedNext.map(t => t.name).join(', ')}]`);
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: djSavedNext.map(t => t.name), trigger: 'track_end' });
         }
@@ -4274,7 +4326,7 @@ export default function DJBooth() {
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
         const [freshTracks, prePicked] = await Promise.all([
-          (() => { const _ev = validPrePicks && validPrePicks.length >= songsPerSetRef.current; if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
+          (() => { const _ev = djSavedNextValid ? (validPrePicks && validPrePicks.length >= 1) : (validPrePicks && validPrePicks.length >= songsPerSetRef.current); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
             : finishedDancer
@@ -4739,6 +4791,9 @@ export default function DJBooth() {
     setRotationSongs({});
     rotationSongsRef.current = {};
     try { localStorage.removeItem('djbooth_planned_assignments'); } catch {}
+    djSavedSongsRef.current = {};
+    djSavedManualRef.current = {};
+    persistDjSaved();
     restoredSongsRef.current = false;
     rotationPendingRef.current = false;
     setRotationPending(false);
@@ -4775,6 +4830,13 @@ export default function DJBooth() {
       setCurrentDancerIndex(newIdx);
       currentDancerIndexRef.current = newIdx;
     }
+    // Clear DJ-saved pick flags for the removed dancer so a later re-add doesn't
+    // replay a stale saved set (flags persist across relaunch by design).
+    if (djSavedSongsRef.current[dancerId] || djSavedManualRef.current[dancerId]) {
+      delete djSavedSongsRef.current[dancerId];
+      delete djSavedManualRef.current[dancerId];
+      persistDjSaved();
+    }
     rotationRef.current = newRotation;
     setRotation(newRotation);
   };
@@ -4794,6 +4856,10 @@ export default function DJBooth() {
     currentDancerIndexRef.current = 0;
     setCurrentDancerIndex(0);
     setRotation([]);
+    // Everyone left the rotation — drop all DJ-saved pick flags (stale-flag leak guard).
+    djSavedSongsRef.current = {};
+    djSavedManualRef.current = {};
+    persistDjSaved();
   };
 
   const moveUp = (index) => {
@@ -5473,7 +5539,7 @@ export default function DJBooth() {
                   if (updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i])) {
                     updateDancerMutation.mutate({ id: dancerId, data: { playlist: updatedPlaylist } });
                   }
-                  if (isRotationActive && tracks.length > 0) {
+                  if (isRotationActive) {
                     const resolved = [];
                     for (const name of displayedSongs) {
                       let track = tracks.find(t => t.name === name);
@@ -5486,6 +5552,11 @@ export default function DJBooth() {
                       const updated = { ...rotationSongsRef.current, [dancerId]: resolved };
                       setRotationSongs(updated);
                       rotationSongsRef.current = updated;
+                      // Playlist edits from the rotation tab are USER actions too —
+                      // protect them from auto clobber until played (Jul 25 override law).
+                      djSavedSongsRef.current[dancerId] = resolved;
+                      djSavedManualRef.current[dancerId] = true;
+                      persistDjSaved();
                     }
                   }
                 }}
@@ -5538,7 +5609,11 @@ export default function DJBooth() {
                   // The ephemeral apply to rotationSongs / djSavedSongsRef happens below
                   // (still gated by overrideSet so the on-stage / upcoming-songs Option A
                   // behavior the DJ expects continues to work).
-                  if (tracks.length > 0) {
+                  // Always apply picks — even if the client track page hasn't loaded yet
+                  // (tracks state is only the first 100). Name-only entries resolve at
+                  // playtime. The old `if (tracks.length > 0)` gate silently DROPPED the
+                  // DJ's saved picks (toast said "saved") when the list was empty.
+                  {
                     const updatedSongs = { ...(rotationSongsRef.current || {}) };
                     for (const [dancerId, songNames] of Object.entries(playlists)) {
                       if (!overrideSet.has(String(dancerId))) continue;
@@ -5566,6 +5641,7 @@ export default function DJBooth() {
                     }
                     setRotationSongs(updatedSongs);
                     rotationSongsRef.current = updatedSongs;
+                    persistDjSaved();
                     console.log('🎵 Live rotation playlists updated');
                     if (Object.keys(interstitials).length > 0) {
                       console.log('🎵 Interstitial songs updated:', Object.keys(interstitials).length, 'break slots');
@@ -5767,6 +5843,7 @@ export default function DJBooth() {
                   // the new fresh selection (Rule 5: re-roll means re-roll, not "use stale").
                   djSavedSongsRef.current = {};
                   djSavedManualRef.current = {};
+                  persistDjSaved();
                   console.log(`🔄 songsPerSet → ${n}: re-rolling all ${rotation.length} queued dancer set(s) (Rule 5, ver=${_rerollVer})`);
                   logDiag?.('songs_per_set_reroll_all', { newCount: n, dancers: rotation.length, ver: _rerollVer });
 
