@@ -79,31 +79,75 @@ else
   echo "NoMachine already installed"
 fi
 
-echo "[4/12] Cloning app from GitHub..."
-if [ ! -d "$APP_DIR" ]; then
-  cd "$UNIT_HOME"
-  git clone "https://github.com/$GITHUB_REPO.git" djbooth
-fi
+echo "[4/12] Cloning app from GitHub and assembling unit layout..."
+# The repo is a pnpm monorepo, but units run a FLAT layout (~/djbooth/server + ~/djbooth/dist)
+# — the same layout ~/djbooth-update.sh maintains. We clone to a temp dir and assemble the
+# flat app dir from it, exactly mirroring the updater's monorepo→flat copy logic, so a
+# fresh unit is byte-for-byte what an updated unit looks like.
+CLONE_DIR=$(mktemp -d /tmp/djbooth-clone-XXXXXX)
+git clone --depth 1 "https://github.com/$GITHUB_REPO.git" "$CLONE_DIR/repo"
+SRC="$CLONE_DIR/repo"
+mkdir -p "$APP_DIR"
 cd "$APP_DIR"
 
-echo "[5/12] Installing dependencies and building..."
-npm install --no-audit --no-fund 2>&1 | tail -5
-npx vite build 2>&1 | tail -5
+API_SRC="$SRC/artifacts/api-server"
+DJ_SRC="$SRC/artifacts/dj-booth"
+if [ ! -d "$API_SRC/server" ]; then
+  echo "FATAL: $API_SRC/server not found in repo — layout changed? Aborting."
+  exit 1
+fi
+cp -r "$API_SRC/server" "$APP_DIR/"
+# homebase-package.json is the npm-compatible manifest (no pnpm workspace: refs, no preinstall guard)
+cp "$API_SRC/homebase-package.json" "$APP_DIR/package.json"
+rm -f "$APP_DIR/package-lock.json"
+cp -r "$DJ_SRC/public" "$APP_DIR/"
+cp "$DJ_SRC/index.html" "$APP_DIR/" 2>/dev/null || true
+cp -r "$DJ_SRC/src" "$APP_DIR/" 2>/dev/null || true
+cp "$DJ_SRC/homebase-vite.config.js" "$APP_DIR/vite.config.js" 2>/dev/null || true
+cp "$DJ_SRC/tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
+cp "$DJ_SRC/postcss.config.js" "$APP_DIR/" 2>/dev/null || true
+# Pre-built frontend is committed to the repo — no vite build needed on the unit
+if [ -d "$DJ_SRC/dist" ]; then
+  cp -r "$DJ_SRC/dist" "$APP_DIR/"
+  echo "Pre-built frontend installed (no build step needed)"
+else
+  echo "FATAL: no pre-built dist/ in repo — cannot continue."
+  exit 1
+fi
+rm -rf "$CLONE_DIR"
+
+echo "[5/12] Installing dependencies..."
+# npm install with FULL log + real exit-code check. NEVER pipe through tail here:
+# `npm install | tail -5` makes set -e see tail's exit code (0), so a failed install
+# used to print "SETUP COMPLETE!" with no node_modules (hit provisioning unit 005, Jul 2026).
+NPM_LOG="/tmp/djbooth-setup-npm.log"
+if ! NODE_ENV=development npm install --no-audit --no-fund --legacy-peer-deps > "$NPM_LOG" 2>&1; then
+  echo "FATAL: npm install failed. Last 30 lines:"
+  tail -30 "$NPM_LOG"
+  echo "Full log: $NPM_LOG"
+  exit 1
+fi
+if [ ! -d "$APP_DIR/node_modules/express" ] || [ ! -d "$APP_DIR/node_modules/better-sqlite3" ]; then
+  echo "FATAL: npm install finished but critical packages are missing. Full log: $NPM_LOG"
+  exit 1
+fi
+echo "Dependencies installed"
 
 echo "[6/12] Setting up environment variables..."
+# Homebase is parameterized: FLEET_SERVER env var wins, default = current live homebase.
+FLEET_SERVER="${FLEET_SERVER:-http://100.64.87.105:3001}"
 if [ ! -f "$APP_DIR/.env" ]; then
-  FLEET_SERVER="http://100.109.73.27:3001"
-  echo "Fetching fleet config from homebase..."
+  echo "Fetching fleet config from homebase ($FLEET_SERVER)..."
   HTTP_CODE=$(curl -sf -o "$APP_DIR/.env" -w "%{http_code}" "$FLEET_SERVER/api/fleet-env" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ] && [ -s "$APP_DIR/.env" ]; then
     echo ".env downloaded from homebase"
   else
     echo "Could not reach homebase for env config."
-    echo "Make sure the homebase is running at $FLEET_SERVER"
-    cat > "$APP_DIR/.env" << 'ENVEOF'
+    echo "Make sure the homebase is running at $FLEET_SERVER, or pass FLEET_SERVER=http://<ip>:3001"
+    cat > "$APP_DIR/.env" << ENVEOF
 PORT=3001
 NODE_ENV=production
-FLEET_SERVER_URL=http://100.109.73.27:3001
+FLEET_SERVER_URL=$FLEET_SERVER
 ENVEOF
   fi
 else
@@ -509,7 +553,7 @@ echo "  SETUP COMPLETE!"
 echo ""
 echo "  Unit:       $UNIT_USER"
 echo "  Tailscale:  $TAILSCALE_IP"
-echo "  Fleet URL:  http://100.109.73.27:3001"
+echo "  Fleet URL:  $FLEET_SERVER"
 echo "  App URL:    http://localhost:3001"
 echo ""
 echo "  Reboot to start kiosk mode:"
