@@ -266,7 +266,12 @@ app.get('/api/fleet-env', (req, res) => {
   const lines = [];
   for (const key of FLEET_KEYS) {
     let val = process.env[key] || '';
-    if (key === 'FLEET_SERVER_URL') val = `http://100.109.73.27:3001`;
+    // FLEET_SERVER_URL: never hardcode an IP (the old hardcoded homebase IP went
+    // dead and stale-.env'd every new unit). The Host header is the address the
+    // unit actually reached this homebase at — echo that back; env var can override.
+    if (key === 'FLEET_SERVER_URL') {
+      val = process.env.FLEET_SERVER_URL || (req.headers.host ? `http://${req.headers.host}` : '');
+    }
     if (key === 'PORT') val = '3001';
     if (key === 'NODE_ENV') val = 'production';
     if (val) lines.push(`${key}=${val}`);
