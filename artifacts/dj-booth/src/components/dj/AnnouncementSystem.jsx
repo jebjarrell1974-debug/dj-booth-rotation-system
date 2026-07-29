@@ -173,6 +173,10 @@ const ANNOUNCEMENT_TYPES = {
   INTRO: 'intro',
   ROUND2: 'round2',
   OUTRO: 'outro',
+  // One-song-set (multi-stage) mode: shorter intro + combined "she's moving to the
+  // next stage / here comes the next girl" hand-off that replaces the outro.
+  INTRO_SHORT: 'intro_short',
+  STAGE_TRANSITION: 'stage_transition',
 };
 
 const GENERIC_DANCER_NAME = '_GENERIC_';
@@ -189,6 +193,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     openaiApiKey,
     hideUI = false,
     onVoiceDiag,
+    // One-song-set mode (songs per set = 1): pre-cache short intros + stage
+    // transitions instead of intro/round2/outro. Playback call sites in DJBooth
+    // pick the types; this only steers what gets generated ahead of time.
+    oneSongMode = false,
   } = props;
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -860,9 +868,18 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const makeNextJobs = (dancer) => {
       const jobs = [];
       for (let v = 1; v <= UPCOMING_CACHE_VARIATIONS; v++) {
-        jobs.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
-        jobs.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, v, 2]);
-        jobs.push([ANNOUNCEMENT_TYPES.OUTRO, dancer.name, null, v, 1]);
+        if (oneSongMode) {
+          // One-song sets play intro_short at song start and stage_transition
+          // (paired with the incoming dancer) at song end — round2/outro never fire.
+          jobs.push([ANNOUNCEMENT_TYPES.INTRO_SHORT, dancer.name, null, v, 1]);
+          if (dancer.nextName) {
+            jobs.push([ANNOUNCEMENT_TYPES.STAGE_TRANSITION, dancer.name, dancer.nextName, v, 1]);
+          }
+        } else {
+          jobs.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
+          jobs.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, v, 2]);
+          jobs.push([ANNOUNCEMENT_TYPES.OUTRO, dancer.name, null, v, 1]);
+        }
       }
       return jobs;
     };
@@ -909,7 +926,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         if (!preCacheCancelRef.current) console.log(`✅ Background pre-cache complete: ${secondDancer.name}`);
       })();
     }
-  }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
+  }, [getOrGenerateAnnouncement, elevenLabsApiKey, oneSongMode]);
 
   const preCacheForRotationStart = useCallback(async (rotationDancers, onProgress, bufferCount = 2) => {
     const config = getApiConfig();

@@ -3302,11 +3302,16 @@ export default function DJBooth() {
         // entertainer being skipped — go straight to the next dancer's song 1 + intro.
         // Only prefetch/duck for the outro on a natural set-end advance.
         const playOutro = announcementsEnabled && !skipBreaks;
+        // One-song sets (multi-stage rotation): replace the outro with a combined
+        // stage-transition hand-off ("she's moving to the next stage... here comes X").
+        const _oneSongSkip = songsPerSetRef.current === 1 && !_finishingFeature && nextDancer?.name;
         const outroPromise = !playOutro
           ? Promise.resolve(null)
           : _finishingFeature
             ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
-            : prefetchAnnouncement('outro', dancer.name, null, 1);
+            : _oneSongSkip
+              ? prefetchAnnouncement('stage_transition', dancer.name, nextDancer.name, 1)
+              : prefetchAnnouncement('outro', dancer.name, null, 1);
         if (playOutro) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
@@ -3424,7 +3429,7 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
+          const introPromise = prefetchAnnouncement(songsPerSetRef.current === 1 ? 'intro_short' : 'intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3871,7 +3876,7 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
+          const announcementPromise = prefetchAnnouncement(songsPerSetRef.current === 1 ? 'intro_short' : 'intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -4277,11 +4282,16 @@ export default function DJBooth() {
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
+        // One-song sets (multi-stage rotation): replace the outro with a combined
+        // stage-transition hand-off ("she's moving to the next stage... here comes X").
+        const _oneSongFlip = songsPerSetRef.current === 1 && !_finishingFeature && nextDancer?.name;
         const outroPromise = !announcementsEnabled
           ? Promise.resolve(null)
           : _finishingFeature
             ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
-            : prefetchAnnouncement('outro', dancer.name, null, 1);
+            : _oneSongFlip
+              ? prefetchAnnouncement('stage_transition', dancer.name, nextDancer.name, 1)
+              : prefetchAnnouncement('outro', dancer.name, null, 1);
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
         const djSaved = djSavedSongsRef.current[finishedDancerId];
@@ -4417,7 +4427,7 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
+          const introPromise = prefetchAnnouncement(songsPerSetRef.current === 1 ? 'intro_short' : 'intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -4990,6 +5000,7 @@ export default function DJBooth() {
           />
           <AnnouncementSystem
             ref={announcementRef}
+            oneSongMode={songsPerSet === 1}
             dancers={dancers}
             rotation={rotation}
             currentDancerIndex={currentDancerIndex}
