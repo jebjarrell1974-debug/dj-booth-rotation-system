@@ -236,66 +236,33 @@ Do not number the lines.
 Just the spoken words, nothing else.`;
   }
 
-  // ONE-SONG-SET SHORT INTRO — used when songs-per-set is 1 (multi-stage conveyor
-  // rotations). Shorter than a normal intro but not a one-liner: the transition
-  // announcement at the previous song's end already called her up, so this is a
-  // quick re-hit as her song starts, not a full build.
-  if (type === 'intro_short') {
-    return `${SYSTEM_PROMPT}
-
-EVENT: QUICK STAGE INTRODUCTION (ONE-SONG SET)
-
-${displayName} is taking the main stage RIGHT NOW for a one-song set.${genericNote}
-
-RULES:
-- SHORT: two to three sentences MAX. This is a quick hit, not a build-up — she was already called up moments ago.
-- High energy from the first word. No slow lead-in, no suspense build.
-- Say "${displayName}" exactly ONCE, landing it with impact.
-- Work in ONE quick money/tip line — she only has one song, so get them to the rail NOW.
-- Do NOT mention day of the week, club name, or time-specific references.
-- Do NOT use "give it up", "make some noise", "let me hear you" or any cheer-soliciting language.
-
-EXAMPLES (inspiration only — write something COMPLETELY ORIGINAL every time):
-"[energetically] One song, fellas — that's all you get, so make it count. Get to that rail with those bills ready. ${displayName} on the main stage, right now."
-"[excitedly] No time to waste — she's here and she's already moving. [eagerly] Rail up, cash out, gentlemen. This is ${displayName}."
-
-Write something COMPLETELY ORIGINAL. Two to three sentences. Quick, punchy, done.
-
-OUTPUT FORMAT:
-Write the announcement as flowing spoken text — exactly what the DJ would say over the mic.
-Do not include labels, brackets (except emotion tags), stage directions, or explanations.
-Do not number the lines.
-Just the spoken words, nothing else.`;
-  }
-
   // ONE-SONG-SET STAGE TRANSITION — replaces the outro when songs-per-set is 1.
-  // Combines the send-off and the next call-up in ONE short announcement: the
-  // finishing entertainer is MOVING TO THE NEXT STAGE (she is NOT leaving), and
-  // the next entertainer is called to this stage immediately. Keeps multi-stage
-  // conveyor rotations moving with minimal talk between songs.
+  // A quick, short send-off: thank the finishing entertainer and note she's moving
+  // to the next stage. NO call-up of the next girl (she gets her normal intro when
+  // her song starts). Style: "That was the amazing Tina. Moving on to the next stage."
   if (type === 'stage_transition') {
-    const nextDisplay = (!nextDancerName || nextDancerName === '_GENERIC_') ? 'your next entertainer' : nextDancerName;
     return `${SYSTEM_PROMPT}
 
-EVENT: STAGE-TO-STAGE TRANSITION (ONE-SONG SET, MULTI-STAGE ROTATION)
+EVENT: QUICK STAGE-MOVE SEND-OFF (ONE-SONG SET, MULTI-STAGE ROTATION)
 
-${displayName} just finished her one song on this stage.${genericNote} She is NOT done for the night — she is MOVING TO THE NEXT STAGE right now. At the same time, ${nextDisplay} is stepping onto THIS stage.
+${displayName} just finished her one song on this stage.${genericNote} She is NOT done for the night — she is moving to the next stage.
 
 RULES:
-- THREE to FOUR sentences total. This is a fast hand-off, not two full announcements.
-- Part 1 (one or two sentences): send ${displayName} to the NEXT STAGE — make it clear she's still performing, just moving. Say "the next stage" generically — never a stage number or stage name.
-- Part 2 (one or two sentences): immediately call ${nextDisplay} to THIS stage with energy.
-- Land on "${nextDisplay}" as the final word or close to it.
-- One quick money/tip mention MAX, woven in naturally — do not do a full money push for both girls.
+- VERY SHORT: one to two sentences MAX. Quick, simple, done.
+- The core message: that was ${displayName}, and she's moving on to the next stage.
+- Say "the next stage" generically — NEVER a stage number or stage name.
+- Do NOT call up, mention, or tease the next entertainer — her intro handles that.
+- Do NOT do a money/tip push here — keep it clean and fast.
 - Do NOT mention day of the week, club name, or time-specific references.
 - Do NOT use "give it up", "make some noise", "let me hear you" or any cheer-soliciting language.
-- Do NOT say goodbye-flavored lines ("that's all from her", "she's done") — she's moving, not leaving.
+- Do NOT say goodbye-flavored lines ("that's all from her", "she's done for the night") — she's moving, not leaving.
 
 EXAMPLES (inspiration only — write something COMPLETELY ORIGINAL every time):
-"[energetically] ${displayName} isn't finished, fellas — she's headed to the next stage, so follow that money. [excitedly] And stepping up right here, right now... ${nextDisplay}!"
-"[excitedly] Keep your eyes moving — ${displayName} is taking it to the next stage this second. [eagerly] And on this stage, cash in hand, gentlemen... here comes ${nextDisplay}."
+"[energetically] That was the amazing ${displayName}! Moving on to the next stage."
+"[excitedly] The one and only ${displayName}, fellas — catch her on the next stage."
+"[energetically] ${displayName}, everybody! She's headed to the next stage right now."
 
-Write something COMPLETELY ORIGINAL. Three to four sentences. Fast hand-off, big landing on the next name.
+Write something COMPLETELY ORIGINAL. One to two sentences. Short and simple.
 
 OUTPUT FORMAT:
 Write the announcement as flowing spoken text — exactly what the DJ would say over the mic.

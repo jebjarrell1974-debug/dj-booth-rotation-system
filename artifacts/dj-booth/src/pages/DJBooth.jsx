@@ -3302,15 +3302,15 @@ export default function DJBooth() {
         // entertainer being skipped — go straight to the next dancer's song 1 + intro.
         // Only prefetch/duck for the outro on a natural set-end advance.
         const playOutro = announcementsEnabled && !skipBreaks;
-        // One-song sets (multi-stage rotation): replace the outro with a combined
-        // stage-transition hand-off ("she's moving to the next stage... here comes X").
-        const _oneSongSkip = songsPerSetRef.current === 1 && !_finishingFeature && nextDancer?.name;
+        // One-song sets (multi-stage rotation): replace the outro with a short
+        // "that was X — moving to the next stage" send-off.
+        const _oneSongSkip = songsPerSetRef.current === 1 && !_finishingFeature;
         const outroPromise = !playOutro
           ? Promise.resolve(null)
           : _finishingFeature
             ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
             : _oneSongSkip
-              ? prefetchAnnouncement('stage_transition', dancer.name, nextDancer.name, 1)
+              ? prefetchAnnouncement('stage_transition', dancer.name, null, 1)
               : prefetchAnnouncement('outro', dancer.name, null, 1);
         if (playOutro) audioEngineRef.current?.duck();
 
@@ -3429,7 +3429,7 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement(songsPerSetRef.current === 1 ? 'intro_short' : 'intro', nextDancer.name, null, 1, null);
+          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3876,7 +3876,7 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
 
         if (announcementsEnabled) {
-          const announcementPromise = prefetchAnnouncement(songsPerSetRef.current === 1 ? 'intro_short' : 'intro', nextDancer.name, null, 1, null);
+          const announcementPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
           lastAudioActivityRef.current = Date.now();
@@ -3986,16 +3986,30 @@ export default function DJBooth() {
         setCurrentSongNumber(newSongNum);
         
         if (nextTrack && !nextTrack.url && nextTrack.name) {
-          let fresh = tracks.find(t => t.name === nextTrack.name && t.url);
-          if (!fresh) fresh = await resolveTrackByName(nextTrack.name);
-          if (fresh) {
+          // Resolution ladder for name-only DJ picks. The old exact-match-then-server
+          // path silently missed (library `tracks` is a small window of the full
+          // catalog, and exact string compare is brittle), fell through, and re-rolled
+          // a RANDOM track — the "assigned song 2 played some random song" bug.
+          const wanted = nextTrack.name;
+          const norm = (s) => (s || '').toLowerCase().replace(/\.mp3$/i, '').trim();
+          let fresh = tracks.find(t => t.name === wanted && t.url)
+            || tracks.find(t => norm(t.name) === norm(wanted) && t.url);
+          if (!fresh) fresh = await resolveTrackByName(wanted);
+          if (!fresh?.url) fresh = await resolveTrackByName(wanted.replace(/\.mp3$/i, ''));
+          if (fresh?.url) {
             nextTrack = fresh;
             dancerTracks[songNum] = fresh;
           }
         }
         
         if (!nextTrack || !nextTrack.url) {
-          const freshTracks = await getDancerTracks(dancer);
+          // DJ-assigned pick could not be resolved — this should be rare and must be
+          // LOUD, because the replacement is a random track the DJ didn't choose.
+          console.warn(`⚠️ HandleTrackEnd: assigned song ${songNum + 1} for ${dancer.name} unresolvable (${nextTrack?.name || 'missing entry'}) — re-rolling replacement`);
+          logDiag?.('assigned_track_unresolved', { dancer: dancer.name, songNum: songNum + 1, wanted: nextTrack?.name || null });
+          // Exclude everything already in her set so the re-roll can't repeat song 1.
+          const played = dancerTracks.map(t => t?.name).filter(Boolean);
+          const freshTracks = await getDancerTracks(dancer, played);
           if (freshTracks[0]?.url) {
             nextTrack = freshTracks[0];
           } else {
@@ -4282,15 +4296,15 @@ export default function DJBooth() {
         const _teTransStart = Date.now();
         logDiag('transition_start', { from: dancer.name, to: nextDancer.name, trigger: 'track_end' });
 
-        // One-song sets (multi-stage rotation): replace the outro with a combined
-        // stage-transition hand-off ("she's moving to the next stage... here comes X").
-        const _oneSongFlip = songsPerSetRef.current === 1 && !_finishingFeature && nextDancer?.name;
+        // One-song sets (multi-stage rotation): replace the outro with a short
+        // "that was X — moving to the next stage" send-off.
+        const _oneSongFlip = songsPerSetRef.current === 1 && !_finishingFeature;
         const outroPromise = !announcementsEnabled
           ? Promise.resolve(null)
           : _finishingFeature
             ? fetchFeatureAudioUrl(finishedDancerId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
             : _oneSongFlip
-              ? prefetchAnnouncement('stage_transition', dancer.name, nextDancer.name, 1)
+              ? prefetchAnnouncement('stage_transition', dancer.name, null, 1)
               : prefetchAnnouncement('outro', dancer.name, null, 1);
         if (announcementsEnabled) audioEngineRef.current?.duck();
 
@@ -4427,7 +4441,7 @@ export default function DJBooth() {
         }
 
         if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement(songsPerSetRef.current === 1 ? 'intro_short' : 'intro', nextDancer.name, null, 1, null);
+          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
           audioEngineRef.current?.duck();
           const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
           lastAudioActivityRef.current = Date.now();

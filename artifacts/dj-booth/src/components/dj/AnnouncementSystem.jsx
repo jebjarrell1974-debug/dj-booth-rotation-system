@@ -173,9 +173,8 @@ const ANNOUNCEMENT_TYPES = {
   INTRO: 'intro',
   ROUND2: 'round2',
   OUTRO: 'outro',
-  // One-song-set (multi-stage) mode: shorter intro + combined "she's moving to the
-  // next stage / here comes the next girl" hand-off that replaces the outro.
-  INTRO_SHORT: 'intro_short',
+  // One-song-set (multi-stage) mode: quick "that was X — moving to the next stage"
+  // send-off that replaces the outro. Intro stays the normal intro.
   STAGE_TRANSITION: 'stage_transition',
 };
 
@@ -869,12 +868,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       const jobs = [];
       for (let v = 1; v <= UPCOMING_CACHE_VARIATIONS; v++) {
         if (oneSongMode) {
-          // One-song sets play intro_short at song start and stage_transition
-          // (paired with the incoming dancer) at song end — round2/outro never fire.
-          jobs.push([ANNOUNCEMENT_TYPES.INTRO_SHORT, dancer.name, null, v, 1]);
-          if (dancer.nextName) {
-            jobs.push([ANNOUNCEMENT_TYPES.STAGE_TRANSITION, dancer.name, dancer.nextName, v, 1]);
-          }
+          // One-song sets play the normal intro at song start and a short
+          // stage_transition send-off at song end — round2/outro never fire.
+          jobs.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
+          jobs.push([ANNOUNCEMENT_TYPES.STAGE_TRANSITION, dancer.name, null, v, 1]);
         } else {
           jobs.push([ANNOUNCEMENT_TYPES.INTRO, dancer.name, null, v, 1]);
           jobs.push([ANNOUNCEMENT_TYPES.ROUND2, dancer.name, null, v, 2]);
