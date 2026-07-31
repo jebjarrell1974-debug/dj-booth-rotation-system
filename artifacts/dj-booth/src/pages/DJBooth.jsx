@@ -163,7 +163,12 @@ export default function DJBooth() {
       return Array.isArray(parsed) ? parsed : [];
     } catch { return []; }
   });
-  const autoplayQueueRef = useRef([]);
+  // CRITICAL: seed the ref from the SAME restored value as the state. This ref is
+  // what playback actually reads (handleTrackEnd / watchdog / remove button). It used
+  // to init as [] with nothing syncing it until the DJ's next edit — so after any
+  // kiosk reload the UI showed the curated queue while playback saw an EMPTY queue
+  // and fell back to random tracks ("DJ Only Curated plays whatever it wants" bug).
+  const autoplayQueueRef = useRef(autoplayQueue);
   const autoplayFillInFlightRef = useRef(false);
   const autoplayPlayingRef = useRef(false);
   const autoplayFillVersionRef = useRef(0);
@@ -3222,9 +3227,14 @@ export default function DJBooth() {
           }
 
           if (announcementsEnabled) {
+            // One-song sets: short "moving to the next stage" send-off replaces the
+            // outro on break paths too (it has no next-girl call-up, so it's safe
+            // to play before break songs).
             const announcementPromise = _finishingFeature
               ? fetchFeatureAudioUrl(finishedId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
-              : prefetchAnnouncement('outro', dancer.name, null, 1);
+              : songsPerSetRef.current === 1
+                ? prefetchAnnouncement('stage_transition', dancer.name, null, 1)
+                : prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
             const announcementDone = playPrefetchedAnnouncement(announcementUrl);
@@ -4210,9 +4220,14 @@ export default function DJBooth() {
           }
 
           if (announcementsEnabled) {
+            // One-song sets: short "moving to the next stage" send-off replaces the
+            // outro on break paths too (it has no next-girl call-up, so it's safe
+            // to play before break songs).
             const announcementPromise = _finishingFeature
               ? fetchFeatureAudioUrl(finishedId, 'outro').then(u => u || prefetchAnnouncement('outro', dancer.name, null, 1))
-              : prefetchAnnouncement('outro', dancer.name, null, 1);
+              : songsPerSetRef.current === 1
+                ? prefetchAnnouncement('stage_transition', dancer.name, null, 1)
+                : prefetchAnnouncement('outro', dancer.name, null, 1);
             audioEngineRef.current?.duck();
             const [, announcementUrl] = await Promise.all([waitForDuck(), announcementPromise]);
             const announcementDone = playPrefetchedAnnouncement(announcementUrl);
