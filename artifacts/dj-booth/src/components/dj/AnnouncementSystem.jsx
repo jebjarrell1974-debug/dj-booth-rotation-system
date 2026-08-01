@@ -159,7 +159,13 @@ const cleanupStaleIDBEntries = async () => {
       const keys = request.result || [];
       let removed = 0;
       for (const key of keys) {
-        if (typeof key === 'string' && !key.includes(`-${CURRENT_VOICE_VERSION}`)) {
+        // Preserve ALL active version namespaces — regular (V17), feature
+        // (FEATURE_V2), and stage-transition (ST_V2) — or valid entries get
+        // purged on every mount and must be refetched/regenerated.
+        if (typeof key === 'string'
+            && !key.includes(`-${CURRENT_VOICE_VERSION}`)
+            && !key.includes('-FEATURE_V2')
+            && !key.includes('-ST_V2')) {
           store.delete(key);
           removed++;
         }
@@ -338,7 +344,17 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     if (type === 'stage_transition') {
       if (!config.openaiApiKey) return buildLocalStageTransitionScript(dancerName, varNum);
       try {
-        return await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
+        const script = await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
+        // Post-generation guard: send-offs must be SHORT and clean. If the LLM
+        // (or a canned fallback that slipped through) returns something long or
+        // tip-push flavored, discard it and use the local pool.
+        const words = (script || '').trim().split(/\s+/).length;
+        const banned = /tip|rain|dollar|one-on-one|private|vip|lap dance|still going|do not let up/i;
+        if (!script || words > 30 || banned.test(script)) {
+          console.warn(`⚠️ stage_transition script rejected (${words} words / banned phrase) — using local short send-off pool`);
+          return buildLocalStageTransitionScript(dancerName, varNum);
+        }
+        return script;
       } catch (err) {
         console.warn(`⚠️ stage_transition LLM script failed (${err.message}) — using local short send-off pool`);
         return buildLocalStageTransitionScript(dancerName, varNum);
@@ -832,7 +848,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         // Use the per-type version tag so feature_intro recovery targets the correct
         // FEATURE_VOICE_VERSION-tagged key (was hardcoded to CURRENT_VOICE_VERSION,
         // which silently broke recovery for feature voiceovers).
-        const _versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION : CURRENT_VOICE_VERSION;
+        const _versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
+          : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
+          : CURRENT_VOICE_VERSION;
         const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${_versionTag}`;
         console.warn(`⚠️ Playback failed for ${cacheKey} — clearing local cache, trying server copy first...`, playError.message);
         onVoiceDiag?.('voice_play_fail', { dancer: dancerName, voiceType: type, error: (playError.message || '').substring(0, 80) });
