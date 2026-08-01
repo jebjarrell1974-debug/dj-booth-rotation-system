@@ -327,12 +327,30 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1, featureMeta = null) => {
     const config = getApiConfig();
 
-    // Stage transitions NEVER go through an LLM without a real key: the canned
-    // InvokeLLM fallback has no matching branch and returns a long tip-push
-    // line (the "long outro on one-song sets" bug). Use the local pool instead.
-    if (type === 'stage_transition' && !config.openaiApiKey) {
-      return buildLocalStageTransitionScript(dancerName, varNum);
+    // Stage transitions must NEVER produce a long/wrong script, no matter what
+    // state the OpenAI key is in:
+    //  - no key        → the canned InvokeLLM fallback returns a long tip-push
+    //                    line (the "long outro on one-song sets" bug) — skip it.
+    //  - key present   → try the LLM for variety, but if the call FAILS (expired
+    //                    key, billing lapse, 401, timeout) fall back to the local
+    //                    short pool instead of throwing into the generic-outro
+    //                    fallback ladder.
+    if (type === 'stage_transition') {
+      if (!config.openaiApiKey) return buildLocalStageTransitionScript(dancerName, varNum);
+      try {
+        return await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
+      } catch (err) {
+        console.warn(`⚠️ stage_transition LLM script failed (${err.message}) — using local short send-off pool`);
+        return buildLocalStageTransitionScript(dancerName, varNum);
+      }
     }
+    return await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
+  }, []);
+
+  // Shared LLM script path (OpenAI direct when a model is pinned, otherwise the
+  // InvokeLLM fallback chain). Extracted so stage_transition can try it and
+  // catch failures without duplicating the call logic.
+  const generateScriptViaLLM = async (type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config) => {
     // Features always use peak energy (level 5) regardless of clock — they're a marquee event.
     const promptLevel = type === 'feature_intro' ? 5 : LOCKED_LEVEL;
     const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, promptLevel, roundNumber, varNum, featureMeta);
@@ -384,7 +402,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
     const response = await localIntegrations.Core.InvokeLLM({ prompt });
     return parseResponse(response);
-  }, []);
+  };
 
   const generateAudio = useCallback(async (script) => {
     const config = getApiConfig();
