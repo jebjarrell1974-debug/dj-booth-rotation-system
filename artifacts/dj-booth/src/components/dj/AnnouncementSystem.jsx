@@ -303,8 +303,36 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   };
 
 
+  // Local short send-off pool for one-song-set stage transitions. These do NOT
+  // depend on an LLM: the fleet has no OpenAI key, and the generic canned LLM
+  // fallback returns long tip-push lines that are exactly what this announcement
+  // must NOT be. varNum picks a different line per variation so pre-cached
+  // send-offs still vary night to night.
+  const buildLocalStageTransitionScript = (dancerName, varNum = 1) => {
+    const pool = [
+      `[energetically] That was the amazing ${dancerName}! Moving on to the next stage.`,
+      `[excitedly] The one and only ${dancerName}, fellas — catch her on the next stage.`,
+      `[energetically] ${dancerName}, everybody! She's headed to the next stage right now.`,
+      `[excitedly] That was the beautiful ${dancerName} — she's on her way to the next stage.`,
+      `[energetically] There she goes — ${dancerName}, moving to the next stage!`,
+      `[excitedly] The gorgeous ${dancerName}, everybody! Next stage, here she comes.`,
+      `[energetically] That was ${dancerName} lighting it up! She's rolling to the next stage.`,
+      `[excitedly] ${dancerName}, ladies and gentlemen! Follow her over to the next stage.`,
+      `[energetically] The stunning ${dancerName} — and she's not done, she's moving to the next stage.`,
+      `[excitedly] That was ${dancerName}! Keep an eye out — she's up next on the next stage.`,
+    ];
+    return pool[(Math.max(1, varNum) - 1) % pool.length];
+  };
+
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1, featureMeta = null) => {
     const config = getApiConfig();
+
+    // Stage transitions NEVER go through an LLM without a real key: the canned
+    // InvokeLLM fallback has no matching branch and returns a long tip-push
+    // line (the "long outro on one-song sets" bug). Use the local pool instead.
+    if (type === 'stage_transition' && !config.openaiApiKey) {
+      return buildLocalStageTransitionScript(dancerName, varNum);
+    }
     // Features always use peak energy (level 5) regardless of clock — they're a marquee event.
     const promptLevel = type === 'feature_intro' ? 5 : LOCKED_LEVEL;
     const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, promptLevel, roundNumber, varNum, featureMeta);
@@ -454,10 +482,17 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   // separate from regular dancer voiceovers and can be invalidated independently (bump
   // FEATURE_VOICE_VERSION when changing the feature_intro prompt).
   const FEATURE_VOICE_VERSION = 'FEATURE_V2';
+  // Stage-transition send-offs get their own version namespace: v1 blobs were
+  // generated from the WRONG script (no OpenAI key → canned fallback returned a
+  // long tip-push line) and were cached on the server fleet-wide. Bumping this
+  // invalidates them without touching intros/round2/outros.
+  const STAGE_TRANSITION_VERSION = 'ST_V2';
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1, phonetic = null) => {
     const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';
-    const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION : CURRENT_VOICE_VERSION;
+    const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
+      : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
+      : CURRENT_VOICE_VERSION;
     return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}${ph}-var${varNum}-${versionTag}`;
   };
 

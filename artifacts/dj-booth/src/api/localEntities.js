@@ -291,7 +291,9 @@ export const localIntegrations = {
         }
       }
       
-      return prompt.includes('STAGE INTRODUCTION') 
+      return prompt.includes('STAGE-MOVE SEND-OFF')
+        ? 'That was amazing, everybody! She is moving on to the next stage right now.'
+        : prompt.includes('STAGE INTRODUCTION') 
         ? 'Coming to the main stage right now, get those eyes up and get ready. Show her some love and make it rain.'
         : prompt.includes('STAGE TRANSITION') 
         ? 'That was incredible. She is available right now for a little one-on-one time, so if you want her, now is the moment. Meanwhile, keep your eyes on the main stage because we have another beauty coming your way.'
