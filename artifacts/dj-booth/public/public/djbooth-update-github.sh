@@ -518,13 +518,17 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
-# CROWD = HDMI-1 (DisplayPort-with-adapter). Read its current geometry from xrandr.
-CROWD_PORT="HDMI-1"
+# CROWD = HDMI-1 (DisplayPort-with-adapter) by default. Per-unit override via
+# ~/.djbooth-ports (e.g. 005: CROWD_PORT=HDMI-2, KIOSK_PORT=DP-1).
+KIOSK_PORT=""; CROWD_PORT=""
+if [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null || true; fi
+CROWD_PORT="${CROWD_PORT:-HDMI-1}"
+KIOSK_PORT="${KIOSK_PORT:-HDMI-2}"
 CROWD_GEOM=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^${CROWD_PORT} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
 
-# Fallback: if HDMI-1 doesn't exist (rare hardware variation), use any connected port that isn't HDMI-2.
+# Fallback: if the crowd port doesn't exist (rare hardware variation), use any connected port that isn't the kiosk port.
 if [ -z "$CROWD_GEOM" ]; then
-  CROWD_PORT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | awk '{print $1}' | grep -v "^HDMI-2$" | head -1)
+  CROWD_PORT=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep " connected" | awk '{print $1}' | grep -v "^${KIOSK_PORT}$" | head -1)
   if [ -n "$CROWD_PORT" ]; then
     CROWD_GEOM=$(DISPLAY=:0 xrandr --query 2>/dev/null | grep "^${CROWD_PORT} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
   fi
@@ -682,14 +686,17 @@ rm -f "$HOME/.config/chromium/SingletonLock" \
       "$HOME/.config/chromium/SingletonCookie" \
       "$HOME/.config/chromium/SingletonSocket"
 
-# KIOSK = HDMI-2 (native HDMI port on the computer). Read its current geometry from xrandr.
-# Hardware convention: native HDMI -> DJ kiosk monitor on every NEON AI DJ unit.
-KIOSK_MON="HDMI-2"; KX=0; KY=0; KW=1920; KH=1080
+# KIOSK = HDMI-2 (native HDMI port) by default. Per-unit override via
+# ~/.djbooth-ports (e.g. 005: KIOSK_PORT=DP-1, CROWD_PORT=HDMI-2).
+KIOSK_PORT=""; CROWD_PORT=""
+if [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null || true; fi
+KIOSK_MON="${KIOSK_PORT:-HDMI-2}"; CROWD_PORT="${CROWD_PORT:-HDMI-1}"
+KX=0; KY=0; KW=1920; KH=1080
 KIOSK_GEOM=$(xrandr --query 2>/dev/null | grep "^${KIOSK_MON} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
 
-# Fallback: if HDMI-2 doesn't exist, use any connected port that isn't HDMI-1.
+# Fallback: if the kiosk port doesn't exist, use any connected port that isn't the crowd port.
 if [ -z "$KIOSK_GEOM" ]; then
-  KIOSK_MON=$(xrandr --query 2>/dev/null | grep " connected" | awk '{print $1}' | grep -v "^HDMI-1$" | head -1)
+  KIOSK_MON=$(xrandr --query 2>/dev/null | grep " connected" | awk '{print $1}' | grep -v "^${CROWD_PORT}$" | head -1)
   if [ -n "$KIOSK_MON" ]; then
     KIOSK_GEOM=$(xrandr --query 2>/dev/null | grep "^${KIOSK_MON} connected" | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1)
   fi
