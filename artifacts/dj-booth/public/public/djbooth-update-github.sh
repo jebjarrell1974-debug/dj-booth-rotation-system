@@ -737,6 +737,7 @@ chromium \
   --disable-features=TranslateUI,BackgroundMediaSuspend,MediaSessionService \
   --autoplay-policy=no-user-gesture-required \
   --disable-background-media-suspend \
+  --disable-pinch \
   --force-device-scale-factor=0.85 &
 
 # Poll for window, then move + fullscreen.
