@@ -287,7 +287,14 @@ export const localIntegrations = {
           return String(content ?? '');
         } catch (error) {
           console.error('OpenAI API error:', error.message);
-          throw error;
+          // A rejected key (401/invalid) must behave like NO key: fall through
+          // to the canned scripts below instead of throwing. Only transient
+          // errors (timeouts, network) still throw so callers can prefer their
+          // real cached audio over canned regeneration.
+          const msg = error.message || '';
+          if (!(msg.includes('401') || msg.toLowerCase().includes('invalid openai api key'))) {
+            throw error;
+          }
         }
       }
       

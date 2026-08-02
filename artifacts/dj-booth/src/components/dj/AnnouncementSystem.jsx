@@ -139,6 +139,12 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
+// Session flag: once OpenAI rejects the key (401/403), stop sending it requests
+// entirely for the rest of the session. A BAD key must behave exactly like NO
+// key — instant fallback to cached/canned — instead of a failed call (and its
+// ducked-music delay) on every single announcement.
+let openaiKeyLooksInvalid = false;
+
 const CURRENT_VOICE_VERSION = 'V17';
 
 const hashPhonetic = (str) => {
@@ -374,7 +380,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const openaiKey = config.openaiApiKey || '';
     const scriptModel = config.scriptModel || 'auto';
 
-    if (openaiKey && scriptModel !== 'auto') {
+    if (openaiKey && scriptModel !== 'auto' && !openaiKeyLooksInvalid) {
+      try {
       return await withRetry(async () => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 30000);
@@ -414,6 +421,21 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           throw err;
         }
       });
+      } catch (err) {
+        const msg = err?.message || '';
+        if (msg.includes('401') || msg.includes('403') || msg.toLowerCase().includes('incorrect api key')) {
+          openaiKeyLooksInvalid = true;
+          console.warn('🚫 OpenAI rejected the API key — disabling OpenAI for this session (behaving as if no key is set)');
+        }
+        throw err;
+      }
+    }
+
+    if (openaiKeyLooksInvalid) {
+      // Key is known-bad this session: don't let InvokeLLM burn another OpenAI
+      // round-trip per announcement — fail fast so callers hit their cached /
+      // canned / local-pool fallbacks instantly, with zero added duck time.
+      throw new Error('OpenAI key invalid (401) — skipped for this session');
     }
 
     const response = await localIntegrations.Core.InvokeLLM({ prompt });
