@@ -139,12 +139,6 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
   throw lastError;
 };
 
-// Session flag: once OpenAI rejects the key (401/403), stop sending it requests
-// entirely for the rest of the session. A BAD key must behave exactly like NO
-// key — instant fallback to cached/canned — instead of a failed call (and its
-// ducked-music delay) on every single announcement.
-let openaiKeyLooksInvalid = false;
-
 const CURRENT_VOICE_VERSION = 'V17';
 
 const hashPhonetic = (str) => {
@@ -165,13 +159,7 @@ const cleanupStaleIDBEntries = async () => {
       const keys = request.result || [];
       let removed = 0;
       for (const key of keys) {
-        // Preserve ALL active version namespaces — regular (V17), feature
-        // (FEATURE_V2), and stage-transition (ST_V2) — or valid entries get
-        // purged on every mount and must be refetched/regenerated.
-        if (typeof key === 'string'
-            && !key.includes(`-${CURRENT_VOICE_VERSION}`)
-            && !key.includes('-FEATURE_V2')
-            && !key.includes('-ST_V2')) {
+        if (typeof key === 'string' && !key.includes(`-${CURRENT_VOICE_VERSION}`)) {
           store.delete(key);
           removed++;
         }
@@ -315,64 +303,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   };
 
 
-  // Local short send-off pool for one-song-set stage transitions. These do NOT
-  // depend on an LLM: the fleet has no OpenAI key, and the generic canned LLM
-  // fallback returns long tip-push lines that are exactly what this announcement
-  // must NOT be. varNum picks a different line per variation so pre-cached
-  // send-offs still vary night to night.
-  const buildLocalStageTransitionScript = (dancerName, varNum = 1) => {
-    const pool = [
-      `[energetically] That was the amazing ${dancerName}! Moving on to the next stage.`,
-      `[excitedly] The one and only ${dancerName}, fellas — catch her on the next stage.`,
-      `[energetically] ${dancerName}, everybody! She's headed to the next stage right now.`,
-      `[excitedly] That was the beautiful ${dancerName} — she's on her way to the next stage.`,
-      `[energetically] There she goes — ${dancerName}, moving to the next stage!`,
-      `[excitedly] The gorgeous ${dancerName}, everybody! Next stage, here she comes.`,
-      `[energetically] That was ${dancerName} lighting it up! She's rolling to the next stage.`,
-      `[excitedly] ${dancerName}, ladies and gentlemen! Follow her over to the next stage.`,
-      `[energetically] The stunning ${dancerName} — and she's not done, she's moving to the next stage.`,
-      `[excitedly] That was ${dancerName}! Keep an eye out — she's up next on the next stage.`,
-    ];
-    return pool[(Math.max(1, varNum) - 1) % pool.length];
-  };
-
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1, featureMeta = null) => {
     const config = getApiConfig();
-
-    // Stage transitions must NEVER produce a long/wrong script, no matter what
-    // state the OpenAI key is in:
-    //  - no key        → the canned InvokeLLM fallback returns a long tip-push
-    //                    line (the "long outro on one-song sets" bug) — skip it.
-    //  - key present   → try the LLM for variety, but if the call FAILS (expired
-    //                    key, billing lapse, 401, timeout) fall back to the local
-    //                    short pool instead of throwing into the generic-outro
-    //                    fallback ladder.
-    if (type === 'stage_transition') {
-      if (!config.openaiApiKey) return buildLocalStageTransitionScript(dancerName, varNum);
-      try {
-        const script = await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
-        // Post-generation guard: send-offs must be SHORT and clean. If the LLM
-        // (or a canned fallback that slipped through) returns something long or
-        // tip-push flavored, discard it and use the local pool.
-        const words = (script || '').trim().split(/\s+/).length;
-        const banned = /tip|rain|dollar|one-on-one|private|vip|lap dance|still going|do not let up/i;
-        if (!script || words > 30 || banned.test(script)) {
-          console.warn(`⚠️ stage_transition script rejected (${words} words / banned phrase) — using local short send-off pool`);
-          return buildLocalStageTransitionScript(dancerName, varNum);
-        }
-        return script;
-      } catch (err) {
-        console.warn(`⚠️ stage_transition LLM script failed (${err.message}) — using local short send-off pool`);
-        return buildLocalStageTransitionScript(dancerName, varNum);
-      }
-    }
-    return await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
-  }, []);
-
-  // Shared LLM script path (OpenAI direct when a model is pinned, otherwise the
-  // InvokeLLM fallback chain). Extracted so stage_transition can try it and
-  // catch failures without duplicating the call logic.
-  const generateScriptViaLLM = async (type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config) => {
     // Features always use peak energy (level 5) regardless of clock — they're a marquee event.
     const promptLevel = type === 'feature_intro' ? 5 : LOCKED_LEVEL;
     const prompt = buildAnnouncementPrompt(type, dancerName, nextDancerName, promptLevel, roundNumber, varNum, featureMeta);
@@ -380,8 +312,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const openaiKey = config.openaiApiKey || '';
     const scriptModel = config.scriptModel || 'auto';
 
-    if (openaiKey && scriptModel !== 'auto' && !openaiKeyLooksInvalid) {
-      try {
+    if (openaiKey && scriptModel !== 'auto') {
       return await withRetry(async () => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 30000);
@@ -421,26 +352,11 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           throw err;
         }
       });
-      } catch (err) {
-        const msg = err?.message || '';
-        if (msg.includes('401') || msg.includes('403') || msg.toLowerCase().includes('incorrect api key')) {
-          openaiKeyLooksInvalid = true;
-          console.warn('🚫 OpenAI rejected the API key — disabling OpenAI for this session (behaving as if no key is set)');
-        }
-        throw err;
-      }
-    }
-
-    if (openaiKeyLooksInvalid) {
-      // Key is known-bad this session: don't let InvokeLLM burn another OpenAI
-      // round-trip per announcement — fail fast so callers hit their cached /
-      // canned / local-pool fallbacks instantly, with zero added duck time.
-      throw new Error('OpenAI key invalid (401) — skipped for this session');
     }
 
     const response = await localIntegrations.Core.InvokeLLM({ prompt });
     return parseResponse(response);
-  };
+  }, []);
 
   const generateAudio = useCallback(async (script) => {
     const config = getApiConfig();
@@ -538,17 +454,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   // separate from regular dancer voiceovers and can be invalidated independently (bump
   // FEATURE_VOICE_VERSION when changing the feature_intro prompt).
   const FEATURE_VOICE_VERSION = 'FEATURE_V2';
-  // Stage-transition send-offs get their own version namespace: v1 blobs were
-  // generated from the WRONG script (no OpenAI key → canned fallback returned a
-  // long tip-push line) and were cached on the server fleet-wide. Bumping this
-  // invalidates them without touching intros/round2/outros.
-  const STAGE_TRANSITION_VERSION = 'ST_V2';
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1, phonetic = null) => {
     const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';
-    const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
-      : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
-      : CURRENT_VOICE_VERSION;
+    const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION : CURRENT_VOICE_VERSION;
     return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}${ph}-var${varNum}-${versionTag}`;
   };
 
@@ -870,9 +779,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         // Use the per-type version tag so feature_intro recovery targets the correct
         // FEATURE_VOICE_VERSION-tagged key (was hardcoded to CURRENT_VOICE_VERSION,
         // which silently broke recovery for feature voiceovers).
-        const _versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
-          : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
-          : CURRENT_VOICE_VERSION;
+        const _versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION : CURRENT_VOICE_VERSION;
         const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${_versionTag}`;
         console.warn(`⚠️ Playback failed for ${cacheKey} — clearing local cache, trying server copy first...`, playError.message);
         onVoiceDiag?.('voice_play_fail', { dancer: dancerName, voiceType: type, error: (playError.message || '').substring(0, 80) });

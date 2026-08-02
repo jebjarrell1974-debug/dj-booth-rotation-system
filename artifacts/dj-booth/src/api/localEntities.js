@@ -287,20 +287,11 @@ export const localIntegrations = {
           return String(content ?? '');
         } catch (error) {
           console.error('OpenAI API error:', error.message);
-          // A rejected key (401/invalid) must behave like NO key: fall through
-          // to the canned scripts below instead of throwing. Only transient
-          // errors (timeouts, network) still throw so callers can prefer their
-          // real cached audio over canned regeneration.
-          const msg = error.message || '';
-          if (!(msg.includes('401') || msg.toLowerCase().includes('invalid openai api key'))) {
-            throw error;
-          }
+          throw error;
         }
       }
       
-      return prompt.includes('STAGE-MOVE SEND-OFF')
-        ? 'That was amazing, everybody! She is moving on to the next stage right now.'
-        : prompt.includes('STAGE INTRODUCTION') 
+      return prompt.includes('STAGE INTRODUCTION') 
         ? 'Coming to the main stage right now, get those eyes up and get ready. Show her some love and make it rain.'
         : prompt.includes('STAGE TRANSITION') 
         ? 'That was incredible. She is available right now for a little one-on-one time, so if you want her, now is the moment. Meanwhile, keep your eyes on the main stage because we have another beauty coming your way.'

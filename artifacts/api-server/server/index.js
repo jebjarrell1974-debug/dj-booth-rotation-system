@@ -558,15 +558,9 @@ app.get('/api/config/defaults', (req, res) => {
   let stored = {};
   try { stored = getClientSettings(); } catch {}
 
-  // OpenAI key — STORED (Options page) wins, env only fills the gap.
-  // Flipped Aug 2026: a bad placeholder key landed in the fleet .env and env-wins
-  // made it impossible to fix from the booth UI (operator on-site with the good
-  // key but no way to override the .env without SSH). A key the operator typed
-  // into Options is deliberate; a .env value may be a stale fleet artifact.
-  // Placeholder-looking env values (PASTE/YOUR-KEY) are ignored entirely.
-  const envOpenAIKey = /paste|your.?key|xxxx/i.test(process.env.OPENAI_API_KEY || '') ? '' : (process.env.OPENAI_API_KEY || '');
-  if (stored.djbooth_openai_key) defaults.openaiApiKey = stored.djbooth_openai_key;
-  else if (envOpenAIKey) defaults.openaiApiKey = envOpenAIKey;
+  // Secrets — env wins, stored only fills the gap.
+  if (process.env.OPENAI_API_KEY) defaults.openaiApiKey = process.env.OPENAI_API_KEY;
+  else if (stored.djbooth_openai_key) defaults.openaiApiKey = stored.djbooth_openai_key;
   if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
   else if (stored.djbooth_elevenlabs_key) defaults.elevenLabsApiKey = stored.djbooth_elevenlabs_key;
 
