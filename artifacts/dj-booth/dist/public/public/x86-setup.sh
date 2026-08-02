@@ -59,11 +59,11 @@ if ! command -v nxserver &> /dev/null; then
     grep -oE 'https://web9001\.nomachine\.com/download/[0-9]+\.[0-9]+/Linux/nomachine_[0-9._]+amd64\.deb' | \
     head -1)
   if [ -z "$NM_URL" ]; then
-    echo "⚠ Could not auto-detect NoMachine download URL."
-    echo "  Visit https://www.nomachine.com/download to get the .deb link,"
-    echo "  then run: wget <url> && sudo dpkg -i nomachine_*.deb"
-  else
-    echo "Downloading: $NM_URL"
+    # Auto-detect broke (their download page is JS-rendered now) — use last KNOWN-GOOD.
+    NM_URL="https://download.nomachine.com/download/9.8/Linux/nomachine_9.8.2_1_amd64.deb"
+    echo "Auto-detect failed — using known-good NoMachine 9.8.2: $NM_URL"
+  fi
+  echo "Downloading: $NM_URL"
     curl -fL -o /tmp/nomachine.deb "$NM_URL"
     if file /tmp/nomachine.deb | grep -q "Debian binary package"; then
       sudo dpkg -i /tmp/nomachine.deb
@@ -74,7 +74,6 @@ if ! command -v nxserver &> /dev/null; then
       echo "  Visit https://www.nomachine.com/download to install manually."
       rm -f /tmp/nomachine.deb
     fi
-  fi
 else
   echo "NoMachine already installed"
 fi
@@ -545,7 +544,13 @@ fi
 
 echo "[12/12] Setting daily reboot and downloading update script..."
 echo "0 8 * * * root /sbin/reboot" | sudo tee /etc/cron.d/daily-reboot > /dev/null
-curl -o "$UNIT_HOME/djbooth-update.sh" "https://raw.githubusercontent.com/$GITHUB_REPO/main/public/djbooth-update-github.sh" && chmod +x "$UNIT_HOME/djbooth-update.sh"
+# -f = fail on 404 (an error page must NEVER be saved as the updater); validate shebang.
+curl -fsSL -o /tmp/djbooth-update-dl.sh "https://raw.githubusercontent.com/$GITHUB_REPO/main/artifacts/dj-booth/public/public/djbooth-update-github.sh" \
+  && head -1 /tmp/djbooth-update-dl.sh | grep -q '^#!/bin/bash' \
+  && mv /tmp/djbooth-update-dl.sh "$UNIT_HOME/djbooth-update.sh" \
+  && chmod +x "$UNIT_HOME/djbooth-update.sh" \
+  && echo "Update script installed" \
+  || echo "WARNING: update script download FAILED — run the curl from the runbook manually"
 
 echo ""
 echo "================================================"

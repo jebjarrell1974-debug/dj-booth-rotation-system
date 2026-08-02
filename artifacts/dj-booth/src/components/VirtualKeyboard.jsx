@@ -94,8 +94,8 @@ const ROWS_NUM = [
 
 const SPECIAL = new Set(['SHIFT','DEL','123','ABC','SPACE','DONE']);
 
-const KEY_H = 56;
-const GAP = 6;
+const KEY_H = 64;
+const GAP = 8;
 const PAD_H = 12;
 
 function Key({ label, onPress, wide, extraWide, accent, danger, muted, active }) {
@@ -345,6 +345,36 @@ export default function VirtualKeyboard() {
     }, 120);
   }, [clearContainerPadding]);
 
+  // Flag the body while the keyboard is up so dialogs can suppress
+  // outside-click dismissal (first outside tap only closes the keyboard).
+  useEffect(() => {
+    if (visible) {
+      document.body.classList.add('vkbd-open');
+    } else {
+      document.body.classList.remove('vkbd-open');
+    }
+    return () => document.body.classList.remove('vkbd-open');
+  }, [visible]);
+
+  // Outside-tap handling without a click-eating backdrop: taps on anything
+  // that isn't the keyboard or a text field dismiss the keyboard but still
+  // reach their target (Save/Cancel work in one tap).
+  useEffect(() => {
+    if (!visible) return;
+    const onDocPointerDown = (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest('[data-virtual-keyboard]')) return;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (activeInputRef.current) activeInputRef.current.blur();
+      setAnim(false);
+      setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
+  }, [visible]);
+
   useEffect(() => {
     const onFocusIn = (e) => {
       const el = e.target;
@@ -421,16 +451,9 @@ export default function VirtualKeyboard() {
   return (
     <>
       <div
-        style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          if (activeInputRef.current) activeInputRef.current.blur();
-          setAnim(false);
-          setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
-        }}
-      />
-      <div
+        data-virtual-keyboard=""
         style={{
+          pointerEvents: 'auto',
           position: 'fixed',
           bottom: 0,
           left: 0,

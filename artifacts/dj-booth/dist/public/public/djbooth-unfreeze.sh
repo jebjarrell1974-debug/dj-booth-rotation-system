@@ -22,9 +22,12 @@ fi
 sleep 1
 
 # HUP also drops the touch→monitor mapping. Re-bind to the kiosk output.
+# Honor per-unit port override (~/.djbooth-ports) — e.g. 005 kiosk on DisplayPort.
+if [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null; fi
+KIOSK_TARGET="${KIOSK_PORT:-HDMI-2}"
 if [ -x /usr/local/bin/djbooth-touch-map.sh ]; then
-  echo "$(date): unfreeze: re-mapping touchscreen to HDMI-2"
-  KIOSK_OUTPUT=HDMI-2 /usr/local/bin/djbooth-touch-map.sh manual 2>/dev/null
+  echo "$(date): unfreeze: re-mapping touchscreen to $KIOSK_TARGET"
+  KIOSK_OUTPUT="$KIOSK_TARGET" /usr/local/bin/djbooth-touch-map.sh manual 2>/dev/null
 fi
 
 echo "$(date): unfreeze: done"
