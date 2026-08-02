@@ -306,6 +306,11 @@ else
     done
   fi
 
+
+  grep -q "^NODE_ENV=" "$ENV_FILE" || echo "NODE_ENV=production" >> "$ENV_FILE"
+  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.64.87.105:3001" >> "$ENV_FILE"
+fi
+
 # -- Operator-authorized key enforcement (Aug 2026) -----------------------------
 # Fleet .env carried a broken placeholder OpenAI key and the operator cannot
 # type/paste on units. Key embedded encoded (reversed+base64) so repo secret
@@ -317,10 +322,6 @@ else
   echo "OPENAI_API_KEY=${OK_VAL}" >> "$ENV_FILE"
 fi
 echo "OpenAI key enforced from updater"
-
-  grep -q "^NODE_ENV=" "$ENV_FILE" || echo "NODE_ENV=production" >> "$ENV_FILE"
-  grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.64.87.105:3001" >> "$ENV_FILE"
-fi
 
 echo "[6/8] Building frontend..."
 if [ -d "${EXTRACTED_DIR}artifacts/dj-booth/src" ]; then
