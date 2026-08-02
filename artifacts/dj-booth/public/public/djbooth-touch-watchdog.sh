@@ -51,7 +51,7 @@ BOOT_GUARD_SEC="${BOOT_GUARD_SEC:-120}"
 TOUCH_PATTERN="${TOUCH_PATTERN:-}"
 # Per-unit port override (e.g. 005: touchscreen on DisplayPort). Absent on
 # units with standard wiring — defaults below keep fleet behavior unchanged.
-if [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null || true; fi
+if [ -n "${HOME:-}" ] && [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null || true; fi
 KIOSK_OUTPUT="${KIOSK_OUTPUT:-${KIOSK_PORT:-HDMI-2}}"
 
 export DISPLAY="${DISPLAY:-:0}"

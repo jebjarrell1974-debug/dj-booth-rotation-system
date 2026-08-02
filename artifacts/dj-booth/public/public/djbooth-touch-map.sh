@@ -34,7 +34,7 @@ set -uo pipefail
 LOG="/tmp/djbooth-touch.log"
 # Per-unit port override (e.g. 005: touchscreen on DisplayPort). Absent on
 # units with standard wiring — defaults below keep fleet behavior unchanged.
-if [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null || true; fi
+if [ -n "${HOME:-}" ] && [ -f "$HOME/.djbooth-ports" ]; then . "$HOME/.djbooth-ports" 2>/dev/null || true; fi
 KIOSK_OUTPUT="${KIOSK_OUTPUT:-${KIOSK_PORT:-HDMI-2}}"
 TOUCH_PATTERN="${TOUCH_PATTERN:-}"
 MAX_WAIT_X="${MAX_WAIT_X:-60}"
