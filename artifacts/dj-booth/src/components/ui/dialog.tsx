@@ -27,35 +27,42 @@ const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
-// Taps on the on-screen keyboard (rendered outside the dialog portal) must not
-// count as "outside" interactions, or the dialog closes on the first keystroke.
-const isVirtualKeyboardEvent = (event: { target: EventTarget | null; detail?: any }) => {
-  // While the keyboard is up, the first outside tap should only dismiss the
-  // keyboard — never the dialog.
-  if (document.body.classList.contains("vkbd-open")) return true;
-  const target = event.detail?.originalEvent?.target ?? event.target;
-  return target instanceof Element && !!target.closest("[data-virtual-keyboard]");
-};
+// The global on-screen VirtualKeyboard is portaled to <body>, OUTSIDE the
+// Radix dialog content. Without this guard, tapping any keyboard key (or its
+// backdrop) counts as an "outside interaction" and instantly closes the
+// dialog — the fleet-wide "keyboard closes the Add Entertainer dialog" bug.
+const isVirtualKeyboardEvent = (event: { target: EventTarget | null }) =>
+  event.target instanceof Element &&
+  !!event.target.closest("[data-virtual-keyboard]")
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onPointerDownOutside, onInteractOutside, onFocusOutside, ...props }, ref) => (
+>(({ className, children, onInteractOutside, onPointerDownOutside, onFocusOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
-      onPointerDownOutside={(event) => {
-        if (isVirtualKeyboardEvent(event)) { event.preventDefault(); return; }
-        onPointerDownOutside?.(event);
+      onInteractOutside={(e) => {
+        if (isVirtualKeyboardEvent(e.detail.originalEvent)) {
+          e.preventDefault()
+          return
+        }
+        onInteractOutside?.(e)
       }}
-      onInteractOutside={(event) => {
-        if (isVirtualKeyboardEvent(event)) { event.preventDefault(); return; }
-        onInteractOutside?.(event);
+      onPointerDownOutside={(e) => {
+        if (isVirtualKeyboardEvent(e.detail.originalEvent)) {
+          e.preventDefault()
+          return
+        }
+        onPointerDownOutside?.(e)
       }}
-      onFocusOutside={(event) => {
-        if (isVirtualKeyboardEvent(event)) { event.preventDefault(); return; }
-        onFocusOutside?.(event);
+      onFocusOutside={(e) => {
+        if (isVirtualKeyboardEvent(e.detail.originalEvent)) {
+          e.preventDefault()
+          return
+        }
+        onFocusOutside?.(e)
       }}
       className={cn(
         "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",

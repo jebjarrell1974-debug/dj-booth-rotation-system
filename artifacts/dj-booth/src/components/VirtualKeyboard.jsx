@@ -94,8 +94,8 @@ const ROWS_NUM = [
 
 const SPECIAL = new Set(['SHIFT','DEL','123','ABC','SPACE','DONE']);
 
-const KEY_H = 64;
-const GAP = 8;
+const KEY_H = 56;
+const GAP = 6;
 const PAD_H = 12;
 
 function Key({ label, onPress, wide, extraWide, accent, danger, muted, active }) {
@@ -252,6 +252,7 @@ export default function VirtualKeyboard() {
   const [anim, setAnim] = useState(false);
   const activeInputRef = useRef(null);
   const hideTimerRef = useRef(null);
+  const dismissTimerRef = useRef(null);
   const scrollTimerRef = useRef(null);
   const paddedContainerRef = useRef(null);
   const originalPaddingRef = useRef('');
@@ -324,6 +325,7 @@ export default function VirtualKeyboard() {
 
   const show = useCallback((el) => {
     clearTimeout(hideTimerRef.current);
+    clearTimeout(dismissTimerRef.current);
     activeInputRef.current = el;
     const isNum = isNumericInput(el);
     const kbdH = isNum ? KBD_HEIGHT_NUM : KBD_HEIGHT_QWERTY;
@@ -345,36 +347,6 @@ export default function VirtualKeyboard() {
     }, 120);
   }, [clearContainerPadding]);
 
-  // Flag the body while the keyboard is up so dialogs can suppress
-  // outside-click dismissal (first outside tap only closes the keyboard).
-  useEffect(() => {
-    if (visible) {
-      document.body.classList.add('vkbd-open');
-    } else {
-      document.body.classList.remove('vkbd-open');
-    }
-    return () => document.body.classList.remove('vkbd-open');
-  }, [visible]);
-
-  // Outside-tap handling without a click-eating backdrop: taps on anything
-  // that isn't the keyboard or a text field dismiss the keyboard but still
-  // reach their target (Save/Cancel work in one tap).
-  useEffect(() => {
-    if (!visible) return;
-    const onDocPointerDown = (e) => {
-      const t = e.target;
-      if (!(t instanceof Element)) return;
-      if (t.closest('[data-virtual-keyboard]')) return;
-      const tag = t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (activeInputRef.current) activeInputRef.current.blur();
-      setAnim(false);
-      setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
-    };
-    document.addEventListener('pointerdown', onDocPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
-  }, [visible]);
-
   useEffect(() => {
     const onFocusIn = (e) => {
       const el = e.target;
@@ -393,9 +365,37 @@ export default function VirtualKeyboard() {
       document.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('focusout', onFocusOut);
       clearTimeout(hideTimerRef.current);
+      clearTimeout(dismissTimerRef.current);
       clearTimeout(scrollTimerRef.current);
     };
   }, [show, hide]);
+
+  // Hide the keyboard when the user taps anywhere that isn't the keyboard or
+  // a text field. Replaces the old full-screen backdrop <div>, which sat on
+  // top of EVERYTHING (z-index 9998) — Radix dialogs saw its taps as
+  // "outside" interactions and closed instantly (the fleet-wide bug).
+  // DISMISS-ONLY semantics, same as the old backdrop: preventDefault +
+  // stopPropagation so the tap ONLY hides the keyboard — it never presses a
+  // button underneath, and it never reaches Radix's outside-dismiss listener
+  // (so open dialogs stay open). Capture phase = we run before everything.
+  useEffect(() => {
+    if (!visible) return;
+    const onDocPointerDown = (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest('[data-virtual-keyboard]')) return;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (activeInputRef.current) activeInputRef.current.blur();
+      setAnim(false);
+      clearContainerPadding();
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
+  }, [visible, clearContainerPadding]);
 
   const handleKey = useCallback((label) => {
     const el = activeInputRef.current;
@@ -407,7 +407,8 @@ export default function VirtualKeyboard() {
         el.blur();
       }
       setAnim(false);
-      setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = setTimeout(() => { setVisible(false); activeInputRef.current = null; }, 220);
       return;
     }
 
@@ -451,9 +452,8 @@ export default function VirtualKeyboard() {
   return (
     <>
       <div
-        data-virtual-keyboard=""
+        data-virtual-keyboard="panel"
         style={{
-          pointerEvents: 'auto',
           position: 'fixed',
           bottom: 0,
           left: 0,
