@@ -6,6 +6,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { guardOutsideEvents } from "@/lib/vkbd"
 
 const Sheet = SheetPrimitive.Root
 
@@ -56,11 +57,12 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
+>(({ side = "right", className, children, onPointerDownOutside, onInteractOutside, onFocusOutside, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}
+      {...guardOutsideEvents({ onPointerDownOutside, onInteractOutside, onFocusOutside })}
       className={cn(sheetVariants({ side }), className)}
       {...props}
     >

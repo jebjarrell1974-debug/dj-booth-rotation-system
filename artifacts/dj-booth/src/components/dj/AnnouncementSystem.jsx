@@ -8,6 +8,7 @@ import { getApiConfig } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
+import { reportScriptFallback } from '@/utils/scriptFallbackAlert';
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('djbooth_token');
@@ -166,12 +167,12 @@ const cleanupStaleIDBEntries = async () => {
       let removed = 0;
       for (const key of keys) {
         // Preserve ALL active version namespaces — regular (V17), feature
-        // (FEATURE_V2), and stage-transition (ST_V2) — or valid entries get
+        // (FEATURE_V2), and stage-transition (ST_V3) — or valid entries get
         // purged on every mount and must be refetched/regenerated.
         if (typeof key === 'string'
             && !key.includes(`-${CURRENT_VOICE_VERSION}`)
             && !key.includes('-FEATURE_V2')
-            && !key.includes('-ST_V2')) {
+            && !key.includes('-ST_V3')) {
           store.delete(key);
           removed++;
         }
@@ -348,7 +349,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     //                    short pool instead of throwing into the generic-outro
     //                    fallback ladder.
     if (type === 'stage_transition') {
-      if (!config.openaiApiKey) return buildLocalStageTransitionScript(dancerName, varNum);
+      if (!config.openaiApiKey) {
+        reportScriptFallback('no_key', 'OpenAI key missing — local stage-transition pool used');
+        return buildLocalStageTransitionScript(dancerName, varNum);
+      }
       try {
         const script = await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
         // Post-generation guard: send-offs must be SHORT and clean. If the LLM
@@ -427,6 +431,9 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           openaiKeyLooksInvalid = true;
           console.warn('🚫 OpenAI rejected the API key — disabling OpenAI for this session (behaving as if no key is set)');
         }
+        // Retries exhausted — caller falls back to canned/generic material.
+        // Report so the fleet monitor sends a Telegram alert (rate-limited).
+        reportScriptFallback('api_error', msg);
         throw err;
       }
     }
@@ -435,6 +442,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       // Key is known-bad this session: don't let InvokeLLM burn another OpenAI
       // round-trip per announcement — fail fast so callers hit their cached /
       // canned / local-pool fallbacks instantly, with zero added duck time.
+      reportScriptFallback('api_error', 'OpenAI key invalid (401) — skipped for this session');
       throw new Error('OpenAI key invalid (401) — skipped for this session');
     }
 
@@ -542,7 +550,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   // generated from the WRONG script (no OpenAI key → canned fallback returned a
   // long tip-push line) and were cached on the server fleet-wide. Bumping this
   // invalidates them without touching intros/round2/outros.
-  const STAGE_TRANSITION_VERSION = 'ST_V2';
+  // ST_V3 (Aug 5 2026): units still played LONG outros cached under ST_V2 keys
+  // (poisoned before the short-pool guardrail existed). Bumping forces every
+  // unit to regenerate stage transitions from the local short pool.
+  const STAGE_TRANSITION_VERSION = 'ST_V3';
 
   const getAnnouncementKey = (type, dancerName, nextDancerName = null, varNum = 1, phonetic = null) => {
     const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';

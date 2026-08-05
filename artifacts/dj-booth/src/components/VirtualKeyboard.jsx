@@ -94,8 +94,8 @@ const ROWS_NUM = [
 
 const SPECIAL = new Set(['SHIFT','DEL','123','ABC','SPACE','DONE']);
 
-const KEY_H = 56;
-const GAP = 6;
+const KEY_H = 64;
+const GAP = 8;
 const PAD_H = 12;
 
 function Key({ label, onPress, wide, extraWide, accent, danger, muted, active }) {
@@ -347,6 +347,17 @@ export default function VirtualKeyboard() {
     }, 120);
   }, [clearContainerPadding]);
 
+  // Flag the body while the keyboard is up so dialogs can suppress
+  // outside-click dismissal (first outside tap only closes the keyboard).
+  useEffect(() => {
+    if (visible) {
+      document.body.classList.add('vkbd-open');
+    } else {
+      document.body.classList.remove('vkbd-open');
+    }
+    return () => document.body.classList.remove('vkbd-open');
+  }, [visible]);
+
   useEffect(() => {
     const onFocusIn = (e) => {
       const el = e.target;
@@ -454,6 +465,7 @@ export default function VirtualKeyboard() {
       <div
         data-virtual-keyboard="panel"
         style={{
+          pointerEvents: 'auto',
           position: 'fixed',
           bottom: 0,
           left: 0,
