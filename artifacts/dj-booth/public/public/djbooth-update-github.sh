@@ -110,7 +110,12 @@ fi
 # Uses the app's own node + @aws-sdk to pull updates/latest.tar.gz from R2,
 # sha256-verified against updates/manifest.json. Bundle layout is identical to
 # the homebase bundle (flat app dir), so it reuses USE_HOMEBASE_BUNDLE=true.
-if [ "$USE_HOMEBASE_BUNDLE" = "false" ] && [ "$DJBOOTH_SKIP_R2" != "1" ]; then
+# HOMEBASE MUST NEVER UPDATE FROM R2: the R2 bundle is homebase's OWN publication.
+# Pulling it back means homebase re-installs its own old code, then republishes the
+# same stale bundle — the whole fleet gets frozen on an ancient SHA forever while
+# every update "succeeds" (Aug 5 2026 incident: fleet stuck on bfa5bb1 from Jul 23).
+# Homebase updates from GitHub only; it then publishes a FRESH bundle for the units.
+if [ "$USE_HOMEBASE_BUNDLE" = "false" ] && [ "$DJBOOTH_SKIP_R2" != "1" ] && [ "$IS_HOMEBASE" != "true" ]; then
   if grep -q "^R2_ACCESS_KEY_ID=" "$APP_DIR/.env" 2>/dev/null \
      && [ -f "$APP_DIR/server/r2update-fetch.js" ] \
      && [ -d "$APP_DIR/node_modules/@aws-sdk/client-s3" ]; then
