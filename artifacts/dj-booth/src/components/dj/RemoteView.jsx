@@ -4,7 +4,7 @@ import DJOptions from '@/components/dj/DJOptions';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
-import { getApiConfig } from '@/components/apiConfig';
+import { getApiConfig, isValidElevenLabsKey } from '@/components/apiConfig';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
@@ -49,6 +49,44 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   const [deactivatePin, setDeactivatePin] = useState('');
 
   const [rerolling, setRerolling] = useState({});
+
+  // Voice API key panel — paste the ElevenLabs key from the phone instead of
+  // typing 90 characters on the kiosk. Saves straight to the unit's server DB.
+  const [voiceKeyInput, setVoiceKeyInput] = useState('');
+  const [voiceKeyStatus, setVoiceKeyStatus] = useState('unknown'); // 'valid' | 'invalid' | 'unknown'
+  const [voiceKeySaveMsg, setVoiceKeySaveMsg] = useState('');
+
+  const refreshVoiceKeyStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/config/defaults');
+      if (res.ok) {
+        const d = await res.json();
+        setVoiceKeyStatus(isValidElevenLabsKey(d.elevenLabsApiKey) ? 'valid' : 'invalid');
+      }
+    } catch {}
+  }, []);
+  useEffect(() => { refreshVoiceKeyStatus(); }, [refreshVoiceKeyStatus]);
+
+  const handleSaveVoiceKey = async () => {
+    const key = voiceKeyInput.trim();
+    if (!isValidElevenLabsKey(key)) {
+      setVoiceKeySaveMsg("That doesn't look right — ElevenLabs keys start with sk_ followed by a long code. Check the copy/paste.");
+      return;
+    }
+    try {
+      const res = await fetch('/api/config/save-to-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ djbooth_elevenlabs_key: key }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setVoiceKeySaveMsg('✓ Saved. The booth picks it up automatically — no restart needed.');
+      setVoiceKeyInput('');
+      refreshVoiceKeyStatus();
+    } catch (e) {
+      setVoiceKeySaveMsg(`Save failed: ${e.message}`);
+    }
+  };
 
   const [promoForm, setPromoForm] = useState({ event_name: '', details: '', vibe: 'Hype', length: '30s' });
   const [promoSubmitting, setPromoSubmitting] = useState(false);
@@ -970,6 +1008,35 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Voice API Key — paste from phone, no kiosk typing */}
+              <div className="flex-shrink-0 bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
+                <div className="px-3 pt-3 pb-2 border-b border-[#1e293b]">
+                  <div className="text-base font-semibold text-gray-300 uppercase tracking-wider">Voice API Key</div>
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    {voiceKeyStatus === 'valid' ? '✓ A valid key is on this unit' : voiceKeyStatus === 'invalid' ? '⚠ Stored key looks broken — paste a new one' : 'Paste your ElevenLabs key (starts with sk_)'}
+                  </div>
+                </div>
+                <div className="p-3 space-y-2">
+                  <input
+                    value={voiceKeyInput}
+                    onChange={e => setVoiceKeyInput(e.target.value)}
+                    placeholder="sk_..."
+                    autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                    className="w-full bg-[#08081a] border border-[#1e293b] rounded-xl px-4 py-3 text-base text-white placeholder-gray-700 focus:outline-none focus:border-[#00d4ff] font-mono"
+                  />
+                  {voiceKeySaveMsg && (
+                    <div className={`text-sm font-semibold ${voiceKeySaveMsg.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{voiceKeySaveMsg}</div>
+                  )}
+                  <button
+                    onClick={handleSaveVoiceKey}
+                    disabled={!voiceKeyInput.trim()}
+                    className="w-full h-12 rounded-xl bg-[#00d4ff] text-black font-bold text-base active:opacity-80 disabled:opacity-40"
+                  >
+                    Save Key to This Unit
+                  </button>
                 </div>
               </div>
 

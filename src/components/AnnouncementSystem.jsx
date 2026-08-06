@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Mic, Download, Wifi, WifiOff, Loader2, Check, AlertCircle, HardDrive } from 'lucide-react';
 import { localIntegrations } from '@/api/localEntities';
-import { getApiConfig } from '@/components/apiConfig';
+import { getApiConfig, recoverElevenLabsKey } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
@@ -453,9 +453,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
   const generateAudio = useCallback(async (script) => {
     const config = getApiConfig();
-    const apiKey = config.elevenLabsApiKey || elevenLabsApiKey;
+    let apiKey = config.elevenLabsApiKey || elevenLabsApiKey;
     if (!apiKey) {
-      throw new Error('ElevenLabs API key not configured - check settings');
+      // No key at all — maybe one was just pasted via the remote panel or fixed
+      // at homebase. Pull fresh server defaults before giving up, so a remote
+      // fix takes effect on a RUNNING booth with no restart.
+      const recovered = await recoverElevenLabsKey();
+      if (recovered) apiKey = getApiConfig().elevenLabsApiKey;
+      if (!apiKey) throw new Error('ElevenLabs API key not configured - check settings');
     }
 
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
@@ -491,7 +496,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     // in @/utils/ttsText so this never drifts from the other announcement paths.
     const ttsText = prepareTTSText(script, pronunciationMap);
 
-    return await withRetry(async () => {
+    const doTTS = async (keyToUse) => withRetry(async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
       try {
@@ -500,7 +505,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           headers: {
             'Accept': 'audio/mpeg',
             'Content-Type': 'application/json',
-            'xi-api-key': apiKey
+            'xi-api-key': keyToUse
           },
           body: JSON.stringify({
             text: ttsText,
@@ -541,6 +546,26 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         throw err;
       }
     });
+
+    try {
+      return await doTTS(apiKey);
+    } catch (err) {
+      // Bad-key self-heal: if ElevenLabs rejected the KEY itself (malformed
+      // "must start with 'sk_'" 400, or 401 invalid), drop the corrupted local
+      // copy, re-pull the server's good key (env / DB / last-known-good /
+      // remote-pasted), and retry ONCE with it — no booth restart needed.
+      const msg = err?.message || '';
+      const isKeyError = /must start with 'sk_'|invalid elevenlabs api key/i.test(msg);
+      if (isKeyError) {
+        const recovered = await recoverElevenLabsKey();
+        const freshKey = getApiConfig().elevenLabsApiKey;
+        if (recovered && freshKey && freshKey !== apiKey) {
+          console.warn('🔑 Retrying TTS with recovered ElevenLabs key');
+          return await doTTS(freshKey);
+        }
+      }
+      throw err;
+    }
   }, [elevenLabsApiKey]);
 
   // Feature entertainers use their own cache version namespace so their voiceovers stay

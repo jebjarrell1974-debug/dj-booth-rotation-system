@@ -346,9 +346,26 @@ export function saveClientSettings(settings) {
     'djbooth_display_countdown', 'djbooth_voice_gain', 'neonaidj_beat_match',
     'neonaidj_music_eq', 'neonaidj_voice_eq',
   ];
+  // API keys are the recovery backstop for wiped browser profiles: never let an
+  // empty/blank value overwrite a stored key (a kiosk with a fresh profile used
+  // to auto-save '' over the server copy — the fleet-wide key-loss bug).
+  const neverBlank = new Set(['djbooth_openai_key', 'djbooth_elevenlabs_key']);
   for (const key of allowed) {
     if (settings[key] !== undefined && settings[key] !== null) {
-      setSetting(`client_${key}`, String(settings[key]));
+      const val = String(settings[key]);
+      if (neverBlank.has(key) && val.trim() === '') continue;
+      // ElevenLabs keys must be sk_<long alnum>. A malformed value (partial
+      // kiosk typing, garbled paste) must never replace the stored good key —
+      // that's the "API key must start with 'sk_'" fleet outage. When a VALID
+      // key is saved, keep a last-known-good copy as the recovery backstop.
+      if (key === 'djbooth_elevenlabs_key') {
+        if (!/^sk_[A-Za-z0-9]{16,}$/.test(val.trim())) {
+          console.warn('🔑 Rejected malformed ElevenLabs key on save (must be sk_...) — keeping stored key');
+          continue;
+        }
+        setSetting('client_djbooth_elevenlabs_key_lkg', val.trim());
+      }
+      setSetting(`client_${key}`, val);
     }
   }
 }

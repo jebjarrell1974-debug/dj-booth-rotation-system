@@ -1,3 +1,5 @@
+import { saveApiConfig, getApiConfig, isValidElevenLabsKey } from '@/components/apiConfig';
+
 const API_BASE = '/api/fleet';
 
 function getToken() {
@@ -393,6 +395,20 @@ export class FleetSyncClient {
       this.updateStatus('fetching_manifest');
       const syncData = await this.deviceFetch('/sync/start', { method: 'POST', body: JSON.stringify({}) });
       const manifest = await syncData.json();
+
+      // Fleet master ElevenLabs key: homebase publishes its known-good key with
+      // the sync manifest. If it differs from ours, adopt it (saveApiConfig
+      // validates format and also persists to this unit's server DB), so a key
+      // fixed ONCE at homebase heals every unit on its next sync.
+      try {
+        const masterKey = manifest.masterKeys?.elevenLabsApiKey;
+        if (masterKey && isValidElevenLabsKey(masterKey) && getApiConfig().elevenLabsApiKey !== masterKey) {
+          console.log('🔑 Adopting fleet master ElevenLabs key from homebase');
+          saveApiConfig({ elevenLabsApiKey: masterKey });
+        }
+      } catch (e) {
+        console.warn('Master key adoption failed:', e.message);
+      }
 
       this.updateStatus('uploading_logs');
       await this.uploadLogs();

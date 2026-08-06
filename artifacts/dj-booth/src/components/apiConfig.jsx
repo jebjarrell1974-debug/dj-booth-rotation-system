@@ -17,6 +17,12 @@ const STORAGE_KEYS = {
 // this one line and push an update — do NOT type voice IDs into the booth by hand.
 export const FORCED_VOICE_ID = 'DODLEQrClDo8wCz460ld';
 
+// ElevenLabs keys always start with "sk_" followed by a long hex/alnum body.
+// Anything else (partial kiosk typing, garbled paste, blank) must NEVER be
+// stored or used — a malformed key silently kills all voice generation while
+// cached audio keeps playing, so nobody notices until a new girl goes silent.
+export const isValidElevenLabsKey = (k) => /^sk_[A-Za-z0-9]{16,}$/.test((k || '').trim());
+
 const DEFAULTS = {
   openaiApiKey: '',
   elevenLabsApiKey: '',
@@ -32,18 +38,46 @@ const DEFAULTS = {
 
 let cachedConfig = null;
 let serverDefaults = null;
+let serverDefaultsOk = false;
 
 async function fetchServerDefaults() {
-  if (serverDefaults) return serverDefaults;
+  // Only cache a SUCCESSFUL fetch. If the server wasn't up yet (kiosk boot race),
+  // caching {} forever meant a wiped browser profile never recovered its keys —
+  // and worse, the Options page would then auto-save empty keys over the server
+  // copy. Retry a few times, and retry again on the next loadApiConfig call.
+  if (serverDefaultsOk) return serverDefaults;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch('/api/config/defaults');
+      if (res.ok) {
+        serverDefaults = await res.json();
+        serverDefaultsOk = true;
+        reseedStorageFromServer(serverDefaults);
+        return serverDefaults;
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+  }
+  serverDefaults = serverDefaults || {};
+  return serverDefaults;
+}
+
+// A Chromium profile reset wipes localStorage. Re-seed the API keys from the
+// server's copy (settings DB / .env) so a wiped kiosk fully recovers on first
+// load with no manual re-entry.
+function reseedStorageFromServer(sd) {
   try {
-    const res = await fetch('/api/config/defaults');
-    if (res.ok) {
-      serverDefaults = await res.json();
-      return serverDefaults;
+    if (sd.openaiApiKey && !(localStorage.getItem(STORAGE_KEYS.openaiApiKey) || '').trim()) {
+      localStorage.setItem(STORAGE_KEYS.openaiApiKey, sd.openaiApiKey);
+    }
+    // Re-seed when local key is blank OR malformed — a corrupted local key must
+    // heal itself from the server copy on next load, not stick around all night.
+    const localEl = (localStorage.getItem(STORAGE_KEYS.elevenLabsApiKey) || '').trim();
+    if (isValidElevenLabsKey(sd.elevenLabsApiKey) && !isValidElevenLabsKey(localEl)) {
+      localStorage.setItem(STORAGE_KEYS.elevenLabsApiKey, sd.elevenLabsApiKey);
+      if (localEl) console.warn('🔑 Replaced malformed local ElevenLabs key with server copy');
     }
   } catch {}
-  serverDefaults = {};
-  return serverDefaults;
 }
 
 function readFromStorage() {
@@ -61,10 +95,13 @@ function readFromStorage() {
   };
 
   const sd = serverDefaults || {};
+  // A malformed local ElevenLabs key is treated as ABSENT so the server copy
+  // (env/DB/last-known-good) wins. Never hand a bad key to the announcer.
+  const localElevenLabs = isValidElevenLabsKey(local.elevenLabsApiKey) ? local.elevenLabsApiKey : '';
   return {
     ...local,
     openaiApiKey: local.openaiApiKey || sd.openaiApiKey || '',
-    elevenLabsApiKey: local.elevenLabsApiKey || sd.elevenLabsApiKey || '',
+    elevenLabsApiKey: localElevenLabs || sd.elevenLabsApiKey || '',
     elevenLabsVoiceId: FORCED_VOICE_ID,
     scriptModel: local.scriptModel || sd.scriptModel || 'gpt-4.1',
   };
@@ -81,6 +118,24 @@ export const getApiConfig = () => {
   return readFromStorage();
 };
 
+// Called when ElevenLabs rejects the key at generation time (400 "must start
+// with 'sk_'" / 401 invalid). Drops the bad local copy, forces a fresh pull of
+// server defaults (env → stored → last-known-good), and rebuilds the cached
+// config — so a remotely-pasted or fleet-synced fix takes effect WITHOUT
+// restarting the booth.
+export async function recoverElevenLabsKey() {
+  // Only called on CONFIRMED rejection (or missing key), so always evict the
+  // local copy — a format-valid but revoked key must not keep winning over a
+  // fresher server/remote-pasted key.
+  try { localStorage.removeItem(STORAGE_KEYS.elevenLabsApiKey); } catch {}
+  serverDefaultsOk = false; // force refetch — server may have a newer good key
+  await fetchServerDefaults();
+  cachedConfig = readFromStorage();
+  const ok = isValidElevenLabsKey(cachedConfig.elevenLabsApiKey);
+  console.warn(`🔑 ElevenLabs key recovery: ${ok ? 'restored a valid key' : 'no valid key available yet'}`);
+  return ok;
+}
+
 export const saveApiConfig = (config) => {
   const updates = {};
   for (const key of Object.keys(DEFAULTS)) {
@@ -89,6 +144,18 @@ export const saveApiConfig = (config) => {
     }
   }
 
+  // API keys: REFUSE bad values instead of storing them. A blank or malformed
+  // key (whole-form autosave with an untouched/garbled field, partial kiosk
+  // typing) must never overwrite a working key — locally OR on the server.
+  if (updates.openaiApiKey !== undefined && !(updates.openaiApiKey || '').trim()) {
+    delete updates.openaiApiKey; // never blank over a stored key
+  }
+  if (updates.elevenLabsApiKey !== undefined && !isValidElevenLabsKey(updates.elevenLabsApiKey)) {
+    if ((updates.elevenLabsApiKey || '').trim()) {
+      console.warn('🔑 Rejected malformed ElevenLabs key on save (must start with sk_) — keeping current key');
+    }
+    delete updates.elevenLabsApiKey;
+  }
   if (updates.openaiApiKey !== undefined) localStorage.setItem(STORAGE_KEYS.openaiApiKey, updates.openaiApiKey);
   if (updates.elevenLabsApiKey !== undefined) localStorage.setItem(STORAGE_KEYS.elevenLabsApiKey, updates.elevenLabsApiKey);
   if (updates.elevenLabsVoiceId !== undefined) localStorage.setItem(STORAGE_KEYS.elevenLabsVoiceId, updates.elevenLabsVoiceId);
@@ -104,8 +171,12 @@ export const saveApiConfig = (config) => {
   cachedConfig = { ...current, ...updates };
 
   const serverPayload = {};
-  if (updates.openaiApiKey !== undefined) serverPayload[STORAGE_KEYS.openaiApiKey] = updates.openaiApiKey;
-  if (updates.elevenLabsApiKey !== undefined) serverPayload[STORAGE_KEYS.elevenLabsApiKey] = updates.elevenLabsApiKey;
+  // Never push an EMPTY key to the server. An empty field (e.g. after a browser
+  // profile wipe, before server defaults loaded) must not clobber the server's
+  // stored key — the server copy is the recovery backstop. The server also
+  // enforces this, but don't even send it.
+  if (updates.openaiApiKey) serverPayload[STORAGE_KEYS.openaiApiKey] = updates.openaiApiKey;
+  if (updates.elevenLabsApiKey) serverPayload[STORAGE_KEYS.elevenLabsApiKey] = updates.elevenLabsApiKey;
   if (updates.elevenLabsVoiceId !== undefined) serverPayload[STORAGE_KEYS.elevenLabsVoiceId] = updates.elevenLabsVoiceId;
   if (updates.announcementsEnabled !== undefined) serverPayload[STORAGE_KEYS.announcementsEnabled] = String(updates.announcementsEnabled);
   if (updates.clubName !== undefined) serverPayload[STORAGE_KEYS.clubName] = updates.clubName;

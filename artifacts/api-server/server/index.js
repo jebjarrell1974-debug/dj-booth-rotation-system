@@ -567,8 +567,16 @@ app.get('/api/config/defaults', (req, res) => {
   const envOpenAIKey = /paste|your.?key|xxxx/i.test(process.env.OPENAI_API_KEY || '') ? '' : (process.env.OPENAI_API_KEY || '');
   if (stored.djbooth_openai_key) defaults.openaiApiKey = stored.djbooth_openai_key;
   else if (envOpenAIKey) defaults.openaiApiKey = envOpenAIKey;
-  if (process.env.ELEVENLABS_API_KEY) defaults.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
-  else if (stored.djbooth_elevenlabs_key) defaults.elevenLabsApiKey = stored.djbooth_elevenlabs_key;
+  // ElevenLabs key: only ever serve a WELL-FORMED key (sk_<long alnum>). A
+  // corrupted candidate is skipped so the next-best source wins:
+  // env → stored (Options/remote-pasted) → last-known-good backstop.
+  const validElKey = (k) => /^sk_[A-Za-z0-9]{16,}$/.test((k || '').trim());
+  const elCandidate = [
+    process.env.ELEVENLABS_API_KEY,
+    stored.djbooth_elevenlabs_key,
+    stored.djbooth_elevenlabs_key_lkg,
+  ].find(validElKey);
+  if (elCandidate) defaults.elevenLabsApiKey = elCandidate.trim();
 
   // Voice ID — authoritative, baked into the app. A per-unit typo or stale .env
   // can never override it.

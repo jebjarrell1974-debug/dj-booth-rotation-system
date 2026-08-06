@@ -17,7 +17,7 @@ import {
   createPromoRequest, listPromoRequests, getPromoRequest, deletePromoRequest, completePromoRequest,
   getDancerBackup, listDancerBackups
 } from './fleet-db.js';
-import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms, getTrackAnalysisByFilenames } from './db.js';
+import { getSession, saveVoiceover, getTrackAutoGains, getTrackBpms, getTrackAnalysisByFilenames, getClientSettings } from './db.js';
 import { getFleetStatus, updateDeviceLiveData } from './fleet-monitor.js';
 import {
   getPublicKey, signLicenseToken, buildLicensePayload, generateManualKey,
@@ -382,9 +382,26 @@ router.post('/sync/start', authenticateDeviceMiddleware, (req, res) => {
   const musicManifest = getMusicManifest(req.device.device_id);
   const latestUpdate = getLatestUpdate(req.device.device_id);
 
+  // Fleet master ElevenLabs key: set once on homebase (env or Options page),
+  // every unit picks it up on sync — no more typing 90-char keys on kiosks.
+  // Only a WELL-FORMED key is ever published; device-key auth protects this
+  // endpoint (same trust level as voiceover/music sync).
+  const validElKey = (k) => /^sk_[A-Za-z0-9]{16,}$/.test((k || '').trim());
+  let masterElevenLabsKey = null;
+  try {
+    const stored = getClientSettings();
+    masterElevenLabsKey = [
+      process.env.ELEVENLABS_API_KEY,
+      stored.djbooth_elevenlabs_key,
+      stored.djbooth_elevenlabs_key_lkg,
+    ].find(validElKey) || null;
+    if (masterElevenLabsKey) masterElevenLabsKey = masterElevenLabsKey.trim();
+  } catch {}
+
   res.json({
     ok: true,
     serverTime: Date.now(),
+    masterKeys: masterElevenLabsKey ? { elevenLabsApiKey: masterElevenLabsKey } : null,
     voiceovers: voiceoverManifest,
     music: musicManifest,
     latestUpdate: latestUpdate ? {

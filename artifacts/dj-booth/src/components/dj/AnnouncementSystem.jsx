@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Mic, Download, Wifi, WifiOff, Loader2, Check, AlertCircle, HardDrive } from 'lucide-react';
 import { localIntegrations } from '@/api/localEntities';
-import { getApiConfig } from '@/components/apiConfig';
+import { getApiConfig, recoverElevenLabsKey } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
@@ -222,6 +222,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const preCacheStartTimeRef = useRef(0);
   const variationCounterRef = useRef({});
   const failedGenerationsRef = useRef(new Set());
+  const failedGenerationTimesRef = useRef({});
   const lastPlayedTypeVariantRef = useRef({ intro: 0, outro: 0, round2: 0 });
   const currentSetIntroVariantRef = useRef({});
 
@@ -452,9 +453,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
   const generateAudio = useCallback(async (script) => {
     const config = getApiConfig();
-    const apiKey = config.elevenLabsApiKey || elevenLabsApiKey;
+    let apiKey = config.elevenLabsApiKey || elevenLabsApiKey;
     if (!apiKey) {
-      throw new Error('ElevenLabs API key not configured - check settings');
+      // No key at all — maybe one was just pasted via the remote panel or fixed
+      // at homebase. Pull fresh server defaults before giving up, so a remote
+      // fix takes effect on a RUNNING booth with no restart.
+      const recovered = await recoverElevenLabsKey();
+      if (recovered) apiKey = getApiConfig().elevenLabsApiKey;
+      if (!apiKey) throw new Error('ElevenLabs API key not configured - check settings');
     }
 
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
@@ -490,7 +496,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     // in @/utils/ttsText so this never drifts from the other announcement paths.
     const ttsText = prepareTTSText(script, pronunciationMap);
 
-    return await withRetry(async () => {
+    const doTTS = async (keyToUse) => withRetry(async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
       try {
@@ -499,7 +505,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
           headers: {
             'Accept': 'audio/mpeg',
             'Content-Type': 'application/json',
-            'xi-api-key': apiKey
+            'xi-api-key': keyToUse
           },
           body: JSON.stringify({
             text: ttsText,
@@ -540,6 +546,26 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         throw err;
       }
     });
+
+    try {
+      return await doTTS(apiKey);
+    } catch (err) {
+      // Bad-key self-heal: if ElevenLabs rejected the KEY itself (malformed
+      // "must start with 'sk_'" 400, or 401 invalid), drop the corrupted local
+      // copy, re-pull the server's good key (env / DB / last-known-good /
+      // remote-pasted), and retry ONCE with it — no booth restart needed.
+      const msg = err?.message || '';
+      const isKeyError = /must start with 'sk_'|invalid elevenlabs api key/i.test(msg);
+      if (isKeyError) {
+        const recovered = await recoverElevenLabsKey();
+        const freshKey = getApiConfig().elevenLabsApiKey;
+        if (recovered && freshKey && freshKey !== apiKey) {
+          console.warn('🔑 Retrying TTS with recovered ElevenLabs key');
+          return await doTTS(freshKey);
+        }
+      }
+      throw err;
+    }
   }, [elevenLabsApiKey]);
 
   // Feature entertainers use their own cache version namespace so their voiceovers stay
@@ -788,6 +814,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
 
     const failKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
+    // Stage transitions have NO generic pre-recorded fallback, so a session-permanent
+    // failure skip means SILENT send-offs for that girl all night after one transient
+    // TTS hiccup. Let them retry after a 2-minute cooldown instead.
+    if (type === ANNOUNCEMENT_TYPES.STAGE_TRANSITION &&
+        failedGenerationsRef.current.has(failKey) &&
+        Date.now() - (failedGenerationTimesRef.current[failKey] || 0) > 120000) {
+      console.log(`🔁 Retrying stage_transition generation for ${dancerName} (cooldown elapsed)`);
+      failedGenerationsRef.current.delete(failKey);
+    }
     if (failedGenerationsRef.current.has(failKey)) {
       console.log(`⏭️ Skipping generation for ${failKey} — failed earlier this session, using fallback`);
       const anyVariation = dancerName !== GENERIC_DANCER_NAME ? await findCachedAtAnyVariation(type, dancerName, nextDancerName) : null;
@@ -836,6 +871,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     } catch (genError) {
       setGeneratingType(null);
       failedGenerationsRef.current.add(failKey);
+      failedGenerationTimesRef.current[failKey] = Date.now();
       const isTimeout = genError.name === 'AbortError' || genError.message?.toLowerCase().includes('abort');
       onVoiceDiag?.(isTimeout ? 'voice_timeout' : 'voice_generate_fail', { dancer: dancerName, voiceType: type, error: (genError.message || '').substring(0, 80) });
       console.warn(`⚠️ Could not generate ${type} for ${dancerName}: ${genError.message}, trying fallbacks... (will skip retries this session)`);
@@ -1040,15 +1076,24 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const total = rotationDancers.length;
     if (total === 0) return true;
 
-    const typesPerDancer = 3;
+    // One-song mode needs intro + stage_transition pre-warmed; 2/3-song sets keep
+    // the original intro/round2/outro set untouched. Without this, one-song send-offs
+    // were NEVER pre-cached — each girl's first send-off was generated live at
+    // track-end, and any TTS hiccup there meant a silent transition.
+    const typesPerDancer = oneSongMode ? 2 : 3;
     const jobsPerDancer = typesPerDancer * UPCOMING_CACHE_VARIATIONS;
     const makeJobs = (dancerIdx) => {
       const d = rotationDancers[dancerIdx];
       const jobs = [];
       for (let v = 1; v <= UPCOMING_CACHE_VARIATIONS; v++) {
-        jobs.push({ type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1, varNum: v });
-        jobs.push({ type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2, varNum: v });
-        jobs.push({ type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1, varNum: v });
+        if (oneSongMode) {
+          jobs.push({ type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1, varNum: v });
+          jobs.push({ type: ANNOUNCEMENT_TYPES.STAGE_TRANSITION, name: d.name, nextName: null, round: 1, varNum: v });
+        } else {
+          jobs.push({ type: ANNOUNCEMENT_TYPES.INTRO, name: d.name, nextName: null, round: 1, varNum: v });
+          jobs.push({ type: ANNOUNCEMENT_TYPES.ROUND2, name: d.name, nextName: null, round: 2, varNum: v });
+          jobs.push({ type: ANNOUNCEMENT_TYPES.OUTRO, name: d.name, nextName: null, round: 1, varNum: v });
+        }
       }
       return jobs;
     };
@@ -1077,7 +1122,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
 
     return true;
-  }, [getOrGenerateAnnouncement, elevenLabsApiKey]);
+  }, [getOrGenerateAnnouncement, elevenLabsApiKey, oneSongMode]);
 
   const resetAndRegenerateDancer = useCallback(async (dancerName) => {
     if (!dancerName) return { deleted: 0 };
