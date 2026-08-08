@@ -107,9 +107,38 @@ function readFromStorage() {
   };
 }
 
+// Self-heal for long-running kiosk pages: a booth screen can outlive the moment
+// a key arrives on the server (remote paste / fleet sync AFTER page load), and
+// fetchServerDefaults caches its first successful answer forever. While no
+// valid ElevenLabs key is in hand, force-refetch server defaults every 60s so
+// the running page adopts a late-arriving key WITHOUT a reload. Stops itself
+// once a valid key is present. (Aug 8 2026 — venue outage root cause.)
+let keyWatchdogRunning = false;
+function startKeyWatchdog() {
+  if (keyWatchdogRunning) return;
+  const cfg = cachedConfig || readFromStorage();
+  if (isValidElevenLabsKey(cfg.elevenLabsApiKey)) return;
+  keyWatchdogRunning = true;
+  const tick = async () => {
+    try {
+      serverDefaultsOk = false; // bust the forever-cache
+      await fetchServerDefaults();
+      cachedConfig = readFromStorage();
+      if (isValidElevenLabsKey(cachedConfig.elevenLabsApiKey)) {
+        console.warn('🔑 ElevenLabs key arrived from server — adopted without reload');
+        keyWatchdogRunning = false;
+        return;
+      }
+    } catch {}
+    setTimeout(tick, 60000);
+  };
+  setTimeout(tick, 60000);
+}
+
 export async function loadApiConfig() {
   await fetchServerDefaults();
   cachedConfig = readFromStorage();
+  startKeyWatchdog();
   return cachedConfig;
 }
 
@@ -133,6 +162,7 @@ export async function recoverElevenLabsKey() {
   cachedConfig = readFromStorage();
   const ok = isValidElevenLabsKey(cachedConfig.elevenLabsApiKey);
   console.warn(`🔑 ElevenLabs key recovery: ${ok ? 'restored a valid key' : 'no valid key available yet'}`);
+  if (!ok) startKeyWatchdog(); // keep polling until a key shows up on the server
   return ok;
 }
 
