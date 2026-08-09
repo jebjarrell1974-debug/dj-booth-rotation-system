@@ -307,6 +307,32 @@ function createWindow() {
     else items.push({ role: 'copy' });
     Menu.buildFromTemplate(items).popup({ window: mainWindow });
   });
+  // DEMO-ONLY display tweaks (never touch the fleet's booth screen): on the
+  // laptop's smaller window, the Options-page dropdowns (Day Shift genres,
+  // Active Music Folders) open as short scrolling boxes that barely show.
+  // Let them open taller and scroll into view when they appear.
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.insertCSS(`
+      .max-h-48.overflow-auto, .max-h-64.overflow-auto {
+        max-height: min(60vh, 520px) !important;
+      }
+    `).catch(() => {});
+    mainWindow.webContents.executeJavaScript(`
+      (() => {
+        if (window.__neonDemoDropdownFix) return;
+        window.__neonDemoDropdownFix = true;
+        new MutationObserver((muts) => {
+          for (const m of muts) for (const n of m.addedNodes) {
+            if (n.nodeType === 1 && n.classList &&
+                n.classList.contains('absolute') && n.classList.contains('z-50') &&
+                (n.classList.contains('max-h-48') || n.classList.contains('max-h-64'))) {
+              setTimeout(() => { try { n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {} }, 50);
+            }
+          }
+        }).observe(document.body, { childList: true, subtree: true });
+      })();
+    `, true).catch(() => {});
+  });
   mainWindow.loadURL(`http://127.0.0.1:${DEMO_PORT}/`);
 }
 
