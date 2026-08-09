@@ -108,10 +108,36 @@ function rollback(liveDir) {
 
   // Dependency safety: if the new server needs a package this bundle doesn't
   // have, a blind update would leave the demo unable to start. Refuse instead.
+  // IMPORTANT: check what the server code ACTUALLY imports, not package.json —
+  // the api-server package.json also declares deps for a separate build tree
+  // the demo never runs (that false alarm blocked the Aug 2026 update).
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'artifacts/api-server/package.json'), 'utf8'));
-    const missing = Object.keys(pkg.dependencies || {})
-      .filter(d => !fs.existsSync(path.join(BOOTH, 'node_modules', d)));
+    const isBuiltin = (m) => m.startsWith('node:') || [
+      'fs','path','os','http','https','crypto','stream','url','util','events',
+      'child_process','zlib','net','tls','dns','buffer','querystring','assert',
+      'readline','worker_threads','timers','string_decoder','process','tty'
+    ].includes(m);
+    const needed = new Set();
+    const scan = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) { if (entry.name !== 'node_modules') scan(p); continue; }
+        if (!/\.(js|cjs|mjs)$/.test(entry.name)) continue;
+        const src = fs.readFileSync(p, 'utf8');
+        const re = /(?:require\(\s*|from\s+|import\s*\(\s*)['"]([^'".][^'"]*)['"]/g;
+        let m;
+        while ((m = re.exec(src))) {
+          const mod = m[1];
+          // reduce to the package name (scoped or not) BEFORE the builtin
+          // check, so subpaths like stream/promises count as builtin too
+          const name = mod.startsWith('@') ? mod.split('/').slice(0, 2).join('/') : mod.split('/')[0];
+          if (isBuiltin(mod) || isBuiltin(name)) continue;
+          needed.add(name);
+        }
+      }
+    };
+    scan(newServer);
+    const missing = [...needed].filter(d => !fs.existsSync(path.join(BOOTH, 'node_modules', d)));
     if (missing.length) {
       die(`This update needs new components (${missing.join(', ')}) that this demo bundle doesn't carry.\n` +
           '    The demo needs a fresh bundle from the workshop — nothing was changed.');
