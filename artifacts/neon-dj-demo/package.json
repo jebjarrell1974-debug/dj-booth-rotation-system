@@ -1,0 +1,16 @@
+{
+  "name": "@workspace/neon-dj-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEON DJ — portable desktop demo shell (Electron) wrapping the booth server + UI",
+  "main": "main.cjs",
+  "scripts": {
+    "stage": "node stage.mjs",
+    "start": "electron .",
+    "build:win": "node build-win.mjs",
+    "typecheck": "echo 'no typecheck (plain JS package)'"
+  },
+  "devDependencies": {
+    "electron": "^38.8.6"
+  }
+}
