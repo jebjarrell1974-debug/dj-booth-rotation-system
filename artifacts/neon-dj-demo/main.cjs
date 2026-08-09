@@ -86,7 +86,11 @@ function writeApiKeys(updates) {
       if (re.test(text)) text = text.replace(re, `${name}=${value}`);
       else text += `\n${name}=${value}\n`;
     }
-    fs.writeFileSync(KEYS_FILE(), text);
+    // Crash-safe write: temp file + atomic rename, so a power cut mid-write
+    // can never leave the only offline key cache truncated or empty.
+    const tmp = KEYS_FILE() + '.tmp';
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, KEYS_FILE());
   } catch { /* non-fatal — synced keys still flow in via env this run */ }
 }
 
@@ -102,18 +106,32 @@ const isValidElKey = (k) => /^sk_[A-Za-z0-9]{16,}$/.test((k || '').trim());
 function fetchHomebaseDefaults(baseUrl) {
   return new Promise((resolve) => {
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    let req = null;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      try { if (req) req.destroy(); } catch {}
+      resolve(v);
+    };
+    // ABSOLUTE deadline — the per-socket timeout only fires on inactivity, so
+    // a half-response that keeps trickling bytes would otherwise hang startup.
+    const deadline = setTimeout(() => done(null), HOMEBASE_TIMEOUT_MS);
     try {
-      const req = http.get(`${baseUrl.replace(/\/$/, '')}/api/config/defaults`,
+      req = http.get(`${baseUrl.replace(/\/$/, '')}/api/config/defaults`,
         { timeout: HOMEBASE_TIMEOUT_MS }, (res) => {
           let body = '';
-          res.on('data', (c) => { body += c; });
+          res.on('data', (c) => {
+            body += c;
+            if (body.length > 65536) done(null); // defaults are tiny; cap it
+          });
           res.on('end', () => {
             try { done(JSON.parse(body)); } catch { done(null); }
           });
+          res.on('error', () => done(null));
         });
       req.on('error', () => done(null));
-      req.on('timeout', () => { req.destroy(); done(null); });
+      req.on('timeout', () => done(null));
     } catch { done(null); }
   });
 }

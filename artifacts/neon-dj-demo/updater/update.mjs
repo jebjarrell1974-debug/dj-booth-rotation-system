@@ -132,21 +132,38 @@ function rollback(liveDir) {
   // Window shell (Electron resources/app: main.cjs + package.json). Carries
   // paste support and the Home Base key sync. Non-fatal if the layout differs
   // (e.g. Linux staging has no resources/app) — keep .prev rollback copies.
-  try {
+  {
     const appRes = path.join(BASE, 'resources', 'app');
     const newShell = path.join(root, 'artifacts/neon-dj-demo');
-    if (fs.existsSync(appRes) && fs.existsSync(path.join(newShell, 'main.cjs'))) {
-      for (const f of ['main.cjs', 'package.json']) {
-        const src = path.join(newShell, f);
-        const dst = path.join(appRes, f);
-        if (!fs.existsSync(src)) continue;
-        if (fs.existsSync(dst)) fs.copyFileSync(dst, dst + '.prev');
-        fs.copyFileSync(src, dst + '.new');
-        fs.renameSync(dst + '.new', dst);
+    const shellFiles = ['main.cjs', 'package.json'];
+    const haveAll = shellFiles.every(f => fs.existsSync(path.join(newShell, f)));
+    if (fs.existsSync(appRes) && haveAll) {
+      // All-or-nothing: stage BOTH files first, then rename both into place;
+      // roll BOTH back if anything fails so the shell files never mismatch.
+      const done = [];
+      try {
+        for (const f of shellFiles) {
+          fs.copyFileSync(path.join(newShell, f), path.join(appRes, f + '.new'));
+        }
+        for (const f of shellFiles) {
+          const dst = path.join(appRes, f);
+          if (fs.existsSync(dst)) fs.copyFileSync(dst, dst + '.prev');
+          fs.renameSync(dst + '.new', dst);
+          done.push(f);
+        }
+        log('  [ok] Window shell updated (paste + key sync)');
+      } catch (e) {
+        for (const f of done) {
+          try { fs.renameSync(path.join(appRes, f + '.prev'), path.join(appRes, f)); } catch {}
+        }
+        for (const f of shellFiles) { try { fs.rmSync(path.join(appRes, f + '.new'), { force: true }); } catch {} }
+        log('  [warn] Window shell NOT updated (rolled back): ' + e.message);
+        log('         The demo still works — run this update again to retry.');
       }
-      log('  [ok] Window shell updated (paste + key sync)');
+    } else if (fs.existsSync(appRes)) {
+      log('  [warn] Window shell files missing from download — shell left as-is.');
     }
-  } catch (e) { log('  [warn] Window shell not updated: ' + e.message); }
+  }
 
   // Self-update the updater (new copy takes effect next run)
   try {
