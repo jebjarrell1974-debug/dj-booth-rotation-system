@@ -2004,7 +2004,12 @@ app.delete('/api/music/track', authenticate, requireDJ, async (req, res) => {
       if (MUSIC_PATH && relativePath.startsWith(MUSIC_PATH)) {
         relativePath = relativePath.slice(MUSIC_PATH.length).replace(/^\/+/, '');
       } else {
-        relativePath = track.path.split('/').pop();
+        // Basename fallback must handle Windows separators too (same class of
+        // bug as musicScanner's genre split); on POSIX '\' is a legal filename
+        // char, so only treat it as a separator on win32.
+        relativePath = process.platform === 'win32'
+          ? track.path.split(/[\\/]/).pop()
+          : track.path.split('/').pop();
       }
       results.r2 = await deleteFromR2Music(relativePath);
     }

@@ -27,7 +27,15 @@ function walkDirectory(dirPath, rootPath, results = []) {
       const ext = extname(entry.name).toLowerCase();
       if (SUPPORTED_EXTENSIONS.has(ext)) {
         const relPath = relative(rootPath, fullPath);
-        const parts = relPath.split('/');
+        // The genre IS the top-level folder name, so this split has to use the
+        // separator the platform actually produces: path.relative() returns
+        // "Genre\\Song.mp3" on Windows and "Genre/Song.mp3" on POSIX. Splitting
+        // on '/' alone left every Windows track with genre '' — which emptied
+        // the Options-page genre/folder dropdowns on the demo laptop while the
+        // Linux fleet units were unaffected. (Windows accepts '/' too, hence
+        // both separators there; POSIX must NOT split on '\' since it is a
+        // legal filename character.)
+        const parts = relPath.split(process.platform === 'win32' ? /[\\/]/ : '/');
         const genre = parts.length > 1 ? parts[0] : '';
         let size = 0;
         let mtime = '';
