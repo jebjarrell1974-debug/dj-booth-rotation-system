@@ -1,6 +1,7 @@
 // NEON DJ demo updater — pulls the SAME code the fleet units run (GitHub main)
 // and swaps it into the demo, touching NOTHING personal:
-//   REPLACED: booth/server, booth/dist/public, this updater
+//   REPLACED: booth/server, booth/dist/public, the window shell (resources/app),
+//             this updater
 //   UNTOUCHED: data/ (database, API keys, music, voiceovers), booth/node_modules,
 //              runtime/, the Electron shell
 // The demo stays OUT of the fleet: fleet/telegram/R2 behavior is controlled by
@@ -127,6 +128,25 @@ function rollback(liveDir) {
     rollback(liveServer); rollback(liveDist);
     die('Install failed midway — rolled back to the previous version. Error: ' + e.message);
   }
+
+  // Window shell (Electron resources/app: main.cjs + package.json). Carries
+  // paste support and the Home Base key sync. Non-fatal if the layout differs
+  // (e.g. Linux staging has no resources/app) — keep .prev rollback copies.
+  try {
+    const appRes = path.join(BASE, 'resources', 'app');
+    const newShell = path.join(root, 'artifacts/neon-dj-demo');
+    if (fs.existsSync(appRes) && fs.existsSync(path.join(newShell, 'main.cjs'))) {
+      for (const f of ['main.cjs', 'package.json']) {
+        const src = path.join(newShell, f);
+        const dst = path.join(appRes, f);
+        if (!fs.existsSync(src)) continue;
+        if (fs.existsSync(dst)) fs.copyFileSync(dst, dst + '.prev');
+        fs.copyFileSync(src, dst + '.new');
+        fs.renameSync(dst + '.new', dst);
+      }
+      log('  [ok] Window shell updated (paste + key sync)');
+    }
+  } catch (e) { log('  [warn] Window shell not updated: ' + e.message); }
 
   // Self-update the updater (new copy takes effect next run)
   try {
