@@ -312,21 +312,53 @@ function createWindow() {
   // Active Music Folders) open as short scrolling boxes that barely show.
   // Let them open taller and scroll into view when they appear.
   mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.insertCSS(`
-      .max-h-48.overflow-auto, .max-h-64.overflow-auto {
-        max-height: min(60vh, 520px) !important;
-      }
-    `).catch(() => {});
+    // Pin the Options-page dropdown lists (Day Shift genres, Active Music
+    // Folders) to the WINDOW when they open: sized to the space available,
+    // opening upward when there's more room above. Their default downward,
+    // nested-scroll layout shows only a sliver on a 900px laptop window.
     mainWindow.webContents.executeJavaScript(`
       (() => {
         if (window.__neonDemoDropdownFix) return;
-        window.__neonDemoDropdownFix = true;
+        window.__neonDemoDropdownFix = 2;
+        const pin = (n) => {
+          try {
+            const parent = n.parentElement;
+            const btn = parent && parent.querySelector('button');
+            if (!btn) return;
+            const place = () => {
+              const r = btn.getBoundingClientRect();
+              const below = window.innerHeight - r.bottom - 12;
+              const above = r.top - 12;
+              const openUp = below < 240 && above > below;
+              const maxH = Math.max(160, Math.min(560, openUp ? above : below));
+              n.style.setProperty('position', 'fixed', 'important');
+              n.style.setProperty('left', r.left + 'px', 'important');
+              n.style.setProperty('width', r.width + 'px', 'important');
+              n.style.setProperty('right', 'auto', 'important');
+              n.style.setProperty('margin-top', '0', 'important');
+              n.style.setProperty('max-height', maxH + 'px', 'important');
+              n.style.setProperty('overflow-y', 'auto', 'important');
+              n.style.setProperty('z-index', '9999', 'important');
+              if (openUp) {
+                n.style.setProperty('top', 'auto', 'important');
+                n.style.setProperty('bottom', (window.innerHeight - r.top + 4) + 'px', 'important');
+              } else {
+                n.style.setProperty('bottom', 'auto', 'important');
+                n.style.setProperty('top', (r.bottom + 4) + 'px', 'important');
+              }
+            };
+            place();
+            const onScroll = () => { if (document.body.contains(n)) place(); else window.removeEventListener('scroll', onScroll, true); };
+            window.addEventListener('scroll', onScroll, true);
+            window.addEventListener('resize', onScroll);
+          } catch {}
+        };
         new MutationObserver((muts) => {
           for (const m of muts) for (const n of m.addedNodes) {
             if (n.nodeType === 1 && n.classList &&
                 n.classList.contains('absolute') && n.classList.contains('z-50') &&
                 (n.classList.contains('max-h-48') || n.classList.contains('max-h-64'))) {
-              setTimeout(() => { try { n.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {} }, 50);
+              pin(n);
             }
           }
         }).observe(document.body, { childList: true, subtree: true });
