@@ -135,9 +135,10 @@ function rollback(liveDir) {
   {
     const appRes = path.join(BASE, 'resources', 'app');
     const newShell = path.join(root, 'artifacts/neon-dj-demo');
-    const shellFiles = ['main.cjs', 'package.json'];
-    const haveAll = shellFiles.every(f => fs.existsSync(path.join(newShell, f)));
-    if (fs.existsSync(appRes) && haveAll) {
+    // main.cjs is required; package.json comes along when present (GitHub's
+    // zip cache can briefly lag a commit, and package.json rarely changes).
+    const shellFiles = ['main.cjs', 'package.json'].filter(f => fs.existsSync(path.join(newShell, f)));
+    if (fs.existsSync(appRes) && shellFiles.includes('main.cjs')) {
       // All-or-nothing: stage BOTH files first, then rename both into place;
       // roll BOTH back if anything fails so the shell files never mismatch.
       const done = [];
