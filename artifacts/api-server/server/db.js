@@ -812,7 +812,21 @@ export function getMusicTrackById(id) {
 }
 
 export function getMusicTrackByName(name) {
-  return readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
+  // Exact match first; then case-insensitive; then with/without a trailing
+  // extension. Feature-show set resolution goes through here — a miss used to
+  // cascade into a RANDOM library track under the feature intro, so be forgiving.
+  let row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
+  if (row) return row;
+  row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE').get(name);
+  if (row) return row;
+  const noExt = name.replace(/\.[a-z0-9]{2,4}$/i, '');
+  if (noExt !== name) {
+    row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE').get(noExt);
+    if (row) return row;
+  }
+  return readDb.prepare(
+    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' COLLATE NOCASE ORDER BY LENGTH(name) ASC"
+  ).get(noExt);
 }
 
 export function deleteMusicTrackFromDB(trackName) {

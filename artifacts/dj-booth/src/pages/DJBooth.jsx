@@ -194,8 +194,20 @@ export default function DJBooth() {
   // A feature lives in rotationRef like any dancer once placed, but her show details
   // live here (NOT in rotationSongs) so normal re-pick/cooldown logic can't clobber them.
   // She is auto-removed from both on show completion.
-  const placedFeaturesRef = useRef({});
-  const [placedFeatures, setPlacedFeatures] = useState({});
+  // PERSISTED to localStorage: the chosen set used to live only in this ref, so any
+  // kiosk relaunch / page reload between placing the feature and her showtime wiped
+  // it and playFeatureArrival silently fell back to a RANDOM library track (Aug 15
+  // live bug on 002 — Lauren Phillips show played Black Eyed Peas). The rotation
+  // itself survives via server stage state, so the placement map must survive too.
+  // Ref is seeded from the same restored value (state/ref pairs on reload rule).
+  const restoredPlacedFeatures = (() => {
+    try { return JSON.parse(localStorage.getItem('djbooth_placed_features')) || {}; } catch { return {}; }
+  })();
+  const placedFeaturesRef = useRef(restoredPlacedFeatures);
+  const [placedFeatures, setPlacedFeatures] = useState(restoredPlacedFeatures);
+  useEffect(() => {
+    try { localStorage.setItem('djbooth_placed_features', JSON.stringify(placedFeatures)); } catch {}
+  }, [placedFeatures]);
   // Monotonic version token guarding async rotationSongs writes (Rule 1 flip-to-bottom
   // re-pick + Rule 5 instant re-roll). Bumped at the START of any operation that wipes
   // or replaces queue state; async callbacks capture the version at dispatch and only
@@ -335,6 +347,21 @@ export default function DJBooth() {
     } catch {}
   };
   
+  // Script-generation fallback alerts (canned scripts due to missing OpenAI
+  // key or failing OpenAI calls). Emitters are rate-limited once per session
+  // (see @/utils/scriptFallbackAlert); logging it here puts the event on the
+  // diag log → booth state → fleet heartbeat path so homebase sends Telegram.
+  useEffect(() => {
+    const handler = (e) => {
+      logDiag('script_fallback', {
+        reason: e.detail?.reason || 'unknown',
+        error: String(e.detail?.detail || '').substring(0, 160),
+      });
+    };
+    window.addEventListener('djbooth-script-fallback', handler);
+    return () => window.removeEventListener('djbooth-script-fallback', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const fisherYatesShuffle = (arr) => {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -2220,9 +2247,37 @@ export default function DJBooth() {
     let setTrack = null;
     if (placed?.chosenSetName) {
       setTrack = await resolveTrackByName(placed.chosenSetName);
+      if (!setTrack?.url) console.warn('⚠️ FEATURE: chosen set did not resolve by name:', placed.chosenSetName);
+    } else {
+      console.warn('⚠️ FEATURE: no armed chosenSetName for', featureDancer.name, '— placement map was empty');
+    }
+    if (!setTrack?.url && featureDancer.feature_music_folder) {
+      // Her saved feature folder is server-persisted — pull its track list and match
+      // the chosen name loosely, else take the first track. This keeps her show on
+      // HER music even if exact name lookup fails or the placement map was lost.
+      try {
+        const token = localStorage.getItem('djbooth_token');
+        const res = await fetch(`/api/features/folder-tracks/${encodeURIComponent(featureDancer.feature_music_folder)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) {
+          const { tracks: folderTracks } = await res.json();
+          const names = (folderTracks || []).map(t => (typeof t === 'string' ? t : t?.name)).filter(Boolean);
+          const want = (placed?.chosenSetName || '').toLowerCase();
+          const match = names.find(n => n.toLowerCase() === want) || names[0];
+          if (match) {
+            setTrack = await resolveTrackByName(match);
+            if (setTrack?.url) console.warn('🌟 FEATURE: recovered set from her folder:', match);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ FEATURE: folder recovery failed:', err?.message);
+      }
     }
     if (!setTrack?.url) {
       // Backward-compat: unplaced feature (added straight into rotation) → her folder/playlist.
+      console.warn('⚠️ FEATURE: falling back to getDancerTracks — this can pick NON-feature music');
       const fb = await getDancerTracks(featureDancer);
       setTrack = fb?.[0] || null;
     }
