@@ -824,9 +824,12 @@ export function getMusicTrackByName(name) {
     row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE').get(noExt);
     if (row) return row;
   }
+  // LIKE metacharacters in the track name must be escaped or a name containing
+  // % / _ could match an unrelated row.
+  const likeSafe = noExt.replace(/([\\%_])/g, '\\$1');
   return readDb.prepare(
-    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' COLLATE NOCASE ORDER BY LENGTH(name) ASC"
-  ).get(noExt);
+    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' ESCAPE '\\' COLLATE NOCASE ORDER BY LENGTH(name) ASC"
+  ).get(likeSafe);
 }
 
 export function deleteMusicTrackFromDB(trackName) {

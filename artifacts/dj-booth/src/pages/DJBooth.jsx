@@ -1407,6 +1407,27 @@ export default function DJBooth() {
     bgPrePickRef.current = { dancerId, promise, tracks: null };
   }, [isRotationActive, currentSongNumber, songsPerSet]);
 
+  // Reconcile the localStorage-restored feature placement map against the
+  // authoritative rotation: if a feature's show completed / she was removed while
+  // this page was closed (another client, server progression), her id is gone from
+  // rotation_order but the persisted placement would otherwise linger and replay an
+  // OLD show's chosen set at a later date. Prune entries not in the rotation.
+  const prunePlacedFeatures = (validRotation) => {
+    const cur = placedFeaturesRef.current || {};
+    const keep = {};
+    let pruned = 0;
+    const inRot = new Set(validRotation);
+    for (const [fid, val] of Object.entries(cur)) {
+      // ids may be numbers in rotation and string keys here — compare loosely
+      if (inRot.has(fid) || inRot.has(Number(fid))) keep[fid] = val; else pruned++;
+    }
+    if (pruned > 0) {
+      console.log(`🧹 Pruned ${pruned} stale feature placement(s) not in rotation`);
+      placedFeaturesRef.current = keep;
+      setPlacedFeatures(keep);
+    }
+  };
+
   useEffect(() => {
     if (!activeStage) return;
     const saved = activeStage.rotation_order;
@@ -1419,6 +1440,7 @@ export default function DJBooth() {
         }
         setRotation(valid);
         rotationRef.current = valid;
+        prunePlacedFeatures(valid);
         const idx = valid.length > 0 ? Math.min(activeStage.current_dancer_index || 0, valid.length - 1) : 0;
         setCurrentDancerIndex(idx);
         currentDancerIndexRef.current = idx;
@@ -2251,10 +2273,12 @@ export default function DJBooth() {
     } else {
       console.warn('⚠️ FEATURE: no armed chosenSetName for', featureDancer.name, '— placement map was empty');
     }
-    if (!setTrack?.url && featureDancer.feature_music_folder) {
-      // Her saved feature folder is server-persisted — pull its track list and match
-      // the chosen name loosely, else take the first track. This keeps her show on
-      // HER music even if exact name lookup fails or the placement map was lost.
+    // Her saved feature folder is server-persisted — pull its track list up front.
+    // Used both to recover a failed name lookup AND to retry with her OTHER songs
+    // if the chosen file itself won't play (corrupt file). Keeps her show on HER
+    // music instead of a random library track.
+    let folderNames = [];
+    if (featureDancer.feature_music_folder) {
       try {
         const token = localStorage.getItem('djbooth_token');
         const res = await fetch(`/api/features/folder-tracks/${encodeURIComponent(featureDancer.feature_music_folder)}`, {
@@ -2263,16 +2287,18 @@ export default function DJBooth() {
         });
         if (res.ok) {
           const { tracks: folderTracks } = await res.json();
-          const names = (folderTracks || []).map(t => (typeof t === 'string' ? t : t?.name)).filter(Boolean);
-          const want = (placed?.chosenSetName || '').toLowerCase();
-          const match = names.find(n => n.toLowerCase() === want) || names[0];
-          if (match) {
-            setTrack = await resolveTrackByName(match);
-            if (setTrack?.url) console.warn('🌟 FEATURE: recovered set from her folder:', match);
-          }
+          folderNames = (folderTracks || []).map(t => (typeof t === 'string' ? t : t?.name)).filter(Boolean);
         }
       } catch (err) {
-        console.warn('⚠️ FEATURE: folder recovery failed:', err?.message);
+        console.warn('⚠️ FEATURE: folder track list fetch failed:', err?.message);
+      }
+    }
+    if (!setTrack?.url && folderNames.length > 0) {
+      const want = (placed?.chosenSetName || '').toLowerCase();
+      const match = folderNames.find(n => n.toLowerCase() === want) || folderNames[0];
+      if (match) {
+        setTrack = await resolveTrackByName(match);
+        if (setTrack?.url) console.warn('🌟 FEATURE: recovered set from her folder:', match);
       }
     }
     if (!setTrack?.url) {
@@ -2297,12 +2323,26 @@ export default function DJBooth() {
     }
 
     lastAudioActivityRef.current = Date.now();
+    let started = false;
     if (setTrack?.url) {
       console.log('🌟 FEATURE show set starting:', setTrack.name, '(full-length, no cut)');
-      const ok = await playTrack(setTrack.url, true, setTrack.name, 'FEATURE');
-      if (!ok) await playFallbackTrack(true);
-    } else {
-      console.warn('⚠️ FEATURE: no set track resolved — falling back');
+      started = await playTrack(setTrack.url, true, setTrack.name, 'FEATURE');
+      if (!started) console.warn('⚠️ FEATURE: chosen set failed to PLAY (bad/corrupt file?):', setTrack.name);
+    }
+    if (!started && folderNames.length > 0) {
+      // Chosen file failed (corrupt / unreadable) — try her OTHER folder songs
+      // before ever touching the general library.
+      for (const n of folderNames) {
+        if (setTrack?.name && n === setTrack.name) continue;
+        const alt = await resolveTrackByName(n);
+        if (!alt?.url) continue;
+        console.warn('🌟 FEATURE: retrying with another of her songs:', n);
+        started = await playTrack(alt.url, true, alt.name, 'FEATURE');
+        if (started) { setTrack = alt; break; }
+      }
+    }
+    if (!started) {
+      console.warn('⚠️ FEATURE: nothing from her folder would play — falling back to library');
       await playFallbackTrack(true);
     }
     if (announcementsEnabled) audioEngineRef.current?.unduck();
