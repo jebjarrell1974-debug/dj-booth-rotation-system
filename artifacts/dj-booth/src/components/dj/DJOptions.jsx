@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
-import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor, Clock, Sun } from 'lucide-react';
+import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor, Clock, Sun, Link2, Copy, RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
@@ -11,7 +11,6 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const [musicEq, setMusicEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}'));
-  const [voiceEq, setVoiceEq] = useState(() => JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}'));
   const [beatMatchEnabled, setBeatMatchEnabled] = useState(() => localStorage.getItem('neonaidj_beat_match') === 'true');
   const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
   const [commercialDropdownOpen, setCommercialDropdownOpen] = useState(false);
@@ -23,6 +22,35 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
   });
   const [dayShiftDropdownOpen, setDayShiftDropdownOpen] = useState(false);
   const dayShiftDropdownRef = useRef(null);
+  const [posKey, setPosKey] = useState('');
+  const [posKeyVisible, setPosKeyVisible] = useState(false);
+  const [posKeyCopied, setPosKeyCopied] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('djbooth_token');
+    if (!token) return;
+    fetch('/api/pos/key', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.key) setPosKey(data.key); })
+      .catch(() => {});
+  }, []);
+
+  const copyPosKey = () => {
+    try {
+      navigator.clipboard?.writeText(posKey);
+      setPosKeyCopied(true);
+      setTimeout(() => setPosKeyCopied(false), 2000);
+    } catch {}
+  };
+
+  const rotatePosKey = () => {
+    if (!window.confirm('Generate a NEW POS API key? The old key stops working immediately — the POS company must update to the new key.')) return;
+    const token = localStorage.getItem('djbooth_token');
+    fetch('/api/pos/key/rotate', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.key) setPosKey(data.key); })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     if (!commercialSyncedRef.current && externalCommercialFreq != null) {
@@ -81,6 +109,15 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
     }
     setSaving(false);
   }, [djOptions, onOptionsChange]);
+
+  // Day Shift Mode is always on now (the enable/disable switch was removed).
+  // Ensure it's persisted as enabled with a valid default window so the booth applies it.
+  useEffect(() => {
+    if (!djOptions) return;
+    if (djOptions.dayShift?.enabled === true) return;
+    const ds = djOptions.dayShift || {};
+    saveOptions({ dayShift: { startTime: '12:00', endTime: '20:00', genres: [], ...ds, enabled: true } });
+  }, [djOptions, saveOptions]);
 
   const toggleGenre = useCallback((folderName) => {
     const current = [...activeGenres];
@@ -223,11 +260,10 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
         {/* Day Shift Mode */}
         {(() => {
           const dayShift = djOptions?.dayShift || {};
-          const dayShiftEnabled = !!dayShift.enabled;
           const dayShiftStart = dayShift.startTime || '12:00';
           const dayShiftEnd = dayShift.endTime || '20:00';
           const dayShiftGenres = dayShift.genres || [];
-          const saveDayShift = (updates) => saveOptions({ dayShift: { ...dayShift, ...updates } });
+          const saveDayShift = (updates) => saveOptions({ dayShift: { ...dayShift, enabled: true, ...updates } });
           const toggleDsGenre = (name) => {
             const next = dayShiftGenres.includes(name)
               ? dayShiftGenres.filter(g => g !== name)
@@ -236,22 +272,15 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
           };
           return (
             <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sun className="w-4 h-4 text-[#fbbf24]" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-[#fbbf24] uppercase tracking-wider">Day Shift Mode</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">Override music genres during daytime hours</p>
-                  </div>
+              <div className="flex items-center gap-2">
+                <Sun className="w-4 h-4 text-[#fbbf24]" />
+                <div>
+                  <h3 className="text-sm font-semibold text-[#fbbf24] uppercase tracking-wider">Day Shift Mode</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Override music genres during daytime hours</p>
                 </div>
-                <Switch
-                  checked={dayShiftEnabled}
-                  onCheckedChange={(val) => saveDayShift({ enabled: val })}
-                />
               </div>
 
-              {dayShiftEnabled && (
-                <div className="mt-4 space-y-4">
+              <div className="mt-4 space-y-4">
                   {/* Time window */}
                   <div className="flex items-center gap-3">
                     <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -323,7 +352,6 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                     During the active window, break songs and entertainers without personal playlists will pull from the Day Shift genres above. Outside the window, Music Selection Mode applies as normal.
                   </p>
                 </div>
-              )}
             </div>
           );
         })()}
@@ -537,47 +565,42 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
       </div>
 
       <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
-        <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-4">Voice EQ</h3>
-        <div className="space-y-3">
-          {[
-            { band: 'bass', label: 'Bass', sublabel: '200 Hz' },
-            { band: 'mid', label: 'Mid', sublabel: '1 kHz' },
-            { band: 'treble', label: 'Treble', sublabel: '4 kHz' },
-          ].map(({ band, label, sublabel }) => (
-            <div key={band} className="flex items-center gap-3">
-              <div className="w-16 flex-shrink-0">
-                <span className="text-sm text-white font-medium">{label}</span>
-                <span className="text-[10px] text-gray-500 block">{sublabel}</span>
-              </div>
-              <input
-                type="range"
-                min={-12}
-                max={12}
-                step={1}
-                value={voiceEq[band]}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value);
-                  setVoiceEq(prev => ({ ...prev, [band]: val }));
-                  audioEngineRef?.current?.setVoiceEq?.(band, val);
-                }}
-                className="flex-1 h-2 accent-[#00d4ff]"
-              />
-              <span className="w-10 text-right text-xs font-mono text-gray-400">
-                {voiceEq[band] > 0 ? '+' : ''}{voiceEq[band]} dB
-              </span>
-            </div>
-          ))}
-          <button
-            onClick={() => {
-              const flat = { bass: 0, mid: 0, treble: 0 };
-              setVoiceEq(flat);
-              ['bass', 'mid', 'treble'].forEach(b => audioEngineRef?.current?.setVoiceEq?.(b, 0));
-            }}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors mt-1"
-          >
-            Reset to flat
-          </button>
+        <div className="flex items-center gap-2 mb-2">
+          <Link2 className="w-4 h-4 text-[#00d4ff]" />
+          <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">POS Integration</h3>
         </div>
+        <p className="text-xs text-gray-500 mb-3">
+          The POS system on the venue network uses this API key to send check-in, VIP, and checkout signals to the booth. Give this key to the POS company — never post it publicly.
+        </p>
+        {posKey ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPosKeyVisible(v => !v)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-[#151528] border border-[#1e293b] text-left"
+              >
+                <span className="text-xs font-mono text-gray-300 break-all">
+                  {posKeyVisible ? posKey : '••••••••••••••••••••  (tap to reveal)'}
+                </span>
+              </button>
+              <button
+                onClick={copyPosKey}
+                className="px-3 py-2 rounded-lg bg-[#151528] border border-[#1e293b] text-gray-300 hover:border-[#2e2e5a] flex items-center gap-1.5 flex-shrink-0"
+              >
+                {posKeyCopied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                <span className="text-xs">{posKeyCopied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+            <button
+              onClick={rotatePosKey}
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" /> Generate new key (old key stops working)
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-600">Key loads when signed in as DJ.</p>
+        )}
       </div>
 
     </div>

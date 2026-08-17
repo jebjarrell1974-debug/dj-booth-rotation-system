@@ -897,7 +897,10 @@ export default function DJBooth() {
     dancerVipMapRef.current = newMap;
     setDancerVipMap({ ...newMap });
     try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
-    const newRot = [...rotationRef.current, id];
+    // Guard against duplicate entries (e.g. a retried POS vip-end webhook)
+    const newRot = rotationRef.current.includes(id)
+      ? [...rotationRef.current]
+      : [...rotationRef.current, id];
     setRotation(newRot);
     rotationRef.current = newRot;
     if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
@@ -1200,11 +1203,27 @@ export default function DJBooth() {
           break;
         case 'sendToVip':
           if (cmd.payload.dancerId != null && cmd.payload.durationMs) {
+            const _vipIdStr = String(cmd.payload.dancerId);
+            // POS-originated sends are idempotent: if she's already in VIP (or
+            // pending VIP after her set), a repeated signal must NOT add time.
+            if (cmd.payload.skipIfActive &&
+                (dancerVipMapRef.current[_vipIdStr] || pendingVipRef.current[_vipIdStr])) {
+              console.log('[POS] sendToVip skipped — already in VIP/pending:', _vipIdStr);
+              break;
+            }
             sendDancerToVipRef.current?.(cmd.payload.dancerId, cmd.payload.durationMs);
           }
           break;
         case 'releaseFromVip':
           if (cmd.payload.dancerId != null) {
+            const _relIdStr = String(cmd.payload.dancerId);
+            // POS-originated releases only act if she's actually in VIP/pending,
+            // so a duplicated or out-of-order webhook can't touch the rotation.
+            if (cmd.payload.onlyIfVip &&
+                !dancerVipMapRef.current[_relIdStr] && !pendingVipRef.current[_relIdStr]) {
+              console.log('[POS] releaseFromVip skipped — not in VIP:', _relIdStr);
+              break;
+            }
             releaseDancerFromVipRef.current?.(cmd.payload.dancerId);
           }
           break;

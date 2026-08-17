@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { spawn as spawnProcess, execSync as execSyncChild } from 'child_process';
 import { networkInterfaces, hostname } from 'os';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import {
   getSetting, setSetting, hashPin, verifyPin,
   createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer, invalidateDancerSessions,
@@ -1749,9 +1750,7 @@ app.get('/api/booth/display', (req, res) => {
   });
 });
 
-app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
-  const { action, payload } = req.body;
-  if (!action) return res.status(400).json({ error: 'Action required' });
+function queueBoothCommand(action, payload = {}) {
   const cmd = {
     id: ++commandIdCounter,
     action,
@@ -1761,6 +1760,13 @@ app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
   remoteCommandQueue.push(cmd);
   if (remoteCommandQueue.length > 50) remoteCommandQueue = remoteCommandQueue.slice(-50);
   broadcastSSE('command', { command: cmd });
+  return cmd;
+}
+
+app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
+  const { action, payload } = req.body;
+  if (!action) return res.status(400).json({ error: 'Action required' });
+  const cmd = queueBoothCommand(action, payload);
   res.json({ ok: true, commandId: cmd.id });
 });
 
@@ -1776,6 +1782,120 @@ app.post('/api/booth/commands/ack', authenticate, requireDJ, (req, res) => {
     remoteCommandQueue = remoteCommandQueue.filter(c => c.id > upToId);
   }
   res.json({ ok: true });
+});
+
+// ===== POS Integration (LAN webhook receivers) =====
+// A point-of-sale system on the same network sends entertainer lifecycle
+// signals here. Each signal is translated into the same booth commands the
+// DJ remote uses, so the booth reacts exactly as if the DJ tapped the screen.
+
+const POS_VIP_DEFAULT_MS = 12 * 60 * 60 * 1000; // open-ended VIP; POS sends vip-end to release
+
+function getPosApiKey() {
+  let key = getSetting('pos_api_key');
+  if (!key) {
+    key = 'pos_' + randomBytes(24).toString('hex');
+    setSetting('pos_api_key', key);
+    console.log('[POS] Generated new POS API key (view it in DJ Options > POS Integration)');
+  }
+  return key;
+}
+
+// Ensure the key exists as soon as the server boots so the operator can hand it out
+getPosApiKey();
+
+function requirePosKey(req, res, next) {
+  const provided = req.get('x-api-key') || '';
+  if (!provided || provided.length > 256) {
+    return res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
+  }
+  // Timing-safe comparison over fixed-length digests
+  const a = createHash('sha256').update(provided).digest();
+  const b = createHash('sha256').update(getPosApiKey()).digest();
+  if (!timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
+  }
+  next();
+}
+
+function resolvePosEntertainer(body) {
+  const id = body?.entertainerId != null ? String(body.entertainerId).trim() : '';
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  if (!id && !name) {
+    return { status: 400, error: 'Provide "entertainerId" or "name" in the JSON body' };
+  }
+  const dancers = listDancers();
+  let dancer = null;
+  if (id) dancer = dancers.find(d => String(d.id) === id) || null;
+  if (!dancer && name) {
+    dancer = dancers.find(d => (d.name || '').trim().toLowerCase() === name.toLowerCase()) || null;
+  }
+  if (!dancer) {
+    return {
+      status: 404,
+      error: `Entertainer not found${name ? ` for name "${name}"` : ''}${id ? ` for id "${id}"` : ''}. Use GET /api/pos/entertainers for the current roster.`,
+    };
+  }
+  return { dancer };
+}
+
+function posEventHandler(eventType) {
+  return (req, res) => {
+    const resolved = resolvePosEntertainer(req.body);
+    if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+    const { dancer } = resolved;
+    const commandIds = [];
+    switch (eventType) {
+      case 'checkin':
+        commandIds.push(queueBoothCommand('addDancerToRotation', { dancerId: dancer.id }).id);
+        break;
+      case 'vip-start':
+        // skipIfActive => a retried webhook never adds VIP time
+        commandIds.push(queueBoothCommand('sendToVip', { dancerId: dancer.id, durationMs: POS_VIP_DEFAULT_MS, skipIfActive: true }).id);
+        break;
+      case 'vip-end':
+        // onlyIfVip => a duplicate/out-of-order webhook can't duplicate her in rotation
+        commandIds.push(queueBoothCommand('releaseFromVip', { dancerId: dancer.id, onlyIfVip: true }).id);
+        break;
+      case 'checkout':
+        // Release from VIP first (clears any VIP timer, only if actually in VIP), then remove from rotation.
+        commandIds.push(queueBoothCommand('releaseFromVip', { dancerId: dancer.id, onlyIfVip: true }).id);
+        commandIds.push(queueBoothCommand('removeDancerFromRotation', { dancerId: dancer.id }).id);
+        break;
+    }
+    try {
+      createAuditEntry('POS System', 'pos', `pos_${eventType.replace('-', '_')}`, dancer.name);
+    } catch {}
+    console.log(`[POS] ${eventType}: ${dancer.name} (id ${dancer.id})`);
+    res.json({ ok: true, event: eventType, entertainerId: dancer.id, name: dancer.name, commandIds });
+  };
+}
+
+// Connectivity test for the POS integrator
+app.get('/api/pos/health', requirePosKey, (req, res) => {
+  res.json({ ok: true, service: 'NEON AI DJ', unit: hostname(), time: new Date().toISOString() });
+});
+
+// Current roster so the POS can map its records to our entertainers
+app.get('/api/pos/entertainers', requirePosKey, (req, res) => {
+  const dancers = listDancers().filter(d => d.is_active !== false);
+  res.json({ entertainers: dancers.map(d => ({ id: d.id, name: d.name })) });
+});
+
+app.post('/api/pos/checkin', requirePosKey, posEventHandler('checkin'));
+app.post('/api/pos/vip-start', requirePosKey, posEventHandler('vip-start'));
+app.post('/api/pos/vip-end', requirePosKey, posEventHandler('vip-end'));
+app.post('/api/pos/checkout', requirePosKey, posEventHandler('checkout'));
+
+// DJ-only: view (or rotate) the POS API key so the operator can hand it to the POS company
+app.get('/api/pos/key', authenticate, requireDJ, (req, res) => {
+  res.json({ key: getPosApiKey() });
+});
+app.post('/api/pos/key/rotate', authenticate, requireDJ, (req, res) => {
+  const key = 'pos_' + randomBytes(24).toString('hex');
+  setSetting('pos_api_key', key);
+  createAuditEntry(req.session?.staff_name || 'DJ', req.session?.staff_role || 'dj', 'pos_key_rotated', null);
+  res.json({ key });
 });
 
 let MUSIC_PATH = process.env.MUSIC_PATH || getSetting('music_path') || '';
