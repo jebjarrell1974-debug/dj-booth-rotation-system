@@ -157,6 +157,9 @@ async function registerHeartbeat(deviceId, data) {
     lastWatchdogSilentMs: data.lastWatchdogSilentMs ?? null,
     lastWatchdogDancer: data.lastWatchdogDancer ?? null,
     lastWatchdogTrack: data.lastWatchdogTrack ?? null,
+    // Newest script_fallback diag ts already alerted on — carried forward so
+    // entries lingering in the rolling diag log can't re-fire every cooldown.
+    lastScriptFallbackTs: existing?.lastScriptFallbackTs || 0,
   });
 
   if (data.dancer_names && Array.isArray(data.dancer_names)) {
@@ -259,6 +262,35 @@ async function registerHeartbeat(deviceId, data) {
       );
     }
 
+    // --- Canned-script fallback alerts (from diagLog script_fallback events) ---
+    // The June 2026 silent OpenAI-key loss must never repeat: the moment a
+    // unit's announcements fall back to canned scripts, say so on Telegram.
+    // Entries carry ts (client clock); track the newest alerted ts per device
+    // so old entries lingering in the rolling diag log can't re-fire.
+    const scriptFallbacks = diagLog.filter(e =>
+      (e?.event || e?.type) === 'script_fallback' &&
+      (e?.ts || 0) > (dev.lastScriptFallbackTs || 0)
+    );
+    if (scriptFallbacks.length > 0) {
+      dev.lastScriptFallbackTs = Math.max(...scriptFallbacks.map(e => e.ts || 0));
+      if (canSendAlert(effectiveId, 'script_fallback')) {
+        const sample = scriptFallbacks[0];
+        const reasonLabel = sample.reason === 'no_key'
+          ? 'OpenAI key MISSING'
+          : sample.reason === 'api_error'
+            ? 'OpenAI call FAILING'
+            : (sample.reason || 'unknown');
+        const errLine = sample.error ? `\nDetail: <code>${sample.error}</code>` : '';
+        sendTelegram(
+          `📜 <b>CANNED SCRIPT FALLBACK</b>\n` +
+          `<b>${dev.name}</b> (${dev.clubName})\n` +
+          `Announcements are using canned scripts\n` +
+          `Reason: ${reasonLabel}` +
+          errLine
+        );
+      }
+    }
+
     // --- CPU temperature alert (>80°C) ---
     const cpuTemp = parseFloat(data.cpuTemp);
     if (!isNaN(cpuTemp) && cpuTemp > 80 && canSendAlert(effectiveId, 'cpu_temp')) {
@@ -316,7 +348,12 @@ async function registerHeartbeat(deviceId, data) {
 
     const totalPicks = (data.prePickHits || 0) + (data.prePickMisses || 0);
     const warmupComplete = !dev.sessionStartMs || (Date.now() - dev.sessionStartMs) > 5 * 60 * 1000;
-    if (totalPicks >= 5 && warmupComplete) {
+    // Sample-size + rotation-size floor: tiny after-close windows (e.g. 8 picks with
+    // 3 dancers cycling) naturally produce >50% miss rates without any real problem
+    // (cooldowns invalidate pre-picks; every miss still plays via live lookup).
+    // Only alert when there's a statistically meaningful sample from a real rotation.
+    const enoughDancers = (data.activeEntertainers || 0) >= 6;
+    if (totalPicks >= 30 && enoughDancers && warmupComplete) {
       const missRate = (data.prePickMisses || 0) / totalPicks;
       if (missRate > 0.5 && canSendAlert(effectiveId, 'low_cache_rate')) {
         sendTelegram(
