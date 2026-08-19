@@ -26,6 +26,20 @@ This page is only a convenience for developers. The actual integration is
 server-to-server: the POS sends HTTPS requests to the endpoints below; it does
 not need to load or control a DJ-booth screen.
 
+## Visual workflow demo
+
+For a display-only, generic event-status board that updates automatically as
+your POS sends sandbox events, open:
+
+```
+https://git-hub-meeting.replit.app/api/pos/demo
+```
+
+This is a deliberately separate fake workflow simulator — not a DJ booth
+screen. It contains no music, real people, venue details, production controls,
+or live-system access. Use it when you want to show check-in, VIP start, VIP
+end, and checkout moving the fake sandbox roster through a visible workflow.
+
 ## API key
 
 Send this in the `X-API-Key` header on every request:
