@@ -13,6 +13,19 @@ https://git-hub-meeting.replit.app
 
 (HTTPS here; real units are plain HTTP on the venue LAN at `http://<unit-ip>:3001`.)
 
+## Browser test console
+
+For a human-friendly screen with the fake roster, clickable test controls, live
+responses, and the current pretend rotation/VIP state, open:
+
+```
+https://git-hub-meeting.replit.app/api/pos/sandbox
+```
+
+This page is only a convenience for developers. The actual integration is
+server-to-server: the POS sends HTTPS requests to the endpoints below; it does
+not need to load or control a DJ-booth screen.
+
 ## API key
 
 Send this in the `X-API-Key` header on every request:
@@ -77,6 +90,6 @@ curl -X POST $BASE/checkout  -H "X-API-Key: $KEY" -H "Content-Type: application/
   expected — re-send a `checkin` and continue.
 - Retries are safe: repeating any signal never double-adds anyone or adds extra
   VIP time, exactly like production.
-- There is a web page at the base URL (the DJ booth screen) — ignore it; it is a
-  display shell with no data behind it in the sandbox. Your integration only
-  needs the `/api/pos/*` endpoints above.
+- The main base URL may show the DJ-booth display shell. It is not part of the
+  POS integration. Use the browser test console URL above, or call
+  `/api/pos/*` directly from your own tool or code.
