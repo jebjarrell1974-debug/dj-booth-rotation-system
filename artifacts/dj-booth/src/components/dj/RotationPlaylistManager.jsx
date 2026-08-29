@@ -1,10 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable, useMouseSensor } from '@hello-pangea/dnd';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  capSongAssignments,
+  capSongList,
+  fillSongListToLimit,
+} from '@/utils/rotationAssignments';
 
 const TRACKS_PER_PAGE = 200;
 
@@ -183,7 +188,7 @@ export default function RotationPlaylistManager({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
-          return parsed.assignments;
+          return capSongAssignments(parsed.assignments, songsPerSet);
         }
       }
     } catch {}
@@ -231,6 +236,8 @@ export default function RotationPlaylistManager({
 
   const appliedPlaylistsRef = React.useRef({});
   const songAssignmentsRef = React.useRef({});
+  const assignmentSongsPerSetRef = React.useRef(songsPerSet);
+  const assignmentGenerationRef = React.useRef(0);
   // Restore the "DJ edited these — don't re-roll/clobber them" markers alongside
   // the displayed picks so a second Save All (after a tab switch) still reports
   // the DJ's overrides, and the active restore block keeps skipping them.
@@ -277,7 +284,16 @@ export default function RotationPlaylistManager({
     return () => { window.removeEventListener('storage', checkFreq); clearInterval(interval); };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (assignmentSongsPerSetRef.current !== songsPerSet) {
+      assignmentSongsPerSetRef.current = songsPerSet;
+      assignmentGenerationRef.current += 1;
+    }
+    const capped = capSongAssignments(songAssignments, songsPerSet);
+    if (capped !== songAssignments) {
+      setSongAssignments(capped);
+      return;
+    }
     songAssignmentsRef.current = songAssignments;
     onSongAssignmentsChange?.(songAssignments);
     // Persist the displayed picks + DJ-edit markers so a remount (tab switch) or
@@ -289,7 +305,7 @@ export default function RotationPlaylistManager({
         overrides: [...djOverridesRef.current],
       }));
     } catch {}
-  }, [songAssignments]);
+  }, [songAssignments, songsPerSet]);
 
   useEffect(() => {
     if (musicSource === 'genres') return;
@@ -340,7 +356,7 @@ export default function RotationPlaylistManager({
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
           if (djOverridesRef.current.has(dancerId)) return;
           if (trackList && trackList.length > 0) {
-            const mapped = trackList.map(t => t.name);
+            const mapped = capSongList(trackList.map(t => t.name), songsPerSet);
             // Don't downgrade: if the dancer already has the right number of songs assigned
             // and the incoming pre-pick has fewer (stale from before a songsPerSet change),
             // keep what we have rather than overwriting with a short array that will then
@@ -367,6 +383,7 @@ export default function RotationPlaylistManager({
 
     const isFoldersOnly = djOptions?.musicMode === 'folders_only';
     const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const requestGeneration = assignmentGenerationRef.current;
 
     (async () => {
       const token = localStorage.getItem('djbooth_token');
@@ -452,12 +469,12 @@ export default function RotationPlaylistManager({
         assigned.forEach(n => batchExcludes.push(n));
       }
 
-      if (Object.keys(newAssignments).length > 0) {
+      if (requestGeneration === assignmentGenerationRef.current && Object.keys(newAssignments).length > 0) {
         setSongAssignments(prev => {
           const updated = { ...prev };
           for (const [dancerId, songs] of Object.entries(newAssignments)) {
             if (!djOverridesRef.current.has(dancerId)) {
-              updated[dancerId] = songs;
+              updated[dancerId] = capSongList(songs, assignmentSongsPerSetRef.current);
             }
           }
           return updated;
@@ -484,7 +501,6 @@ export default function RotationPlaylistManager({
   useEffect(() => {
     if (prevSongsPerSetRef.current === songsPerSet) return;
     prevSongsPerSetRef.current = songsPerSet;
-    if (tracks.length === 0) return;
 
     // First handle the SHRINK case synchronously — just trim the list.
     setSongAssignments(prev => {
@@ -500,6 +516,8 @@ export default function RotationPlaylistManager({
       return changed ? updated : prev;
     });
 
+    if (tracks.length === 0) return;
+
     // GROW case — need to ADD songs. Use the server endpoint so the playlist rule is honored:
     // "When a dancer has a playlist, pick ONLY from that playlist — never random library."
     const dancersNeedingMore = Object.keys(songAssignmentsRef.current).filter(dancerId => {
@@ -510,6 +528,7 @@ export default function RotationPlaylistManager({
 
     const isFoldersOnly = djOptions?.musicMode === 'folders_only';
     const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const requestGeneration = assignmentGenerationRef.current;
 
     (async () => {
       const token = localStorage.getItem('djbooth_token');
@@ -518,7 +537,6 @@ export default function RotationPlaylistManager({
       const additions = {};
 
       for (const dancerId of dancersNeedingMore) {
-        if (djOverridesRef.current.has(dancerId)) continue;
         const dancer = dancers.find(d => d.id === dancerId);
         if (!dancer) continue;
         const existingSongs = songAssignmentsRef.current[dancerId] || [];
@@ -574,13 +592,16 @@ export default function RotationPlaylistManager({
         fillNames.forEach(n => allUsed.add(n));
       }
 
-      if (Object.keys(additions).length > 0) {
+      if (requestGeneration === assignmentGenerationRef.current && Object.keys(additions).length > 0) {
         setSongAssignments(prev => {
           const updated = { ...prev };
           for (const [dancerId, additionalSongs] of Object.entries(additions)) {
-            if (djOverridesRef.current.has(dancerId)) continue;
             const existing = updated[dancerId] || [];
-            updated[dancerId] = [...existing, ...additionalSongs];
+            updated[dancerId] = fillSongListToLimit(
+              existing,
+              additionalSongs,
+              assignmentSongsPerSetRef.current
+            );
           }
           return updated;
         });
@@ -665,18 +686,22 @@ export default function RotationPlaylistManager({
   const displayedTracks = genreFilteredTracks;
 
   const addSongToDancer = useCallback((dancerId, trackName) => {
-    djOverridesRef.current.add(dancerId);
     setSongAssignments(prev => {
       const current = [...(prev[dancerId] || [])];
       if (current.includes(trackName)) {
         toast.error('Song already assigned');
         return prev;
       }
+      if (current.length >= songsPerSet) {
+        toast.error(`This set is limited to ${songsPerSet} song${songsPerSet === 1 ? '' : 's'}`);
+        return prev;
+      }
+      djOverridesRef.current.add(dancerId);
       current.push(trackName);
       const updated = { ...prev, [dancerId]: current };
       return updated;
     });
-  }, []);
+  }, [songsPerSet]);
 
   const handleDragEnd = (result) => {
     const { source, destination, type } = result;
@@ -708,13 +733,17 @@ export default function RotationPlaylistManager({
       const trackName = resolveTrackName();
       if (!trackName) return;
 
-      djOverridesRef.current.add(dancerId);
       setSongAssignments(prev => {
         const current = [...(prev[dancerId] || [])];
         if (current.includes(trackName)) {
           toast.error('Song already assigned');
           return prev;
         }
+        if (current.length >= songsPerSet) {
+          toast.error(`This set is limited to ${songsPerSet} song${songsPerSet === 1 ? '' : 's'}`);
+          return prev;
+        }
+        djOverridesRef.current.add(dancerId);
         current.splice(destination.index, 0, trackName);
         const updated = { ...prev, [dancerId]: current };
         return updated;
@@ -977,8 +1006,9 @@ export default function RotationPlaylistManager({
     lastSaveTimeRef.current = now;
     const playlists = {};
     Object.entries(songAssignments).forEach(([dancerId, songs]) => {
-      playlists[dancerId] = songs;
-      appliedPlaylistsRef.current[dancerId] = songs.join(',');
+      const limited = capSongList(songs, songsPerSet);
+      playlists[dancerId] = limited;
+      appliedPlaylistsRef.current[dancerId] = limited.join(',');
     });
 
     const finalInterstitials = { ...interstitialSongs };

@@ -4,6 +4,7 @@ import DJOptions from '@/components/dj/DJOptions';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { VOICE_SETTINGS, getCurrentEnergyLevel } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
+import { capSongAssignments, capSongList } from '@/utils/rotationAssignments';
 import { getApiConfig, isValidElevenLabsKey } from '@/components/apiConfig';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import {
@@ -180,19 +181,20 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
   }, [libSearch, libGenre, fetchLib]);
 
   const getSongs = (dancerId) => {
-    if (songEdits[dancerId]) return songEdits[dancerId];
+    if (songEdits[dancerId]) return capSongList(songEdits[dancerId], songsPerSet);
     const songs = rotationSongs[dancerId] || [];
-    return songs.map(s => typeof s === 'string' ? s : s.name);
+    return capSongList(songs.map(s => typeof s === 'string' ? s : s.name), songsPerSet);
   };
 
   const setSongs = (dancerId, songs) => {
-    setSongEdits(prev => ({ ...prev, [dancerId]: songs }));
+    setSongEdits(prev => ({ ...prev, [dancerId]: capSongList(songs, songsPerSet) }));
     setHasUnsaved(true);
   };
 
   const addSong = (dancerId, trackName) => {
     const current = getSongs(dancerId);
     if (current.includes(trackName)) return;
+    if (current.length >= songsPerSet) return;
     setSongs(dancerId, [...current, trackName]);
   };
 
@@ -247,7 +249,9 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, djOption
 
   const handleSaveAll = () => {
     if (Object.keys(songEdits).length > 0) {
-      boothApi.sendCommand('updateSongAssignments', { assignments: songEdits });
+      boothApi.sendCommand('updateSongAssignments', {
+        assignments: capSongAssignments(songEdits, songsPerSet)
+      });
     }
     boothApi.sendCommand('saveRotation', { rotation: rotationList });
     setSongEdits({});

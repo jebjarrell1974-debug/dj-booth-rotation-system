@@ -46,6 +46,12 @@ import RemoteView from '@/components/dj/RemoteView';
 import DJOptions from '@/components/dj/DJOptions';
 import CustomSoundboard from '@/components/dj/CustomSoundboard';
 import FeatureEntertainerPanel from '@/components/dj/FeatureEntertainerPanel';
+import {
+  capSongAssignments,
+  capSongList,
+  fillSongListToLimit,
+  normalizeSongsPerSet,
+} from '@/utils/rotationAssignments';
 
 const DEFAULT_SONGS_PER_SET = 2;
 // Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
@@ -151,6 +157,7 @@ export default function DJBooth() {
   const [currentSongNumber, setCurrentSongNumber] = useState(1);
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
+  const applySongsPerSetChangeRef = useRef(null);
   const tracksRef = useRef([]);
   // Autoplay queue is persisted to localStorage so DJ's manual edits survive page refresh.
   // autoplayAutoFillEnabled controls whether fillAutoplayQueue is allowed to top up with
@@ -226,6 +233,10 @@ export default function DJBooth() {
     try { return JSON.parse(localStorage.getItem('djbooth_dj_saved_manual')) || {}; } catch { return {}; }
   })());
   const persistDjSaved = () => {
+    djSavedSongsRef.current = capSongAssignments(
+      djSavedSongsRef.current,
+      songsPerSetRef.current
+    );
     try {
       localStorage.setItem('djbooth_dj_saved_songs', JSON.stringify(djSavedSongsRef.current));
       localStorage.setItem('djbooth_dj_saved_manual', JSON.stringify(djSavedManualRef.current));
@@ -238,11 +249,42 @@ export default function DJBooth() {
   const breakSongsPerSetRef = useRef(0);
   const [djOptions, setDjOptions] = useState({ activeGenres: [], musicMode: 'dancer_first' });
   const djOptionsRef = useRef({ activeGenres: [], musicMode: 'dancer_first' });
+  const commitRotationSongs = useCallback((candidate) => {
+    const next = typeof candidate === 'function'
+      ? candidate(rotationSongsRef.current)
+      : candidate;
+    const capped = capSongAssignments(next, songsPerSetRef.current);
+    rotationSongsRef.current = capped;
+    setRotationSongs(capped);
+    return capped;
+  }, []);
+
+  const capAllAssignmentsToSetSize = useCallback((count) => {
+    const limit = normalizeSongsPerSet(count, DEFAULT_SONGS_PER_SET);
+    const cappedRotation = capSongAssignments(rotationSongsRef.current, limit);
+    if (cappedRotation !== rotationSongsRef.current) {
+      commitRotationSongs(cappedRotation);
+    }
+
+    const cappedSaved = capSongAssignments(djSavedSongsRef.current, limit);
+    if (cappedSaved !== djSavedSongsRef.current) {
+      djSavedSongsRef.current = cappedSaved;
+      persistDjSaved();
+    }
+  }, []);
+
   useEffect(() => {
+    if (songsPerSetMountedRef.current) {
+      const capped = capSongAssignments(rotationSongs, songsPerSet);
+      if (capped !== rotationSongs) {
+        commitRotationSongs(capped);
+        return;
+      }
+    }
     try {
       localStorage.setItem('djbooth_rotation_songs', JSON.stringify(rotationSongs));
     } catch {}
-  }, [rotationSongs]);
+  }, [rotationSongs, songsPerSet]);
 
   const rotationRef = useRef([]);
   const dancersRef = useRef([]);
@@ -1021,9 +1063,10 @@ export default function DJBooth() {
           break;
         case 'setSongsPerSet':
           if (cmd.payload.count) {
-            auditSongsPerSet(songsPerSetRef.current, cmd.payload.count, cmd.payload.source || 'remote-unknown');
-            setSongsPerSet(cmd.payload.count);
-            songsPerSetRef.current = cmd.payload.count;
+            applySongsPerSetChangeRef.current?.(
+              cmd.payload.count,
+              cmd.payload.source || 'remote-unknown'
+            );
           }
           break;
         case 'updateRotation':
@@ -1229,22 +1272,26 @@ export default function DJBooth() {
           break;
         case 'updateSongAssignments':
           if (cmd.payload.assignments) {
+            const assignmentVersion = ++rotationAssignmentVersionRef.current;
             const allTracks = tracksRef.current || [];
             const newSongs = { ...rotationSongsRef.current };
             Object.entries(cmd.payload.assignments).forEach(([dancerId, songNames]) => {
-              newSongs[dancerId] = songNames.map(name => {
+              const limitedNames = capSongList(songNames, songsPerSetRef.current);
+              newSongs[dancerId] = limitedNames.map(name => {
                 const found = allTracks.find(t => t.name === name && t.url);
                 return found || { name, path: name };
               });
             });
-            setRotationSongs(newSongs);
-            rotationSongsRef.current = newSongs;
+            commitRotationSongs(newSongs);
             // Remote (phone) edits are USER actions — mark them DJ-saved so auto
             // pre-pick/cooldown/flip filters can never clobber them (Jul 25 override law).
             Object.keys(cmd.payload.assignments).forEach(dancerId => {
               if (Array.isArray(newSongs[dancerId]) && newSongs[dancerId].length > 0) {
                 djSavedSongsRef.current[dancerId] = newSongs[dancerId];
                 djSavedManualRef.current[dancerId] = true;
+              } else {
+                delete djSavedSongsRef.current[dancerId];
+                delete djSavedManualRef.current[dancerId];
               }
             });
             persistDjSaved();
@@ -1265,9 +1312,8 @@ export default function DJBooth() {
                 }
                 resolved[dancerId] = resolvedList;
               }
-              if (changed) {
-                setRotationSongs({ ...resolved });
-                rotationSongsRef.current = { ...resolved };
+              if (changed && assignmentVersion === rotationAssignmentVersionRef.current) {
+                commitRotationSongs({ ...resolved });
                 console.log('🎵 Resolved URLs for manually assigned tracks');
               }
             })();
@@ -1514,10 +1560,15 @@ export default function DJBooth() {
               songsPerSetRef.current = v;
             }
           }
+          capAllAssignmentsToSetSize(songsPerSetRef.current);
           songsPerSetMountedRef.current = true;
         })
-        .catch(() => { songsPerSetMountedRef.current = true; });
+        .catch(() => {
+          capAllAssignmentsToSetSize(songsPerSetRef.current);
+          songsPerSetMountedRef.current = true;
+        });
     } else {
+      capAllAssignmentsToSetSize(songsPerSetRef.current);
       songsPerSetMountedRef.current = true;
     }
   }, []);
@@ -1628,8 +1679,7 @@ export default function DJBooth() {
           const updatedSongs = [...currentSongs];
           updatedSongs[songIdx] = track;
           const newRotationSongs = { ...rotationSongsRef.current, [currentDancerId]: updatedSongs };
-          setRotationSongs(newRotationSongs);
-          rotationSongsRef.current = newRotationSongs;
+          commitRotationSongs(newRotationSongs);
         }
       }
     };
@@ -2130,6 +2180,84 @@ export default function DJBooth() {
   }, [tracks]);
   getDancerTracksRef.current = getDancerTracks;
 
+  const applySongsPerSetChange = useCallback(async (value, source = 'unknown') => {
+    const previousCount = songsPerSetRef.current;
+    const nextCount = normalizeSongsPerSet(value, previousCount);
+    if (nextCount === previousCount) return;
+
+    auditSongsPerSet(previousCount, nextCount, source);
+    setSongsPerSet(nextCount);
+    songsPerSetRef.current = nextCount;
+    const version = ++rotationAssignmentVersionRef.current;
+    capAllAssignmentsToSetSize(nextCount);
+
+    // Shrinking is complete after the synchronous cap above. Growing keeps every
+    // existing/DJ-picked track in order and fetches only enough unique tracks to
+    // fill the newly added slots. The playing track lives in AudioEngine and is
+    // never stopped or replaced by this queue update.
+    if (!isRotationActiveRef.current || nextCount < previousCount) return;
+
+    const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
+    const orderedIds = [...rotationRef.current];
+    if (currentPerformerId != null) {
+      const currentIndex = orderedIds.indexOf(currentPerformerId);
+      if (currentIndex > 0) {
+        orderedIds.splice(currentIndex, 1);
+        orderedIds.unshift(currentPerformerId);
+      }
+    }
+
+    const batchExcludes = Object.values(rotationSongsRef.current)
+      .flat()
+      .map(track => typeof track === 'string' ? track : track?.name)
+      .filter(Boolean);
+
+    console.log(`➕ songsPerSet ${previousCount} → ${nextCount}: filling only missing assignment slots (ver=${version})`);
+    logDiag?.('songs_per_set_grow_fill', {
+      previousCount,
+      nextCount,
+      dancers: orderedIds.length,
+      ver: version,
+    });
+
+    for (const dancerId of orderedIds) {
+      if (version !== rotationAssignmentVersionRef.current) return;
+      const dancer = dancersRef.current.find(d => d.id === dancerId);
+      if (!dancer) continue;
+
+      const djSaved = capSongList(djSavedSongsRef.current[dancerId], nextCount);
+      const existing = capSongList(rotationSongsRef.current[dancerId], nextCount);
+      const preserved = djSaved.length > 0 ? djSaved : existing;
+      if (preserved.length >= nextCount) continue;
+
+      try {
+        const excludeNames = [
+          ...batchExcludes,
+          ...preserved.map(track => typeof track === 'string' ? track : track?.name).filter(Boolean),
+        ];
+        const candidates = await getDancerTracks(dancer, excludeNames, false, 5000);
+        if (version !== rotationAssignmentVersionRef.current) return;
+
+        const filled = fillSongListToLimit(preserved, candidates, nextCount);
+        if (filled.length === preserved.length) continue;
+
+        commitRotationSongs({ ...rotationSongsRef.current, [dancerId]: filled });
+        filled.forEach(track => {
+          const name = typeof track === 'string' ? track : track?.name;
+          if (name && !batchExcludes.includes(name)) batchExcludes.push(name);
+        });
+
+        if (djSaved.length > 0 || djSavedManualRef.current[dancerId]) {
+          djSavedSongsRef.current[dancerId] = filled;
+          persistDjSaved();
+        }
+      } catch (err) {
+        console.warn(`⚠️ songsPerSet grow-fill: ${dancer.name} failed: ${err.message}`);
+      }
+    }
+  }, [capAllAssignmentsToSetSize, commitRotationSongs, getDancerTracks]);
+  applySongsPerSetChangeRef.current = applySongsPerSetChange;
+
   const restoredSongsRef = useRef(false);
   useEffect(() => {
     if (restoredSongsRef.current) return;
@@ -2151,6 +2279,7 @@ export default function DJBooth() {
     }
     restoredSongsRef.current = true;
     const capturedRotation = [...rotation];
+    const restoreVersion = rotationAssignmentVersionRef.current;
     (async () => {
       const selectedSongs = {};
       const batchExcludes = [];
@@ -2159,6 +2288,10 @@ export default function DJBooth() {
         const dancer = dancers.find(d => d.id === dancerId);
         if (dancer) {
           const dancerTracks = await getDancerTracks(dancer, batchExcludes);
+          if (restoreVersion !== rotationAssignmentVersionRef.current) {
+            console.log('🚫 Restored rotation picks discarded — a newer assignment change won');
+            return;
+          }
           if (dancerTracks && dancerTracks.length > 0 && dancerTracks.length < need) {
             logDiag?.('restored_songs_short', { dancer: dancer.name, got: dancerTracks.length, need });
           }
@@ -2171,8 +2304,8 @@ export default function DJBooth() {
         restoredSongsRef.current = false;
         return;
       }
-      setRotationSongs(selectedSongs);
-      rotationSongsRef.current = selectedSongs;
+      if (restoreVersion !== rotationAssignmentVersionRef.current) return;
+      commitRotationSongs(selectedSongs);
       console.log('🔄 Restored rotation song assignments after restart');
     })();
   }, [isRotationActive, rotation, tracks, dancers, getDancerTracks]);
@@ -2381,8 +2514,7 @@ export default function DJBooth() {
     if (rotationSongsRef.current[featureId]) {
       const songs = { ...rotationSongsRef.current };
       delete songs[featureId];
-      rotationSongsRef.current = songs;
-      setRotationSongs(songs);
+      commitRotationSongs(songs);
     }
     if (djSavedSongsRef.current[featureId] || djSavedManualRef.current[featureId]) {
       delete djSavedSongsRef.current[featureId];
@@ -2516,6 +2648,7 @@ export default function DJBooth() {
     transitionInProgressRef.current = true;
     transitionStartTimeRef.current = Date.now();
     lastAudioActivityRef.current = Date.now();
+    const beginAssignmentVersion = ++rotationAssignmentVersionRef.current;
     
     try {
     
@@ -2550,8 +2683,10 @@ export default function DJBooth() {
         dancerTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
       }
     }
-    setRotationSongs(selectedSongs);
-    rotationSongsRef.current = selectedSongs;
+    const finalSelectedSongs = beginAssignmentVersion === rotationAssignmentVersionRef.current
+      ? selectedSongs
+      : { ...selectedSongs, ...rotationSongsRef.current };
+    commitRotationSongs(finalSelectedSongs);
     
     setIsRotationActive(true);
     isRotationActiveRef.current = true;
@@ -2568,7 +2703,7 @@ export default function DJBooth() {
       console.log('🌟 BeginRotation: first dancer is FEATURE — running feature show');
       await playFeatureArrivalRef.current(dancer);
     } else if (dancer) {
-      let dancerTracks = selectedSongs[cleanRotation[0]];
+      let dancerTracks = rotationSongsRef.current[cleanRotation[0]] || finalSelectedSongs[cleanRotation[0]];
       console.log('🎵 BeginRotation: Selected tracks for', dancer.name, ':', dancerTracks?.map(t => t.name));
       let firstTrack = dancerTracks?.[0];
       
@@ -2634,8 +2769,7 @@ export default function DJBooth() {
     // Always clear stale pre-picks from localStorage/previous session so beginRotation
     // always calls getDancerTracks fresh — regardless of whether we start immediately
     // or queue to start after the current song ends.
-    rotationSongsRef.current = {};
-    setRotationSongs({});
+    commitRotationSongs({});
     try { localStorage.removeItem('djbooth_planned_assignments'); } catch {}
 
     const isPlaying = audioEngineRef.current?.isPlaying;
@@ -3109,8 +3243,7 @@ export default function DJBooth() {
         dancerTracks = await getDancerTracks(dancer);
         if (dancerTracks && dancerTracks.length > 0) {
           const updatedSongs = { ...rotationSongsRef.current, [rot[idx]]: dancerTracks };
-          setRotationSongs(updatedSongs);
-          rotationSongsRef.current = updatedSongs;
+          commitRotationSongs(updatedSongs);
         }
       } catch (err) {
         console.warn('⚠️ HandleSkip: getDancerTracks failed for', dancer.name, ':', err.message);
@@ -3279,8 +3412,7 @@ export default function DJBooth() {
           currentSongNumberRef.current = 0;
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
-          rotationSongsRef.current = clearedSongs;
-          setRotationSongs(clearedSongs);
+          commitRotationSongs(clearedSongs);
           updateStageState(0, flippedRotation);
 
           // Rule 1 (locked spec May 21): flip-to-bottom is THE reset trigger. After clearing
@@ -3311,8 +3443,7 @@ export default function DJBooth() {
                 }
                 if (repicked && repicked.length > 0) {
                   const updated = { ...rotationSongsRef.current, [finishedId]: repicked };
-                  rotationSongsRef.current = updated;
-                  setRotationSongs(updated);
+                  commitRotationSongs(updated);
                   djSavedSongsRef.current[finishedId] = repicked;
                   persistDjSaved();
                   console.log(`🔄 Flip-to-bottom re-pick: ${finishedDancerForRepick.name} → [${repicked.map(t => t.name).join(', ')}]`);
@@ -3448,7 +3579,7 @@ export default function DJBooth() {
         // Jul 25 "rerolled + saved, still played old songs" root cause.
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
-        rotationSongsRef.current = scratchSongs;
+        rotationSongsRef.current = capSongAssignments(scratchSongs, songsPerSetRef.current);
         // Honor DJ-saved songs for the INCOMING dancer too — if DJ explicitly picked
         // these on Save All, play them even if on cooldown. Only the .url check stays
         // (we can't play a track with no URL). This prevents the "DJ assigns songs →
@@ -3479,7 +3610,8 @@ export default function DJBooth() {
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
-        const [freshTracks, prePicked] = await Promise.all([
+        const transitionAssignmentVersion = rotationAssignmentVersionRef.current;
+        let [freshTracks, prePicked] = await Promise.all([
           (() => { const _ev = djSavedNextValid ? (validPrePicks && validPrePicks.length >= 1) : (validPrePicks && validPrePicks.length >= songsPerSetRef.current); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
@@ -3492,6 +3624,25 @@ export default function DJBooth() {
                   })
               : Promise.resolve([])
         ]);
+        if (transitionAssignmentVersion !== rotationAssignmentVersionRef.current) {
+          const latestIncomingSaved = capSongList(djSavedSongsRef.current[nextDancerId], songsPerSetRef.current);
+          const latestIncoming = latestIncomingSaved.length > 0
+            ? latestIncomingSaved
+            : capSongList(rotationSongsRef.current[nextDancerId], songsPerSetRef.current);
+          if (latestIncoming.length > 0) freshTracks = latestIncoming;
+
+          const latestFinished = capSongList(
+            djSavedSongsRef.current[finishedDancerId] || rotationSongsRef.current[finishedDancerId],
+            songsPerSetRef.current
+          );
+          if (latestFinished.length > 0) prePicked = latestFinished;
+
+          if (latestIncomingSaved.length > 0) {
+            delete djSavedSongsRef.current[nextDancerId];
+            delete djSavedManualRef.current[nextDancerId];
+            persistDjSaved();
+          }
+        }
         let nextTrack = freshTracks?.[0];
         if (nextTrack && !nextTrack.url && nextTrack.name) {
           const _rt = await resolveTrackByName(nextTrack.name);
@@ -3505,8 +3656,7 @@ export default function DJBooth() {
         } else {
           delete updatedSongs[finishedDancerId];
         }
-        setRotationSongs(updatedSongs);
-        rotationSongsRef.current = updatedSongs;
+        commitRotationSongs(updatedSongs);
 
         if (playOutro) {
           const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
@@ -3744,8 +3894,7 @@ export default function DJBooth() {
         cleaned[dId] = arr.filter(t => t?.name !== trackName);
       }
     }
-    rotationSongsRef.current = cleaned;
-    setRotationSongs(cleaned);
+    commitRotationSongs(cleaned);
 
     const slotTrack = cleaned[currentDancerId] && cleaned[currentDancerId][targetSlot];
     const slotHasTrack = !!(slotTrack && slotTrack.name);
@@ -3942,6 +4091,7 @@ export default function DJBooth() {
 
       try {
         lastAudioActivityRef.current = Date.now();
+        const transitionAssignmentVersion = rotationAssignmentVersionRef.current;
         const _piDancerId = newRotation[newIdx];
         const _piDjSaved = djSavedSongsRef.current[_piDancerId];
         const _piDjSavedValid = _piDjSaved && _piDjSaved.length >= 1 && _piDjSaved.every(t => t && (t.url || t.name));
@@ -3969,14 +4119,25 @@ export default function DJBooth() {
           : (existingTracks.length >= songsPerSetRef.current &&
              existingTracks.every(t => !_postCd[t.name] || ((_postNow - _postCd[t.name]) >= COOLDOWN_MS))));
         let freshTracks = _piDjSavedValid ? _piDjSaved : (_postValid ? existingTracks : await getDancerTracks(nextDancer));
+        if (transitionAssignmentVersion !== rotationAssignmentVersionRef.current) {
+          const latestSaved = capSongList(djSavedSongsRef.current[_piDancerId], songsPerSetRef.current);
+          const latestCurrent = capSongList(rotationSongsRef.current[_piDancerId], songsPerSetRef.current);
+          if (latestSaved.length > 0 || latestCurrent.length > 0) {
+            freshTracks = latestSaved.length > 0 ? latestSaved : latestCurrent;
+          }
+          if (latestSaved.length > 0) {
+            delete djSavedSongsRef.current[_piDancerId];
+            delete djSavedManualRef.current[_piDancerId];
+            persistDjSaved();
+          }
+        }
         let nextTrack = freshTracks?.[0];
         if (nextTrack && !nextTrack.url && nextTrack.name) {
           const _rt = await resolveTrackByName(nextTrack.name);
           if (_rt?.url) { nextTrack = _rt; if (Array.isArray(freshTracks)) freshTracks[0] = _rt; }
         }
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
-        setRotationSongs(updatedSongs);
-        rotationSongsRef.current = updatedSongs;
+        commitRotationSongs(updatedSongs);
 
         const _piFeature = getFeatureMeta(nextDancer);
         if (_piFeature) {
@@ -4065,8 +4226,7 @@ export default function DJBooth() {
         dancerTracks = await getDancerTracks(dancer);
         if (dancerTracks && dancerTracks.length > 0) {
           const updatedSongs = { ...rotationSongsRef.current, [rot[idx]]: dancerTracks };
-          setRotationSongs(updatedSongs);
-          rotationSongsRef.current = updatedSongs;
+          commitRotationSongs(updatedSongs);
         }
       } catch (err) {
         console.warn('⚠️ HandleTrackEnd: getDancerTracks failed for', dancer.name, ':', err.message);
@@ -4272,8 +4432,7 @@ export default function DJBooth() {
           currentSongNumberRef.current = 0;
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
-          rotationSongsRef.current = clearedSongs;
-          setRotationSongs(clearedSongs);
+          commitRotationSongs(clearedSongs);
           updateStageState(0, flippedRotation);
 
           // Rule 1 (locked spec May 21): flip-to-bottom is THE reset trigger. After clearing
@@ -4304,8 +4463,7 @@ export default function DJBooth() {
                 }
                 if (repicked && repicked.length > 0) {
                   const updated = { ...rotationSongsRef.current, [finishedId]: repicked };
-                  rotationSongsRef.current = updated;
-                  setRotationSongs(updated);
+                  commitRotationSongs(updated);
                   djSavedSongsRef.current[finishedId] = repicked;
                   persistDjSaved();
                   console.log(`🔄 Flip-to-bottom re-pick: ${finishedDancerForRepick.name} → [${repicked.map(t => t.name).join(', ')}]`);
@@ -4447,7 +4605,7 @@ export default function DJBooth() {
         // Jul 25 "rerolled + saved, still played old songs" root cause.
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
-        rotationSongsRef.current = scratchSongs;
+        rotationSongsRef.current = capSongAssignments(scratchSongs, songsPerSetRef.current);
         // Honor DJ-saved songs for the INCOMING dancer too — if DJ explicitly picked
         // these on Save All, play them even if on cooldown. Only the .url check stays
         // (we can't play a track with no URL). This prevents the "DJ assigns songs →
@@ -4478,7 +4636,8 @@ export default function DJBooth() {
         const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
-        const [freshTracks, prePicked] = await Promise.all([
+        const transitionAssignmentVersion = rotationAssignmentVersionRef.current;
+        let [freshTracks, prePicked] = await Promise.all([
           (() => { const _ev = djSavedNextValid ? (validPrePicks && validPrePicks.length >= 1) : (validPrePicks && validPrePicks.length >= songsPerSetRef.current); if (_ev) { prePickHitsRef.current++; logDiag('prepick_hit', { dancer: nextDancer.name }); } else { prePickMissesRef.current++; logDiag('prepick_miss', { dancer: nextDancer.name }); } return _ev ? Promise.resolve(validPrePicks) : getDancerTracks(nextDancer); })(),
           djSavedValid
             ? (console.log(`🎵 Pre-pick for ${finishedDancer?.name}: using DJ-saved songs`), Promise.resolve(djSaved))
@@ -4491,6 +4650,25 @@ export default function DJBooth() {
                   })
               : Promise.resolve([])
         ]);
+        if (transitionAssignmentVersion !== rotationAssignmentVersionRef.current) {
+          const latestIncomingSaved = capSongList(djSavedSongsRef.current[nextDancerId], songsPerSetRef.current);
+          const latestIncoming = latestIncomingSaved.length > 0
+            ? latestIncomingSaved
+            : capSongList(rotationSongsRef.current[nextDancerId], songsPerSetRef.current);
+          if (latestIncoming.length > 0) freshTracks = latestIncoming;
+
+          const latestFinished = capSongList(
+            djSavedSongsRef.current[finishedDancerId] || rotationSongsRef.current[finishedDancerId],
+            songsPerSetRef.current
+          );
+          if (latestFinished.length > 0) prePicked = latestFinished;
+
+          if (latestIncomingSaved.length > 0) {
+            delete djSavedSongsRef.current[nextDancerId];
+            delete djSavedManualRef.current[nextDancerId];
+            persistDjSaved();
+          }
+        }
         let nextTrack = freshTracks?.[0];
         if (nextTrack && !nextTrack.url && nextTrack.name) {
           const _rt = await resolveTrackByName(nextTrack.name);
@@ -4504,8 +4682,7 @@ export default function DJBooth() {
         } else {
           delete updatedSongs[finishedDancerId];
         }
-        setRotationSongs(updatedSongs);
-        rotationSongsRef.current = updatedSongs;
+        commitRotationSongs(updatedSongs);
 
         const _arrivalFeature = getFeatureMeta(nextDancer);
         if (_arrivalFeature) {
@@ -4752,8 +4929,7 @@ export default function DJBooth() {
               const updated = [...songs];
               updated[idx] = recoveredTrack;
               const newSongs = { ...rotationSongsRef.current, [wdUpdateId]: updated };
-              setRotationSongs(newSongs);
-              rotationSongsRef.current = newSongs;
+              commitRotationSongs(newSongs);
             }
           }
         };
@@ -4919,12 +5095,14 @@ export default function DJBooth() {
         }, 500);
       }
       if (dancer && isRotationActive) {
+        const prePickVersion = rotationAssignmentVersionRef.current;
         getDancerTracks(dancer).then(prePicked => {
           if (!isRotationActiveRef.current) return;
           if (!rotationRef.current.includes(dancerId)) return;
+          if (prePickVersion !== rotationAssignmentVersionRef.current) return;
+          if (djSavedManualRef.current[dancerId] || djSavedSongsRef.current[dancerId]) return;
           const latest = { ...rotationSongsRef.current, [dancerId]: prePicked };
-          setRotationSongs(latest);
-          rotationSongsRef.current = latest;
+          commitRotationSongs(latest);
           console.log(`🎵 Pre-picked for ${dancer.name} (added): [${prePicked.map(t => t.name).join(', ')}]`);
         }).catch(e => console.warn('⚠️ Pre-pick failed for', dancer?.name, e.message));
       }
@@ -4941,8 +5119,7 @@ export default function DJBooth() {
     currentDancerIndexRef.current = 0;
     setCurrentSongNumber(1);
     currentSongNumberRef.current = 1;
-    setRotationSongs({});
-    rotationSongsRef.current = {};
+    commitRotationSongs({});
     try { localStorage.removeItem('djbooth_planned_assignments'); } catch {}
     djSavedSongsRef.current = {};
     djSavedManualRef.current = {};
@@ -5672,6 +5849,7 @@ export default function DJBooth() {
                   }
                 }}
                 onAutoSavePlaylist={async (dancerId, displayedSongs, action) => {
+                  const saveVersion = ++rotationAssignmentVersionRef.current;
                   const dancer = dancers.find(d => d.id === dancerId);
                   const existingPlaylist = dancer?.playlist || [];
 
@@ -5694,18 +5872,34 @@ export default function DJBooth() {
                     updateDancerMutation.mutate({ id: dancerId, data: { playlist: updatedPlaylist } });
                   }
                   if (isRotationActive) {
+                    const limitedNames = capSongList(displayedSongs, songsPerSetRef.current);
+                    const immediate = limitedNames.map(name => {
+                      return tracks.find(t => t.name === name) || { name, path: name };
+                    });
+                    if (immediate.length > 0) {
+                      commitRotationSongs({
+                        ...rotationSongsRef.current,
+                        [dancerId]: immediate,
+                      });
+                      djSavedSongsRef.current[dancerId] = immediate;
+                      djSavedManualRef.current[dancerId] = true;
+                      persistDjSaved();
+                    }
+
                     const resolved = [];
-                    for (const name of displayedSongs) {
+                    for (const name of limitedNames) {
                       let track = tracks.find(t => t.name === name);
                       if (!track) track = await resolveTrackByName(name);
                       // Never drop: keep name-only so it resolves at playtime (see onSaveAll).
                       if (track) resolved.push(track);
                       else if (name) resolved.push({ name, path: name });
                     }
-                    if (resolved.length > 0) {
+                    if (
+                      resolved.length > 0 &&
+                      saveVersion === rotationAssignmentVersionRef.current
+                    ) {
                       const updated = { ...rotationSongsRef.current, [dancerId]: resolved };
-                      setRotationSongs(updated);
-                      rotationSongsRef.current = updated;
+                      commitRotationSongs(updated);
                       // Playlist edits from the rotation tab are USER actions too —
                       // protect them from auto clobber until played (Jul 25 override law).
                       djSavedSongsRef.current[dancerId] = resolved;
@@ -5715,6 +5909,7 @@ export default function DJBooth() {
                   }
                 }}
                 onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = []) => {
+                  const saveVersion = ++rotationAssignmentVersionRef.current;
                   if (isRotationActive && rotationRef.current.length > 0) {
                     const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
                     if (currentPerformerId != null) {
@@ -5752,6 +5947,23 @@ export default function DJBooth() {
                   setInterstitialRemoteVersion(v => v + 1);
                   try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
                   const overrideSet = new Set(manualOverrides.map(id => String(id)));
+                  const immediateSongs = { ...(rotationSongsRef.current || {}) };
+                  const immediateSavedUpdates = {};
+                  for (const [dancerId, songNames] of Object.entries(playlists)) {
+                    if (!overrideSet.has(String(dancerId))) continue;
+                    const immediate = capSongList(songNames, songsPerSetRef.current).map(name => {
+                      return tracks.find(t => t.name === name) || { name, path: name };
+                    });
+                    immediateSongs[dancerId] = immediate;
+                    if (immediate.length > 0) immediateSavedUpdates[dancerId] = immediate;
+                  }
+                  commitRotationSongs(immediateSongs);
+                  for (const [dancerId, immediate] of Object.entries(immediateSavedUpdates)) {
+                    djSavedSongsRef.current[dancerId] = immediate;
+                    djSavedManualRef.current[dancerId] = true;
+                  }
+                  persistDjSaved();
+
                   // Rule 2 (locked spec May 21): Set edits are EPHEMERAL — dragging songs
                   // into or removing from an active set is scoped to THIS set instance only.
                   // We do NOT write to the dancer's permanent playlist here. On her next
@@ -5769,10 +5981,11 @@ export default function DJBooth() {
                   // DJ's saved picks (toast said "saved") when the list was empty.
                   {
                     const updatedSongs = { ...(rotationSongsRef.current || {}) };
+                    const savedUpdates = {};
                     for (const [dancerId, songNames] of Object.entries(playlists)) {
                       if (!overrideSet.has(String(dancerId))) continue;
                       const resolved = [];
-                      for (const name of songNames) {
+                      for (const name of capSongList(songNames, songsPerSetRef.current)) {
                         let track = tracks.find(t => t.name === name);
                         if (!track) {
                           track = await resolveTrackByName(name);
@@ -5788,15 +6001,21 @@ export default function DJBooth() {
                       }
                       updatedSongs[dancerId] = resolved;
                       if (resolved.length > 0) {
+                        savedUpdates[dancerId] = resolved;
+                      }
+                    }
+                    if (saveVersion === rotationAssignmentVersionRef.current) {
+                      commitRotationSongs(updatedSongs);
+                      for (const [dancerId, resolved] of Object.entries(savedUpdates)) {
                         djSavedSongsRef.current[dancerId] = resolved;
                         djSavedManualRef.current[dancerId] = true;
                         console.log(`🎵 DJ saved ${resolved.length} song(s) for dancer ${dancerId} — will survive next transition`);
                       }
+                      persistDjSaved();
+                      console.log('🎵 Live rotation playlists updated');
+                    } else {
+                      console.log('🚫 Save All assignment resolution discarded — a newer assignment change won');
                     }
-                    setRotationSongs(updatedSongs);
-                    rotationSongsRef.current = updatedSongs;
-                    persistDjSaved();
-                    console.log('🎵 Live rotation playlists updated');
                     if (Object.keys(interstitials).length > 0) {
                       console.log('🎵 Interstitial songs updated:', Object.keys(interstitials).length, 'break slots');
                     }
@@ -5977,63 +6196,7 @@ export default function DJBooth() {
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={async (n) => {
-                  auditSongsPerSet(songsPerSetRef.current, n, 'booth-buttons');
-                  setSongsPerSet(n);
-                  songsPerSetRef.current = n;
-                  if (!isRotationActive) return;
-
-                  // Rule 5 (locked spec May 21): System songs-per-set knob change applies
-                  // INSTANTLY — all queued dancers re-roll right that second. User explicitly
-                  // confirmed they're aware this changes what the DJ is currently looking at
-                  // and that is deliberate. The currently-playing track is held in
-                  // currentTrackRef / AudioEngine (separate from rotationSongs), so wiping
-                  // rotationSongs does NOT interrupt audio — it just changes the upcoming queue.
-                  const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
-                  const _rerollVer = ++rotationAssignmentVersionRef.current;
-                  const wiped = {};
-                  rotationSongsRef.current = wiped;
-                  setRotationSongs(wiped);
-                  // Also drop djSavedSongsRef entries so old DJ-saved picks don't bypass
-                  // the new fresh selection (Rule 5: re-roll means re-roll, not "use stale").
-                  djSavedSongsRef.current = {};
-                  djSavedManualRef.current = {};
-                  persistDjSaved();
-                  console.log(`🔄 songsPerSet → ${n}: re-rolling all ${rotation.length} queued dancer set(s) (Rule 5, ver=${_rerollVer})`);
-                  logDiag?.('songs_per_set_reroll_all', { newCount: n, dancers: rotation.length, ver: _rerollVer });
-
-                  const batchExcludes = [];
-                  // Re-pick for the current performer first so her NEXT song is ready fastest,
-                  // then everyone else in rotation order.
-                  const orderedIds = [...rotation];
-                  if (currentPerformerId != null) {
-                    const ci = orderedIds.indexOf(currentPerformerId);
-                    if (ci > 0) { orderedIds.splice(ci, 1); orderedIds.unshift(currentPerformerId); }
-                  }
-                  for (const dancerId of orderedIds) {
-                    // Bail the whole loop if another rotation mutation (newer reroll, flip, etc.)
-                    // has happened — late results from THIS loop would clobber a newer queue.
-                    if (_rerollVer !== rotationAssignmentVersionRef.current) {
-                      console.log(`🚫 songsPerSet re-roll stale (ver ${_rerollVer} ≠ ${rotationAssignmentVersionRef.current}) — aborting remaining picks`);
-                      return;
-                    }
-                    const dancer = dancers.find(d => d.id === dancerId);
-                    if (!dancer) continue;
-                    try {
-                      const newTracks = await getDancerTracks(dancer, batchExcludes, false, 5000);
-                      if (_rerollVer !== rotationAssignmentVersionRef.current) {
-                        console.log(`🚫 songsPerSet re-roll stale after await (ver ${_rerollVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding ${dancer.name} result`);
-                        return;
-                      }
-                      if (newTracks && newTracks.length > 0) {
-                        const updated = { ...rotationSongsRef.current, [dancerId]: newTracks };
-                        rotationSongsRef.current = updated;
-                        setRotationSongs(updated);
-                        newTracks.forEach(t => { if (t?.name) batchExcludes.push(t.name); });
-                      }
-                    } catch (err) {
-                      console.warn(`⚠️ songsPerSet re-roll: ${dancer.name} failed: ${err.message}`);
-                    }
-                  }
+                  await applySongsPerSetChange(n, 'booth-buttons');
                 }}
                 onSongAssignmentsChange={setPlannedSongAssignments}
                 autoplayQueue={autoplayQueue}
