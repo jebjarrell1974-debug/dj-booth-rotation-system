@@ -1,6 +1,17 @@
 function getApiBase() {
-  const boothIp = localStorage.getItem('djbooth_booth_ip');
-  if (boothIp) return `http://${boothIp}:3001/api`;
+  const boothTarget = localStorage.getItem('djbooth_booth_ip')?.trim();
+  if (!boothTarget) return '/api';
+
+  const targetHost = boothTarget
+    .replace(/^https?:\/\//i, '')
+    .split('/')[0]
+    .replace(/:\d+$/, '');
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isSameHost = targetHost === currentHost;
+  const isReplitHost = /\.(replit\.dev|repl\.co)$/i.test(targetHost);
+
+  if (isSameHost || isReplitHost) return '/api';
+  if (boothTarget) return `http://${targetHost}:3001/api`;
   return '/api';
 }
 
@@ -88,7 +99,10 @@ async function apiFetch(path, options = {}) {
   
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || 'Request failed');
+    const error = new Error(err.error || 'Request failed');
+    error.status = res.status;
+    error.details = err;
+    throw error;
   }
   
   return res.json();
@@ -133,10 +147,39 @@ export const djOptionsApi = {
   update: (options) => apiFetch('/dj-options', { method: 'PUT', body: JSON.stringify(options) }),
 };
 
+export const zoneProApi = {
+  getStatus: () => apiFetch("/zonepro/status"),
+  getSettings: () => apiFetch("/zonepro/settings"),
+  saveSettings: (settings) => apiFetch("/zonepro/settings", { method: "POST", body: JSON.stringify(settings) }),
+  discover: () => apiFetch("/zonepro/discover", { method: "POST" }),
+  testConnection: () => apiFetch("/zonepro/test", { method: "POST" }),
+  readConfiguration: () => apiFetch("/zonepro/read", { method: "POST" }),
+  planConfiguration: (configuration, expectedRevision, current) => apiFetch("/zonepro/plan", { method: "POST", body: JSON.stringify({ configuration, expectedRevision, current }) }),
+  applyConfiguration: ({ planId, confirmationToken }) => apiFetch("/zonepro/apply", { method: "POST", body: JSON.stringify({ planId, confirmationToken }) }),
+  listSnapshots: () => apiFetch("/zonepro/snapshots"),
+  importSnapshot: (snapshot) => apiFetch("/zonepro/snapshots/import", { method: "POST", body: JSON.stringify(snapshot) }),
+  restoreSnapshot: ({ snapshotId, planId, confirmationToken }) => apiFetch(`/zonepro/snapshots/${snapshotId}/restore`, { method: "POST", body: JSON.stringify({ planId, confirmationToken }) }),
+  control: ({ zoneId, action, value, requestId }) => apiFetch("/zonepro/control", { method: "POST", body: JSON.stringify({ zoneId, action, value, requestId }) }),
+};
+
 export const boothApi = {
   getState: () => apiFetch('/booth/state'),
   postState: (state) => apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) }),
-  sendCommand: (action, payload = {}) => apiFetch('/booth/command', { method: 'POST', body: JSON.stringify({ action, payload }) }),
+  sendCommand: (action, payload = {}, options = {}) => {
+    const requestId = options.requestId || (
+      globalThis.crypto?.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    return apiFetch('/booth/command', {
+      method: 'POST',
+      body: JSON.stringify({
+        action,
+        payload,
+        requestId,
+        expectedRotationVersion: options.expectedRotationVersion,
+      }),
+    });
+  },
   getCommands: (since = 0) => apiFetch(`/booth/commands?since=${since}`),
   ackCommands: (upToId) => apiFetch('/booth/commands/ack', { method: 'POST', body: JSON.stringify({ upToId }) }),
 };

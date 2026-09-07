@@ -187,16 +187,18 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
           <Megaphone className="w-4 h-4 text-amber-400" />
           <span className="text-sm font-bold text-amber-400 uppercase tracking-wider">House Announcements</span>
         </div>
-        <button
-          onClick={() => setAdding(v => !v)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 text-xs font-semibold active:opacity-70"
-        >
-          {adding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-          {adding ? 'Cancel' : 'New'}
-        </button>
+        {!isRemote && (
+          <button
+            onClick={() => setAdding(v => !v)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 text-xs font-semibold active:opacity-70"
+          >
+            {adding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+            {adding ? 'Cancel' : 'New'}
+          </button>
+        )}
       </div>
 
-      {adding && (
+      {!isRemote && adding && (
         <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/30 p-3 space-y-2 flex-shrink-0">
           <input
             placeholder="Button name (e.g. Last Call)"
@@ -226,7 +228,10 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
         {announcements.length === 0 && !adding && (
           <div className="text-center py-6 text-gray-600 text-sm">
             <Megaphone className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            No house announcements yet.<br />Add the defaults below or create your own.
+            {isRemote
+              ? <>No house announcements are available.<br />Create them on the physical kiosk.</>
+              : <>No house announcements yet.<br />Add the defaults below or create your own.</>
+            }
           </div>
         )}
 
@@ -243,17 +248,19 @@ export default function HouseAnnouncementPanel({ onPlay, isRemote = false, onRem
               }
               <span className="text-sm font-semibold text-white truncate">{ann.name}</span>
             </button>
-            <button
-              onClick={() => deleteMutation.mutate(ann.cache_key)}
-              disabled={deleteMutation.isPending}
-              className="p-2.5 rounded-xl bg-[#0d0d1f] border border-[#1e293b] text-red-400 active:opacity-70"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {!isRemote && (
+              <button
+                onClick={() => deleteMutation.mutate(ann.cache_key)}
+                disabled={deleteMutation.isPending}
+                className="p-2.5 rounded-xl bg-[#0d0d1f] border border-[#1e293b] text-red-400 active:opacity-70"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         ))}
 
-        {missingDefaults.length > 0 && (
+        {!isRemote && missingDefaults.length > 0 && (
           <div className="pt-1">
             <div className="text-xs text-gray-600 uppercase tracking-wider mb-2">Quick-add defaults</div>
             {missingDefaults.map(def => (

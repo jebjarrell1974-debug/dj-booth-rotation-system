@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { getApiConfig, saveApiConfig, loadApiConfig, FORCED_VOICE_ID } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
+import ZoneProWorkspace from '@/components/dj/ZoneProWorkspace';
 
 const LOCKED_LEVEL = 4;
 
@@ -578,7 +579,7 @@ export default function Configuration() {
 
   return (
     <div className="h-screen bg-[#08081a] text-white overflow-y-auto">
-      <div className="max-w-2xl mx-auto p-6 pb-16">
+      <div className="max-w-4xl mx-auto p-6 pb-16">
         <div className="mb-8">
           <Link to={createPageUrl('DJBooth')}>
             <Button variant="ghost" className="mb-4 text-gray-400 hover:text-white">
@@ -1772,7 +1773,11 @@ export default function Configuration() {
           )}
         </div>
 
-        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5">
+        <div className="mt-8">
+          <ZoneProWorkspace />
+        </div>
+
+        <div className="bg-[#0d0d1f] border border-[#1e293b] rounded-xl p-5 mt-6">
           <h3 className="text-white text-md font-semibold mb-2 flex items-center gap-2">
             <Server className="w-4 h-4 text-[#00d4ff]" />
             Fleet Management

@@ -31,6 +31,7 @@ import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
+import { createZoneProRouter } from './zonepro-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music, uploadSoundboardFile, deleteSoundboardFileFromR2, syncSoundboardToR2, syncSoundboardFromR2 } from './r2sync.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
@@ -1159,6 +1160,12 @@ app.delete('/api/playback-errors', authenticate, requireDJ, (req, res) => {
 });
 
 app.use('/api/fleet', fleetRoutes);
+app.use('/api/zonepro', createZoneProRouter({
+  authenticate,
+  requireDJ,
+  requireMaster,
+  audit: writeAudit,
+}));
 setupFleetMonitorRoutes(app);
 
 app.get('/fleet-dashboard', (req, res) => {

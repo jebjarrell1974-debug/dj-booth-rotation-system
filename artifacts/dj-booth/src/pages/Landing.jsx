@@ -206,7 +206,11 @@ export default function Landing() {
                   autoCorrect="off"
                 />
                 <p className="text-xs text-gray-600">
-                  {boothIpInput ? `Connecting to ${boothIpInput}:3001` : 'Leave blank if on the same device'}
+                  {boothIpInput && boothIpInput === window.location.hostname
+                    ? 'Connecting securely through this app'
+                    : boothIpInput
+                    ? `Connecting to ${boothIpInput.replace(/^https?:\/\//i, '').replace(/:\d+$/, '')}:3001`
+                    : 'Leave blank if on the same device'}
                 </p>
               </div>
             )}

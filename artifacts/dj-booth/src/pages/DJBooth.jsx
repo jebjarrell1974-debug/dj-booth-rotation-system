@@ -46,6 +46,7 @@ import RemoteView from '@/components/dj/RemoteView';
 import DJOptions from '@/components/dj/DJOptions';
 import CustomSoundboard from '@/components/dj/CustomSoundboard';
 import FeatureEntertainerPanel from '@/components/dj/FeatureEntertainerPanel';
+import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
 import {
   capSongAssignments,
   capSongList,
@@ -1047,6 +1048,7 @@ export default function DJBooth() {
 
   const executeCommand = useCallback((cmd) => {
     try {
+      if (!Number.isInteger(cmd?.id) || cmd.id <= lastCommandIdRef.current) return;
       lastCommandIdRef.current = Math.max(lastCommandIdRef.current, cmd.id);
       switch (cmd.action) {
         case 'skip':
@@ -5633,6 +5635,7 @@ export default function DJBooth() {
             { id: 'rotation',      icon: Layers,           label: 'Rotation',  always: true  },
             { id: 'dancers',       icon: Users,            label: 'Roster',    always: true  },
             { id: 'options',       icon: SlidersHorizontal,label: 'Options',   always: true  },
+            { id: 'zones',         icon: Radio,            label: 'Zones',     always: true  },
             { id: 'announcements', icon: Mic,              label: 'Announce',  kiosk: true   },
             { id: 'sfx',           icon: Drum,             label: 'SFX',       kiosk: true   },
             { id: 'feature',       icon: Star,             label: 'Feature',   always: true  },
@@ -6377,6 +6380,12 @@ export default function DJBooth() {
                     await queryClient.refetchQueries({ queryKey: ['dancers'] });
                   }}
                 />
+              </div>
+            )}
+
+            {activeTab === 'zones' && (
+              <div className="h-full overflow-hidden">
+                <ZoneProDailyControls />
               </div>
             )}
           </div>

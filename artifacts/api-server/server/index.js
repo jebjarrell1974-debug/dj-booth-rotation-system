@@ -33,6 +33,7 @@ import { createPromoRequest, listPromoRequests } from './fleet-db.js';
 import { scanMusicFolder, startPeriodicScan, stopPeriodicScan } from './musicScanner.js';
 import fleetRoutes from './fleet-routes.js';
 import aichatRoutes from './aichat-routes.js';
+import { createZoneProRouter } from './zonepro-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music, uploadSoundboardFile, deleteSoundboardFileFromR2, syncSoundboardToR2, syncSoundboardFromR2 } from './r2sync.js';
 import { publishUpdateBundle } from './r2update.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
@@ -41,6 +42,13 @@ import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos
 import { listFeatureBeds, listMusicFolders, listFolderTracks, produceFeatureAudio, featureCacheKey, ensureFeatureBedsFolder } from './feature-producer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
+import {
+  BoothCommandQueue,
+  isPhysicalKioskAddress,
+  isStructuralCommand,
+  normalizeBoothState,
+  validateBoothCommand,
+} from './booth-command-policy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -121,10 +129,11 @@ let liveBoothState = {
   lastWatchdogSilentMs: null,
   lastWatchdogDancer: null,
   lastWatchdogTrack: null,
+  stateVersion: 0,
+  rotationVersion: 0,
 };
 
-let remoteCommandQueue = [];
-let commandIdCounter = 0;
+const boothCommandQueue = new BoothCommandQueue();
 let errorCounter = 0;
 const origConsoleError = console.error;
 console.error = (...args) => { errorCounter++; origConsoleError.apply(console, args); };
@@ -327,6 +336,21 @@ const SELF_IPS = (() => {
   } catch {}
   return set;
 })();
+
+// Do not use req.ip, X-Forwarded-For, or any client-controlled header here.
+// The kiosk identity is the TCP peer address of the request received by this
+// process.  This intentionally fails closed when a reverse proxy is inserted.
+function isPhysicalKioskRequest(req) {
+  const address = (req.socket?.remoteAddress || req.connection?.remoteAddress || '').replace('::ffff:', '');
+  return isPhysicalKioskAddress(address, SELF_IPS);
+}
+
+function requirePhysicalKiosk(req, res, next) {
+  if (!isPhysicalKioskRequest(req)) {
+    return res.status(403).json({ error: 'This endpoint is available only to the physical kiosk' });
+  }
+  next();
+}
 
 app.get('/api/auth/connection-info', (req, res) => {
   const rawIp = (req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '')
@@ -1390,6 +1414,12 @@ app.delete('/api/playback-errors', authenticate, requireDJ, (req, res) => {
 });
 
 app.use('/api/fleet', fleetRoutes);
+app.use('/api/zonepro', createZoneProRouter({
+  authenticate,
+  requireDJ,
+  requireMaster,
+  audit: writeAudit,
+}));
 // /aichat routes only mount on units that explicitly opt in (homebase only).
 // Venue Dells leave DJBOOTH_AICHAT_ENABLED unset → routes never register.
 if (process.env.DJBOOTH_AICHAT_ENABLED === '1') {
@@ -1456,7 +1486,7 @@ app.post('/api/r2/sync/music', authenticate, requireDJ, async (req, res) => {
   }
 });
 
-app.post('/api/admin/update', async (req, res) => {
+app.post('/api/admin/update', authenticate, requireMaster, requirePhysicalKiosk, async (req, res) => {
   const { pin } = req.body || {};
   if (!pin || pin !== getMasterPin()) {
     return res.status(403).json({ error: 'Invalid PIN' });
@@ -1508,7 +1538,7 @@ app.get('/api/system/display-rotation', async (req, res) => {
   }
 });
 
-app.post('/api/system/display-rotation', async (req, res) => {
+app.post('/api/system/display-rotation', authenticate, requireDJ, requirePhysicalKiosk, async (req, res) => {
   const { transform } = req.body || {};
   const validTransforms = ['normal', '90', '180', '270'];
   if (!validTransforms.includes(transform)) {
@@ -1534,7 +1564,7 @@ app.post('/api/system/display-rotation', async (req, res) => {
   }
 });
 
-app.post('/api/admin/restart', async (req, res) => {
+app.post('/api/admin/restart', authenticate, requireMaster, requirePhysicalKiosk, async (req, res) => {
   const { pin } = req.body || {};
   if (!pin || pin !== getMasterPin()) {
     return res.status(403).json({ error: 'Invalid PIN' });
@@ -1547,7 +1577,7 @@ app.post('/api/admin/restart', async (req, res) => {
   }, 500);
 });
 
-app.post('/api/admin/reboot', async (req, res) => {
+app.post('/api/admin/reboot', authenticate, requireMaster, requirePhysicalKiosk, async (req, res) => {
   const { pin } = req.body || {};
   if (!pin || pin !== getMasterPin()) {
     return res.status(403).json({ error: 'Invalid PIN' });
@@ -1560,7 +1590,7 @@ app.post('/api/admin/reboot', async (req, res) => {
   }, 500);
 });
 
-app.post('/api/admin/sync', async (req, res) => {
+app.post('/api/admin/sync', authenticate, requireMaster, requirePhysicalKiosk, async (req, res) => {
   const { pin } = req.body || {};
   if (!pin || pin !== getMasterPin()) {
     return res.status(403).json({ error: 'Invalid PIN' });
@@ -1636,7 +1666,11 @@ app.get('/api/booth/events', (req, res) => {
   });
   res.write('data: {"type":"connected"}\n\n');
   
-  const client = { res, role: req.session.role };
+  const client = {
+    res,
+    role: req.session.role,
+    isKiosk: isPhysicalKioskRequest(req),
+  };
   sseClients.add(client);
   
   const heartbeat = setInterval(() => {
@@ -1649,57 +1683,29 @@ app.get('/api/booth/events', (req, res) => {
   });
 });
 
-function broadcastSSE(eventType, data) {
+function broadcastSSE(eventType, data, { kioskOnly = false } = {}) {
   const msg = `data: ${JSON.stringify({ type: eventType, ...data })}\n\n`;
   for (const client of sseClients) {
+    if (kioskOnly && !client.isKiosk) continue;
     try { client.res.write(msg); } catch { sseClients.delete(client); }
   }
 }
 
 // Live booth state endpoints
-app.post('/api/booth/state', authenticate, requireDJ, (req, res) => {
+app.post('/api/booth/state', authenticate, requireDJ, requirePhysicalKiosk, (req, res) => {
   const state = req.body;
-  liveBoothState = {
-    isRotationActive: !!state.isRotationActive,
-    currentDancerIndex: state.currentDancerIndex || 0,
-    currentDancerName: state.currentDancerName || null,
-    currentTrack: state.currentTrack || null,
-    currentSongNumber: state.currentSongNumber || 0,
-    songsPerSet: state.songsPerSet || 3,
-    isPlaying: !!state.isPlaying,
-    rotation: state.rotation || [],
-    announcementsEnabled: state.announcementsEnabled !== false,
-    rotationSongs: state.rotationSongs || {},
-    volume: state.volume != null ? state.volume : 0.8,
-    voiceGain: state.voiceGain != null ? state.voiceGain : 1.5,
-    trackTime: state.trackTime || 0,
-    trackDuration: state.trackDuration || 0,
-    trackTimeAt: state.trackTimeAt || 0,
-    breakSongsPerSet: state.breakSongsPerSet || 0,
-    breakSongIndex: state.breakSongIndex != null ? state.breakSongIndex : null,
-    interstitialSongs: state.interstitialSongs || {},
-    commercialFreq: state.commercialFreq || 'off',
-    commercialCounter: state.commercialCounter || 0,
-    promoQueue: state.promoQueue || [],
-    availablePromos: state.availablePromos || [],
-    skippedCommercials: state.skippedCommercials || [],
-    updatedAt: Date.now(),
-    diagLog: state.diagLog || [],
-    prePickHits: state.prePickHits || 0,
-    prePickMisses: state.prePickMisses || 0,
-    lastTransitionMs: state.lastTransitionMs ?? null,
-    lastWatchdogAt: state.lastWatchdogAt ?? null,
-    lastWatchdogSilentMs: state.lastWatchdogSilentMs ?? null,
-    lastWatchdogDancer: state.lastWatchdogDancer ?? null,
-    lastWatchdogTrack: state.lastWatchdogTrack ?? null,
-  };
+  liveBoothState = normalizeBoothState(liveBoothState, state);
   updateSystemState({
     currentDancer: liveBoothState.currentDancerName,
     currentSong: liveBoothState.currentTrack,
     rotationActive: liveBoothState.isRotationActive,
   });
   broadcastSSE('boothState', { state: liveBoothState });
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    stateVersion: liveBoothState.stateVersion,
+    rotationVersion: liveBoothState.rotationVersion,
+  });
 });
 
 app.get('/api/booth/state', authenticate, (req, res) => {
@@ -1750,37 +1756,43 @@ app.get('/api/booth/display', (req, res) => {
   });
 });
 
-function queueBoothCommand(action, payload = {}) {
-  const cmd = {
-    id: ++commandIdCounter,
-    action,
-    payload: payload || {},
-    timestamp: Date.now(),
-  };
-  remoteCommandQueue.push(cmd);
-  if (remoteCommandQueue.length > 50) remoteCommandQueue = remoteCommandQueue.slice(-50);
-  broadcastSSE('command', { command: cmd });
-  return cmd;
+function queueBoothCommand(action, payload = {}, options = {}) {
+  const result = boothCommandQueue.enqueue(action, payload, options);
+  if (!result.duplicate) broadcastSSE('command', { command: result.command }, { kioskOnly: true });
+  return result;
 }
 
 app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
-  const { action, payload } = req.body;
-  if (!action) return res.status(400).json({ error: 'Action required' });
-  const cmd = queueBoothCommand(action, payload);
-  res.json({ ok: true, commandId: cmd.id });
-});
-
-app.get('/api/booth/commands', authenticate, requireDJ, (req, res) => {
-  const since = parseInt(req.query.since) || 0;
-  const pending = remoteCommandQueue.filter(c => c.id > since);
-  res.json({ commands: pending });
-});
-
-app.post('/api/booth/commands/ack', authenticate, requireDJ, (req, res) => {
-  const { upToId } = req.body;
-  if (upToId) {
-    remoteCommandQueue = remoteCommandQueue.filter(c => c.id > upToId);
+  const { action, payload, requestId, expectedRotationVersion } = req.body || {};
+  if (typeof requestId !== 'string' || requestId.length < 1 || requestId.length > 128) {
+    return res.status(400).json({ error: 'requestId is required and must be a string up to 128 characters' });
   }
+  const validation = validateBoothCommand(action, payload);
+  if (!validation.ok) return res.status(400).json({ error: validation.error });
+  const token = req.headers.authorization?.replace('Bearer ', '') || '';
+  const actor = `dj:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+  const duplicate = boothCommandQueue.findDuplicate(actor, requestId);
+  if (duplicate) {
+    return res.json({ ok: true, commandId: duplicate.id, command: duplicate, duplicate: true });
+  }
+  if (isStructuralCommand(action)) {
+    if (!Number.isInteger(expectedRotationVersion)) return res.status(428).json({ error: 'expectedRotationVersion is required for rotation changes' });
+    if (expectedRotationVersion !== liveBoothState.rotationVersion) {
+      return res.status(409).json({ error: 'Rotation has changed; refresh and try again', rotationVersion: liveBoothState.rotationVersion });
+    }
+  }
+  const result = queueBoothCommand(action, validation.payload, { actor, requestId });
+  res.json({ ok: true, commandId: result.command.id, command: result.command, duplicate: result.duplicate });
+});
+
+app.get('/api/booth/commands', authenticate, requireDJ, requirePhysicalKiosk, (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  res.json({ commands: boothCommandQueue.pendingSince(since) });
+});
+
+app.post('/api/booth/commands/ack', authenticate, requireDJ, requirePhysicalKiosk, (req, res) => {
+  const { upToId } = req.body;
+  boothCommandQueue.acknowledgeThrough(upToId);
   res.json({ ok: true });
 });
 
@@ -1845,22 +1857,31 @@ function posEventHandler(eventType) {
     if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
     const { dancer } = resolved;
     const commandIds = [];
+    // POS is a trusted server-to-server producer, not a kiosk consumer. Include
+    // the caller's idempotency key when supplied; action suffixes preserve both
+    // checkout commands under one POS event.
+    const posRequestId = typeof req.body?.requestId === 'string' ? req.body.requestId.slice(0, 128) : null;
+    const queuePos = (action, payload) => queueBoothCommand(action, payload, {
+      actor: 'pos',
+      requestId: posRequestId ? `${posRequestId}:${action}` : null,
+      ttlMs: 2 * 60 * 1000,
+    }).command;
     switch (eventType) {
       case 'checkin':
-        commandIds.push(queueBoothCommand('addDancerToRotation', { dancerId: dancer.id }).id);
+        commandIds.push(queuePos('addDancerToRotation', { dancerId: dancer.id }).id);
         break;
       case 'vip-start':
         // skipIfActive => a retried webhook never adds VIP time
-        commandIds.push(queueBoothCommand('sendToVip', { dancerId: dancer.id, durationMs: POS_VIP_DEFAULT_MS, skipIfActive: true }).id);
+        commandIds.push(queuePos('sendToVip', { dancerId: dancer.id, durationMs: POS_VIP_DEFAULT_MS, skipIfActive: true }).id);
         break;
       case 'vip-end':
         // onlyIfVip => a duplicate/out-of-order webhook can't duplicate her in rotation
-        commandIds.push(queueBoothCommand('releaseFromVip', { dancerId: dancer.id, onlyIfVip: true }).id);
+        commandIds.push(queuePos('releaseFromVip', { dancerId: dancer.id, onlyIfVip: true }).id);
         break;
       case 'checkout':
         // Release from VIP first (clears any VIP timer, only if actually in VIP), then remove from rotation.
-        commandIds.push(queueBoothCommand('releaseFromVip', { dancerId: dancer.id, onlyIfVip: true }).id);
-        commandIds.push(queueBoothCommand('removeDancerFromRotation', { dancerId: dancer.id }).id);
+        commandIds.push(queuePos('releaseFromVip', { dancerId: dancer.id, onlyIfVip: true }).id);
+        commandIds.push(queuePos('removeDancerFromRotation', { dancerId: dancer.id }).id);
         break;
     }
     try {
@@ -2233,7 +2254,7 @@ app.get('/api/music/stream/:id', (req, res) => {
   }
 });
 
-app.post('/api/kiosk/exit', authenticate, requireDJ, async (req, res) => {
+app.post('/api/kiosk/exit', authenticate, requireDJ, requirePhysicalKiosk, async (req, res) => {
   try {
     const { exec } = await import('child_process');
     exec('pkill -f "chromium.*kiosk" 2>/dev/null; pkill -f "chromium-browser.*kiosk" 2>/dev/null', (err) => {
@@ -2247,7 +2268,7 @@ app.post('/api/kiosk/exit', authenticate, requireDJ, async (req, res) => {
   }
 });
 
-app.post('/api/display/launch', authenticate, requireDJ, async (req, res) => {
+app.post('/api/display/launch', authenticate, requireDJ, requirePhysicalKiosk, async (req, res) => {
   try {
     const { writeFileSync } = await import('fs');
     writeFileSync('/tmp/djbooth-display-trigger', '1');
@@ -2279,7 +2300,7 @@ app.get('/api/version', async (req, res) => {
   });
 });
 
-app.post('/api/system/update', async (req, res) => {
+app.post('/api/system/update', authenticate, requireMaster, requirePhysicalKiosk, async (req, res) => {
   const { pin } = req.body;
   if (!pin || pin.length !== 5) {
     return res.status(400).json({ error: '5-digit PIN required' });
