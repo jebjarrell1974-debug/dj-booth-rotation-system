@@ -241,10 +241,21 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
       return;
     }
     if (assigningTo) {
-      addSong(assigningTo, trackName);
+      const { dancerId, songIdx } = assigningTo;
+      const updated = [...getSongs(dancerId)];
+      updated[songIdx] = trackName;
+      setSongs(dancerId, updated);
       setAssigningTo(null);
       setTab('rotation');
     }
+  };
+
+  const openLibraryForSong = (dancerId, songIdx) => {
+    setAssigningBreak(null);
+    setAssigningTo({ dancerId, songIdx });
+    setLibSearch('');
+    setLibGenre('');
+    setTab('library');
   };
 
   return (
@@ -562,9 +573,26 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
                                 return (
                                   <div key={songIdx} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${isNowPlaying ? 'bg-[#00d4ff]/10 border-[#00d4ff]/30' : 'bg-[#0d0d1f] border-[#1e293b]'}`}>
                                     <span className={`text-sm font-bold w-5 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-500'}`}>{isNowPlaying ? '▶' : songIdx + 1}</span>
-                                    <span className={`text-sm flex-1 truncate ${isOnCooldown(song) ? 'text-orange-300' : 'text-gray-300'}`}>{stripExt(song)}</span>
+                                    <button
+                                      type="button"
+                                      disabled={isNowPlaying}
+                                      onClick={() => openLibraryForSong(dancer.id, songIdx)}
+                                      className={`text-sm flex-1 min-w-0 text-left truncate rounded px-1 -mx-1 ${
+                                        isOnCooldown(song) ? 'text-orange-300' : 'text-gray-300'
+                                      } ${isNowPlaying ? '' : 'hover:text-[#00d4ff] hover:bg-[#00d4ff]/10'}`}
+                                      title={isNowPlaying ? 'The currently playing song cannot be changed here' : 'Choose an exact replacement from the full music library'}
+                                    >
+                                      {stripExt(song)}
+                                    </button>
                                     {!isNowPlaying && (
                                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <button
+                                          onClick={() => openLibraryForSong(dancer.id, songIdx)}
+                                          className="w-8 h-8 rounded-lg bg-[#00d4ff]/15 flex items-center justify-center text-[#00d4ff] hover:bg-[#00d4ff]/25 transition-colors"
+                                          title="Choose from Music Library"
+                                        >
+                                          <Music className="w-4 h-4" />
+                                        </button>
                                         <button onClick={() => rerollSong(dancer.id, songIdx)} disabled={isRerolling} className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 hover:bg-amber-500/25 disabled:opacity-40 transition-colors" title="Reroll Song">
                                           {isRerolling ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
                                         </button>
@@ -690,7 +718,7 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
                   </button>
                   <div className="flex-1 text-sm text-[#00d4ff] font-medium truncate">
                     {assigningBreak ? `Picking B${assigningBreak.index + 1}` :
-                     assigningTo ? `Picking for ${dancers.find(d => d.id === assigningTo)?.name || 'Dancer'}` : ''}
+                     assigningTo ? `Replacing song ${assigningTo.songIdx + 1} for ${dancers.find(d => d.id === assigningTo.dancerId)?.name || 'Dancer'}` : ''}
                   </div>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
