@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { boothApi } from '@/api/serverApi';
+import { boothApi, djOptionsApi, musicApi } from '@/api/serverApi';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { capSongAssignments, capSongList } from '@/utils/rotationAssignments';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Shuffle,
-  ChevronDown, ChevronUp, RefreshCw, Drum, Layers, Star, Activity, Crown, Ban
+  ChevronDown, ChevronUp, RefreshCw, Drum, Layers, Star, Activity, Crown, Ban,
+  Sun, Moon, Check
 } from 'lucide-react';
 import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
 
@@ -20,7 +21,14 @@ const STRUCTURAL_COMMANDS = new Set([
 ]);
 const BOOTH_STALE_AFTER_MS = 10_000;
 
-export default function RemoteView({ dancers, liveBoothState, onLogout, songCooldowns = {} }) {
+export default function RemoteView({
+  dancers,
+  liveBoothState,
+  djOptions = {},
+  onOptionsChange,
+  onLogout,
+  songCooldowns = {},
+}) {
   const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const isOnCooldown = (name) => {
     const ts = songCooldowns[name];
@@ -47,6 +55,8 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
   const [libTotal, setLibTotal] = useState(0);
   const [libLoading, setLibLoading] = useState(false);
   const libSearchTimer = useRef(null);
+  const [optionGenres, setOptionGenres] = useState([]);
+  const [optionsSaving, setOptionsSaving] = useState(false);
 
   const [clock, setClock] = useState(Date.now());
   const [lastStateReceivedAt, setLastStateReceivedAt] = useState(0);
@@ -156,6 +166,49 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
     libSearchTimer.current = setTimeout(() => fetchLib(libSearch, libGenre), 300);
     return () => clearTimeout(libSearchTimer.current);
   }, [libSearch, libGenre, fetchLib]);
+
+  useEffect(() => {
+    if (tab !== 'options' || optionGenres.length > 0) return;
+    musicApi.getGenres()
+      .then(data => setOptionGenres(data.genres || []))
+      .catch(error => setCommandError(error.message || 'Could not load music genres.'));
+  }, [tab, optionGenres.length]);
+
+  const saveRemoteOptions = async (updates) => {
+    if (!isConnected || optionsSaving) return;
+    setOptionsSaving(true);
+    setCommandError('');
+    try {
+      await djOptionsApi.update(updates);
+      onOptionsChange?.({ ...djOptions, ...updates });
+    } catch (error) {
+      setCommandError(error.message || 'Could not save genre settings.');
+    } finally {
+      setOptionsSaving(false);
+    }
+  };
+
+  const toggleShiftGenre = (kind, genreName) => {
+    if (kind === 'day') {
+      const dayShift = {
+        startTime: '12:00',
+        endTime: '20:00',
+        genres: [],
+        ...(djOptions.dayShift || {}),
+        enabled: true,
+      };
+      const genres = dayShift.genres.includes(genreName)
+        ? dayShift.genres.filter(name => name !== genreName)
+        : [...dayShift.genres, genreName];
+      saveRemoteOptions({ dayShift: { ...dayShift, genres } });
+      return;
+    }
+    const current = djOptions.activeGenres || [];
+    const activeGenres = current.includes(genreName)
+      ? current.filter(name => name !== genreName)
+      : [...current, genreName];
+    saveRemoteOptions({ activeGenres });
+  };
 
   const getSongs = (dancerId) => {
     if (songEdits[dancerId]) return capSongList(songEdits[dancerId], songsPerSet);
@@ -942,6 +995,144 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
                     </select>
                   </label>
                 </div>
+                <div className="md:col-span-2 rounded-xl border border-cyan-500/20 bg-[#08081a] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-[#00d4ff] mb-3">Music Selection Mode</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => saveRemoteOptions({ musicMode: 'dancer_first' })}
+                      disabled={optionsSaving}
+                      className={`p-3 rounded-xl border text-left transition-colors ${
+                        (djOptions.musicMode || 'dancer_first') === 'dancer_first'
+                          ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40 text-[#00d4ff]'
+                          : 'bg-[#151528] border-[#2e2e5a] text-gray-300'
+                      }`}
+                    >
+                      <span className="font-semibold block">Entertainer First</span>
+                      <span className="text-xs text-gray-500 block mt-1">Use her playlist first, then selected genres as fallback.</span>
+                    </button>
+                    <button
+                      onClick={() => saveRemoteOptions({ musicMode: 'folders_only' })}
+                      disabled={optionsSaving}
+                      className={`p-3 rounded-xl border text-left transition-colors ${
+                        djOptions.musicMode === 'folders_only'
+                          ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40 text-[#00d4ff]'
+                          : 'bg-[#151528] border-[#2e2e5a] text-gray-300'
+                      }`}
+                    >
+                      <span className="font-semibold block">Selected Genres Only</span>
+                      <span className="text-xs text-gray-500 block mt-1">Bypass entertainer folders and use the shift genre selections.</span>
+                    </button>
+                  </div>
+                </div>
+                {(() => {
+                  const dayShift = {
+                    startTime: '12:00',
+                    endTime: '20:00',
+                    genres: [],
+                    ...(djOptions.dayShift || {}),
+                    enabled: true,
+                  };
+                  const shifts = [
+                    {
+                      kind: 'day',
+                      title: 'Day Shift Genres',
+                      subtitle: `${dayShift.startTime} to ${dayShift.endTime}`,
+                      genres: dayShift.genres,
+                      accent: 'text-amber-300',
+                      border: 'border-amber-500/20',
+                      selected: 'bg-amber-500/15 border-amber-500/40 text-amber-200',
+                      Icon: Sun,
+                    },
+                    {
+                      kind: 'night',
+                      title: 'Night Shift Genres',
+                      subtitle: 'Used outside the Day Shift window',
+                      genres: djOptions.activeGenres || [],
+                      accent: 'text-violet-300',
+                      border: 'border-violet-500/20',
+                      selected: 'bg-violet-500/15 border-violet-500/40 text-violet-200',
+                      Icon: Moon,
+                    },
+                  ];
+                  return shifts.map(shift => (
+                    <div key={shift.kind} className={`rounded-xl border ${shift.border} bg-[#08081a] p-4`}>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <shift.Icon className={`w-4 h-4 ${shift.accent}`} />
+                          <div>
+                            <div className={`text-xs font-semibold uppercase tracking-wider ${shift.accent}`}>{shift.title}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">{shift.subtitle}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => shift.kind === 'day'
+                              ? saveRemoteOptions({ dayShift: { ...dayShift, genres: optionGenres.map(genre => genre.name) } })
+                              : saveRemoteOptions({ activeGenres: optionGenres.map(genre => genre.name) })}
+                            disabled={optionsSaving}
+                            className="text-xs text-gray-400 hover:text-white"
+                          >
+                            All
+                          </button>
+                          <button
+                            onClick={() => shift.kind === 'day'
+                              ? saveRemoteOptions({ dayShift: { ...dayShift, genres: [] } })
+                              : saveRemoteOptions({ activeGenres: [] })}
+                            disabled={optionsSaving}
+                            className="text-xs text-gray-500 hover:text-white"
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      {shift.kind === 'day' && (
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <label className="text-xs text-gray-500">
+                            From
+                            <input
+                              type="time"
+                              value={dayShift.startTime}
+                              onChange={event => saveRemoteOptions({ dayShift: { ...dayShift, startTime: event.target.value } })}
+                              className="mt-1 w-full h-10 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white"
+                            />
+                          </label>
+                          <label className="text-xs text-gray-500">
+                            To
+                            <input
+                              type="time"
+                              value={dayShift.endTime}
+                              onChange={event => saveRemoteOptions({ dayShift: { ...dayShift, endTime: event.target.value } })}
+                              className="mt-1 w-full h-10 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white"
+                            />
+                          </label>
+                        </div>
+                      )}
+                      <div className="max-h-64 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pr-1">
+                        {optionGenres.length === 0 ? (
+                          <div className="col-span-full py-4 text-center text-xs text-gray-500">Loading genres…</div>
+                        ) : optionGenres.map(genre => {
+                          const selected = shift.genres.includes(genre.name);
+                          return (
+                            <button
+                              key={`${shift.kind}-${genre.name}`}
+                              onClick={() => toggleShiftGenre(shift.kind, genre.name)}
+                              disabled={optionsSaving}
+                              className={`min-h-10 px-3 py-2 rounded-lg border flex items-center gap-2 text-left text-sm ${
+                                selected ? shift.selected : 'bg-[#151528] border-[#2e2e5a] text-gray-300'
+                              } disabled:opacity-50`}
+                            >
+                              <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${selected ? 'border-current' : 'border-gray-600'}`}>
+                                {selected && <Check className="w-3 h-3" />}
+                              </span>
+                              <span className="truncate flex-1">{genre.name}</span>
+                              <span className="text-[10px] text-gray-600">{genre.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
                 <div className="md:col-span-2 rounded-xl border border-[#1e293b] bg-[#08081a] p-4 text-sm text-gray-400">
                   System maintenance, credentials, display configuration, recovery tools, and deep audio-zone setup are available only on the physical kiosk.
                 </div>
