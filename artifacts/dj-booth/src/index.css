@@ -141,6 +141,18 @@
     touch-action: auto;
   }
 
+  /* Keep native genre menus readable in kiosk Chromium and mobile browsers.
+     Without an explicit scheme/options palette, the OS popup can render
+     inherited white text on its default white background. */
+  select {
+    color-scheme: dark;
+  }
+
+  select option {
+    background-color: #151528;
+    color: #ffffff;
+  }
+
   button, [role="button"], a, label, .cursor-pointer {
     touch-action: manipulation;
     min-height: 44px;

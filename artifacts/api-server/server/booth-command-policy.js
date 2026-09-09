@@ -4,7 +4,7 @@ export const NORMAL_REMOTE_COMMANDS = new Set([
   'setVoiceGain', 'setCommercialFreq', 'setBreakSongsPerSet', 'moveInRotation',
   'saveRotation', 'updateInterstitialSongs', 'skipCommercial', 'swapPromo',
   'playSound', 'sendToVip', 'releaseFromVip', 'updateSongAssignments',
-  'playHouseAnnouncement',
+  'playHouseAnnouncement', 'deactivateTrack',
 ]);
 
 const STRUCTURAL_COMMANDS = new Set([
@@ -95,6 +95,11 @@ export function validateBoothCommand(action, payload = {}) {
       break;
     case 'playHouseAnnouncement':
       if (!isString(payload.cacheKey, 512)) return invalid('cacheKey is required');
+      break;
+    case 'deactivateTrack':
+      if (!isString(payload.trackName, 512) || !/^\d{5}$/.test(payload.pin)) {
+        return invalid('trackName and a 5-digit DJ PIN are required');
+      }
       break;
   }
   return { ok: true, payload };

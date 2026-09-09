@@ -5,7 +5,7 @@ import { capSongAssignments, capSongList } from '@/utils/rotationAssignments';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Shuffle,
-  ChevronDown, ChevronUp, RefreshCw, Drum, Layers, Star, Activity, Crown
+  ChevronDown, ChevronUp, RefreshCw, Drum, Layers, Star, Activity, Crown, Ban
 } from 'lucide-react';
 import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
 
@@ -51,6 +51,9 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
   const [clock, setClock] = useState(Date.now());
   const [lastStateReceivedAt, setLastStateReceivedAt] = useState(0);
   const [commandError, setCommandError] = useState('');
+  const [showDeactivatePin, setShowDeactivatePin] = useState(false);
+  const [deactivatePin, setDeactivatePin] = useState('');
+  const deactivatePinInputRef = useRef(null);
   const lastServerUpdateRef = useRef(null);
   useEffect(() => {
     const interval = setInterval(() => setClock(Date.now()), 1000);
@@ -102,6 +105,25 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
       return null;
     }
   }, [isConnected, liveBoothState?.rotationVersion]);
+
+  const openDeactivate = () => {
+    if (!currentTrack || !isConnected) return;
+    setDeactivatePin('');
+    setShowDeactivatePin(true);
+    setTimeout(() => deactivatePinInputRef.current?.focus(), 100);
+  };
+
+  const confirmDeactivate = async () => {
+    if (!currentTrack || !/^\d{5}$/.test(deactivatePin)) return;
+    const result = await sendRemoteCommand('deactivateTrack', {
+      trackName: currentTrack,
+      pin: deactivatePin,
+    });
+    if (result) {
+      setShowDeactivatePin(false);
+      setDeactivatePin('');
+    }
+  };
 
   const currentDancer = dancers?.find(d => d.id === rotationList[currentDancerIndex]);
   const rotationDancers = rotationList.map(id => dancers?.find(d => d.id === id)).filter(Boolean);
@@ -260,6 +282,14 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
               )}
 
               <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  disabled={!boothStateLoaded || !currentTrack}
+                  onClick={openDeactivate}
+                  title="Deactivate this song and replace it without counting it against the entertainer"
+                  className="w-7 h-7 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center justify-center disabled:opacity-30 transition-colors"
+                >
+                  <Ban className="w-4 h-4" />
+                </button>
                 <button
                   disabled={!boothStateLoaded || skipLocked}
                   onClick={() => sendRemoteCommand('skip')}
@@ -632,8 +662,12 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
                               <button onClick={() => { setVipExtendFor(vipDancer.id); setVipAddMs(0); }} className="flex-1 h-9 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-sm font-semibold hover:bg-yellow-500/25 transition-colors">
                                 Extend Time
                               </button>
-                              <button onClick={() => sendRemoteCommand('releaseFromVip', { dancerId: vipDancer.id })} className="flex-1 h-9 rounded-lg bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-semibold hover:bg-green-500/25 transition-colors">
-                                Release
+                              <button
+                                onClick={() => sendRemoteCommand('releaseFromVip', { dancerId: vipDancer.id })}
+                                className="flex-1 min-h-9 h-auto py-2 rounded-lg bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-semibold hover:bg-green-500/25 transition-colors"
+                                title={`End ${vipDancer.name}'s VIP early and return her to rotation`}
+                              >
+                                Return to Rotation
                               </button>
                             </div>
                           )}
@@ -695,6 +729,45 @@ export default function RemoteView({ dancers, liveBoothState, onLogout, songCool
                   isRemote
                   onRemotePlay={(cacheKey) => sendRemoteCommand('playHouseAnnouncement', { cacheKey })}
                 />
+              </div>
+            </div>
+          )}
+
+          {showDeactivatePin && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4" onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }}>
+              <div className="bg-[#0d0d1f] border border-red-500/40 rounded-2xl p-6 w-full max-w-[340px] shadow-2xl" onClick={event => event.stopPropagation()}>
+                <h3 className="text-lg font-bold text-red-400 mb-1">Deactivate Current Song</h3>
+                <p className="text-xs text-gray-400 mb-4 truncate">{stripExt(currentTrack) || 'Current song'}</p>
+                <p className="text-sm text-gray-300 mb-3">
+                  Enter your 5-digit DJ PIN. The kiosk will replace this song without counting it against the entertainer.
+                </p>
+                <input
+                  ref={deactivatePinInputRef}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={5}
+                  value={deactivatePin}
+                  onChange={event => setDeactivatePin(event.target.value.replace(/\D/g, '').slice(0, 5))}
+                  onKeyDown={event => { if (event.key === 'Enter') confirmDeactivate(); }}
+                  className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-4 py-3 text-center text-2xl font-mono text-white tracking-[0.5em] focus:outline-none focus:border-red-500/60 mb-4"
+                  placeholder="•••••"
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }}
+                    className="flex-1 py-2.5 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-semibold active:bg-[#2e2e5a] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeactivate}
+                    disabled={deactivatePin.length !== 5}
+                    className="flex-1 py-2.5 rounded-lg bg-red-500 text-white text-sm font-semibold active:bg-red-600 disabled:opacity-30 transition-colors"
+                  >
+                    Deactivate
+                  </button>
+                </div>
               </div>
             </div>
           )}

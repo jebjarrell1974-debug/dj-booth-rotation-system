@@ -12,6 +12,10 @@ import {
 test('only explicit normal DJ commands validate', () => {
   assert.equal(validateBoothCommand('setVolume', { volume: 0 }).ok, true);
   assert.equal(validateBoothCommand('deactivateTrack', {}).ok, false);
+  assert.equal(validateBoothCommand('deactivateTrack', { trackName: 'Song A.mp3', pin: '12345' }).ok, true);
+  assert.equal(validateBoothCommand('deactivateTrack', { trackName: 'Song A.mp3', pin: '1234' }).ok, false);
+  assert.equal(validateBoothCommand('deactivateTrack', { trackName: 'Song A.mp3', pin: 'abcde' }).ok, false);
+  assert.equal(isStructuralCommand('deactivateTrack'), false);
   assert.equal(validateBoothCommand('reboot', {}).ok, false);
   assert.equal(validateBoothCommand('setVolume', { volume: 1.01 }).ok, false);
   assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: 0 }).ok, false);
