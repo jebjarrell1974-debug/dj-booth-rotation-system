@@ -255,6 +255,8 @@ export default function RotationPlaylistManager({
   }, [dancerVipMap]);
 
   const appliedPlaylistsRef = React.useRef({});
+  const lastAuthoritativeRotationRef = React.useRef(rotation);
+  const lastAuthoritativeInterstitialsRef = React.useRef(savedInterstitials || {});
   const songAssignmentsRef = React.useRef({});
   const assignmentSongsPerSetRef = React.useRef(songsPerSet);
   const assignmentGenerationRef = React.useRef(0);
@@ -291,7 +293,11 @@ export default function RotationPlaylistManager({
   }, [searchQuery]);
 
   useEffect(() => {
-    setLocalRotation(rotation);
+    setLocalRotation(current => {
+      const wasUnedited = JSON.stringify(current) === JSON.stringify(lastAuthoritativeRotationRef.current);
+      lastAuthoritativeRotationRef.current = rotation;
+      return wasUnedited ? rotation : current;
+    });
   }, [rotation]);
 
   useEffect(() => {
@@ -350,9 +356,13 @@ export default function RotationPlaylistManager({
 
   useEffect(() => {
     if (interstitialRemoteVersion > 0) {
-      setInterstitialSongs(savedInterstitials || {});
+      setInterstitialSongs(current => {
+        const wasUnedited = JSON.stringify(current) === JSON.stringify(lastAuthoritativeInterstitialsRef.current);
+        lastAuthoritativeInterstitialsRef.current = savedInterstitials || {};
+        return wasUnedited ? (savedInterstitials || {}) : current;
+      });
     }
-  }, [interstitialRemoteVersion]);
+  }, [interstitialRemoteVersion, savedInterstitials]);
 
   useEffect(() => {
     if (!isRotationActive || !localRotation || localRotation.length === 0) return;
@@ -1035,8 +1045,14 @@ export default function RotationPlaylistManager({
     const manualOverrides = [...djOverridesRef.current];
 
     saveGuardRef.current = Date.now() + 30000;
-    onSaveAll?.(localRotation, playlists, finalInterstitials, manualOverrides);
-    toast.success('Rotation & playlists saved');
+    try {
+      await onSaveAll?.(localRotation, playlists, finalInterstitials, manualOverrides);
+      toast.success('Rotation & playlists saved');
+    } catch (error) {
+      // Keep every local edit intact on conflict/failure. The operator can
+      // review the authoritative update and retry instead of rebuilding work.
+      toast.error(error?.message || 'Rotation was not saved');
+    }
   };
 
 

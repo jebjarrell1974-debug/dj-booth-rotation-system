@@ -33,7 +33,13 @@ import {
 } from 'lucide-react';
 import AudioEngine from '@/components/dj/AudioEngine';
 import MusicLibrary from '@/components/dj/MusicLibrary';
-import { isRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
+import { isRemoteMode, isPhoneRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
+import {
+  acquireStructuralCommitLock,
+  commandIsExpired,
+  mergeWorkspaceAssignments,
+  runClaimedCommand,
+} from '@/utils/boothCommandRuntime';
 import NowPlaying from '@/components/dj/NowPlaying';
 import DancerRoster from '@/components/dj/DancerRoster';
 import StageRotation from '@/components/dj/StageRotation';
@@ -92,11 +98,50 @@ function isDayShiftActive(dayShift) {
   return nowMins >= startMins || nowMins < endMins;
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef) {
+  const songs = {};
+  const assignments = mergeWorkspaceAssignments(
+    plannedSongAssignmentsRef.current,
+    rotationSongsRef.current,
+  );
+  for (const [id, tracks] of Object.entries(assignments)) {
+    songs[id] = (tracks || []).map(track => typeof track === 'string' ? track : track?.name).filter(Boolean);
+  }
+  return {
+    rotation: [...(rotationRef.current || [])],
+    rotationSongs: songs,
+    interstitialSongs: interstitialSongsRef.current || {},
+    dancerVipMap: dancerVipMapRef.current || {},
+    placedFeatures: placedFeaturesRef.current || {},
+  };
+}
+
+function requireExecutor(ref, name) {
+  if (typeof ref?.current !== 'function') throw new Error(`${name} executor is unavailable`);
+  return ref.current;
+}
+
+const STRUCTURAL_REMOTE_ACTIONS = new Set([
+  'updateRotation', 'removeDancerFromRotation', 'addDancerToRotation',
+  'moveInRotation', 'saveRotation', 'updateSongAssignments',
+  'saveRotationWorkspace', 'updateInterstitialSongs', 'sendToVip',
+  'releaseFromVip', 'placeFeature', 'cancelFeaturePlacement',
+]);
+
 export default function DJBooth() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const audioEngineRef = useRef(null);
   const remoteMode = isRemoteMode();
+  const phoneRemoteMode = isPhoneRemoteMode();
   
   // Music tracks state (loaded from server)
   const [tracks, setTracks] = useState([]);
@@ -120,11 +165,15 @@ export default function DJBooth() {
   const timeDisplayRef = useRef(null);
   const remoteTimeDisplayRef = useRef(null);
   const [volume, setVolume] = useState(0.8);
+  const volumeRef = useRef(0.8);
+  volumeRef.current = volume;
   // Boot preset: every reboot/turn-on starts at 80% music / 80% voice. We deliberately
   // do NOT restore the saved djbooth_voice_gain here — the operator wants a fixed 80%
   // starting point each night (current voice is loud). Live adjustments still work and
   // persist within the session, but the next boot resets to 80%.
   const [voiceGain, setVoiceGain] = useState(0.8);
+  const voiceGainRef = useRef(0.8);
+  voiceGainRef.current = voiceGain;
   const updateThrottleRef = useRef(0);
 
   // Seed the audio engine with the 80% boot preset so the ACTUAL output (not just the
@@ -321,6 +370,8 @@ export default function DJBooth() {
   const [interstitialSongsState, setInterstitialSongsState] = useState(() => interstitialSongsRef.current);
   const [interstitialRemoteVersion, setInterstitialRemoteVersion] = useState(0);
   const [plannedSongAssignments, setPlannedSongAssignments] = useState({});
+  const plannedSongAssignmentsRef = useRef({});
+  plannedSongAssignmentsRef.current = plannedSongAssignments;
   const playingInterstitialRef = useRef(false);
   const playingInterstitialBreakKeyRef = useRef(null);
   const interstitialIndexRef = useRef(0);
@@ -334,6 +385,7 @@ export default function DJBooth() {
   const beginRotationRef = useRef(null);
   const stopRotationRef = useRef(null);
   const saveRotationRef = useRef(null);
+  const updateAutoplayQueueRef = useRef(null);
   const commercialCounterRef = useRef(0);
   const playingCommercialRef = useRef(false);
   const commercialEndResolverRef = useRef(null);
@@ -711,7 +763,21 @@ export default function DJBooth() {
   }, []);
 
   const [liveBoothState, setLiveBoothState] = useState(null);
+  const sendBoothCommand = useCallback((action, payload = {}, options = {}) => {
+    const structural = STRUCTURAL_REMOTE_ACTIONS.has(action);
+    const state = liveBoothState;
+    return boothApi.sendCommand(action, payload, structural ? {
+      expectedRotationVersion: state?.rotationVersion,
+      nowPlayingGuard: options.nowPlayingGuard ?? (state?.isRotationActive ? {
+        dancerId: state.rotation?.[state.currentDancerIndex],
+        songNumber: state.currentSongNumber,
+        track: state.currentTrack,
+      } : undefined),
+      ...options,
+    } : options);
+  }, [liveBoothState]);
   const sseRef = useRef(null);
+  const hydratedRotationVersionRef = useRef(-1);
 
   useEffect(() => {
     if (!remoteMode) return;
@@ -797,6 +863,47 @@ export default function DJBooth() {
     return () => { active = false; clearInterval(statePollInterval); sseRef.current?.close(); sseRef.current = null; };
   }, [remoteMode]);
 
+  // A full DJ remote renders the kiosk workspace, but its model is hydrated only
+  // from authoritative kiosk revisions. Reconnect/poll duplicates never reset
+  // in-progress editor state, and none of these values grant audio authority.
+  useEffect(() => {
+    if (!remoteMode || !liveBoothState?.updatedAt) return;
+    setIsRotationActive(!!liveBoothState.isRotationActive);
+    isRotationActiveRef.current = !!liveBoothState.isRotationActive;
+    setCurrentDancerIndex(liveBoothState.currentDancerIndex ?? 0);
+    currentDancerIndexRef.current = liveBoothState.currentDancerIndex ?? 0;
+    setCurrentSongNumber(liveBoothState.currentSongNumber ?? 0);
+    currentSongNumberRef.current = liveBoothState.currentSongNumber ?? 0;
+    setCurrentTrack(liveBoothState.currentTrack ?? null);
+    currentTrackRef.current = liveBoothState.currentTrack ?? null;
+    setIsPlaying(!!liveBoothState.isPlaying);
+    isPlayingRef.current = !!liveBoothState.isPlaying;
+    setVolume(liveBoothState.volume ?? 0.8);
+    setVoiceGain(liveBoothState.voiceGain ?? 0.8);
+    setAnnouncementsEnabled(liveBoothState.announcementsEnabled !== false);
+    setBreakSongsPerSet(liveBoothState.breakSongsPerSet ?? 0);
+    breakSongsPerSetRef.current = liveBoothState.breakSongsPerSet ?? 0;
+    setDancerVipMap(liveBoothState.dancerVipMap || {});
+    dancerVipMapRef.current = liveBoothState.dancerVipMap || {};
+    const nextAutoplayQueue = liveBoothState.autoplayQueue || [];
+    setAutoplayQueue(nextAutoplayQueue);
+    autoplayQueueRef.current = nextAutoplayQueue;
+    setAutoplayAutoFillEnabled(liveBoothState.autoplayAutoFillEnabled !== false);
+    autoplayAutoFillEnabledRef.current = liveBoothState.autoplayAutoFillEnabled !== false;
+
+    if (hydratedRotationVersionRef.current !== liveBoothState.rotationVersion) {
+      hydratedRotationVersionRef.current = liveBoothState.rotationVersion;
+      const nextRotation = liveBoothState.rotation || [];
+      setRotation(nextRotation);
+      rotationRef.current = nextRotation;
+      commitRotationSongs(liveBoothState.rotationSongs || {});
+      const interstitials = liveBoothState.interstitialSongs || {};
+      interstitialSongsRef.current = interstitials;
+      setInterstitialSongsState(interstitials);
+      setInterstitialRemoteVersion(v => v + 1);
+    }
+  }, [remoteMode, liveBoothState, commitRotationSongs]);
+
   // Fetch dancers
   const { data: dancers = [] } = useQuery({
     queryKey: ['dancers'],
@@ -875,7 +982,7 @@ export default function DJBooth() {
   //  - dancer already in VIP  -> extend her remaining countdown by durationMs
   //  - dancer on stage         -> add to her pending (after-set) VIP duration
   //  - otherwise               -> send her to VIP now for durationMs
-  const sendDancerToVip = useCallback((dancerId, durationMs) => {
+  const sendDancerToVip = useCallback(async (dancerId, durationMs) => {
     if (!durationMs || durationMs <= 0) return;
     const idStr = String(dancerId);
     const isOnStage = rotationRef.current[currentDancerIndexRef.current] === dancerId && isRotationActiveRef.current;
@@ -911,84 +1018,121 @@ export default function DJBooth() {
     } else {
       const expiresAt = Date.now() + durationMs;
       const newMap = { ...dancerVipMapRef.current, [idStr]: { expiresAt, duration: durationMs } };
-      dancerVipMapRef.current = newMap;
-      setDancerVipMap(newMap);
-      try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
       const rot = rotationRef.current;
       const currentId = rot[currentDancerIndexRef.current];
       const newRot = rot.filter(id => id !== dancerId);
       const adjustedIdx = Math.max(0, newRot.indexOf(currentId));
+      if (isRotationActiveRef.current) {
+        await requireExecutor(updateStageStateRef, 'VIP stage persistence')(adjustedIdx, newRot);
+      }
+      dancerVipMapRef.current = newMap;
+      setDancerVipMap(newMap);
+      try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
       setRotation(newRot);
       rotationRef.current = newRot;
       setCurrentDancerIndex(adjustedIdx);
       currentDancerIndexRef.current = adjustedIdx;
-      if (isRotationActiveRef.current) updateStageStateRef.current?.(adjustedIdx, newRot);
       toast(`${_vipDancerName || 'Entertainer'} sent to VIP (${addMins} min)`, { icon: '👑' });
     }
   }, []);
 
   // Release a dancer from In VIP early — adds to bottom of rotation
-  const releaseDancerFromVip = useCallback((dancerId) => {
+  const releaseDancerFromVip = useCallback(async (dancerId) => {
     const _relName = dancersRef.current.find(d => d.id === dancerId)?.name;
     logDiag('vip_release', { dancer: _relName });
     const id = String(dancerId);
     const newMap = { ...dancerVipMapRef.current };
     delete newMap[id];
-    delete pendingVipRef.current[id];
-    setPendingVipState({ ...pendingVipRef.current });
-    try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(pendingVipRef.current)); } catch {}
-    dancerVipMapRef.current = newMap;
-    setDancerVipMap({ ...newMap });
-    try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
+    const newPending = { ...pendingVipRef.current };
+    delete newPending[id];
     // Guard against duplicate entries (e.g. a retried POS vip-end webhook)
     const newRot = rotationRef.current.includes(id)
       ? [...rotationRef.current]
       : [...rotationRef.current, id];
+    if (isRotationActiveRef.current) {
+      await requireExecutor(updateStageStateRef, 'VIP stage persistence')(currentDancerIndexRef.current, newRot);
+    }
+    pendingVipRef.current = newPending;
+    setPendingVipState(newPending);
+    try { localStorage.setItem('neonaidj_pending_vip', JSON.stringify(newPending)); } catch {}
+    dancerVipMapRef.current = newMap;
+    setDancerVipMap({ ...newMap });
+    try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
     setRotation(newRot);
     rotationRef.current = newRot;
-    if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
     const dancer = dancersRef.current.find(d => String(d.id) === id);
     toast(`${dancer?.name || 'Entertainer'} released from VIP`, { icon: '✅' });
   }, []);
   sendDancerToVipRef.current = sendDancerToVip;
   releaseDancerFromVipRef.current = releaseDancerFromVip;
 
-  // Auto-expire VIP timers — check every 15 seconds
+  // Auto-expire VIP timers — check every 15 seconds. This natural structural
+  // transition shares the same commit lock as remote structural commands.
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       const now = Date.now();
       const map = dancerVipMapRef.current;
       const expired = Object.entries(map).filter(([, v]) => v.expiresAt && v.expiresAt <= now);
-      if (expired.length === 0) return;
+      if (expired.length === 0 || transitionInProgressRef.current) return;
+      transitionInProgressRef.current = true;
+      transitionStartTimeRef.current = now;
       const newMap = { ...map };
       const newRot = [...rotationRef.current];
-      for (const [id] of expired) {
-        delete newMap[id];
-        const dancer = dancersRef.current.find(d => String(d.id) === id);
-        if (dancer && !newRot.some(r => String(r) === id)) {
-          newRot.push(id);
+      try {
+        for (const [id] of expired) {
+          delete newMap[id];
+          const dancer = dancersRef.current.find(d => String(d.id) === id);
+          if (dancer && !newRot.some(r => String(r) === id)) {
+            newRot.push(id);
+          }
+          const rotActive = isRotationActiveRef.current;
+          console.log('👑 VIP expired — returning to rotation:', dancer?.name, rotActive ? '' : '(rotation paused)');
+          toast(
+            rotActive
+              ? `${dancer?.name || 'Entertainer'} returned from VIP`
+              : `${dancer?.name || 'Entertainer'} VIP time ended — added to rotation`,
+            { icon: '✅' }
+          );
         }
-        const rotActive = isRotationActiveRef.current;
-        console.log('👑 VIP expired — returning to rotation:', dancer?.name, rotActive ? '' : '(rotation paused)');
-        toast(
-          rotActive
-            ? `${dancer?.name || 'Entertainer'} returned from VIP`
-            : `${dancer?.name || 'Entertainer'} VIP time ended — added to rotation`,
-          { icon: '✅' }
-        );
+        if (isRotationActiveRef.current) {
+          await requireExecutor(updateStageStateRef, 'VIP expiry stage persistence')(currentDancerIndexRef.current, newRot);
+        }
+        dancerVipMapRef.current = newMap;
+        setDancerVipMap(newMap);
+        setRotation(newRot);
+        rotationRef.current = newRot;
+        try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
+      } catch (error) {
+        console.error('VIP expiry persistence failed:', error);
+      } finally {
+        transitionInProgressRef.current = false;
       }
-      dancerVipMapRef.current = newMap;
-      setDancerVipMap(newMap);
-      setRotation(newRot);
-      rotationRef.current = newRot;
-      try { localStorage.setItem('neonaidj_vip_map', JSON.stringify(newMap)); } catch {}
-      if (isRotationActiveRef.current) updateStageStateRef.current?.(currentDancerIndexRef.current, newRot);
     }, 15000);
     return () => clearInterval(interval);
   }, []);
 
-  const lastCommandIdRef = useRef(0);
   const commandSseRef = useRef(null);
+  const scheduledCommandIdsRef = useRef(new Set());
+  const commandExecutionChainRef = useRef(Promise.resolve());
+  const commandPollInFlightRef = useRef(false);
+  const publishBoothStateRef = useRef(null);
+  const boothStatePublishChainRef = useRef(Promise.resolve());
+  const placeFeatureAtSlotRef = useRef(null);
+  const cancelFeaturePlacementRef = useRef(null);
+  const playTrackRef = useRef(null);
+
+  const waitForStructuralCommitLock = useCallback(async (command) => {
+    await acquireStructuralCommitLock({
+      command,
+      isLocked: () => transitionInProgressRef.current,
+      lock: () => {
+        transitionInProgressRef.current = true;
+        transitionStartTimeRef.current = Date.now();
+        // Invalidate async automatic song picks captured before this lock.
+        rotationAssignmentVersionRef.current += 1;
+      },
+    });
+  }, []);
 
   const autoPopulateBreakSongs = useCallback(async (count) => {
     const rot = rotationRef.current || [];
@@ -1046,26 +1190,45 @@ export default function DJBooth() {
     }
   }, []);
 
-  const executeCommand = useCallback((cmd) => {
+  const executeCommand = useCallback(async (cmd) => {
+    const structural = STRUCTURAL_REMOTE_ACTIONS.has(cmd.action);
+    if (structural) await waitForStructuralCommitLock(cmd);
     try {
-      if (!Number.isInteger(cmd?.id) || cmd.id <= lastCommandIdRef.current) return;
-      lastCommandIdRef.current = Math.max(lastCommandIdRef.current, cmd.id);
+      if (!Number.isInteger(cmd?.id)) throw new Error('Command ID is invalid');
+      if (cmd.nowPlayingGuard) {
+        const guard = cmd.nowPlayingGuard;
+        const activeDancerId = rotationRef.current[currentDancerIndexRef.current];
+        if ((guard.dancerId != null && String(guard.dancerId) !== String(activeDancerId)) ||
+            (guard.songNumber != null && guard.songNumber !== currentSongNumberRef.current) ||
+            (guard.track != null && guard.track !== currentTrackRef.current)) {
+          throw new Error('Now playing changed before the kiosk applied this edit');
+        }
+      }
+      if (cmd.expectedRotation && JSON.stringify(cmd.expectedRotation) !== JSON.stringify(rotationRef.current)) {
+        throw new Error('The kiosk rotation changed before this command could be applied');
+      }
+      if (cmd.expectedWorkspace && stableJson(cmd.expectedWorkspace) !== stableJson(
+        currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef)
+      )) {
+        throw new Error('The kiosk workspace changed before this command could be applied');
+      }
       switch (cmd.action) {
         case 'skip':
-          handleSkipRef.current?.();
+          await requireExecutor(handleSkipRef, 'Skip')();
           break;
         case 'startRotation':
-          beginRotationRef.current?.();
+          await requireExecutor(beginRotationRef, 'Start rotation')(true);
           break;
         case 'stopRotation':
-          stopRotationRef.current?.();
+          await requireExecutor(stopRotationRef, 'Stop rotation')(true);
           break;
         case 'toggleAnnouncements':
-          setAnnouncementsEnabled(prev => !prev);
+          announcementsEnabledRef.current = !announcementsEnabledRef.current;
+          setAnnouncementsEnabled(announcementsEnabledRef.current);
           break;
         case 'setSongsPerSet':
           if (cmd.payload.count) {
-            applySongsPerSetChangeRef.current?.(
+            await requireExecutor(applySongsPerSetChangeRef, 'Songs per set')(
               cmd.payload.count,
               cmd.payload.source || 'remote-unknown'
             );
@@ -1073,6 +1236,7 @@ export default function DJBooth() {
           break;
         case 'updateRotation':
           if (cmd.payload.rotation) {
+            await requireExecutor(saveRotationRef, 'Update rotation')(cmd.payload.rotation);
             logDiag('remote_updateRotation', {
               before: rotationRef.current.map(id => dancers.find(d => d.id === id)?.name).filter(Boolean),
               after: cmd.payload.rotation.map(id => dancers.find(d => d.id === id)?.name).filter(Boolean),
@@ -1084,7 +1248,9 @@ export default function DJBooth() {
           }
           break;
         case 'removeDancerFromRotation':
-          if (cmd.payload.dancerId) {
+          if (cmd.payload.dancerId != null) {
+            const oldRotation = [...rotationRef.current];
+            const oldIndex = currentDancerIndexRef.current;
             const _removedIdx = rotationRef.current.indexOf(cmd.payload.dancerId);
             const _newRot = rotationRef.current.filter(id => id !== cmd.payload.dancerId);
             if (_removedIdx !== -1 && _removedIdx <= currentDancerIndexRef.current && _newRot.length > 0) {
@@ -1094,33 +1260,62 @@ export default function DJBooth() {
             }
             rotationRef.current = _newRot;
             setRotation(_newRot);
+            try {
+              await requireExecutor(saveRotationRef, 'Remove entertainer')(_newRot);
+            } catch (error) {
+              rotationRef.current = oldRotation;
+              setRotation(oldRotation);
+              currentDancerIndexRef.current = oldIndex;
+              setCurrentDancerIndex(oldIndex);
+              throw error;
+            }
           }
           break;
         case 'addDancerToRotation':
-          if (cmd.payload.dancerId) {
-            setRotation(prev => {
-              if (prev.includes(cmd.payload.dancerId)) return prev;
-              const updated = [...prev, cmd.payload.dancerId];
+          if (cmd.payload.dancerId != null) {
+            if (!rotationRef.current.includes(cmd.payload.dancerId)) {
+              const oldRotation = [...rotationRef.current];
+              const updated = [...rotationRef.current, cmd.payload.dancerId];
               rotationRef.current = updated;
-              return updated;
-            });
+              setRotation(updated);
+              try {
+                await requireExecutor(saveRotationRef, 'Add entertainer')(updated);
+              } catch (error) {
+                rotationRef.current = oldRotation;
+                setRotation(oldRotation);
+                throw error;
+              }
+            }
           }
           break;
         case 'setVolume':
           if (cmd.payload.volume != null) {
             const vol = Math.max(0, Math.min(1, cmd.payload.volume));
             setVolume(vol);
-            audioEngineRef.current?.setVolume(vol);
+            volumeRef.current = vol;
+            if (!audioEngineRef.current?.setVolume) throw new Error('Volume executor is unavailable');
+            await audioEngineRef.current.setVolume(vol);
           }
           break;
         case 'setVoiceGain':
           if (cmd.payload.gain != null) {
             const g = Math.max(0.5, Math.min(1.2, Math.round(cmd.payload.gain * 20) / 20));
             setVoiceGain(g);
-            audioEngineRef.current?.setVoiceGain(g);
+            voiceGainRef.current = g;
+            if (!audioEngineRef.current?.setVoiceGain) throw new Error('Voice gain executor is unavailable');
+            await audioEngineRef.current.setVoiceGain(g);
             try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
-            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
+            const configResponse = await fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) });
+            if (!configResponse.ok) throw new Error('Voice gain could not be persisted');
           }
+          break;
+        case 'setBeatMatch':
+          if (!audioEngineRef.current?.setBeatMatch) throw new Error('Beat match executor is unavailable');
+          await audioEngineRef.current.setBeatMatch(cmd.payload.enabled);
+          break;
+        case 'setMusicEq':
+          if (!audioEngineRef.current?.setMusicEq) throw new Error('Music EQ executor is unavailable');
+          await audioEngineRef.current.setMusicEq(cmd.payload.band, cmd.payload.value);
           break;
         case 'setCommercialFreq':
           if (cmd.payload.freq != null) {
@@ -1128,12 +1323,15 @@ export default function DJBooth() {
             try {
               localStorage.setItem('neonaidj_commercial_freq', nextFreq);
               window.dispatchEvent(new CustomEvent('djbooth_commercial_freq_changed', { detail: nextFreq }));
-              fetch('/api/config/save-to-server', {
+              const configResponse = await fetch('/api/config/save-to-server', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` },
                 body: JSON.stringify({ neonaidj_commercial_freq: nextFreq }),
-              }).catch(() => {});
-            } catch {}
+              });
+              if (!configResponse.ok) throw new Error('Commercial frequency could not be persisted');
+            } catch (error) {
+              throw error;
+            }
           }
           break;
         case 'setBreakSongsPerSet':
@@ -1142,7 +1340,7 @@ export default function DJBooth() {
             setBreakSongsPerSet(c);
             breakSongsPerSetRef.current = c;
             if (c > 0) {
-              autoPopulateBreakSongs(c);
+              await autoPopulateBreakSongs(c);
             } else {
               interstitialSongsRef.current = {};
               setInterstitialSongsState({});
@@ -1151,34 +1349,85 @@ export default function DJBooth() {
             }
           }
           break;
+        case 'setAutoplayQueue':
+          if (cmd.payload.trackNames) {
+            const queue = cmd.payload.trackNames.map(name =>
+              tracksRef.current.find(track => track.name === name) || { name, path: name }
+            );
+            requireExecutor(updateAutoplayQueueRef, 'Autoplay queue')(queue);
+          }
+          break;
+        case 'setAutoplayAutoFill':
+          if (typeof cmd.payload.enabled === 'boolean') {
+            setAutoplayAutoFillEnabled(cmd.payload.enabled);
+            autoplayAutoFillEnabledRef.current = cmd.payload.enabled;
+            localStorage.setItem('djbooth_autoplay_autofill', String(cmd.payload.enabled));
+          }
+          break;
         case 'moveInRotation':
-          if (cmd.payload.dancerId && cmd.payload.direction) {
-            setRotation(prev => {
-              const rot = [...prev];
-              const activeDancerId = rot[currentDancerIndexRef.current];
-              const idx = rot.indexOf(cmd.payload.dancerId);
-              if (idx === -1) return prev;
-              if (cmd.payload.direction === 'up' && idx > 0) {
-                [rot[idx - 1], rot[idx]] = [rot[idx], rot[idx - 1]];
-              } else if (cmd.payload.direction === 'down' && idx < rot.length - 1) {
-                [rot[idx], rot[idx + 1]] = [rot[idx + 1], rot[idx]];
-              }
-              const activeIndex = rot.indexOf(activeDancerId);
-              if (activeIndex >= 0) {
-                currentDancerIndexRef.current = activeIndex;
-                setCurrentDancerIndex(activeIndex);
-              }
-              rotationRef.current = rot;
-              return rot;
-            });
+          if (cmd.payload.dancerId != null && cmd.payload.direction) {
+            const oldRotation = [...rotationRef.current];
+            const oldIndex = currentDancerIndexRef.current;
+            const rot = [...rotationRef.current];
+            const activeDancerId = rot[currentDancerIndexRef.current];
+            const idx = rot.indexOf(cmd.payload.dancerId);
+            if (idx === -1) throw new Error('Entertainer is no longer in the rotation');
+            if (cmd.payload.direction === 'up' && idx > 0) {
+              [rot[idx - 1], rot[idx]] = [rot[idx], rot[idx - 1]];
+            } else if (cmd.payload.direction === 'down' && idx < rot.length - 1) {
+              [rot[idx], rot[idx + 1]] = [rot[idx + 1], rot[idx]];
+            }
+            const activeIndex = rot.indexOf(activeDancerId);
+            if (activeIndex >= 0) {
+              currentDancerIndexRef.current = activeIndex;
+              setCurrentDancerIndex(activeIndex);
+            }
+            rotationRef.current = rot;
+            setRotation(rot);
+            try {
+              await requireExecutor(saveRotationRef, 'Move entertainer')(rot);
+            } catch (error) {
+              rotationRef.current = oldRotation;
+              setRotation(oldRotation);
+              currentDancerIndexRef.current = oldIndex;
+              setCurrentDancerIndex(oldIndex);
+              throw error;
+            }
           }
           break;
         case 'saveRotation':
           if (cmd.payload.rotation) {
             const newRot = cmd.payload.rotation;
+            await requireExecutor(saveRotationRef, 'Save rotation')(newRot);
             setRotation(newRot);
             rotationRef.current = newRot;
-            saveRotationRef.current?.(newRot);
+          }
+          break;
+        case 'saveRotationWorkspace':
+          if (cmd.payload.rotation && cmd.payload.assignments && cmd.payload.interstitialSongs) {
+            const nextRotation = cmd.payload.rotation;
+            await requireExecutor(saveRotationRef, 'Save rotation workspace')(nextRotation);
+            setRotation(nextRotation);
+            rotationRef.current = nextRotation;
+            const allTracks = tracksRef.current || [];
+            const nextSongs = { ...rotationSongsRef.current };
+            Object.entries(cmd.payload.assignments).forEach(([dancerId, names]) => {
+              nextSongs[dancerId] = capSongList(names, songsPerSetRef.current).map(name =>
+                allTracks.find(track => track.name === name && track.url) || { name, path: name }
+              );
+            });
+            commitRotationSongs(nextSongs);
+            for (const dancerId of cmd.payload.manualOverrides || []) {
+              if (nextSongs[dancerId]?.length) {
+                djSavedSongsRef.current[dancerId] = nextSongs[dancerId];
+                djSavedManualRef.current[dancerId] = true;
+              }
+            }
+            persistDjSaved();
+            interstitialSongsRef.current = cmd.payload.interstitialSongs;
+            setInterstitialSongsState({ ...cmd.payload.interstitialSongs });
+            setInterstitialRemoteVersion(v => v + 1);
+            try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(cmd.payload.interstitialSongs)); } catch {}
           }
           break;
         case 'updateInterstitialSongs':
@@ -1192,60 +1441,55 @@ export default function DJBooth() {
           break;
         case 'skipCommercial':
           if (cmd.payload.commercialId) {
-            try {
-              const raw = localStorage.getItem('neonaidj_skipped_commercials');
-              const existing = raw ? JSON.parse(raw) : [];
-              if (!existing.includes(cmd.payload.commercialId)) {
-                existing.push(cmd.payload.commercialId);
-                localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify(existing));
-                window.dispatchEvent(new CustomEvent('djbooth_skipped_commercials_changed', { detail: existing }));
-              }
-              console.log('📺 Remote skipped commercial:', cmd.payload.commercialId);
-            } catch {}
+            const raw = localStorage.getItem('neonaidj_skipped_commercials');
+            const existing = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(existing)) throw new Error('Skipped commercial state is invalid');
+            if (!existing.includes(cmd.payload.commercialId)) {
+              existing.push(cmd.payload.commercialId);
+              localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify(existing));
+              window.dispatchEvent(new CustomEvent('djbooth_skipped_commercials_changed', { detail: existing }));
+            }
+            console.log('📺 Remote skipped commercial:', cmd.payload.commercialId);
           }
           break;
         case 'swapPromo':
           if (cmd.payload.slotIndex != null) {
-            if (swapPromoRef.current) swapPromoRef.current(cmd.payload.slotIndex);
+            await requireExecutor(swapPromoRef, 'Swap promo')(cmd.payload.slotIndex);
             console.log('📺 Remote swapped promo at slot:', cmd.payload.slotIndex);
           }
           break;
         case 'deactivateTrack':
           if (cmd.payload.pin && cmd.payload.trackName) {
-            (async () => {
-              try {
-                const verifyRes = await fetch('/api/auth/login', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ role: 'dj', pin: cmd.payload.pin })
-                });
-                if (!verifyRes.ok) {
-                  console.warn('⚠️ Remote deactivate: invalid PIN');
-                  return;
-                }
-                const loginData = await verifyRes.json().catch(() => ({}));
-                const authToken = loginData.token || localStorage.getItem('djbooth_token');
-                if (!authToken) {
-                  console.warn('⚠️ Remote deactivate: no auth token available');
-                  return;
-                }
-                // Same behavior as the booth screen: block + replace-in-place, no count against her.
-                const result = await deactivateAndReplaceRef.current?.(cmd.payload.trackName, authToken);
-                if (result?.ok) {
-                  console.log('🚫 Remote deactivated track (replaced in place):', cmd.payload.trackName);
-                } else {
-                  console.warn('⚠️ Remote deactivate: failed', result?.error);
-                }
-              } catch (err) {
-                console.warn('⚠️ Remote deactivate failed:', err.message);
-              }
-            })();
+            const verifyRes = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ role: 'dj', pin: cmd.payload.pin })
+            });
+            if (!verifyRes.ok) throw new Error('Invalid DJ PIN');
+            const loginData = await verifyRes.json();
+            const authToken = loginData.token || localStorage.getItem('djbooth_token');
+            if (!authToken) throw new Error('Deactivate authorization is unavailable');
+            const result = await requireExecutor(deactivateAndReplaceRef, 'Deactivate track')(cmd.payload.trackName, authToken);
+            if (!result?.ok) throw new Error(result?.error || 'Track deactivation failed');
+            console.log('🚫 Remote deactivated track (replaced in place):', cmd.payload.trackName);
           }
           break;
         case 'playSound':
           if (cmd.payload.soundId) {
-            (async () => {
-              try {
+              const customSoundId = String(cmd.payload.soundId);
+              if (/^\d+$/.test(customSoundId)) {
+                const token = localStorage.getItem('djbooth_token');
+                const response = await fetch(`/api/soundboard/audio/${customSoundId}`, {
+                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
+                if (!response.ok) throw new Error('Custom sound could not be loaded');
+                const blobUrl = URL.createObjectURL(await response.blob());
+                const audio = new Audio(blobUrl);
+                audio.volume = Math.min(1, Math.max(0, cmd.payload.gain ?? 1));
+                await audio.play();
+                audio.onended = () => URL.revokeObjectURL(blobUrl);
+                audio.onerror = () => URL.revokeObjectURL(blobUrl);
+              } else {
                 const AC = window.AudioContext || window.webkitAudioContext;
                 if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') {
                   soundboardCtxRef.current = new AC();
@@ -1256,10 +1500,7 @@ export default function DJBooth() {
                 const gain = Math.max(0, Math.min(5, cmd.payload.gain ?? 1.0));
                 playSoundboardEffect(cmd.payload.soundId, soundboardCtxRef.current, gain);
                 console.log('🎛️ Soundboard:', cmd.payload.soundId, 'gain:', gain.toFixed(2));
-              } catch (err) {
-                console.warn('🎛️ Soundboard play failed:', err.message);
               }
-            })();
           }
           break;
         case 'sendToVip':
@@ -1272,7 +1513,7 @@ export default function DJBooth() {
               console.log('[POS] sendToVip skipped — already in VIP/pending:', _vipIdStr);
               break;
             }
-            sendDancerToVipRef.current?.(cmd.payload.dancerId, cmd.payload.durationMs);
+            await requireExecutor(sendDancerToVipRef, 'Send to VIP')(cmd.payload.dancerId, cmd.payload.durationMs);
           }
           break;
         case 'releaseFromVip':
@@ -1285,7 +1526,7 @@ export default function DJBooth() {
               console.log('[POS] releaseFromVip skipped — not in VIP:', _relIdStr);
               break;
             }
-            releaseDancerFromVipRef.current?.(cmd.payload.dancerId);
+            await requireExecutor(releaseDancerFromVipRef, 'Release from VIP')(cmd.payload.dancerId);
           }
           break;
         case 'updateSongAssignments':
@@ -1315,7 +1556,7 @@ export default function DJBooth() {
             persistDjSaved();
             console.log('🎵 Remote updateSongAssignments: updated songs for', Object.keys(cmd.payload.assignments).length, 'entertainers');
             // Async-resolve any name-only tracks (no URL) so display always matches playback
-            (async () => {
+            {
               let changed = false;
               const resolved = { ...rotationSongsRef.current };
               for (const [dancerId, trackList] of Object.entries(newSongs)) {
@@ -1334,43 +1575,107 @@ export default function DJBooth() {
                 commitRotationSongs({ ...resolved });
                 console.log('🎵 Resolved URLs for manually assigned tracks');
               }
-            })();
+            }
           }
           break;
         case 'playHouseAnnouncement':
           if (cmd.payload.cacheKey) {
             const _haToken = localStorage.getItem('djbooth_token');
             const _haHdrs = _haToken ? { Authorization: `Bearer ${_haToken}` } : {};
-            fetch(`/api/voiceovers/audio/${encodeURIComponent(cmd.payload.cacheKey)}`, { headers: _haHdrs })
-              .then(r => r.ok ? r.blob() : null)
-              .then(blob => {
-                if (!blob) return;
-                const blobUrl = URL.createObjectURL(blob);
-                audioEngineRef.current?.playAnnouncement(blobUrl, { autoDuck: true });
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
-              })
-              .catch(err => console.error('playHouseAnnouncement failed:', err));
+            const response = await fetch(`/api/voiceovers/audio/${encodeURIComponent(cmd.payload.cacheKey)}`, { headers: _haHdrs });
+            if (!response.ok) throw new Error('House announcement audio could not be loaded');
+            const blobUrl = URL.createObjectURL(await response.blob());
+            if (!audioEngineRef.current?.playAnnouncement) throw new Error('Announcement audio executor is unavailable');
+            await audioEngineRef.current.playAnnouncement(blobUrl, { autoDuck: true, waitForEnd: false });
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
           }
           break;
+        case 'playFeatureAudio':
+          if (cmd.payload.dancerId != null && ['intro', 'outro'].includes(cmd.payload.type)) {
+            const token = localStorage.getItem('djbooth_token');
+            const response = await fetch(
+              `/api/features/${encodeURIComponent(cmd.payload.dancerId)}/audio/${cmd.payload.type}`,
+              { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+            );
+            if (!response.ok) throw new Error('Feature audio could not be loaded');
+            const blobUrl = URL.createObjectURL(await response.blob());
+            if (!audioEngineRef.current?.playAnnouncement) throw new Error('Feature audio executor is unavailable');
+            await audioEngineRef.current.playAnnouncement(blobUrl, { autoDuck: true, waitForEnd: false });
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+          }
+          break;
+        case 'playLibraryTrack': {
+          const track = await resolveTrackByName(cmd.payload.trackName);
+          if (!track?.url) throw new Error('Library track could not be resolved');
+          await requireExecutor(playTrackRef, 'Play library track')(track.url, true, track.name, track.genre);
+          break;
+        }
+        case 'resetDancerVoiceovers':
+          if (!announcementRef.current?.resetAndRegenerateDancer) {
+            throw new Error('Voiceover reset executor is unavailable');
+          }
+          await announcementRef.current.resetAndRegenerateDancer(cmd.payload.dancerName);
+          break;
+        case 'placeFeature':
+          await requireExecutor(placeFeatureAtSlotRef, 'Place feature')(
+            cmd.payload.featureId,
+            cmd.payload.chosenSetName,
+            cmd.payload.playPos,
+            cmd.payload.audioFlags || {}
+          );
+          break;
+        case 'cancelFeaturePlacement':
+          await requireExecutor(cancelFeaturePlacementRef, 'Cancel feature placement')(cmd.payload.featureId);
+          break;
         default:
-          console.log('Unknown remote command:', cmd.action);
+          throw new Error(`Unknown remote command: ${cmd.action}`);
       }
     } catch (err) {
       console.error('Error executing remote command:', cmd.action, err);
+      throw err;
+    } finally {
+      if (structural) transitionInProgressRef.current = false;
     }
-  }, []);
+  }, [commitRotationSongs, waitForStructuralCommitLock]);
+
+  const scheduleCommand = useCallback((command) => {
+    if (!Number.isInteger(command?.id) ||
+        scheduledCommandIdsRef.current.has(command.id)) return;
+    scheduledCommandIdsRef.current.add(command.id);
+    commandExecutionChainRef.current = commandExecutionChainRef.current.then(async () => {
+      try {
+        if (commandIsExpired(command)) return;
+        const claim = await boothApi.claimCommand(command.id);
+        if (!claim?.claimed) return;
+        await runClaimedCommand({
+          command,
+          execute: executeCommand,
+          publish: async () => {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            if (!publishBoothStateRef.current) throw new Error('Kiosk state publisher is unavailable');
+            return publishBoothStateRef.current();
+          },
+          acknowledge: boothApi.ackCommand,
+        });
+      } catch (error) {
+        console.error('Booth command scheduling failed:', command.id, error);
+      } finally {
+        scheduledCommandIdsRef.current.delete(command.id);
+      }
+    });
+  }, [executeCommand]);
 
   useEffect(() => {
     if (remoteMode) return;
     let active = true;
 
     const pollCommands = () => {
-      if (!active) return;
-      boothApi.getCommands(lastCommandIdRef.current).then(({ commands }) => {
+      if (!active || commandPollInFlightRef.current) return;
+      commandPollInFlightRef.current = true;
+      boothApi.getCommands(0).then(({ commands }) => {
         if (!active || !commands) return;
-        commands.forEach(executeCommand);
-        if (commands.length > 0) boothApi.ackCommands(lastCommandIdRef.current).catch(() => {});
-      }).catch(() => {});
+        [...commands].sort((a, b) => a.id - b.id).forEach(scheduleCommand);
+      }).catch(() => {}).finally(() => { commandPollInFlightRef.current = false; });
     };
 
     pollCommands();
@@ -1378,8 +1683,9 @@ export default function DJBooth() {
     const es = connectBoothSSE((data) => {
       if (!active) return;
       if (data.type === 'command' && data.command) {
-        executeCommand(data.command);
-        boothApi.ackCommands(data.command.id).catch(() => {});
+        // SSE is only a low-latency wake-up. Always fetch the complete pending
+        // set so an out-of-order event can never leapfrog and hide an older ID.
+        pollCommands();
       }
       if (data.type === 'djOptions') {
         setDjOptions(data);
@@ -1394,7 +1700,7 @@ export default function DJBooth() {
     const commandPollInterval = setInterval(pollCommands, 1000);
 
     return () => { active = false; clearInterval(commandPollInterval); commandSseRef.current?.close(); commandSseRef.current = null; };
-  }, [remoteMode, executeCommand]);
+  }, [remoteMode, scheduleCommand]);
 
   // Pi mode: broadcast live state to server every 5 seconds
   const boothBroadcastReadyRef = useRef(false);
@@ -1408,27 +1714,27 @@ export default function DJBooth() {
       }
     }
     const broadcast = async () => {
-      try {
-        const currentDancer = rotation.length > 0 && dancers.length > 0
-          ? dancers.find(d => d.id === rotation[currentDancerIndex])
+      const publish = boothStatePublishChainRef.current.catch(() => {}).then(async () => {
+        const currentRotation = rotationRef.current || [];
+        const currentIndex = currentDancerIndexRef.current ?? 0;
+        const currentDancer = currentRotation.length > 0 && dancers.length > 0
+          ? dancers.find(d => d.id === currentRotation[currentIndex])
           : null;
-        const mergedSongs = { ...plannedSongAssignments };
-        if (rotationSongs && Object.keys(rotationSongs).length > 0) {
-          Object.entries(rotationSongs).forEach(([id, tracks]) => {
-            if (tracks && tracks.length > 0) mergedSongs[id] = tracks;
-          });
-        }
-        await boothApi.postState({
-          isRotationActive,
-          currentDancerIndex,
+        const mergedSongs = mergeWorkspaceAssignments(
+          plannedSongAssignmentsRef.current,
+          rotationSongsRef.current,
+        );
+        return boothApi.postState({
+          isRotationActive: isRotationActiveRef.current,
+          currentDancerIndex: currentIndex,
           currentDancerName: currentDancer?.name || null,
-          currentTrack,
-          currentSongNumber,
-          songsPerSet,
-          breakSongsPerSet,
-          isPlaying,
-          rotation,
-          announcementsEnabled,
+          currentTrack: currentTrackRef.current,
+          currentSongNumber: currentSongNumberRef.current,
+          songsPerSet: songsPerSetRef.current,
+          breakSongsPerSet: breakSongsPerSetRef.current,
+          isPlaying: isPlayingRef.current,
+          rotation: currentRotation,
+          announcementsEnabled: announcementsEnabledRef.current,
           skipLocked: skipLockedRef.current,
           rotationSongs: mergedSongs,
           interstitialSongs: interstitialSongsRef.current || {},
@@ -1438,9 +1744,12 @@ export default function DJBooth() {
           promoQueue: promoQueue,
           availablePromos: availablePromos.map(p => ({ cache_key: p.cache_key, dancer_name: p.dancer_name })),
           skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),  // kept for remote rotation display
-          dancerVipMap,
-          volume,
-          voiceGain,
+          dancerVipMap: dancerVipMapRef.current,
+          placedFeatures: placedFeaturesRef.current,
+          autoplayQueue: autoplayQueueRef.current,
+          autoplayAutoFillEnabled: autoplayAutoFillEnabledRef.current,
+          volume: volumeRef.current,
+          voiceGain: voiceGainRef.current,
           trackTime: currentTimeRef.current || 0,
           trackDuration: durationRef.current || 0,
           trackTimeAt: Date.now(),
@@ -1453,11 +1762,17 @@ export default function DJBooth() {
           lastWatchdogDancer: lastWatchdogRef.current?.dancer || null,
           lastWatchdogTrack: lastWatchdogRef.current?.track || null,
         });
-      } catch {}
+      });
+      boothStatePublishChainRef.current = publish;
+      return publish;
     };
-    broadcast();
-    const interval = setInterval(broadcast, 2000);
-    return () => clearInterval(interval);
+    publishBoothStateRef.current = broadcast;
+    broadcast().catch(() => {});
+    const interval = setInterval(() => broadcast().catch(() => {}), 2000);
+    return () => {
+      clearInterval(interval);
+      if (publishBoothStateRef.current === broadcast) publishBoothStateRef.current = null;
+    };
   }, [remoteMode, isRotationActive, currentDancerIndex, currentTrack, currentSongNumber, songsPerSet, breakSongsPerSet, isPlaying, rotation, announcementsEnabled, dancers, rotationSongs, volume, voiceGain, plannedSongAssignments, interstitialSongsState, promoQueue, availablePromos, activeBreakInfo, dancerVipMap]);
 
   // Background pre-pick: when the current dancer's SECOND-TO-LAST song starts (or last song
@@ -1604,7 +1919,7 @@ export default function DJBooth() {
     if (!songsPerSetMountedRef.current) return;
     fetch('/api/config/save-to-server', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` },
       body: JSON.stringify({ neonaidj_songs_per_set: String(songsPerSet) }),
     }).catch(() => {});
   }, [songsPerSet]);
@@ -1858,6 +2173,7 @@ export default function DJBooth() {
     // Persist so DJ's manual queue survives page refresh / kiosk reload.
     try { localStorage.setItem('djbooth_autoplay_queue', JSON.stringify(newQueue)); } catch {}
   }, []);
+  updateAutoplayQueueRef.current = updateAutoplayQueue;
 
   const playFromAutoplayQueue = useCallback(async (crossfade = true) => {
     if (autoplayPlayingRef.current) return false;
@@ -1975,6 +2291,7 @@ export default function DJBooth() {
       notes: d.feature_notes || '',
     };
   }, []);
+  playTrackRef.current = playTrack;
 
   const tracksLoadedRef = useRef(false);
   const initialLoadGraceRef = useRef(true);
@@ -2401,7 +2718,7 @@ export default function DJBooth() {
         current_dancer_index: index,
         is_active: true
       });
-      queryClient.invalidateQueries({ queryKey: ['stages'] });
+      await queryClient.invalidateQueries({ queryKey: ['stages'] });
     }
   }, [activeStage, rotation, updateStageMutation, queryClient]);
   updateStageStateRef.current = updateStageState;
@@ -2585,6 +2902,7 @@ export default function DJBooth() {
 
     const placement = { chosenSetName: chosenSetName || null, introExists: !!audioFlags.introExists, outroExists: !!audioFlags.outroExists };
     const nextPlaced = { ...placedFeaturesRef.current, [featureId]: placement };
+    await requireExecutor(updateStageStateRef, 'Place feature stage update')(newIdx, next);
     placedFeaturesRef.current = nextPlaced;
     setPlacedFeatures(nextPlaced);
 
@@ -2592,13 +2910,6 @@ export default function DJBooth() {
     rotationRef.current = next;
     setCurrentDancerIndex(newIdx);
     currentDancerIndexRef.current = newIdx;
-    await updateStageStateRef.current?.(newIdx, next);
-    saveRotationRef.current?.(next);
-    fetch('/api/stage/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rotation_order: next, current_dancer_index: newIdx, is_active: true })
-    }).catch(() => {});
     console.log(`🌟 Feature placed at play position ${pos}:`, chosenSetName);
     return pos;
   }, []);
@@ -2613,18 +2924,14 @@ export default function DJBooth() {
       return;
     }
     const next = cur.filter(id => id !== featureId);
+    await requireExecutor(updateStageStateRef, 'Cancel feature stage update')(currentDancerIndexRef.current || 0, next);
     clearFeaturePlacement(featureId);
     setRotation(next);
     rotationRef.current = next;
-    await updateStageStateRef.current?.(currentDancerIndexRef.current || 0, next);
-    saveRotationRef.current?.(next);
-    fetch('/api/stage/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rotation_order: next, current_dancer_index: currentDancerIndexRef.current || 0, is_active: true })
-    }).catch(() => {});
     console.log('🌟 Feature placement cancelled:', featureId);
   }, [clearFeaturePlacement]);
+  placeFeatureAtSlotRef.current = placeFeatureAtSlot;
+  cancelFeaturePlacementRef.current = cancelFeaturePlacement;
 
   saveRotationRef.current = async (newRot) => {
     try {
@@ -2633,10 +2940,19 @@ export default function DJBooth() {
           id: activeStage.id,
           data: { rotation_order: newRot, current_dancer_index: currentDancerIndexRef.current, is_active: true }
         });
+      } else if (newRot.length > 0) {
+        await localEntities.Stage.create({
+          name: 'Main Stage',
+          rotation_order: newRot,
+          current_dancer_index: currentDancerIndexRef.current,
+          is_active: true,
+        });
+        await queryClient.invalidateQueries({ queryKey: ['stages'] });
       }
       console.log('💾 Remote saveRotation: persisted to DB');
     } catch (err) {
       console.error('❌ Remote saveRotation failed:', err);
+      throw err;
     }
   };
 
@@ -2648,7 +2964,7 @@ export default function DJBooth() {
     const dnc = dancersRef.current;
     if (rot.length === 0 || !tracks.length) {
       console.error('❌ BeginRotation: rotation.length=' + rot.length + ', tracks.length=' + tracks.length);
-      return;
+      throw new Error(rot.length === 0 ? 'Cannot start an empty rotation' : 'Cannot start until music is loaded');
     }
     
     const dancerIds = new Set(dnc.map(d => d.id));
@@ -2767,6 +3083,7 @@ export default function DJBooth() {
       const ok = await playFallbackTrack(false);
       if (!ok) {
         try { audioEngineRef.current?.resume(); } catch(e) {}
+        throw err;
       }
     } finally {
       transitionInProgressRef.current = false;
@@ -2775,12 +3092,16 @@ export default function DJBooth() {
 
   const lastRotationToggleRef = useRef(0);
   const lastAnnouncementsToggleRef = useRef(0);
-  const startRotation = useCallback(async () => {
+  const startRotation = useCallback(async (strict = false) => {
     const now = Date.now();
-    if (now - lastRotationToggleRef.current < 2000) return;
+    if (now - lastRotationToggleRef.current < 2000) {
+      if (strict) throw new Error('Rotation control is temporarily locked');
+      return;
+    }
     lastRotationToggleRef.current = now;
     if (rotation.length === 0 || !tracks.length) {
       console.error('❌ StartRotation: rotation.length=' + rotation.length + ', tracks.length=' + tracks.length);
+      if (strict) throw new Error(rotation.length === 0 ? 'Cannot start an empty rotation' : 'Cannot start until music is loaded');
       return;
     }
 
@@ -3794,6 +4115,9 @@ export default function DJBooth() {
       interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updated };
       setInterstitialSongsState({ ...interstitialSongsRef.current });
       setInterstitialRemoteVersion(v => v + 1);
+      const nextPlacedFeatures = liveBoothState.placedFeatures || {};
+      placedFeaturesRef.current = nextPlacedFeatures;
+      setPlacedFeatures(nextPlacedFeatures);
       try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
       setActiveBreakInfo({ songs: updated, currentIndex: Math.max(0, interstitialIndexRef.current - 1), breakKey });
       console.log('🌟 Setup: added setup song', name, '→ queue now', updated.length);
@@ -3924,13 +4248,17 @@ export default function DJBooth() {
         currentSongNumberRef.current = currentSongNumberRef.current - 1;
         setCurrentSongNumber(currentSongNumberRef.current);
       }
-      handleSkipRef.current?.({ bypassLockout: true });
+      await requireExecutor(handleSkipRef, 'Deactivate replacement skip')({ bypassLockout: true });
     } else {
       // Safety net: we couldn't secure a replacement AND the slot is empty (essentially only
       // possible if the library returns nothing). Keep audio alive with a fallback track rather
       // than letting handleSkip fall into the end-of-set branch and cut her show short.
       console.error('⚠️ Deactivate: no replacement secured for empty slot — playing fallback to avoid ending set early');
-      try { await playFallbackTrack(true); } catch { handleSkipRef.current?.({ bypassLockout: true }); }
+      try {
+        await playFallbackTrack(true);
+      } catch {
+        await requireExecutor(handleSkipRef, 'Deactivate fallback skip')({ bypassLockout: true });
+      }
     }
     return { ok: true };
   }, [playFallbackTrack]);
@@ -3953,6 +4281,19 @@ export default function DJBooth() {
   const handleDeactivateConfirm = useCallback(async () => {
     if (!deactivatePin || deactivatePin.length !== 5) {
       toast.error('Enter your 5-digit PIN');
+      return;
+    }
+    if (remoteMode) {
+      const pin = deactivatePin;
+      const trackName = currentTrack;
+      setShowDeactivatePin(false);
+      setDeactivatePin('');
+      try {
+        await boothApi.sendCommand('deactivateTrack', { pin, trackName });
+        toast.success(`Deactivated: ${trackName}`);
+      } catch (error) {
+        toast.error(error.message || 'Failed to deactivate');
+      }
       return;
     }
     try {
@@ -3981,7 +4322,7 @@ export default function DJBooth() {
     } else {
       toast.error(result.error || 'Failed to deactivate');
     }
-  }, [currentTrack, deactivatePin, deactivateAndReplace]);
+  }, [currentTrack, deactivatePin, deactivateAndReplace, remoteMode]);
 
   const handleTrackEnd = useCallback(async () => {
     if (playingCommercialRef.current) {
@@ -5127,9 +5468,12 @@ export default function DJBooth() {
     }
   };
 
-  const stopRotation = useCallback(() => {
+  const stopRotation = useCallback((strict = false) => {
     const now = Date.now();
-    if (now - lastRotationToggleRef.current < 2000) return;
+    if (now - lastRotationToggleRef.current < 2000) {
+      if (strict) throw new Error('Rotation control is temporarily locked');
+      return;
+    }
     lastRotationToggleRef.current = now;
     setIsRotationActive(false);
     isRotationActiveRef.current = false;
@@ -5295,7 +5639,7 @@ export default function DJBooth() {
     return () => clearTimeout(timer);
   }, [rotation, dancers, currentDancerIndex, remoteMode]);
 
-  if (remoteMode) {
+  if (phoneRemoteMode) {
     return (
       <RemoteView
         dancers={dancers}
@@ -5417,6 +5761,39 @@ export default function DJBooth() {
                   >
                     {liveBoothState?.announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-white"
+                    onClick={() => boothApi.sendCommand('setVolume', { volume: Math.max(0, Math.round((volume - 0.05) * 100) / 100) })}
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </Button>
+                  <span className="text-xs tabular-nums text-[#00d4ff]">{Math.round(volume * 100)}%</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-white"
+                    onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, Math.round((volume + 0.05) * 100) / 100) })}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-purple-300"
+                    onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, Math.round((voiceGain - 0.05) * 20) / 20) })}
+                  >
+                    <Mic className="w-3.5 h-3.5 mr-1" /> {Math.round(voiceGain * 100)}%
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-purple-300"
+                    onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(1.2, Math.round((voiceGain + 0.05) * 20) / 20) })}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -5509,7 +5886,7 @@ export default function DJBooth() {
                         setVoiceGain(g);
                         audioEngineRef.current?.setVoiceGain(g);
                         try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
-            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
+            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
                       }}
                       disabled={Math.round(voiceGain * 100) <= 50}
                       className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
@@ -5525,7 +5902,7 @@ export default function DJBooth() {
                         setVoiceGain(g);
                         audioEngineRef.current?.setVoiceGain(g);
                         try { localStorage.setItem('djbooth_voice_gain', String(g)); } catch {}
-            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
+            try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ djbooth_voice_gain: String(g) }) }).catch(() => {}); } catch {}
                       }}
                       disabled={Math.round(voiceGain * 100) >= 120}
                       className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors"
@@ -5542,8 +5919,7 @@ export default function DJBooth() {
           
           <div className="flex items-center gap-2 flex-shrink-0">
             
-            {!remoteMode && (
-              <Button
+            <Button
                 variant="outline"
                 size="sm"
                 onClick={handleDeactivateClick}
@@ -5553,7 +5929,6 @@ export default function DJBooth() {
                 <Ban className="w-4 h-4 mr-1" />
                 Deactivate
               </Button>
-            )}
 
             {!remoteMode && (!elevenLabsKey || !openaiKey) && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg">
@@ -5561,7 +5936,7 @@ export default function DJBooth() {
                 <span className="text-xs text-amber-400">API keys not configured</span>
               </div>
             )}
-            {!remoteMode && rotation.length > 0 && (
+            {rotation.length > 0 && (
               preCachingForStart ? (
                 <div className="flex items-center gap-3 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
                   <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
@@ -5589,7 +5964,9 @@ export default function DJBooth() {
                 </Button>
               ) : (
                 <Button
-                  onClick={isRotationActive ? stopRotation : startRotation}
+                  onClick={remoteMode
+                    ? () => boothApi.sendCommand(isRotationActive ? 'stopRotation' : 'startRotation', {})
+                    : (isRotationActive ? stopRotation : startRotation)}
                   className={isRotationActive 
                     ? "bg-red-600 hover:bg-red-700 text-white" 
                     : "bg-green-600 hover:bg-green-700 text-white"
@@ -5655,7 +6032,7 @@ export default function DJBooth() {
             { id: 'announcements', icon: Mic,              label: 'Announce',  kiosk: true   },
             { id: 'sfx',           icon: Drum,             label: 'SFX',       kiosk: true   },
             { id: 'feature',       icon: Star,             label: 'Feature',   always: true  },
-          ].filter(t => t.always || (!remoteMode && t.kiosk)).map(({ id, icon: Icon, label }) => (
+          ].map(({ id, icon: Icon, label }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
@@ -5701,11 +6078,18 @@ export default function DJBooth() {
                     djOptionsRef.current = opts;
                   }}
                   audioEngineRef={audioEngineRef}
+                  externalCommercialFreq={remoteMode ? liveBoothState?.commercialFreq : undefined}
+                  onCommercialFreqChange={remoteMode
+                    ? (freq) => boothApi.sendCommand('setCommercialFreq', { freq })
+                    : undefined}
+                  onAudioCommand={remoteMode
+                    ? (action, payload) => boothApi.sendCommand(action, payload)
+                    : undefined}
                 />
               </div>
             )}
 
-            {activeTab === 'rotation' && remoteMode && (
+            {false && activeTab === 'rotation' && remoteMode && (
               <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 overflow-auto">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Live Rotation</h3>
@@ -5746,7 +6130,7 @@ export default function DJBooth() {
                             )}
                           </div>
                           <button
-                            onClick={() => boothApi.sendCommand('removeDancerFromRotation', { dancerId })}
+                            onClick={() => sendBoothCommand('removeDancerFromRotation', { dancerId })}
                             className="p-1.5 text-red-400/60 hover:text-red-400 transition-colors flex-shrink-0"
                           >
                             <X className="w-4 h-4" />
@@ -5798,7 +6182,7 @@ export default function DJBooth() {
                     {dancers.filter(d => d.is_active && !(liveBoothState?.rotation || []).includes(d.id) && !Object.keys(liveBoothState?.dancerVipMap || {}).includes(String(d.id))).map(dancer => (
                       <button
                         key={dancer.id}
-                        onClick={() => boothApi.sendCommand('addDancerToRotation', { dancerId: dancer.id })}
+                        onClick={() => sendBoothCommand('addDancerToRotation', { dancerId: dancer.id })}
                         className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-[#151528] transition-colors"
                       >
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-black font-bold text-xs" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
@@ -5813,14 +6197,19 @@ export default function DJBooth() {
               </div>
             )}
 
-            {activeTab === 'rotation' && !remoteMode && (
+            {activeTab === 'rotation' && (
               <RotationPlaylistManager
                 dancers={dancers}
                 rotation={rotation}
                 tracks={tracks}
                 placedFeatures={placedFeatures}
-                onPlaceFeature={placeFeatureAtSlot}
-                onCancelFeature={cancelFeaturePlacement}
+                onPlaceFeature={remoteMode
+                  ? (featureId, chosenSetName, playPos, audioFlags) =>
+                      sendBoothCommand('placeFeature', { featureId, chosenSetName, playPos, audioFlags })
+                  : placeFeatureAtSlot}
+                onCancelFeature={remoteMode
+                  ? (featureId) => sendBoothCommand('cancelFeaturePlacement', { featureId })
+                  : cancelFeaturePlacement}
                 djOptions={djOptions}
                 songCooldowns={playedSongsMap}
                 activeRotationSongs={isRotationActive ? rotationSongs : null}
@@ -5838,6 +6227,10 @@ export default function DJBooth() {
                     delete newInterstitials[breakKey];
                   } else {
                     newInterstitials[breakKey] = updated;
+                  }
+                  if (remoteMode) {
+                    sendBoothCommand('updateInterstitialSongs', { interstitialSongs: newInterstitials });
+                    return;
                   }
                   interstitialSongsRef.current = newInterstitials;
                   setInterstitialSongsState({ ...newInterstitials });
@@ -5859,6 +6252,10 @@ export default function DJBooth() {
                     delete newInterstitials[breakKey];
                   } else {
                     newInterstitials[breakKey] = newFullSongs;
+                  }
+                  if (remoteMode) {
+                    sendBoothCommand('updateInterstitialSongs', { interstitialSongs: newInterstitials });
+                    return;
                   }
                   interstitialSongsRef.current = newInterstitials;
                   setInterstitialSongsState({ ...newInterstitials });
@@ -5888,7 +6285,14 @@ export default function DJBooth() {
                   }
 
                   if (updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i])) {
-                    updateDancerMutation.mutate({ id: dancerId, data: { playlist: updatedPlaylist } });
+                    if (remoteMode) await updateDancerMutation.mutateAsync({ id: dancerId, data: { playlist: updatedPlaylist } });
+                    else updateDancerMutation.mutate({ id: dancerId, data: { playlist: updatedPlaylist } });
+                  }
+                  if (remoteMode && isRotationActive) {
+                    await sendBoothCommand('updateSongAssignments', {
+                      assignments: { [dancerId]: capSongList(displayedSongs, songsPerSetRef.current) },
+                    });
+                    return;
                   }
                   if (isRotationActive) {
                     const limitedNames = capSongList(displayedSongs, songsPerSetRef.current);
@@ -5928,6 +6332,22 @@ export default function DJBooth() {
                   }
                 }}
                 onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = []) => {
+                  if (remoteMode) {
+                    await sendBoothCommand('saveRotationWorkspace', {
+                      rotation: newRotation,
+                      assignments: capSongAssignments(playlists, liveBoothState?.songsPerSet || songsPerSet),
+                      interstitialSongs: interstitials,
+                      manualOverrides,
+                    }, {
+                      expectedRotationVersion: liveBoothState?.rotationVersion,
+                      nowPlayingGuard: liveBoothState?.isRotationActive ? {
+                        dancerId: liveBoothState.rotation?.[liveBoothState.currentDancerIndex],
+                        songNumber: liveBoothState.currentSongNumber,
+                        track: liveBoothState.currentTrack,
+                      } : undefined,
+                    });
+                    return;
+                  }
                   const saveVersion = ++rotationAssignmentVersionRef.current;
                   if (isRotationActive && rotationRef.current.length > 0) {
                     const currentPerformerId = rotationRef.current[currentDancerIndexRef.current];
@@ -6076,9 +6496,15 @@ export default function DJBooth() {
                     queryClient.invalidateQueries({ queryKey: ['stages'] });
                   }
                 }}
-                onAddToRotation={addToRotation}
-                onRemoveFromRotation={removeFromRotation}
-                onStartRotation={startRotation}
+                onAddToRotation={remoteMode
+                  ? (dancerId) => sendBoothCommand('addDancerToRotation', { dancerId })
+                  : addToRotation}
+                onRemoveFromRotation={remoteMode
+                  ? (dancerId) => sendBoothCommand('removeDancerFromRotation', { dancerId })
+                  : removeFromRotation}
+                onStartRotation={remoteMode
+                  ? () => boothApi.sendCommand('startRotation')
+                  : startRotation}
                 isRotationActive={isRotationActive}
                 rotationPending={rotationPending}
                 onCancelPendingRotation={() => {
@@ -6087,14 +6513,22 @@ export default function DJBooth() {
                   console.log('🚫 Pending rotation cancelled');
                 }}
                 announcementsEnabled={announcementsEnabled}
-                onAnnouncementsToggle={(enabled) => setAnnouncementsEnabled(enabled)}
+                onAnnouncementsToggle={remoteMode
+                  ? () => boothApi.sendCommand('toggleAnnouncements')
+                  : (enabled) => setAnnouncementsEnabled(enabled)}
                 skipLocked={skipLocked}
                 currentDancerIndex={currentDancerIndex}
                 commercialCounter={commercialCounterRef.current}
                 availablePromos={availablePromos}
                 promoQueue={promoQueue}
-                onSwapPromo={swapPromoAtSlot}
+                onSwapPromo={remoteMode
+                  ? (slotIndex) => boothApi.sendCommand('swapPromo', { slotIndex })
+                  : swapPromoAtSlot}
                 onSkipCurrentDancer={() => {
+                  if (remoteMode) {
+                    boothApi.sendCommand('skip');
+                    return;
+                  }
                   if (!isRotationActiveRef.current) return;
                   if (rotationRef.current.length <= 1) return;
                   // Lockout check BEFORE the 999 sentinel: a rejected press must never
@@ -6108,6 +6542,10 @@ export default function DJBooth() {
                   handleSkipRef.current?.();
                 }}
                 onSkipEntertainerNow={() => {
+                  if (remoteMode) {
+                    boothApi.sendCommand('skip');
+                    return;
+                  }
                   // Top-level "Next Entertainer" button — hard skip, no break songs.
                   // Ends current entertainer's set immediately, plays next entertainer's
                   // intro + song 1 with no break music in between.
@@ -6131,6 +6569,10 @@ export default function DJBooth() {
                   if (dancerId === currentDancerId) return;
                   rot.splice(skipIdx, 1);
                   rot.push(dancerId);
+                  if (remoteMode) {
+                    sendBoothCommand('saveRotation', { rotation: rot });
+                    return;
+                  }
                   let newCurrentIdx = 0;
                   for (let i = 0; i < rot.length; i++) {
                     if (rot[i] === currentDancerId) { newCurrentIdx = i; break; }
@@ -6168,6 +6610,10 @@ export default function DJBooth() {
                   if (newCurrentIdx === -1) newCurrentIdx = currentIdx;
                   // Insert moved dancer right after the on-stage dancer
                   rot.splice(newCurrentIdx + 1, 0, dancerId);
+                  if (remoteMode) {
+                    sendBoothCommand('saveRotation', { rotation: rot });
+                    return;
+                  }
                   setRotation(rot);
                   rotationRef.current = rot;
                   setCurrentDancerIndex(newCurrentIdx);
@@ -6178,6 +6624,12 @@ export default function DJBooth() {
                   toast(`${dancer?.name || 'Entertainer'} is up next`, { icon: '⏫' });
                 }}
                 onDancerDragReorder={(newRotation, oldFirstId, newFirstId) => {
+                  if (remoteMode) {
+                    sendBoothCommand('saveRotation', { rotation: newRotation }, {
+                      expectedRotationVersion: liveBoothState?.rotationVersion,
+                    });
+                    return;
+                  }
                   if (!isRotationActive) return;
                   setRotation(newRotation);
                   rotationRef.current = newRotation;
@@ -6193,12 +6645,20 @@ export default function DJBooth() {
                 }}
                 dancerVipMap={dancerVipMap}
                 pendingVipMap={pendingVipState}
-                onSendToVip={sendDancerToVip}
-                onReleaseFromVip={releaseDancerFromVip}
+                onSendToVip={remoteMode
+                  ? (dancerId, durationMs) => sendBoothCommand('sendToVip', { dancerId, durationMs })
+                  : sendDancerToVip}
+                onReleaseFromVip={remoteMode
+                  ? (dancerId) => sendBoothCommand('releaseFromVip', { dancerId })
+                  : releaseDancerFromVip}
                 currentSongNumber={currentSongNumber}
                 currentTrack={currentTrack}
                 breakSongsPerSet={breakSongsPerSet}
                 onBreakSongsPerSetChange={(n) => {
+                  if (remoteMode) {
+                    boothApi.sendCommand('setBreakSongsPerSet', { count: n });
+                    return;
+                  }
                   const wasBreak = breakSongsPerSetRef.current > 0;
                   setBreakSongsPerSet(n);
                   breakSongsPerSetRef.current = n;
@@ -6215,12 +6675,20 @@ export default function DJBooth() {
                 }}
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={async (n) => {
+                  if (remoteMode) {
+                    await boothApi.sendCommand('setSongsPerSet', { count: n, source: 'full-dj-remote' });
+                    return;
+                  }
                   await applySongsPerSetChange(n, 'booth-buttons');
                 }}
                 onSongAssignmentsChange={setPlannedSongAssignments}
                 autoplayQueue={autoplayQueue}
                 autoplayAutoFillEnabled={autoplayAutoFillEnabled}
                 onAutoplayAutoFillToggle={(val) => {
+                  if (remoteMode) {
+                    boothApi.sendCommand('setAutoplayAutoFill', { enabled: val });
+                    return;
+                  }
                   setAutoplayAutoFillEnabled(val);
                   autoplayAutoFillEnabledRef.current = val;
                   localStorage.setItem('djbooth_autoplay_autofill', String(val));
@@ -6228,12 +6696,20 @@ export default function DJBooth() {
                   if (val) fillAutoplayQueue(autoplayQueueRef.current);
                 }}
                 onAutoplayQueueChange={(newQueue) => {
+                  if (remoteMode) {
+                    boothApi.sendCommand('setAutoplayQueue', { trackNames: newQueue.map(track => track.name) });
+                    return;
+                  }
                   updateAutoplayQueue(newQueue);
                   fillAutoplayQueue(newQueue);
                 }}
                 onAutoplayQueueRemove={(index) => {
                   const newQueue = [...autoplayQueueRef.current];
                   newQueue.splice(index, 1);
+                  if (remoteMode) {
+                    boothApi.sendCommand('setAutoplayQueue', { trackNames: newQueue.map(track => track.name) });
+                    return;
+                  }
                   updateAutoplayQueue(newQueue);
                   fillAutoplayQueue(newQueue);
                 }}
@@ -6247,9 +6723,15 @@ export default function DJBooth() {
                   rotation={rotation}
                   currentDancerIndex={currentDancerIndex}
                   isRotationActive={isRotationActive}
-                  onAddToRotation={addToRotation}
-                  onRemoveFromRotation={removeFromRotation}
-                  onPullAll={pullAllFromRotation}
+                  onAddToRotation={remoteMode
+                    ? (dancerId) => sendBoothCommand('addDancerToRotation', { dancerId })
+                    : addToRotation}
+                  onRemoveFromRotation={remoteMode
+                    ? (dancerId) => sendBoothCommand('removeDancerFromRotation', { dancerId })
+                    : removeFromRotation}
+                  onPullAll={remoteMode
+                    ? () => sendBoothCommand('saveRotation', { rotation: [] })
+                    : pullAllFromRotation}
                   onAddDancer={addDancer}
                   onEditDancer={(id, data) => updateDancerMutation.mutate({ id, data })}
                   onDeleteDancer={(id) => deleteDancerMutation.mutate(id)}
@@ -6260,47 +6742,67 @@ export default function DJBooth() {
                   selectedDancerId={selectedDancer?.id}
                   dancerVipMap={dancerVipMap}
                   pendingVipState={pendingVipState}
-                  onSendToVip={sendDancerToVip}
-                  onReleaseFromVip={releaseDancerFromVip}
-                  onResetVoiceovers={(name) => announcementRef.current?.resetAndRegenerateDancer?.(name)}
+                  onSendToVip={remoteMode
+                    ? (dancerId, durationMs) => sendBoothCommand('sendToVip', { dancerId, durationMs })
+                    : sendDancerToVip}
+                  onReleaseFromVip={remoteMode
+                    ? (dancerId) => sendBoothCommand('releaseFromVip', { dancerId })
+                    : releaseDancerFromVip}
+                  onResetVoiceovers={remoteMode
+                    ? (dancerName) => boothApi.sendCommand('resetDancerVoiceovers', { dancerName })
+                    : (name) => announcementRef.current?.resetAndRegenerateDancer?.(name)}
                 />
               </div>
             )}
             
-            {!remoteMode && (
-              <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex flex-col overflow-hidden" style={{ display: activeTab === 'library' ? 'flex' : 'none' }}>
+            <div className="h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-4 flex flex-col overflow-hidden" style={{ display: activeTab === 'library' ? 'flex' : 'none' }}>
                 <MusicLibrary
                   dancers={dancers}
                   onTrackSelect={(track) => {
                     if (editingPlaylist) return;
-                    if (track.url) playTrack(track.url, true, track.name, track.genre);
+                    if (remoteMode) {
+                      boothApi.sendCommand('playLibraryTrack', { trackName: track.name });
+                    } else if (track.url) {
+                      playTrack(track.url, true, track.name, track.genre);
+                    }
                   }}
                 />
               </div>
-            )}
             
-            {!remoteMode && activeTab === 'announcements' && (
+            {activeTab === 'announcements' && (
               <div className="h-full overflow-y-auto">
                 <div className="flex flex-col gap-6 pb-6">
                   <AnnouncementSystem
                     dancers={dancers}
                     rotation={rotation}
                     currentDancerIndex={currentDancerIndex}
-                    onPlay={handleAnnouncementPlay}
+                    onPlay={remoteMode ? undefined : handleAnnouncementPlay}
+                    onRemotePlay={remoteMode
+                      ? (cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })
+                      : undefined}
                     elevenLabsApiKey={elevenLabsKey}
                     openaiApiKey={openaiKey}
                     hideUI={false}
                     onVoiceDiag={logDiag}
                   />
                   <div className="bg-[#0d0d1f] rounded-xl border border-amber-500/20 p-4">
-                    <HouseAnnouncementPanel onPlay={handleAnnouncementPlay} />
+                    <HouseAnnouncementPanel
+                      onPlay={handleAnnouncementPlay}
+                      isRemote={remoteMode}
+                      onRemotePlay={(cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })}
+                    />
                   </div>
-                  <ManualAnnouncementPlayer onPlay={handleAnnouncementPlay} />
+                  <ManualAnnouncementPlayer
+                    onPlay={remoteMode ? undefined : handleAnnouncementPlay}
+                    onRemotePlay={remoteMode
+                      ? (cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })
+                      : undefined}
+                  />
                 </div>
               </div>
             )}
 
-            {!remoteMode && activeTab === 'sfx' && (
+            {activeTab === 'sfx' && (
               <div className="h-full overflow-y-auto px-2 py-3 space-y-4">
                 {/* Boost selector */}
                 <div>
@@ -6333,6 +6835,10 @@ export default function DJBooth() {
                     ].map(({ id, emoji, label }) => (
                       <button key={id}
                         onPointerDown={() => {
+                          if (remoteMode) {
+                            boothApi.sendCommand('playSound', { soundId: id, gain: volume * sfxBoost });
+                            return;
+                          }
                           const AC = window.AudioContext || window.webkitAudioContext;
                           if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') soundboardCtxRef.current = new AC();
                           playSoundboardEffect(id, soundboardCtxRef.current, volume * sfxBoost);
@@ -6363,6 +6869,10 @@ export default function DJBooth() {
                     ].map(({ id, emoji, label }) => (
                       <button key={id}
                         onPointerDown={() => {
+                          if (remoteMode) {
+                            boothApi.sendCommand('playSound', { soundId: id, gain: volume * sfxBoost });
+                            return;
+                          }
                           const AC = window.AudioContext || window.webkitAudioContext;
                           if (!soundboardCtxRef.current || soundboardCtxRef.current.state === 'closed') soundboardCtxRef.current = new AC();
                           playSoundboardEffect(id, soundboardCtxRef.current, volume * sfxBoost);
@@ -6376,7 +6886,13 @@ export default function DJBooth() {
                 </div>
 
                 {/* Custom Sounds */}
-                <CustomSoundboard volume={volume} sfxBoost={sfxBoost} />
+                <CustomSoundboard
+                  volume={volume}
+                  sfxBoost={sfxBoost}
+                  onRemotePlay={remoteMode
+                    ? (soundId, gain) => boothApi.sendCommand('playSound', { soundId, gain })
+                    : undefined}
+                />
               </div>
             )}
 
@@ -6389,8 +6905,17 @@ export default function DJBooth() {
                   songsPerSet={songsPerSet}
                   breakSongsPerSet={breakSongsPerSet}
                   placedFeatures={placedFeatures}
-                  onPlaceFeature={placeFeatureAtSlot}
-                  onCancelFeature={cancelFeaturePlacement}
+                  allowAudioPreview={!remoteMode}
+                  onRemoteAudioPreview={remoteMode
+                    ? (dancerId, type) => boothApi.sendCommand('playFeatureAudio', { dancerId, type }, { timeoutMs: 180_000 })
+                    : undefined}
+                  onPlaceFeature={remoteMode
+                    ? (featureId, chosenSetName, playPos, audioFlags) =>
+                        sendBoothCommand('placeFeature', { featureId, chosenSetName, playPos, audioFlags })
+                    : placeFeatureAtSlot}
+                  onCancelFeature={remoteMode
+                    ? (featureId) => sendBoothCommand('cancelFeaturePlacement', { featureId })
+                    : cancelFeaturePlacement}
                   onRefreshDancers={async () => {
                     await queryClient.invalidateQueries({ queryKey: ['dancers'] });
                     await queryClient.refetchQueries({ queryKey: ['dancers'] });

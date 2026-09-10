@@ -794,8 +794,8 @@ const AudioEngine = forwardRef(({
     busGain.gain.exponentialRampToValueAtTime(1.0, ctx.currentTime + DUCK_RELEASE_MS / 1000);
   }, [ensureAudioContext]);
 
-  const playAnnouncement = useCallback(async (audioUrl, { autoDuck = true, onNearEnd = null } = {}) => {
-    return new Promise(async (resolve) => {
+  const playAnnouncement = useCallback(async (audioUrl, { autoDuck = true, onNearEnd = null, waitForEnd = true } = {}) => {
+    return new Promise(async (resolve, reject) => {
       const voice = voiceElRef.current;
       if (voice) {
         voice.pause();
@@ -805,7 +805,7 @@ const AudioEngine = forwardRef(({
       const isBlobUrl = audioUrl && audioUrl.startsWith('blob:');
       let resolved = false;
       let nearEndFired = false;
-      const cleanupAndResolve = () => {
+      const cleanupAndResolve = (error = null) => {
         if (resolved) return;
         resolved = true;
         if (voice) voice.ontimeupdate = null;
@@ -815,12 +815,12 @@ const AudioEngine = forwardRef(({
           onNearEnd();
         }
         if (autoDuck) unduck();
-        resolve();
+        if (error) reject(error); else resolve();
       };
 
       if (!audioUrl) {
         console.warn('⚠️ PlayAnnouncement: No audio URL provided');
-        cleanupAndResolve();
+        cleanupAndResolve(new Error('No announcement audio URL was provided'));
         return;
       }
 
@@ -854,7 +854,7 @@ const AudioEngine = forwardRef(({
       voice.onended = cleanupAndResolve;
       voice.onerror = (e) => {
         console.error('❌ Announcement audio error:', e?.target?.error?.message || 'unknown');
-        cleanupAndResolve();
+        cleanupAndResolve(new Error(e?.target?.error?.message || 'Announcement audio playback failed'));
       };
 
       await new Promise((readyResolve) => {
@@ -873,9 +873,13 @@ const AudioEngine = forwardRef(({
 
       try {
         await voice.play();
+        // Remote command receipts describe successful playback startup, not
+        // the duration of the media. Event handlers remain installed so normal
+        // end/error cleanup and unducking still occur after this resolves.
+        if (!waitForEnd) resolve();
       } catch (error) {
         console.error('Failed to play announcement:', error);
-        cleanupAndResolve();
+        cleanupAndResolve(error);
       }
     });
   }, [duck, unduck]);
@@ -954,7 +958,7 @@ const AudioEngine = forwardRef(({
     const saved = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}');
     saved[band] = v;
     localStorage.setItem('neonaidj_music_eq', JSON.stringify(saved));
-    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ neonaidj_music_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
+    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_music_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
   }, []);
 
   const stopVoice = useCallback(() => {
@@ -979,7 +983,7 @@ const AudioEngine = forwardRef(({
     const saved = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
     saved[band] = v;
     localStorage.setItem('neonaidj_voice_eq', JSON.stringify(saved));
-    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ neonaidj_voice_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
+    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_voice_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -1001,7 +1005,7 @@ const AudioEngine = forwardRef(({
     setBeatMatch: (enabled) => {
       beatMatchEnabledRef.current = enabled;
       try { localStorage.setItem('neonaidj_beat_match', enabled ? 'true' : 'false'); } catch {}
-      try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ neonaidj_beat_match: enabled ? 'true' : 'false' }) }).catch(() => {}); } catch {}
+      try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_beat_match: enabled ? 'true' : 'false' }) }).catch(() => {}); } catch {}
     },
     getBeatMatchEnabled: () => beatMatchEnabledRef.current,
     isPlaying,

@@ -276,7 +276,12 @@ function LicenseGate({ children }) {
 }
 
 function App() {
-  const skipBoot = window.location.pathname.startsWith('/fleet') || window.location.pathname === '/FleetDashboard' || window.location.pathname === '/RotationDisplay';
+  // LAN/public clients are command-only and must not wait for physical-kiosk
+  // music scan, voiceover sync, or other local boot work.
+  const skipBoot = isRemoteMode() ||
+    window.location.pathname.startsWith('/fleet') ||
+    window.location.pathname === '/FleetDashboard' ||
+    window.location.pathname === '/RotationDisplay';
   const [bootComplete, setBootComplete] = useState(skipBoot);
   const handleBootReady = useCallback(() => setBootComplete(true), []);
 

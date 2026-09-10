@@ -97,7 +97,7 @@ const resolveEventDates = (dateStr, today = new Date()) => {
   return `${monthName} ${ordinals[0]}`;
 };
 
-export default function ManualAnnouncementPlayer({ onPlay }) {
+export default function ManualAnnouncementPlayer({ onPlay, onRemotePlay }) {
   const queryClient = useQueryClient();
 
   const [promoForm, setPromoForm] = useState({
@@ -151,6 +151,11 @@ export default function ManualAnnouncementPlayer({ onPlay }) {
 
 
   const handlePlay = async (announcement) => {
+    if (onRemotePlay) {
+      await onRemotePlay(announcement.cache_key);
+      toast.success(`Playing: ${announcement.dancer_name || announcement.cache_key}`);
+      return;
+    }
     if (onPlay) {
       const url = `/api/voiceovers/audio/${encodeURIComponent(announcement.cache_key)}`;
       const res = await fetch(url, { headers: getAuthHeaders() });

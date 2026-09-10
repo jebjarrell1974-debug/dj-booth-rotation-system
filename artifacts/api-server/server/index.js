@@ -44,8 +44,9 @@ import { getAndClearErrors, updateSystemState, trackError } from './error-tracke
 import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
 import {
   BoothCommandQueue,
-  isPhysicalKioskAddress,
+  isPhysicalKioskRequestMetadata,
   isStructuralCommand,
+  boothWorkspaceSnapshot,
   normalizeBoothState,
   validateBoothCommand,
 } from './booth-command-policy.js';
@@ -120,6 +121,8 @@ let liveBoothState = {
   promoQueue: [],
   availablePromos: [],
   skippedCommercials: [],
+  autoplayQueue: [],
+  autoplayAutoFillEnabled: true,
   updatedAt: 0,
   diagLog: [],
   prePickHits: 0,
@@ -337,12 +340,12 @@ const SELF_IPS = (() => {
   return set;
 })();
 
-// Do not use req.ip, X-Forwarded-For, or any client-controlled header here.
-// The kiosk identity is the TCP peer address of the request received by this
-// process.  This intentionally fails closed when a reverse proxy is inserted.
+// Physical privilege requires both a loopback TCP peer and a direct loopback
+// Host. Forwarding indicators fail closed, including when a development proxy
+// reaches this process from its own loopback interface.
 function isPhysicalKioskRequest(req) {
   const address = (req.socket?.remoteAddress || req.connection?.remoteAddress || '').replace('::ffff:', '');
-  return isPhysicalKioskAddress(address, SELF_IPS);
+  return isPhysicalKioskRequestMetadata(address, req.headers.host, req.headers);
 }
 
 function requirePhysicalKiosk(req, res, next) {
@@ -471,11 +474,11 @@ app.post('/api/settings/dj-pin', authenticate, requireDJ, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/settings/master-pin', authenticate, requireDJ, (req, res) => {
+app.get('/api/settings/master-pin', authenticate, requireDJ, requireMaster, requirePhysicalKiosk, (req, res) => {
   res.json({ pin: getMasterPin() });
 });
 
-app.post('/api/settings/master-pin', authenticate, requireDJ, (req, res) => {
+app.post('/api/settings/master-pin', authenticate, requireDJ, requireMaster, requirePhysicalKiosk, (req, res) => {
   const { pin } = req.body;
   if (!pin || pin.length !== 5) return res.status(400).json({ error: '5-digit PIN required' });
   setSetting('master_pin', pin);
@@ -498,7 +501,7 @@ app.post('/api/settings/dj-pin/init', (req, res) => {
   res.json({ ok: true, token, role: 'dj' });
 });
 
-app.post('/api/fleet/auto-auth', (req, res) => {
+app.post('/api/fleet/auto-auth', requirePhysicalKiosk, (req, res) => {
   const token = createSession('dj', null, 'Fleet', 0, 'dj');
   res.json({ ok: true, token, role: 'dj' });
 });
@@ -770,7 +773,7 @@ app.post('/api/dancers/import', authenticate, requireDJ, (req, res) => {
   }
 });
 
-app.post('/api/config/save-to-server', (req, res) => {
+app.post('/api/config/save-to-server', authenticate, requireDJ, (req, res) => {
   try {
     saveClientSettings(req.body || {});
     res.json({ ok: true });
@@ -1762,27 +1765,121 @@ function queueBoothCommand(action, payload = {}, options = {}) {
   return result;
 }
 
+function boothActor(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || '';
+  return `dj:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+}
+
 app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
-  const { action, payload, requestId, expectedRotationVersion } = req.body || {};
+  const {
+    action,
+    payload,
+    requestId,
+    expectedRotationVersion,
+    expectedStateVersion,
+    nowPlayingGuard,
+  } = req.body || {};
   if (typeof requestId !== 'string' || requestId.length < 1 || requestId.length > 128) {
     return res.status(400).json({ error: 'requestId is required and must be a string up to 128 characters' });
   }
   const validation = validateBoothCommand(action, payload);
   if (!validation.ok) return res.status(400).json({ error: validation.error });
-  const token = req.headers.authorization?.replace('Bearer ', '') || '';
-  const actor = `dj:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+  const actor = boothActor(req);
   const duplicate = boothCommandQueue.findDuplicate(actor, requestId);
   if (duplicate) {
-    return res.json({ ok: true, commandId: duplicate.id, command: duplicate, duplicate: true });
+    const queued = ['pending', 'processing'].includes(duplicate.status);
+    return res.status(queued ? 202 : 200).json({
+      ok: duplicate.status === 'applied',
+      queued,
+      commandId: duplicate.id,
+      command: duplicate,
+      duplicate: true,
+    });
   }
   if (isStructuralCommand(action)) {
     if (!Number.isInteger(expectedRotationVersion)) return res.status(428).json({ error: 'expectedRotationVersion is required for rotation changes' });
     if (expectedRotationVersion !== liveBoothState.rotationVersion) {
-      return res.status(409).json({ error: 'Rotation has changed; refresh and try again', rotationVersion: liveBoothState.rotationVersion });
+      return res.status(409).json({
+        error: 'Rotation has changed. Your edits were kept; review the latest rotation and save again.',
+        rotationVersion: liveBoothState.rotationVersion,
+        state: liveBoothState,
+      });
+    }
+    const reserved = boothCommandQueue.pendingStructuralForVersion(expectedRotationVersion);
+    if (reserved) {
+      return res.status(409).json({
+        error: 'Another rotation change is still being applied. Your edits were kept; wait for it to finish and save again.',
+        rotationVersion: liveBoothState.rotationVersion,
+        pendingCommandId: reserved.id,
+        state: liveBoothState,
+      });
     }
   }
-  const result = queueBoothCommand(action, validation.payload, { actor, requestId });
-  res.json({ ok: true, commandId: result.command.id, command: result.command, duplicate: result.duplicate });
+  if (expectedStateVersion != null && expectedStateVersion !== liveBoothState.stateVersion) {
+    return res.status(409).json({
+      error: 'Booth state changed before this command was sent. No command was applied.',
+      stateVersion: liveBoothState.stateVersion,
+      state: liveBoothState,
+    });
+  }
+  if (nowPlayingGuard != null) {
+    const validGuard = nowPlayingGuard && typeof nowPlayingGuard === 'object' &&
+      (nowPlayingGuard.dancerId == null || typeof nowPlayingGuard.dancerId === 'string' || Number.isInteger(nowPlayingGuard.dancerId)) &&
+      (nowPlayingGuard.songNumber == null || Number.isInteger(nowPlayingGuard.songNumber)) &&
+      (nowPlayingGuard.track == null || typeof nowPlayingGuard.track === 'string');
+    if (!validGuard) return res.status(400).json({ error: 'nowPlayingGuard is invalid' });
+    const guardMatches =
+      (nowPlayingGuard.dancerId == null || String(nowPlayingGuard.dancerId) === String(liveBoothState.rotation[liveBoothState.currentDancerIndex])) &&
+      (nowPlayingGuard.songNumber == null || nowPlayingGuard.songNumber === liveBoothState.currentSongNumber) &&
+      (nowPlayingGuard.track == null || nowPlayingGuard.track === liveBoothState.currentTrack);
+    if (!guardMatches) {
+      return res.status(409).json({
+        error: 'Now playing changed during this edit. The playing slot was protected and your edits were kept.',
+        stateVersion: liveBoothState.stateVersion,
+        state: liveBoothState,
+      });
+    }
+  }
+  let result;
+  try {
+    result = queueBoothCommand(action, validation.payload, {
+      actor,
+      requestId,
+      expectedRotationVersion,
+      expectedStateVersion,
+      nowPlayingGuard,
+      expectedRotation: isStructuralCommand(action) ? [...(liveBoothState.rotation || [])] : undefined,
+      expectedWorkspace: isStructuralCommand(action) ? boothWorkspaceSnapshot(liveBoothState) : undefined,
+      ttlMs: ['playHouseAnnouncement', 'playFeatureAudio'].includes(action) ? 180_000 : undefined,
+    });
+  } catch (error) {
+    if (error?.code === 'BOOTH_COMMAND_QUEUE_FULL') {
+      return res.status(503).json({ error: error.message });
+    }
+    throw error;
+  }
+  res.status(202).json({
+    ok: false,
+    queued: true,
+    commandId: result.command.id,
+    command: result.command,
+    duplicate: result.duplicate,
+  });
+});
+
+app.get('/api/booth/command/:id', authenticate, requireDJ, (req, res) => {
+  const commandId = Number(req.params.id);
+  const command = boothCommandQueue.getById(commandId);
+  if (!command) return res.status(404).json({ error: 'Command receipt was not found or has expired' });
+  const actor = boothActor(req);
+  if (!isPhysicalKioskRequest(req) && command.actor !== actor) {
+    return res.status(403).json({ error: 'This command belongs to another session' });
+  }
+  res.json({
+    ok: command.status === 'applied',
+    queued: ['pending', 'processing'].includes(command.status),
+    command,
+  });
 });
 
 app.get('/api/booth/commands', authenticate, requireDJ, requirePhysicalKiosk, (req, res) => {
@@ -1790,10 +1887,24 @@ app.get('/api/booth/commands', authenticate, requireDJ, requirePhysicalKiosk, (r
   res.json({ commands: boothCommandQueue.pendingSince(since) });
 });
 
+app.post('/api/booth/commands/claim', authenticate, requireDJ, requirePhysicalKiosk, (req, res) => {
+  const commandId = Number(req.body?.commandId);
+  const command = boothCommandQueue.claim(commandId);
+  if (!command) return res.status(404).json({ error: 'Command was not found' });
+  res.json({ claimed: command.status === 'processing', command });
+});
+
 app.post('/api/booth/commands/ack', authenticate, requireDJ, requirePhysicalKiosk, (req, res) => {
-  const { upToId } = req.body;
-  boothCommandQueue.acknowledgeThrough(upToId);
-  res.json({ ok: true });
+  const commandId = Number(req.body?.commandId ?? req.body?.upToId);
+  const command = boothCommandQueue.acknowledge(commandId, {
+    ok: req.body?.ok !== false,
+    error: req.body?.error,
+    stateVersion: req.body?.stateVersion,
+    rotationVersion: req.body?.rotationVersion,
+  });
+  if (!command) return res.status(404).json({ error: 'Command was not found' });
+  broadcastSSE('commandResult', { command });
+  res.json({ ok: true, command });
 });
 
 // ===== POS Integration (LAN webhook receivers) =====
@@ -1909,10 +2020,10 @@ app.post('/api/pos/vip-end', requirePosKey, posEventHandler('vip-end'));
 app.post('/api/pos/checkout', requirePosKey, posEventHandler('checkout'));
 
 // DJ-only: view (or rotate) the POS API key so the operator can hand it to the POS company
-app.get('/api/pos/key', authenticate, requireDJ, (req, res) => {
+app.get('/api/pos/key', authenticate, requireDJ, requireMaster, requirePhysicalKiosk, (req, res) => {
   res.json({ key: getPosApiKey() });
 });
-app.post('/api/pos/key/rotate', authenticate, requireDJ, (req, res) => {
+app.post('/api/pos/key/rotate', authenticate, requireDJ, requireMaster, requirePhysicalKiosk, (req, res) => {
   const key = 'pos_' + randomBytes(24).toString('hex');
   setSetting('pos_api_key', key);
   createAuditEntry(req.session?.staff_name || 'DJ', req.session?.staff_role || 'dj', 'pos_key_rotated', null);

@@ -218,7 +218,7 @@ export const saveApiConfig = (config) => {
   if (Object.keys(serverPayload).length > 0) {
     fetch('/api/config/save-to-server', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` },
       body: JSON.stringify(serverPayload),
     }).catch(() => {});
   }

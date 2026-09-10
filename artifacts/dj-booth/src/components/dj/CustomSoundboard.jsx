@@ -11,7 +11,7 @@ const getAuthHeaders = () => {
 const apiFetch = (path, opts = {}) =>
   fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts.headers || {}) } }).then(r => r.json());
 
-export default function CustomSoundboard({ volume = 1, sfxBoost = 1 }) {
+export default function CustomSoundboard({ volume = 1, sfxBoost = 1, onRemotePlay }) {
   const [sounds, setSounds] = useState([]);
   const [addMode, setAddMode] = useState(null);
   const [urlInput, setUrlInput] = useState('');
@@ -34,6 +34,12 @@ export default function CustomSoundboard({ volume = 1, sfxBoost = 1 }) {
   useEffect(() => { load(); }, []);
 
   const playSound = (id) => {
+    if (onRemotePlay) {
+      onRemotePlay(String(id), Math.min(5, Math.max(0, volume * sfxBoost)));
+      setPlayingId(id);
+      setTimeout(() => setPlayingId(current => current === id ? null : current), 750);
+      return;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;

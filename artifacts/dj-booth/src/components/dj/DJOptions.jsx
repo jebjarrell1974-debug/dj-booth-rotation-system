@@ -4,7 +4,7 @@ import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor, Clock,
 import { Switch } from '@/components/ui/switch';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
-export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq }) {
+export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq, onAudioCommand }) {
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,7 +62,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
   const saveToServer = (key, value) => {
     fetch('/api/config/save-to-server', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` },
       body: JSON.stringify({ [key]: value }),
     }).catch(() => {});
   };
@@ -213,7 +213,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                       onClick={() => {
                         setCommercialFreq(opt.value);
                         localStorage.setItem('neonaidj_commercial_freq', opt.value);
-                        saveToServer('neonaidj_commercial_freq', opt.value);
+                        if (!onCommercialFreqChange) saveToServer('neonaidj_commercial_freq', opt.value);
                         setCommercialDropdownOpen(false);
                         onCommercialFreqChange?.(opt.value);
                       }}
@@ -514,7 +514,8 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
             onClick={() => {
               const next = !beatMatchEnabled;
               setBeatMatchEnabled(next);
-              audioEngineRef?.current?.setBeatMatch?.(next);
+              if (onAudioCommand) onAudioCommand('setBeatMatch', { enabled: next });
+              else audioEngineRef?.current?.setBeatMatch?.(next);
             }}
             className={`relative w-11 h-6 rounded-full transition-colors ${beatMatchEnabled ? 'bg-[#00d4ff]' : 'bg-[#1e293b]'}`}
           >
@@ -550,7 +551,8 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                 onChange={(e) => {
                   const val = parseInt(e.target.value);
                   setMusicEq(prev => ({ ...prev, [band]: val }));
-                  audioEngineRef?.current?.setMusicEq?.(band, val);
+                  if (onAudioCommand) onAudioCommand('setMusicEq', { band, value: val });
+                  else audioEngineRef?.current?.setMusicEq?.(band, val);
                 }}
                 className="flex-1 h-2 accent-[#00d4ff]"
               />
@@ -563,7 +565,10 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
             onClick={() => {
               const flat = { bass: 0, mid: 0, treble: 0 };
               setMusicEq(flat);
-              ['bass', 'mid', 'treble'].forEach(b => audioEngineRef?.current?.setMusicEq?.(b, 0));
+              ['bass', 'mid', 'treble'].forEach(b => {
+                if (onAudioCommand) onAudioCommand('setMusicEq', { band: b, value: 0 });
+                else audioEngineRef?.current?.setMusicEq?.(b, 0);
+              });
             }}
             className="text-xs text-gray-500 hover:text-gray-300 transition-colors mt-1"
           >

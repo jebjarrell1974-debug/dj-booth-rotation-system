@@ -201,6 +201,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     rotation,
     currentDancerIndex,
     onPlay,
+    onRemotePlay,
     elevenLabsApiKey,
     openaiApiKey,
     hideUI = false,
@@ -910,6 +911,18 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.log(`📢 AnnouncementSystem: Playing ${type} for ${dancerName} (var${varNum}, Round ${roundNumber})${featureMeta ? ' [FEATURE]' : ''}`);
       const result = await getOrGenerateAnnouncement(type, dancerName, nextDancerName, varNum, roundNumber, featureMeta);
       console.log(`📢 AnnouncementSystem: Got audio URL (cached=${result.fromCache}), playing...`);
+      if (onRemotePlay) {
+        const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
+          : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
+          : CURRENT_VOICE_VERSION;
+        const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${versionTag}`;
+        const audioResponse = await fetch(result.url);
+        if (!audioResponse.ok) throw new Error('Generated announcement audio could not be prepared for the kiosk');
+        const saved = await saveToServer(cacheKey, await audioResponse.blob(), '', type, dancerName, LOCKED_LEVEL);
+        if (!saved) throw new Error('Generated announcement could not be cached on the kiosk server');
+        await onRemotePlay(cacheKey, audioOptions);
+        return;
+      }
       try {
         await onPlay?.(result.url, audioOptions);
         console.log(`📢 AnnouncementSystem: Playback complete`);
@@ -960,7 +973,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       console.warn(`Announcement skipped: ${error.message} — music continues uninterrupted`);
       onVoiceDiag?.('voice_skipped', { dancer: dancerName, voiceType: type, error: (error.message || '').substring(0, 80) });
     }
-  }, [getOrGenerateAnnouncement, getNextVariationNum, onPlay, onVoiceDiag]);
+  }, [getOrGenerateAnnouncement, getNextVariationNum, onPlay, onRemotePlay, onVoiceDiag, saveToServer]);
 
   const preCacheDancer = useCallback(async (dancerName) => {
     const config = getApiConfig();

@@ -146,6 +146,8 @@ export default function FeatureEntertainerPanel({
   placedFeatures = {},
   onPlaceFeature,
   onCancelFeature,
+  allowAudioPreview = true,
+  onRemoteAudioPreview,
 }) {
   const features = useMemo(
     () => (dancers || []).filter(d => d.entertainer_type === 'feature').sort((a, b) => a.name.localeCompare(b.name)),
@@ -329,7 +331,16 @@ export default function FeatureEntertainerPanel({
     }
   }, [selected, introScript, outroScript, introBed, outroBed]);
 
-  const previewAudio = useCallback((mode) => {
+  const previewAudio = useCallback(async (mode) => {
+    if (onRemoteAudioPreview) {
+      try {
+        await onRemoteAudioPreview(selected?.id, mode);
+      } catch (error) {
+        alert(`Play failed: ${error.message}`);
+      }
+      return;
+    }
+    if (!allowAudioPreview) return;
     if (!selected) return;
     if (playing === mode) {
       audioRef.current?.pause();
@@ -344,7 +355,7 @@ export default function FeatureEntertainerPanel({
     a.play().catch(e => { setPlaying(null); alert(`Play failed: ${e.message}`); });
     audioRef.current = a;
     setPlaying(mode);
-  }, [selected, playing]);
+  }, [selected, playing, allowAudioPreview, onRemoteAudioPreview]);
 
   const loadShow = useCallback(async () => {
     if (!selected || !pickedFolder) return;
@@ -528,7 +539,7 @@ export default function FeatureEntertainerPanel({
                     <Button onClick={() => produce('intro')} disabled={producingIntro || beds.length === 0} className="bg-purple-500 hover:bg-purple-600 text-white">
                       {producingIntro ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Producing...</> : (introExists ? 'Re-create Intro' : 'Create Intro')}
                     </Button>
-                    <Button onClick={() => previewAudio('intro')} disabled={!introExists} variant="outline" className="border-[#1e293b]">
+                    <Button onClick={() => previewAudio('intro')} disabled={!introExists || (!allowAudioPreview && !onRemoteAudioPreview)} variant="outline" className="border-[#1e293b]">
                       {playing === 'intro' ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                     </Button>
                   </div>
@@ -557,7 +568,7 @@ export default function FeatureEntertainerPanel({
                     <Button onClick={() => produce('outro')} disabled={producingOutro || beds.length === 0} className="bg-purple-500 hover:bg-purple-600 text-white">
                       {producingOutro ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Producing...</> : (outroExists ? 'Re-create Outro' : 'Create Outro')}
                     </Button>
-                    <Button onClick={() => previewAudio('outro')} disabled={!outroExists} variant="outline" className="border-[#1e293b]">
+                    <Button onClick={() => previewAudio('outro')} disabled={!outroExists || (!allowAudioPreview && !onRemoteAudioPreview)} variant="outline" className="border-[#1e293b]">
                       {playing === 'outro' ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                     </Button>
                   </div>

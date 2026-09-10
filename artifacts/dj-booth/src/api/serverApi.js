@@ -41,6 +41,7 @@ function clearToken() {
   sessionStorage.removeItem('djbooth_dancer_id');
   sessionStorage.removeItem('djbooth_dancer_name');
   sessionStorage.removeItem('djbooth_remote');
+  sessionStorage.removeItem('djbooth_phone_remote');
 }
 
 function setSessionInfo(data) {
@@ -65,6 +66,15 @@ function isRemoteMode() {
   // or lost sessionStorage marker. A remote browser must never mount AudioEngine.
   const host = window.location.hostname.toLowerCase();
   return !['localhost', '127.0.0.1', '::1'].includes(host);
+}
+
+function isPhoneRemoteMode() {
+  return isRemoteMode() && sessionStorage.getItem('djbooth_phone_remote') === 'true';
+}
+
+function setPhoneRemoteMode(enabled) {
+  if (enabled) sessionStorage.setItem('djbooth_phone_remote', 'true');
+  else sessionStorage.removeItem('djbooth_phone_remote');
 }
 
 function getSessionInfo() {
@@ -173,23 +183,58 @@ export const zoneProApi = {
 export const boothApi = {
   getState: () => apiFetch('/booth/state'),
   postState: (state) => apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) }),
-  sendCommand: (action, payload = {}, options = {}) => {
+  getCommand: (commandId) => apiFetch(`/booth/command/${commandId}`),
+  sendCommand: async (action, payload = {}, options = {}) => {
     const requestId = options.requestId || (
       globalThis.crypto?.randomUUID?.() ||
       `${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
-    return apiFetch('/booth/command', {
+    const submitted = await apiFetch('/booth/command', {
       method: 'POST',
       body: JSON.stringify({
         action,
         payload,
         requestId,
         expectedRotationVersion: options.expectedRotationVersion,
+        expectedStateVersion: options.expectedStateVersion,
+        nowPlayingGuard: options.nowPlayingGuard,
       }),
     });
+    if (!submitted.queued) {
+      if (!submitted.ok) throw new Error(submitted.command?.error || 'The kiosk did not apply the command');
+      return submitted;
+    }
+
+    const timeoutMs = options.timeoutMs ?? 35_000;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      const receipt = await boothApi.getCommand(submitted.commandId);
+      if (receipt.queued) continue;
+      if (!receipt.ok) {
+        const error = new Error(receipt.command?.error || 'The kiosk rejected the command');
+        error.details = receipt;
+        throw error;
+      }
+      return receipt;
+    }
+    const error = new Error('The kiosk did not confirm that the command was applied');
+    error.code = 'BOOTH_COMMAND_TIMEOUT';
+    throw error;
   },
   getCommands: (since = 0) => apiFetch(`/booth/commands?since=${since}`),
-  ackCommands: (upToId) => apiFetch('/booth/commands/ack', { method: 'POST', body: JSON.stringify({ upToId }) }),
+  claimCommand: (commandId) => apiFetch('/booth/commands/claim', {
+    method: 'POST',
+    body: JSON.stringify({ commandId }),
+  }),
+  ackCommand: (commandId, result = {}) => apiFetch('/booth/commands/ack', {
+    method: 'POST',
+    body: JSON.stringify({ commandId, ...result }),
+  }),
+  ackCommands: (upToId) => apiFetch('/booth/commands/ack', {
+    method: 'POST',
+    body: JSON.stringify({ commandId: upToId }),
+  }),
 };
 
 export function connectBoothSSE(onMessage) {
@@ -228,4 +273,4 @@ export function connectBoothSSE(onMessage) {
   return es;
 }
 
-export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode, setBoothIp, getBoothIp, setTokenOverride, getTokenOverride };
+export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode, isPhoneRemoteMode, setPhoneRemoteMode, setBoothIp, getBoothIp, setTokenOverride, getTokenOverride };

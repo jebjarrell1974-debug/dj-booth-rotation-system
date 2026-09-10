@@ -18,6 +18,12 @@ const STRUCTURAL_COMMANDS = new Set([
   'moveInRotation',
   'saveRotation',
   'updateSongAssignments',
+  'saveRotationWorkspace',
+  'updateInterstitialSongs',
+  'sendToVip',
+  'releaseFromVip',
+  'placeFeature',
+  'cancelFeaturePlacement',
 ]);
 const BOOTH_STALE_AFTER_MS = 10_000;
 
@@ -105,7 +111,7 @@ export default function RemoteView({
   const skippedCommercials = new Set(liveBoothState?.skippedCommercials || []);
   const skipLocked = !!liveBoothState?.skipLocked;
 
-  const sendRemoteCommand = useCallback(async (action, payload = {}) => {
+  const sendRemoteCommand = useCallback(async (action, payload = {}, options = {}) => {
     if (!isConnected) {
       setCommandError('The kiosk state is stale. No command was sent.');
       return null;
@@ -116,6 +122,7 @@ export default function RemoteView({
         expectedRotationVersion: STRUCTURAL_COMMANDS.has(action)
           ? liveBoothState?.rotationVersion
           : undefined,
+        ...options,
       });
     } catch (error) {
       setCommandError(error.message || 'The kiosk rejected the command.');
@@ -277,15 +284,19 @@ export default function RemoteView({
   };
 
   const handleSaveAll = async () => {
-    const commands = [];
-    if (Object.keys(songEdits).length > 0) {
-      commands.push(sendRemoteCommand('updateSongAssignments', {
-        assignments: capSongAssignments(songEdits, songsPerSet)
-      }));
-    }
-    commands.push(sendRemoteCommand('saveRotation', { rotation: rotationList }));
-    const results = await Promise.all(commands);
-    if (results.every(Boolean)) {
+    const result = await sendRemoteCommand('saveRotationWorkspace', {
+      rotation: rotationList,
+      assignments: capSongAssignments(songEdits, songsPerSet),
+      interstitialSongs,
+      manualOverrides: Object.keys(songEdits),
+    }, {
+      nowPlayingGuard: isRotationActive ? {
+        dancerId: rotationList[currentDancerIndex],
+        songNumber: currentSongNumber,
+        track: currentTrack,
+      } : undefined,
+    });
+    if (result) {
       setSongEdits({});
       setHasUnsaved(false);
     }

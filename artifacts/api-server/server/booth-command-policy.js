@@ -5,11 +5,21 @@ export const NORMAL_REMOTE_COMMANDS = new Set([
   'saveRotation', 'updateInterstitialSongs', 'skipCommercial', 'swapPromo',
   'playSound', 'sendToVip', 'releaseFromVip', 'updateSongAssignments',
   'playHouseAnnouncement', 'deactivateTrack',
+  'saveRotationWorkspace',
+  'setAutoplayQueue', 'setAutoplayAutoFill',
+  'playFeatureAudio',
+  'placeFeature', 'cancelFeaturePlacement',
+  'setBeatMatch', 'setMusicEq',
+  'playLibraryTrack',
+  'resetDancerVoiceovers',
 ]);
 
 const STRUCTURAL_COMMANDS = new Set([
   'updateRotation', 'removeDancerFromRotation', 'addDancerToRotation',
   'moveInRotation', 'saveRotation', 'updateSongAssignments',
+  'saveRotationWorkspace',
+  'updateInterstitialSongs', 'sendToVip', 'releaseFromVip',
+  'placeFeature', 'cancelFeaturePlacement',
 ]);
 
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -29,9 +39,36 @@ export function isStructuralCommand(action) {
   return STRUCTURAL_COMMANDS.has(action);
 }
 
-export function isPhysicalKioskAddress(address, selfIps) {
+export function isPhysicalKioskAddress(address) {
   const normalized = String(address || '').replace(/^::ffff:/, '');
-  return normalized.length > 0 && selfIps.has(normalized);
+  // Audio/administration authority belongs to a browser talking over the
+  // machine's loopback interface, never merely to another local interface on
+  // the same host. A request arriving on the kiosk's LAN address is remote.
+  return normalized === '127.0.0.1' || normalized === '::1';
+}
+
+export function isPhysicalKioskRequestMetadata(address, host, headers = {}) {
+  if (!isPhysicalKioskAddress(address)) return false;
+
+  const normalizedHeaders = Object.fromEntries(
+    Object.entries(headers || {}).map(([key, value]) => [key.toLowerCase(), value])
+  );
+  const forwardingHeaders = [
+    'forwarded',
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto',
+    'x-forwarded-port',
+    'x-real-ip',
+    'via',
+  ];
+  if (forwardingHeaders.some(name => normalizedHeaders[name] != null)) return false;
+
+  const value = String(host || '').trim().toLowerCase();
+  if (value === 'localhost' || value === 'localhost.') return true;
+  if (/^localhost\.:\d+$/.test(value) || /^localhost:\d+$/.test(value)) return true;
+  if (/^127\.0\.0\.1(?::\d+)?$/.test(value)) return true;
+  return /^\[::1\](?::\d+)?$/.test(value);
 }
 
 // Validate only data the kiosk's command executor understands.  Keeping this
@@ -49,6 +86,14 @@ export function validateBoothCommand(action, payload = {}) {
       break;
     case 'setVoiceGain':
       if (!isFiniteNumber(payload.gain, 0.5, 1.2)) return invalid('gain must be a number from 0.5 to 1.2');
+      break;
+    case 'setBeatMatch':
+      if (typeof payload.enabled !== 'boolean') return invalid('enabled must be boolean');
+      break;
+    case 'setMusicEq':
+      if (!['bass', 'mid', 'treble'].includes(payload.band) || !isFiniteNumber(payload.value, -12, 12)) {
+        return invalid('EQ band and value are invalid');
+      }
       break;
     case 'setSongsPerSet':
       if (!Number.isInteger(payload.count) || payload.count < 1 || payload.count > 20) return invalid('count must be an integer from 1 to 20');
@@ -81,6 +126,25 @@ export function validateBoothCommand(action, payload = {}) {
       if (!isPlainObject(payload.assignments) || Object.keys(payload.assignments).length > 500 ||
           !Object.entries(payload.assignments).every(([id, songs]) => isId(id) && isStringArray(songs))) return invalid('assignments must map dancer IDs to song-name arrays');
       break;
+    case 'saveRotationWorkspace':
+      if (!isIdArray(payload.rotation)) return invalid('rotation must be an array of dancer IDs');
+      if (!isPlainObject(payload.assignments) || Object.keys(payload.assignments).length > 500 ||
+          !Object.entries(payload.assignments).every(([id, songs]) => isId(id) && isStringArray(songs))) {
+        return invalid('assignments must map dancer IDs to song-name arrays');
+      }
+      if (!isPlainObject(payload.interstitialSongs) || Object.keys(payload.interstitialSongs).length > 100) {
+        return invalid('interstitialSongs must be an object');
+      }
+      if (payload.manualOverrides != null && !isIdArray(payload.manualOverrides)) {
+        return invalid('manualOverrides must be an array of dancer IDs');
+      }
+      break;
+    case 'setAutoplayQueue':
+      if (!isStringArray(payload.trackNames)) return invalid('trackNames must be an array of track names');
+      break;
+    case 'setAutoplayAutoFill':
+      if (typeof payload.enabled !== 'boolean') return invalid('enabled must be boolean');
+      break;
     case 'setCommercialFreq':
       if (!['off', '1', '2', '3'].includes(String(payload.freq))) return invalid('freq must be off, 1, 2, or 3');
       break;
@@ -96,6 +160,27 @@ export function validateBoothCommand(action, payload = {}) {
     case 'playHouseAnnouncement':
       if (!isString(payload.cacheKey, 512)) return invalid('cacheKey is required');
       break;
+    case 'playLibraryTrack':
+      if (!isString(payload.trackName, 512)) return invalid('trackName is required');
+      break;
+    case 'resetDancerVoiceovers':
+      if (!isString(payload.dancerName, 256)) return invalid('dancerName is required');
+      break;
+    case 'playFeatureAudio':
+      if (!isId(payload.dancerId) || !['intro', 'outro'].includes(payload.type)) {
+        return invalid('dancerId and feature audio type are required');
+      }
+      break;
+    case 'placeFeature':
+      if (!isId(payload.featureId) || !Number.isInteger(payload.playPos) || payload.playPos < 1 || payload.playPos > 500) {
+        return invalid('featureId and playPos are required');
+      }
+      if (payload.chosenSetName != null && !isString(payload.chosenSetName, 512)) return invalid('chosenSetName is invalid');
+      if (payload.audioFlags != null && !isPlainObject(payload.audioFlags)) return invalid('audioFlags is invalid');
+      break;
+    case 'cancelFeaturePlacement':
+      if (!isId(payload.featureId)) return invalid('featureId is required');
+      break;
     case 'deactivateTrack':
       if (!isString(payload.trackName, 512) || !/^\d{5}$/.test(payload.pin)) {
         return invalid('trackName and a 5-digit DJ PIN are required');
@@ -109,10 +194,25 @@ export function nextStateRevisions(previous, incoming) {
   const structuralChanged = JSON.stringify(previous.rotation ?? []) !== JSON.stringify(incoming.rotation ?? []) ||
     JSON.stringify(previous.rotationSongs ?? {}) !== JSON.stringify(incoming.rotationSongs ?? {}) ||
     JSON.stringify(previous.interstitialSongs ?? {}) !== JSON.stringify(incoming.interstitialSongs ?? {}) ||
-    JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? {});
+    JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? {}) ||
+    JSON.stringify(previous.placedFeatures ?? {}) !== JSON.stringify(incoming.placedFeatures ?? {});
   return {
     stateVersion: (previous.stateVersion ?? 0) + 1,
     rotationVersion: (previous.rotationVersion ?? 0) + (structuralChanged ? 1 : 0),
+  };
+}
+
+export function boothWorkspaceSnapshot(state = {}) {
+  const songs = {};
+  for (const [id, tracks] of Object.entries(state.rotationSongs || {})) {
+    songs[id] = (tracks || []).map(track => typeof track === 'string' ? track : track?.name).filter(Boolean);
+  }
+  return {
+    rotation: [...(state.rotation || [])],
+    rotationSongs: songs,
+    interstitialSongs: state.interstitialSongs || {},
+    dancerVipMap: state.dancerVipMap || {},
+    placedFeatures: state.placedFeatures || {},
   };
 }
 
@@ -144,6 +244,9 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
     availablePromos: state.availablePromos ?? [],
     skippedCommercials: state.skippedCommercials ?? [],
     dancerVipMap: state.dancerVipMap ?? {},
+    placedFeatures: state.placedFeatures ?? {},
+    autoplayQueue: state.autoplayQueue ?? [],
+    autoplayAutoFillEnabled: state.autoplayAutoFillEnabled !== false,
     updatedAt: now,
     diagLog: state.diagLog ?? [],
     prePickHits: state.prePickHits ?? 0,
@@ -167,9 +270,22 @@ export class BoothCommandQueue {
   }
 
   prune(now = Date.now()) {
-    this.commands = this.commands.filter(command => command.expiresAt > now && command.status === 'pending');
+    for (const command of this.commands) {
+      if (command.status === 'pending' && command.expiresAt <= now) {
+        command.status = 'expired';
+        command.error = 'The command expired before the kiosk applied it';
+        command.completedAt = now;
+      }
+    }
+    this.commands = this.commands.filter(command =>
+      ['pending', 'processing'].includes(command.status) ||
+      (command.completedAt ?? command.timestamp) + this.dedupeTtlMs > now
+    );
     for (const [key, value] of this.requestIds) {
-      if (value.expiresAt <= now) this.requestIds.delete(key);
+      if (value.expiresAt <= now &&
+          !['pending', 'processing'].includes(value.command?.status)) {
+        this.requestIds.delete(key);
+      }
     }
   }
 
@@ -190,6 +306,11 @@ export class BoothCommandQueue {
     const requestId = options.requestId || null;
     const duplicate = this.findDuplicate(actor, requestId, now);
     if (duplicate) return { command: duplicate, duplicate: true };
+    if (this.commands.filter(command => ['pending', 'processing'].includes(command.status)).length >= this.maxSize) {
+      const error = new Error('The kiosk command queue is full; try again after pending work is applied');
+      error.code = 'BOOTH_COMMAND_QUEUE_FULL';
+      throw error;
+    }
 
     const command = {
       id: ++this.nextId,
@@ -200,9 +321,20 @@ export class BoothCommandQueue {
       status: 'pending',
       actor,
       requestId,
+      expectedRotationVersion: options.expectedRotationVersion,
+      expectedStateVersion: options.expectedStateVersion,
+      nowPlayingGuard: options.nowPlayingGuard || null,
+      expectedRotation: options.expectedRotation,
+      expectedWorkspace: options.expectedWorkspace,
     };
     this.commands.push(command);
-    if (this.commands.length > this.maxSize) this.commands = this.commands.slice(-this.maxSize);
+    if (this.commands.length > this.maxSize * 3) {
+      const pending = this.commands.filter(item => ['pending', 'processing'].includes(item.status));
+      const receipts = this.commands
+        .filter(item => !['pending', 'processing'].includes(item.status))
+        .slice(-this.maxSize * 2);
+      this.commands = [...pending, ...receipts].sort((a, b) => a.id - b.id);
+    }
     if (requestId) {
       this.requestIds.set(`${actor}:${requestId}`, {
         command,
@@ -214,14 +346,48 @@ export class BoothCommandQueue {
 
   pendingSince(since = 0, now = Date.now()) {
     this.prune(now);
-    return this.commands.filter(command => command.id > since);
+    return this.commands.filter(command => command.id > since && command.status === 'pending');
   }
 
-  acknowledgeThrough(upToId) {
-    if (!Number.isInteger(upToId) || upToId < 1) return;
-    this.commands = this.commands.filter(command => {
-      if (command.id <= upToId) command.status = 'acknowledged';
-      return command.id > upToId;
-    });
+  getById(id, now = Date.now()) {
+    this.prune(now);
+    return this.commands.find(command => command.id === id) || null;
+  }
+
+  pendingStructuralForVersion(rotationVersion, now = Date.now()) {
+    this.prune(now);
+    return this.commands.find(command =>
+      (command.status === 'pending' || command.status === 'processing') &&
+      isStructuralCommand(command.action) &&
+      command.expectedRotationVersion === rotationVersion
+    ) || null;
+  }
+
+  acknowledge(commandId, result = {}, now = Date.now()) {
+    if (!Number.isInteger(commandId) || commandId < 1) return null;
+    const command = this.getById(commandId, now);
+    if (!command || !['pending', 'processing'].includes(command.status)) return command;
+    command.status = result.ok === false ? 'failed' : 'applied';
+    command.error = result.error || null;
+    command.completedAt = now;
+    command.appliedStateVersion = result.stateVersion;
+    command.appliedRotationVersion = result.rotationVersion;
+    return command;
+  }
+
+  claim(commandId, now = Date.now()) {
+    if (!Number.isInteger(commandId) || commandId < 1) return null;
+    const command = this.getById(commandId, now);
+    if (!command || command.status !== 'pending') return command;
+    command.status = 'processing';
+    command.startedAt = now;
+    return command;
+  }
+
+  // Compatibility for older kiosk clients. This is intentionally exact rather
+  // than "through": a later SSE delivery must never acknowledge earlier work
+  // that has not actually finished.
+  acknowledgeThrough(commandId) {
+    return this.acknowledge(commandId);
   }
 }

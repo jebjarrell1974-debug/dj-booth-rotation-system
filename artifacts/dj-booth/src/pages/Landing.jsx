@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Music2, Users, Delete, ArrowLeft, Wifi, Server } from 'lucide-react';
-import { setBoothIp, getBoothIp } from '@/api/serverApi';
+import { setBoothIp, getBoothIp, setPhoneRemoteMode } from '@/api/serverApi';
 
 function PinPad({ onSubmit, onBack, label, error, loading }) {
   const [pin, setPin] = useState('');
@@ -115,10 +115,13 @@ export default function Landing() {
     setError('');
     setLoading(true);
     try {
-      const isRemote = mode === 'dj-remote';
+      const isRemote = mode === 'dj-remote' || mode === 'phone-remote';
       if (isRemote) {
         setBoothIp(boothIpInput || '');
+      } else {
+        setBoothIp('');
       }
+      setPhoneRemoteMode(mode === 'phone-remote');
       await login('dj', pin, { remote: isRemote });
       navigate('/DJBooth');
     } catch (loginErr) {
@@ -154,7 +157,7 @@ export default function Landing() {
         {!mode ? (
           <div className="flex flex-col items-center gap-8">
             <div className="text-center">
-              <img src="/neon-ai-dj-logo.jpeg" alt="NEON AI DJ" className="w-64 mx-auto mb-4 rounded-xl" />
+              <img src="/public/neon-ai-dj-logo.jpeg" alt="NEON AI DJ" className="w-64 mx-auto mb-4 rounded-xl" />
               <p className="text-gray-500 text-sm mt-1">Enter your PIN to continue</p>
             </div>
 
@@ -174,7 +177,17 @@ export default function Landing() {
                   className="h-16 text-lg font-semibold bg-gradient-to-r from-[#00d4ff] to-[#2563eb] hover:from-[#00a3cc] hover:to-[#1d4ed8] text-black"
                 >
                   <Music2 className="w-5 h-5 mr-3" />
-                  DJ / Manager Remote
+                  DJ Login
+                </Button>
+              )}
+              {!isLocalDevice && (
+                <Button
+                  onClick={() => setMode('phone-remote')}
+                  variant="outline"
+                  className="h-16 text-lg font-semibold border-[#2563eb] bg-[#0d0d1f] text-[#00d4ff] hover:bg-[#151528] hover:text-[#00d4ff]"
+                >
+                  <Wifi className="w-5 h-5 mr-3" />
+                  Phone Remote
                 </Button>
               )}
               <Button
@@ -189,7 +202,7 @@ export default function Landing() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {mode === 'dj-remote' && (
+            {(mode === 'dj-remote' || mode === 'phone-remote') && (
               <div className="flex flex-col gap-2 px-4">
                 <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
                   <Server className="w-4 h-4" />
@@ -219,10 +232,12 @@ export default function Landing() {
                 mode === 'dj' 
                   ? 'Enter DJ PIN'
                   : mode === 'dj-remote'
-                  ? 'Enter DJ PIN (Remote)'
+                  ? 'Enter DJ PIN'
+                  : mode === 'phone-remote'
+                  ? 'Enter DJ PIN (Phone Remote)'
                   : 'Enter your Entertainer PIN'
               }
-              onSubmit={mode === 'dj' || mode === 'dj-remote' ? handleDJLogin : handleDancerLogin}
+              onSubmit={mode === 'dj' || mode === 'dj-remote' || mode === 'phone-remote' ? handleDJLogin : handleDancerLogin}
               onBack={() => { setMode(null); setError(''); }}
               error={error}
               loading={loading}
