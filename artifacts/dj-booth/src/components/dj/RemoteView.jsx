@@ -57,9 +57,10 @@ export default function RemoteView({
   const libSearchTimer = useRef(null);
   const [optionGenres, setOptionGenres] = useState([]);
   const [optionsSaving, setOptionsSaving] = useState(false);
+  const [pendingCommercialFreq, setPendingCommercialFreq] = useState(null);
 
   const [clock, setClock] = useState(Date.now());
-  const [lastStateReceivedAt, setLastStateReceivedAt] = useState(0);
+  const [lastStateReceivedAt, setLastStateReceivedAt] = useState(() => liveBoothState ? Date.now() : 0);
   const [commandError, setCommandError] = useState('');
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
   const [deactivatePin, setDeactivatePin] = useState('');
@@ -70,11 +71,15 @@ export default function RemoteView({
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {
-    if (liveBoothState?.updatedAt && liveBoothState.updatedAt !== lastServerUpdateRef.current) {
-      lastServerUpdateRef.current = liveBoothState.updatedAt;
-      setLastStateReceivedAt(Date.now());
+    if (!liveBoothState) return;
+    if (liveBoothState.updatedAt) lastServerUpdateRef.current = liveBoothState.updatedAt;
+    setLastStateReceivedAt(Date.now());
+  }, [liveBoothState]);
+  useEffect(() => {
+    if (pendingCommercialFreq != null && String(liveBoothState?.commercialFreq) === pendingCommercialFreq) {
+      setPendingCommercialFreq(null);
     }
-  }, [liveBoothState?.updatedAt]);
+  }, [liveBoothState?.commercialFreq, pendingCommercialFreq]);
 
   const stateAgeMs = lastStateReceivedAt ? Math.max(0, clock - lastStateReceivedAt) : Infinity;
   const isConnected = stateAgeMs <= BOOTH_STALE_AFTER_MS;
@@ -269,15 +274,19 @@ export default function RemoteView({
     setRerolling(prev => { const n = { ...prev }; delete n[key]; return n; });
   };
 
-  const handleSaveAll = () => {
+  const handleSaveAll = async () => {
+    const commands = [];
     if (Object.keys(songEdits).length > 0) {
-      sendRemoteCommand('updateSongAssignments', {
+      commands.push(sendRemoteCommand('updateSongAssignments', {
         assignments: capSongAssignments(songEdits, songsPerSet)
-      });
+      }));
     }
-    sendRemoteCommand('saveRotation', { rotation: rotationList });
-    setSongEdits({});
-    setHasUnsaved(false);
+    commands.push(sendRemoteCommand('saveRotation', { rotation: rotationList }));
+    const results = await Promise.all(commands);
+    if (results.every(Boolean)) {
+      setSongEdits({});
+      setHasUnsaved(false);
+    }
   };
 
   const handleAssignTrack = (trackName) => {
@@ -987,7 +996,16 @@ export default function RemoteView({
                   </button>
                   <label className="block text-xs text-gray-500 mt-3">
                     Promo frequency
-                    <select value={String(liveBoothState?.commercialFreq ?? 'off')} onChange={(event) => sendRemoteCommand('setCommercialFreq', { freq: event.target.value })} className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white">
+                    <select
+                      value={pendingCommercialFreq ?? String(liveBoothState?.commercialFreq ?? 'off')}
+                      onChange={async (event) => {
+                        const freq = event.target.value;
+                        setPendingCommercialFreq(freq);
+                        const result = await sendRemoteCommand('setCommercialFreq', { freq });
+                        if (!result) setPendingCommercialFreq(null);
+                      }}
+                      className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white"
+                    >
                       <option value="off">Off</option>
                       <option value="1">Every set</option>
                       <option value="2">Every other set</option>

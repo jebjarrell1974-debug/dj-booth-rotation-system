@@ -211,6 +211,26 @@ export default function RotationPlaylistManager({
       return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch { return new Set(); }
   });
+  useEffect(() => {
+    const handleRemoteCommercialFreq = (event) => {
+      setCommercialFreq(String(event.detail || localStorage.getItem('neonaidj_commercial_freq') || 'off'));
+    };
+    const handleRemoteSkippedCommercials = (event) => {
+      const next = Array.isArray(event.detail)
+        ? event.detail
+        : (() => {
+            try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); }
+            catch { return []; }
+          })();
+      setSkippedCommercials(new Set(next));
+    };
+    window.addEventListener('djbooth_commercial_freq_changed', handleRemoteCommercialFreq);
+    window.addEventListener('djbooth_skipped_commercials_changed', handleRemoteSkippedCommercials);
+    return () => {
+      window.removeEventListener('djbooth_commercial_freq_changed', handleRemoteCommercialFreq);
+      window.removeEventListener('djbooth_skipped_commercials_changed', handleRemoteSkippedCommercials);
+    };
+  }, []);
   // In VIP modal state
   const [vipModalDancerId, setVipModalDancerId] = useState(null);
   const [vipAddMs, setVipAddMs] = useState(0);

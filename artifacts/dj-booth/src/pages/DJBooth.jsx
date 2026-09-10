@@ -1124,7 +1124,16 @@ export default function DJBooth() {
           break;
         case 'setCommercialFreq':
           if (cmd.payload.freq != null) {
-            try { localStorage.setItem('neonaidj_commercial_freq', String(cmd.payload.freq)); } catch {}
+            const nextFreq = String(cmd.payload.freq);
+            try {
+              localStorage.setItem('neonaidj_commercial_freq', nextFreq);
+              window.dispatchEvent(new CustomEvent('djbooth_commercial_freq_changed', { detail: nextFreq }));
+              fetch('/api/config/save-to-server', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ neonaidj_commercial_freq: nextFreq }),
+              }).catch(() => {});
+            } catch {}
           }
           break;
         case 'setBreakSongsPerSet':
@@ -1146,12 +1155,18 @@ export default function DJBooth() {
           if (cmd.payload.dancerId && cmd.payload.direction) {
             setRotation(prev => {
               const rot = [...prev];
+              const activeDancerId = rot[currentDancerIndexRef.current];
               const idx = rot.indexOf(cmd.payload.dancerId);
               if (idx === -1) return prev;
               if (cmd.payload.direction === 'up' && idx > 0) {
                 [rot[idx - 1], rot[idx]] = [rot[idx], rot[idx - 1]];
               } else if (cmd.payload.direction === 'down' && idx < rot.length - 1) {
                 [rot[idx], rot[idx + 1]] = [rot[idx + 1], rot[idx]];
+              }
+              const activeIndex = rot.indexOf(activeDancerId);
+              if (activeIndex >= 0) {
+                currentDancerIndexRef.current = activeIndex;
+                setCurrentDancerIndex(activeIndex);
               }
               rotationRef.current = rot;
               return rot;
@@ -1183,6 +1198,7 @@ export default function DJBooth() {
               if (!existing.includes(cmd.payload.commercialId)) {
                 existing.push(cmd.payload.commercialId);
                 localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify(existing));
+                window.dispatchEvent(new CustomEvent('djbooth_skipped_commercials_changed', { detail: existing }));
               }
               console.log('📺 Remote skipped commercial:', cmd.payload.commercialId);
             } catch {}

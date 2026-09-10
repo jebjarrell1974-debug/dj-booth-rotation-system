@@ -68,6 +68,14 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
   };
 
   useEffect(() => {
+    const handleRemoteCommercialFreq = (event) => {
+      setCommercialFreq(String(event.detail || localStorage.getItem('neonaidj_commercial_freq') || 'off'));
+    };
+    window.addEventListener('djbooth_commercial_freq_changed', handleRemoteCommercialFreq);
+    return () => window.removeEventListener('djbooth_commercial_freq_changed', handleRemoteCommercialFreq);
+  }, []);
+
+  useEffect(() => {
     const token = localStorage.getItem('djbooth_token');
     if (!token) return;
     fetch('/api/client-settings', { headers: { Authorization: `Bearer ${token}` } })
