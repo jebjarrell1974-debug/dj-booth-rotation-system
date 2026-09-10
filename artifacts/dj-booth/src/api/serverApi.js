@@ -56,7 +56,15 @@ function setSessionInfo(data) {
 }
 
 function isRemoteMode() {
-  return sessionStorage.getItem('djbooth_remote') === 'true';
+  if (sessionStorage.getItem('djbooth_remote') === 'true') return true;
+  if (typeof window === 'undefined') return false;
+
+  // Fail closed for audio authority: the physical kiosk loads the app through
+  // loopback. Any browser reaching the unit through a LAN IP/hostname is a
+  // command-only remote even after a restored tab, direct /DJBooth bookmark,
+  // or lost sessionStorage marker. A remote browser must never mount AudioEngine.
+  const host = window.location.hostname.toLowerCase();
+  return !['localhost', '127.0.0.1', '::1'].includes(host);
 }
 
 function getSessionInfo() {
