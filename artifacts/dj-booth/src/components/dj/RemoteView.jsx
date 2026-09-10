@@ -54,6 +54,8 @@ export default function RemoteView({
   const [libGenres, setLibGenres] = useState([]);
   const [libTotal, setLibTotal] = useState(0);
   const [libLoading, setLibLoading] = useState(false);
+  const [libraryStandalone, setLibraryStandalone] = useState(false);
+  const [libraryStatus, setLibraryStatus] = useState('');
   const libSearchTimer = useRef(null);
   const [optionGenres, setOptionGenres] = useState([]);
   const [optionsSaving, setOptionsSaving] = useState(false);
@@ -307,17 +309,66 @@ export default function RemoteView({
       const updated = [...getSongs(dancerId)];
       updated[songIdx] = trackName;
       setSongs(dancerId, updated);
-      setAssigningTo(null);
-      setTab('rotation');
+      if (libraryStandalone) {
+        const dancerName = dancers.find(d => d.id === dancerId)?.name || 'entertainer';
+        setLibraryStatus(`${stripExt(trackName)} assigned to ${dancerName}, song ${songIdx + 1}. Use Save Changes when finished.`);
+      } else {
+        setAssigningTo(null);
+        setTab('rotation');
+      }
     }
   };
 
   const openLibraryForSong = (dancerId, songIdx) => {
+    setLibraryStandalone(false);
+    setLibraryStatus('');
     setAssigningBreak(null);
     setAssigningTo({ dancerId, songIdx });
     setLibSearch('');
     setLibGenre('');
     setTab('library');
+  };
+
+  const editableLibrarySlots = (dancerId) => {
+    if (!dancerId) return [];
+    const songs = getSongs(dancerId);
+    const dancerIndex = rotationList.indexOf(dancerId);
+    const slotCount = Math.min(songsPerSet, songs.length + (songs.length < songsPerSet ? 1 : 0));
+    return Array.from({ length: slotCount }, (_, songIdx) => ({
+      songIdx,
+      disabled: isRotationActive && dancerIndex === currentDancerIndex && songIdx === currentSongNumber - 1,
+    }));
+  };
+
+  const chooseLibraryTarget = (dancerId) => {
+    const firstEditable = editableLibrarySlots(dancerId).find(slot => !slot.disabled);
+    setAssigningTo(firstEditable ? { dancerId, songIdx: firstEditable.songIdx } : null);
+    setLibraryStatus('');
+  };
+
+  const openFullLibrary = () => {
+    setLibraryStandalone(true);
+    setAssigningBreak(null);
+    setLibraryStatus('');
+    const nextDancer = rotationDancers.length > 0
+      ? rotationDancers[(currentDancerIndex + 1) % rotationDancers.length]
+      : null;
+    chooseLibraryTarget(nextDancer?.id || rotationDancers[0]?.id || null);
+    setLibSearch('');
+    setLibGenre('');
+    setTab('library');
+  };
+
+  const changeTab = (id) => {
+    if (id === 'library') {
+      openFullLibrary();
+      return;
+    }
+    setTab(id);
+    setAssigningTo(null);
+    setAssigningBreak(null);
+    setLibraryStandalone(false);
+    setLibraryStatus('');
   };
 
   return (
@@ -458,6 +509,7 @@ export default function RemoteView({
         <div className="hidden md:flex w-16 flex-col bg-[#0a0a1a] border-r border-[#151528] py-2 gap-0.5 items-center flex-shrink-0">
           {[
             { id: 'rotation',      icon: Layers,           label: 'Rotation' },
+              { id: 'library',       icon: Music,            label: 'Music' },
             { id: 'dancers',       icon: Users,            label: 'Roster' },
             { id: 'options',       icon: SlidersHorizontal,label: 'Options' },
             { id: 'zones',         icon: Radio,            label: 'Zones' },
@@ -467,7 +519,7 @@ export default function RemoteView({
           ].map(({ id, icon: Icon, label }) => (
             <button
               key={id}
-              onClick={() => { setTab(id); if (id !== 'library') { setAssigningTo(null); setAssigningBreak(null); } }}
+              onClick={() => changeTab(id)}
               className={`w-14 h-14 flex flex-col items-center justify-center rounded-xl gap-1 transition-colors relative ${
                 tab === id
                   ? 'bg-[#00d4ff]/15 text-[#00d4ff]'
@@ -775,12 +827,13 @@ export default function RemoteView({
             <div className="h-full flex flex-col bg-[#0d0d1f]">
               <div className="p-3 border-b border-[#1e293b] bg-[#0a0a1a] flex flex-col sm:flex-row sm:items-center gap-3 flex-shrink-0">
                 <div className="flex items-center gap-2 flex-1">
-                  <button onClick={() => { setTab('rotation'); setAssigningTo(null); setAssigningBreak(null); }} className="h-10 px-3 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-medium hover:bg-[#2e2e5a] transition-colors">
+                  <button onClick={() => changeTab('rotation')} className="h-10 px-3 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-medium hover:bg-[#2e2e5a] transition-colors">
                     Back
                   </button>
                   <div className="flex-1 text-sm text-[#00d4ff] font-medium truncate">
                     {assigningBreak ? `Picking B${assigningBreak.index + 1}` :
-                     assigningTo ? `Replacing song ${assigningTo.songIdx + 1} for ${dancers.find(d => d.id === assigningTo.dancerId)?.name || 'Dancer'}` : ''}
+                     assigningTo ? `Replacing song ${assigningTo.songIdx + 1} for ${dancers.find(d => d.id === assigningTo.dancerId)?.name || 'Dancer'}` :
+                     'Full Music Library'}
                   </div>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
@@ -791,6 +844,49 @@ export default function RemoteView({
                   </select>
                 </div>
               </div>
+              {libraryStandalone && (
+                <div className="flex-shrink-0 px-3 py-3 border-b border-[#1e293b] bg-[#08081a]">
+                  <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+                    <label className="flex-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Entertainer
+                      <select
+                        value={assigningTo?.dancerId || ''}
+                        onChange={event => chooseLibraryTarget(event.target.value)}
+                        className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-base normal-case text-white"
+                      >
+                        <option value="">Choose entertainer</option>
+                        {rotationDancers.map(dancer => <option key={dancer.id} value={dancer.id}>{dancer.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="w-full lg:w-56 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Song Slot
+                      <select
+                        value={assigningTo?.songIdx ?? ''}
+                        disabled={!assigningTo}
+                        onChange={event => setAssigningTo(current => current ? { ...current, songIdx: Number(event.target.value) } : current)}
+                        className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-base normal-case text-white disabled:opacity-40"
+                      >
+                        {assigningTo && editableLibrarySlots(assigningTo.dancerId).map(({ songIdx, disabled }) => (
+                          <option key={songIdx} value={songIdx} disabled={disabled}>
+                            Song {songIdx + 1}{disabled ? ' — currently playing' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      onClick={handleSaveAll}
+                      disabled={!hasUnsaved}
+                      className={`h-11 px-5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 ${hasUnsaved ? 'bg-green-500 text-black animate-pulse' : 'bg-[#151528] text-gray-500'}`}
+                    >
+                      <Save className="w-4 h-4" />
+                      Save Changes
+                    </button>
+                  </div>
+                  <p className={`mt-2 text-sm ${libraryStatus ? 'text-green-400' : 'text-gray-500'}`}>
+                    {libraryStatus || (assigningTo ? 'Click any track below to assign it to this slot.' : 'Add an entertainer to the rotation before assigning music.')}
+                  </p>
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {libLoading ? (
                   <div className="py-8 text-center text-gray-500">Searching...</div>
@@ -800,7 +896,7 @@ export default function RemoteView({
                   libTracks.map(t => {
                     const cd = isOnCooldown(t.name);
                     return (
-                      <button key={t.path} onClick={() => handleAssignTrack(t.name)} className="w-full text-left px-4 py-3 rounded-xl border border-transparent hover:bg-[#151528] hover:border-[#1e293b] transition-all flex items-center justify-between group">
+                      <button key={t.path} disabled={!assigningTo && !assigningBreak} onClick={() => handleAssignTrack(t.name)} className="w-full text-left px-4 py-3 rounded-xl border border-transparent hover:bg-[#151528] hover:border-[#1e293b] transition-all flex items-center justify-between group disabled:opacity-40 disabled:cursor-not-allowed">
                         <span className={`text-base truncate flex-1 pr-4 ${cd ? 'text-orange-300' : 'text-gray-300 group-hover:text-white'}`}>{stripExt(t.name)}</span>
                         {cd && <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-orange-500/20 text-orange-400">Recently Played</span>}
                       </button>
@@ -1163,6 +1259,7 @@ export default function RemoteView({
         <div className="md:hidden flex-shrink-0 flex items-stretch border-t border-[#151528] bg-[#080818] overflow-x-auto snap-x">
           {[
             { id: 'rotation',      icon: Layers,           label: 'Rotation' },
+              { id: 'library',       icon: Music,            label: 'Music' },
             { id: 'dancers',       icon: Users,            label: 'Roster' },
             { id: 'options',       icon: SlidersHorizontal,label: 'Options' },
             { id: 'zones',         icon: Radio,            label: 'Zones' },
@@ -1172,7 +1269,7 @@ export default function RemoteView({
           ].map(({ id, icon: Icon, label }) => (
             <button
               key={id}
-              onClick={() => { setTab(id); if (id !== 'library') { setAssigningTo(null); setAssigningBreak(null); } }}
+              onClick={() => changeTab(id)}
               className={`flex-none w-20 flex flex-col items-center justify-center gap-1 py-3 snap-start relative transition-colors ${tab === id ? 'text-[#00d4ff]' : 'text-gray-600 active:text-gray-400'}`}
             >
               {tab === id && <div className="absolute top-0 inset-x-0 h-0.5 bg-[#00d4ff] rounded-b" />}
