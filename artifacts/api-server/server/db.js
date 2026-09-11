@@ -732,6 +732,8 @@ export function getBlockedTracks() {
 // once saved into rotation, the system plays them like any other song.
 export const DJ_ONLY_GENRES = ['FEATURE', 'Z DJ ONLY'];
 const DJ_ONLY_PLACEHOLDERS = DJ_ONLY_GENRES.map(() => '?').join(',');
+export const AUTOMATIC_EXCLUDED_GENRES = ['Promo Beds', 'Promos'];
+const AUTOMATIC_EXCLUDED_PLACEHOLDERS = AUTOMATIC_EXCLUDED_GENRES.map(() => '?').join(',');
 
 export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '', excludeDirty = false, excludeDjOnly = false } = {}) {
   let where = ['blocked = 0'];
@@ -863,7 +865,7 @@ export function getRecentCooldowns(hours = 6) {
   ).all(hours);
 }
 
-export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
+export function getRandomTracks(count = 3, excludeNames = [], genres = [], automatic = false) {
   const recentlyPlayed = readDb.prepare(
     `SELECT track_name FROM play_history
      WHERE played_at > datetime('now', 'localtime', '-4 hours')
@@ -882,6 +884,10 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   if (genres.length > 0) {
     conditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
     params.push(...genres);
+  }
+  if (automatic) {
+    conditions.push(`t.genre COLLATE NOCASE NOT IN (${AUTOMATIC_EXCLUDED_PLACEHOLDERS})`);
+    params.push(...AUTOMATIC_EXCLUDED_GENRES);
   }
   conditions.push(`t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`);
   params.push(...DJ_ONLY_GENRES);
@@ -907,6 +913,10 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
     if (genres.length > 0) {
       fallbackConditions.push(`t.genre IN (${genres.map(() => '?').join(',')})`);
       fallbackParams.push(...genres);
+    }
+    if (automatic) {
+      fallbackConditions.push(`t.genre COLLATE NOCASE NOT IN (${AUTOMATIC_EXCLUDED_PLACEHOLDERS})`);
+      fallbackParams.push(...AUTOMATIC_EXCLUDED_GENRES);
     }
     fallbackConditions.push(`t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`);
     fallbackParams.push(...DJ_ONLY_GENRES);
@@ -936,7 +946,14 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = []) {
   return pool.slice(0, count);
 }
 
-export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [], strictPlaylist = false } = {}) {
+export function selectTracksForSet({
+  count = 2,
+  excludeNames = [],
+  genres = [],
+  dancerPlaylist = [],
+  strictPlaylist = false,
+  automatic = false,
+} = {}) {
   // When a dancer has a playlist, pick ONLY from that playlist — never random library songs.
   // folders_only mode sends dancerPlaylist=[] so it falls through to the random library path below.
   if (dancerPlaylist.length > 0) {
@@ -977,8 +994,13 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
         `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
          FROM music_tracks t
          WHERE t.name = ? AND t.blocked = 0
+           ${automatic ? `AND t.genre COLLATE NOCASE NOT IN (${AUTOMATIC_EXCLUDED_PLACEHOLDERS})` : ''}
            AND t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`
-      ).get(trackName, ...DJ_ONLY_GENRES);
+      ).get(
+        trackName,
+        ...(automatic ? AUTOMATIC_EXCLUDED_GENRES : []),
+        ...DJ_ONLY_GENRES,
+      );
       if (!track) { notFoundInDB.push(trackName); continue; }
       if (recentlyPlayedSet.has(trackName)) {
         cooldownTracks.push({ ...track, lastPlayed: lastPlayedMap[trackName] || '' });
@@ -995,9 +1017,14 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
           `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
            FROM music_tracks t
            WHERE LOWER(t.name) = LOWER(?) AND t.blocked = 0
+             ${automatic ? `AND t.genre COLLATE NOCASE NOT IN (${AUTOMATIC_EXCLUDED_PLACEHOLDERS})` : ''}
              AND t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})
            LIMIT 1`
-        ).get(trackName, ...DJ_ONLY_GENRES);
+         ).get(
+           trackName,
+           ...(automatic ? AUTOMATIC_EXCLUDED_GENRES : []),
+           ...DJ_ONLY_GENRES,
+         );
         if (!fuzzyTrack) { stillNotFound.push(trackName); continue; }
         console.log(`✅ selectTracksForSet: fuzzy matched "${trackName}" → "${fuzzyTrack.name}"`);
         const onCooldown = readDb.prepare(
@@ -1025,7 +1052,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
         return [];
       }
       console.warn(`⚠️ selectTracksForSet: ALL playlist songs missing from DB — falling back to random library`);
-      return getRandomTracks(count, [...excludeSet], genres);
+      return getRandomTracks(count, [...excludeSet], genres, automatic);
     }
 
     // Sort cooldown tracks oldest-played-first so least-recently-heard goes first
@@ -1040,7 +1067,7 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     if (freshTracks.length === 0) {
       if (Array.isArray(genres) && genres.length > 0) {
         const excludeForFallback = [...new Set([...excludeNames, ...dancerPlaylist])];
-        const folderTracks = getRandomTracks(count, excludeForFallback, genres);
+        const folderTracks = getRandomTracks(count, excludeForFallback, genres, automatic);
         if (folderTracks.length >= count) {
           console.log(`🎵 selectTracksForSet: all playlist on cooldown — Rule 7 fallback to assigned-genre folders returned ${folderTracks.length}: [${folderTracks.map(t => t.name).join(' | ')}]`);
           return folderTracks;
@@ -1091,10 +1118,10 @@ export function selectTracksForSet({ count = 2, excludeNames = [], genres = [], 
     console.log(`⚠️ selectTracksForSet: NO PLAYLIST path with dancer-set signature — count=${count} genres=[${genres.join(',')}] excludeCount=${(excludeNames || []).length}`);
   }
   const usedNames = new Set(excludeNames);
-  let filler = getRandomTracks(count, [...usedNames], genres);
+  let filler = getRandomTracks(count, [...usedNames], genres, automatic);
   if (filler.length < count && genres.length > 0) {
     const stillExcluded = [...usedNames, ...filler.map(t => t.name)];
-    const more = getRandomTracks(count - filler.length, stillExcluded, []);
+    const more = getRandomTracks(count - filler.length, stillExcluded, [], automatic);
     filler = [...filler, ...more];
   }
   return filler.slice(0, count);

@@ -2149,11 +2149,12 @@ app.put('/api/dj-options', authenticate, requireDJ, (req, res) => {
 
 app.get('/api/music/random', authenticate, (req, res) => {
   const count = Math.min(parseInt(req.query.count) || 3, 50);
+  const automatic = req.query.automatic === 'true' || req.query.automatic === '1';
   const excludeParam = req.query.exclude || '';
   const excludeNames = excludeParam ? excludeParam.split(',').map(s => s.trim()).filter(Boolean) : [];
   const genresParam = req.query.genres || '';
   const genres = genresParam ? genresParam.split(',').map(g => g.trim()).filter(Boolean) : [];
-  const tracks = getRandomTracks(count, excludeNames, genres);
+  const tracks = getRandomTracks(count, excludeNames, genres, automatic);
   res.json({ tracks });
 });
 
@@ -2164,14 +2165,22 @@ app.get('/api/music/track-by-name/:name', authenticate, (req, res) => {
 });
 
 app.post('/api/music/select', authenticate, (req, res) => {
-  const { count = 2, excludeNames = [], genres = [], dancerPlaylist = [], strictPlaylist = false } = req.body || {};
+  const {
+    count = 2,
+    excludeNames = [],
+    genres = [],
+    dancerPlaylist = [],
+    strictPlaylist = false,
+    automatic = false,
+  } = req.body || {};
   try {
     const tracks = selectTracksForSet({
       count: Math.min(count, 20),
       excludeNames: excludeNames || [],
       genres: genres || [],
       dancerPlaylist: dancerPlaylist || [],
-      strictPlaylist: !!strictPlaylist
+      strictPlaylist: !!strictPlaylist,
+      automatic: automatic === true || automatic === 'true' || automatic === 1,
     });
     res.json({ tracks: tracks.map(t => ({ ...t, url: `/api/music/stream/${t.id}` })) });
   } catch (err) {

@@ -13,6 +13,7 @@ import {
   normalizeSongAssignments,
   normalizeSongList,
 } from '@/utils/rotationAssignments';
+import { filterAutomaticTracks } from '@/utils/automaticTrackSelection';
 
 const TRACKS_PER_PAGE = 200;
 
@@ -468,7 +469,8 @@ export default function RotationPlaylistManager({
               count: songsPerSet,
               excludeNames: [...new Set(batchExcludes)],
               genres: activeGenres,
-              dancerPlaylist
+              dancerPlaylist,
+              automatic: true
             }),
             signal: AbortSignal.timeout(5000)
           });
@@ -496,7 +498,8 @@ export default function RotationPlaylistManager({
           // Fresh first, then on-cooldown (oldest played first). Never random library.
           // Mirrors server-side selectTracksForSet behavior in db.js.
           const playlistSet = new Set(fallbackPlaylist);
-          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
+           const playlistTracks = filterAutomaticTracks(tracks)
+             .filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
           const fresh = playlistTracks.filter(t => !isOnCooldown(t.name));
           const cooldown = playlistTracks
             .filter(t => isOnCooldown(t.name))
@@ -504,7 +507,7 @@ export default function RotationPlaylistManager({
           assigned = [...fisherYatesShuffle(fresh).map(t => t.name), ...cooldown.map(t => t.name)].slice(0, songsPerSet);
         } else {
           // No playlist or folders_only mode — random from genre pool is correct
-          const genrePool = filterByGenres(tracks, activeGenres);
+           const genrePool = filterByGenres(filterAutomaticTracks(tracks), activeGenres);
           const fresh = genrePool.filter(t => !excludeSet.has(t.name) && !isOnCooldown(t.name));
           const fill = fresh.length > 0 ? fresh : genrePool.filter(t => !excludeSet.has(t.name));
           assigned = fisherYatesShuffle(fill).slice(0, songsPerSet).map(t => t.name);
@@ -627,7 +630,8 @@ export default function RotationPlaylistManager({
               count: needed,
               excludeNames: [...allUsed],
               genres: activeGenres,
-              dancerPlaylist
+              dancerPlaylist,
+              automatic: true
             }),
             signal: AbortSignal.timeout(5000)
           });
@@ -649,7 +653,8 @@ export default function RotationPlaylistManager({
           const fallbackNow = Date.now();
           const isOnCooldown = (name) => !!(songCooldowns[name] && (fallbackNow - songCooldowns[name]) < FOUR_HOURS_MS);
           const playlistSet = new Set(fallbackPlaylist);
-          const playlistTracks = tracks.filter(t => playlistSet.has(t.name) && !allUsed.has(t.name));
+           const playlistTracks = filterAutomaticTracks(tracks)
+             .filter(t => playlistSet.has(t.name) && !allUsed.has(t.name));
           const fresh = playlistTracks.filter(t => !isOnCooldown(t.name));
           const cooldown = playlistTracks
             .filter(t => isOnCooldown(t.name))
@@ -657,7 +662,7 @@ export default function RotationPlaylistManager({
           fillNames = [...fisherYatesShuffle(fresh).map(t => t.name), ...cooldown.map(t => t.name)].slice(0, needed);
         } else {
           // folders_only or no playlist — random from genre pool is correct
-          const genrePool = filterByGenres(tracks, activeGenres);
+           const genrePool = filterByGenres(filterAutomaticTracks(tracks), activeGenres);
           const available = genrePool.filter(t => !allUsed.has(t.name));
           fillNames = fisherYatesShuffle(available).slice(0, needed).map(t => t.name);
         }
