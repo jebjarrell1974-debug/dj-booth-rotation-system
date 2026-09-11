@@ -8,8 +8,10 @@ import { toast } from 'sonner';
 import {
   capSongAssignments,
   capSongList,
+  currentRotationDancerId,
   fillSongListToLimit,
   getSongName,
+  normalizeManualSongList,
   normalizeSongAssignments,
   normalizeSongList,
   reconcileAuthoritativeAssignments,
@@ -144,6 +146,7 @@ export default function RotationPlaylistManager({
   onSongsPerSetChange,
   activeRotationSongs,
   authoritativeManualAssignments = EMPTY_ASSIGNMENTS,
+  authoritativeManualSetLengths = EMPTY_ASSIGNMENTS,
   savedInterstitials,
   interstitialRemoteVersion,
   activeBreakInfo,
@@ -211,7 +214,16 @@ export default function RotationPlaylistManager({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
-          return normalizeSongAssignments(parsed.assignments, songsPerSet);
+          const assignments = normalizeSongAssignments(parsed.assignments, songsPerSet);
+          const manualIds = new Set([
+            ...(parsed.overrides || []),
+            ...Object.keys(authoritativeManualAssignments || {}),
+            ...Object.keys(authoritativeManualSetLengths || {}),
+          ]);
+          for (const id of manualIds) {
+            assignments[id] = normalizeManualSongList(parsed.assignments[id]);
+          }
+          return assignments;
         }
       }
     } catch {}
@@ -284,6 +296,7 @@ export default function RotationPlaylistManager({
   const lastAuthoritativeInterstitialsRef = React.useRef(savedInterstitials || {});
   const activeRotationSongsKey = stableAssignmentKey(activeRotationSongs || {});
   const authoritativeManualAssignmentsKey = stableAssignmentKey(authoritativeManualAssignments || {});
+  const authoritativeManualSetLengthsKey = stableAssignmentKey(authoritativeManualSetLengths || {});
   const songAssignmentsRef = React.useRef({});
   const assignmentSongsPerSetRef = React.useRef(songsPerSet);
   const assignmentGenerationRef = React.useRef(0);
@@ -311,6 +324,38 @@ export default function RotationPlaylistManager({
     djOverridesRef.current.add(normalizedId);
     dirtyOverridesRef.current.add(normalizedId);
   };
+  // Set edits are live controls, not a Save All-only draft. Publish the
+  // assignment immediately so the kiosk can rebase/cancel any in-flight
+  // automatic pre-pick before the next song is selected.
+  const publishManualAssignment = useCallback((dancerId, songs) => {
+    const normalizedId = String(dancerId);
+    const nextSongs = normalizeManualSongList(songs);
+    markDjOverride(normalizedId);
+    songAssignmentsRef.current = {
+      ...songAssignmentsRef.current,
+      [normalizedId]: nextSongs,
+    };
+    setSongAssignments(previous => ({ ...previous, [normalizedId]: nextSongs }));
+    Promise.resolve(onAutoSavePlaylist?.(dancerId, nextSongs)).catch(error => {
+      toast.error(error?.message || 'Could not apply the playlist edit');
+    });
+  }, [onAutoSavePlaylist]);
+  const normalizeDisplayedAssignments = useCallback((assignments) => {
+    const capped = capSongAssignments(assignments, songsPerSet);
+    const manualIds = new Set([
+      ...djOverridesRef.current,
+      ...dirtyOverridesRef.current,
+      ...Object.keys(authoritativeManualAssignments || {}),
+      ...Object.keys(authoritativeManualSetLengths || {}),
+    ]);
+    const normalized = { ...capped };
+    for (const id of manualIds) {
+      if (Object.prototype.hasOwnProperty.call(assignments || {}, id)) {
+        normalized[id] = normalizeManualSongList(assignments[id]);
+      }
+    }
+    return normalized;
+  }, [songsPerSet, authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey]);
   const prevCurrentDancerIdRef = React.useRef(null);
   const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
@@ -353,7 +398,7 @@ export default function RotationPlaylistManager({
       assignmentSongsPerSetRef.current = songsPerSet;
       assignmentGenerationRef.current += 1;
     }
-    const capped = capSongAssignments(songAssignments, songsPerSet);
+    const capped = normalizeDisplayedAssignments(songAssignments);
     if (capped !== songAssignments) {
       setSongAssignments(capped);
       return;
@@ -371,7 +416,7 @@ export default function RotationPlaylistManager({
         }));
       } catch {}
     }
-  }, [songAssignments, songsPerSet, remoteMode]);
+  }, [songAssignments, songsPerSet, remoteMode, normalizeDisplayedAssignments]);
 
   useEffect(() => {
     if (musicSource === 'genres') return;
@@ -406,7 +451,7 @@ export default function RotationPlaylistManager({
 
   useEffect(() => {
     if (!isRotationActive || !localRotation || localRotation.length === 0) return;
-    const currentId = String(localRotation[0]);
+    const currentId = String(currentRotationDancerId(localRotation, currentDancerIndex));
     if (prevCurrentDancerIdRef.current && prevCurrentDancerIdRef.current !== currentId) {
       const finishedId = prevCurrentDancerIdRef.current;
       djOverridesRef.current.delete(finishedId);
@@ -418,7 +463,7 @@ export default function RotationPlaylistManager({
       });
     }
     prevCurrentDancerIdRef.current = currentId;
-  }, [localRotation, isRotationActive]);
+  }, [localRotation, currentDancerIndex, isRotationActive]);
 
   useEffect(() => {
     const hasRemoteSnapshot = remoteMode && activeRotationSongs != null;
@@ -428,6 +473,10 @@ export default function RotationPlaylistManager({
         activeRotationSongs,
         songsPerSet,
         dirtyOverridesRef.current,
+        [
+          ...Object.keys(authoritativeManualAssignments || {}),
+          ...Object.keys(authoritativeManualSetLengths || {}),
+        ],
       ));
     } else if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
       setSongAssignments(prev => {
@@ -435,7 +484,11 @@ export default function RotationPlaylistManager({
         let changed = false;
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
           if (djOverridesRef.current.has(dancerId)) return;
-          const mapped = normalizeSongList(trackList, songsPerSet);
+          const mapped = (Object.prototype.hasOwnProperty.call(authoritativeManualAssignments || {}, dancerId)
+            || Object.prototype.hasOwnProperty.call(authoritativeManualSetLengths || {}, dancerId)
+            || djOverridesRef.current.has(dancerId))
+            ? normalizeManualSongList(trackList)
+            : normalizeSongList(trackList, songsPerSet);
           // Don't downgrade: if the dancer already has the right number of songs assigned
           // and the incoming pre-pick has fewer (stale from before a songsPerSet change),
           // keep what we have rather than overwriting with a short array that will then
@@ -597,7 +650,7 @@ export default function RotationPlaylistManager({
       }
       return changed ? next : prev;
     });
-  }, [authoritativeManualAssignmentsKey, activeRotationSongsKey]);
+  }, [authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey, activeRotationSongsKey]);
 
   const prevMusicModeRef = useRef(djOptions?.musicMode || 'dancer_first');
   useEffect(() => {
@@ -626,7 +679,7 @@ export default function RotationPlaylistManager({
       let changed = false;
       Object.keys(updated).forEach(dancerId => {
         const songs = updated[dancerId];
-        if (songs && songs.length > songsPerSet) {
+        if (songs && songs.length > songsPerSet && !djOverridesRef.current.has(dancerId)) {
           updated[dancerId] = songs.slice(0, songsPerSet);
           changed = true;
         }
@@ -806,22 +859,14 @@ export default function RotationPlaylistManager({
   const displayedTracks = genreFilteredTracks;
 
   const addSongToDancer = useCallback((dancerId, trackName) => {
-    setSongAssignments(prev => {
-      const current = [...(prev[dancerId] || [])];
-      if (current.includes(trackName)) {
-        toast.error('Song already assigned');
-        return prev;
-      }
-      if (current.length >= songsPerSet) {
-        toast.error(`This set is limited to ${songsPerSet} song${songsPerSet === 1 ? '' : 's'}`);
-        return prev;
-      }
-      markDjOverride(dancerId);
-      current.push(trackName);
-      const updated = { ...prev, [dancerId]: current };
-      return updated;
-    });
-  }, [songsPerSet]);
+    const current = [...(songAssignmentsRef.current[dancerId] || [])];
+    if (current.includes(trackName)) {
+      toast.error('Song already assigned');
+      return;
+    }
+    current.push(trackName);
+    publishManualAssignment(dancerId, current);
+  }, [publishManualAssignment]);
 
   const handleDragEnd = (result) => {
     const { source, destination, type } = result;
@@ -853,21 +898,13 @@ export default function RotationPlaylistManager({
       const trackName = resolveTrackName();
       if (!trackName) return;
 
-      setSongAssignments(prev => {
-        const current = [...(prev[dancerId] || [])];
-        if (current.includes(trackName)) {
-          toast.error('Song already assigned');
-          return prev;
-        }
-        if (current.length >= songsPerSet) {
-          toast.error(`This set is limited to ${songsPerSet} song${songsPerSet === 1 ? '' : 's'}`);
-          return prev;
-        }
-        markDjOverride(dancerId);
-        current.splice(destination.index, 0, trackName);
-        const updated = { ...prev, [dancerId]: current };
-        return updated;
-      });
+      const current = [...(songAssignmentsRef.current[dancerId] || [])];
+      if (current.includes(trackName)) {
+        toast.error('Song already assigned');
+        return;
+      }
+      current.splice(destination.index, 0, trackName);
+      publishManualAssignment(dancerId, current);
       return;
     }
 
@@ -889,14 +926,10 @@ export default function RotationPlaylistManager({
 
     if (source.droppableId === destination.droppableId && source.droppableId.startsWith('songs-')) {
       const dancerId = source.droppableId.replace('songs-', '');
-      markDjOverride(dancerId);
-      setSongAssignments(prev => {
-        const current = [...(prev[dancerId] || [])];
-        const [removed] = current.splice(source.index, 1);
-        current.splice(destination.index, 0, removed);
-        const updated = { ...prev, [dancerId]: current };
-        return updated;
-      });
+      const current = [...(songAssignmentsRef.current[dancerId] || [])];
+      const [removed] = current.splice(source.index, 1);
+      current.splice(destination.index, 0, removed);
+      publishManualAssignment(dancerId, current);
       return;
     }
 
@@ -937,14 +970,9 @@ export default function RotationPlaylistManager({
   };
 
   const removeSong = (dancerId, songIndex) => {
-    markDjOverride(dancerId);
-    setSongAssignments(prev => {
-      const current = [...(prev[dancerId] || [])];
-      const removedSong = current[songIndex];
-      current.splice(songIndex, 1);
-      const updated = { ...prev, [dancerId]: current };
-      return updated;
-    });
+    const current = [...(songAssignmentsRef.current[dancerId] || [])];
+    current.splice(songIndex, 1);
+    publishManualAssignment(dancerId, current);
   };
 
   const rerollSong = useCallback(async (dancerId, songIndex) => {
@@ -985,12 +1013,9 @@ export default function RotationPlaylistManager({
           const data = await res.json();
           const newTrack = data.tracks?.[0];
           if (newTrack) {
-            markDjOverride(dancerId);
-            setSongAssignments(prev => {
-              const current = [...(prev[dancerId] || [])];
-              current[songIndex] = newTrack.name;
-              return { ...prev, [dancerId]: current };
-            });
+            const current = [...(songAssignmentsRef.current[dancerId] || [])];
+            current[songIndex] = newTrack.name;
+            publishManualAssignment(dancerId, current);
             toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
             return;
           }
@@ -1011,12 +1036,9 @@ export default function RotationPlaylistManager({
       const available = freshPool.length > 0 ? freshPool : candidatePool;
       if (available.length > 0) {
         const pick = available[Math.floor(Math.random() * available.length)];
-        markDjOverride(dancerId);
-        setSongAssignments(prev => {
-          const current = [...(prev[dancerId] || [])];
-          current[songIndex] = pick.name;
-          return { ...prev, [dancerId]: current };
-        });
+        const current = [...(songAssignmentsRef.current[dancerId] || [])];
+        current[songIndex] = pick.name;
+        publishManualAssignment(dancerId, current);
         toast.success(`Re-rolled: ${pick.name.replace(/\.[^.]+$/, '')}`);
       } else {
         toast.error('No other songs available to pick from');
@@ -1024,7 +1046,7 @@ export default function RotationPlaylistManager({
     } finally {
       finish();
     }
-  }, [djOptions, tracks, serverTracks, dancers]);
+  }, [djOptions, tracks, serverTracks, dancers, publishManualAssignment]);
 
   const handleAddToRotation = (dancerId) => {
     if (!localRotation.includes(dancerId)) {
@@ -1126,9 +1148,11 @@ export default function RotationPlaylistManager({
     lastSaveTimeRef.current = now;
     const playlists = {};
     Object.entries(songAssignments).forEach(([dancerId, songs]) => {
-      const limited = normalizeSongList(songs, songsPerSet);
-      playlists[dancerId] = limited;
-      appliedPlaylistsRef.current[dancerId] = limited.join(',');
+      const normalized = djOverridesRef.current.has(String(dancerId))
+        ? normalizeManualSongList(songs)
+        : normalizeSongList(songs, songsPerSet);
+      playlists[dancerId] = normalized;
+      appliedPlaylistsRef.current[dancerId] = normalized.join(',');
     });
 
     const finalInterstitials = { ...interstitialSongs };

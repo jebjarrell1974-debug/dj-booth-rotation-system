@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import {
   capSongAssignments,
   capSongList,
+  currentRotationDancerId,
   filterManualAssignments,
   fillSongListToLimit,
   getSongName,
   applyManualAssignments,
   normalizeSongAssignments,
   normalizeSongsPerSet,
+  queueLatestManualAssignment,
   reconcileAuthoritativeAssignments,
+  resolveManualSetLength,
 } from './rotationAssignments.js';
 
 test('caps stale assignments to the configured set length', () => {
@@ -184,4 +187,37 @@ test('normalizes invalid set lengths safely', () => {
   assert.equal(normalizeSongsPerSet('2'), 2);
   assert.equal(normalizeSongsPerSet(0), 1);
   assert.deepEqual(capSongList(['one', 'two'], 0), ['one']);
+});
+
+test('uses the actual current rotation index when identifying the active dancer', () => {
+  assert.equal(currentRotationDancerId(['pending', 'on-stage', 'next'], 1), 'on-stage');
+  assert.equal(currentRotationDancerId(['first'], 99), 'first');
+});
+
+test('manual metadata owns empty and oversized set lengths across reload/default changes', () => {
+  const assignments = {
+    dancer20: Array.from({ length: 20 }, (_, index) => `song-${index}`),
+    cleared: [],
+  };
+  const manualLengths = { dancer20: 20, cleared: 0 };
+  assert.equal(resolveManualSetLength(assignments, manualLengths, 'dancer20', 2), 20);
+  assert.equal(resolveManualSetLength(assignments, manualLengths, 'cleared', 2), 0);
+  assert.deepEqual(
+    reconcileAuthoritativeAssignments(
+      assignments,
+      {},
+      2,
+      [],
+      ['dancer20', 'cleared'],
+    ),
+    assignments,
+  );
+});
+
+test('a rapid edit sequence resolves to the latest manual assignment', () => {
+  let queued = {};
+  queued = queueLatestManualAssignment(queued, 'dancer', ['one.mp3']);
+  queued = queueLatestManualAssignment(queued, 'dancer', ['one.mp3', 'two.mp3']);
+  queued = queueLatestManualAssignment(queued, 'dancer', ['final.mp3']);
+  assert.deepEqual(queued, { dancer: ['final.mp3'] });
 });

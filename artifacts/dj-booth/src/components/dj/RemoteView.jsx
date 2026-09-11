@@ -3,7 +3,7 @@ import { boothApi, djOptionsApi, musicApi } from '@/api/serverApi';
 import PressAndHoldDuckButton from '@/components/dj/PressAndHoldDuckButton';
 import { createRemoteDuckLease } from '@/utils/duckLease';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
-import { capSongAssignments, capSongList } from '@/utils/rotationAssignments';
+import { capSongList, normalizeManualSongList, queueLatestManualAssignment } from '@/utils/rotationAssignments';
 import { remoteSkipPayload } from '@/utils/skipPlayback';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
@@ -105,6 +105,7 @@ export default function RemoteView({
   const rotationList = liveBoothState?.rotation || [];
   const currentDancerIndex = liveBoothState?.currentDancerIndex || 0;
   const rotationSongs = liveBoothState?.rotationSongs || {};
+  const manualRotationSongs = liveBoothState?.manualRotationSongs || {};
   const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
   const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
   const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
@@ -132,6 +133,54 @@ export default function RemoteView({
       return null;
     }
   }, [isConnected, liveBoothState?.rotationVersion]);
+  // Assignment edits can arrive faster than the kiosk command poller. Keep
+  // one ordered drain per dancer: an in-flight edit finishes first, then only
+  // the newest queued value is sent. This prevents an older phone mutation
+  // from arriving after the final edit and winning on the kiosk.
+  const manualAssignmentQueuesRef = useRef(new Map());
+  const publishManualAssignment = useCallback((dancerId, songs) => {
+    const key = String(dancerId);
+    const existing = manualAssignmentQueuesRef.current.get(key);
+    const queue = existing || {
+      pending: null,
+      revision: 0,
+      running: false,
+      promise: null,
+    };
+    queue.pending = normalizeManualSongList(songs);
+    queue.revision += 1;
+    manualAssignmentQueuesRef.current.set(key, queue);
+    if (!queue.running) {
+      queue.running = true;
+      queue.promise = (async () => {
+        while (queue.pending) {
+          const nextSongs = queue.pending;
+          const revision = queue.revision;
+          queue.pending = null;
+          const result = await sendRemoteCommand('updateSongAssignments', {
+            assignments: { [dancerId]: nextSongs },
+            clientRevision: revision,
+          });
+          if (!result) {
+            queue.pending = null;
+            break;
+          }
+        }
+      })().finally(() => {
+        queue.running = false;
+        if (manualAssignmentQueuesRef.current.get(key) === queue) {
+          manualAssignmentQueuesRef.current.delete(key);
+        }
+      });
+    }
+    return queue.promise;
+  }, [sendRemoteCommand]);
+  const flushManualAssignmentQueues = useCallback(async () => {
+    const pending = [...manualAssignmentQueuesRef.current.values()]
+      .map(queue => queue.promise)
+      .filter(Boolean);
+    await Promise.all(pending);
+  }, []);
   const remoteDuckLeaseRef = useRef(null);
   const remoteDuckSendRef = useRef(null);
   remoteDuckSendRef.current = (action, payload, options) => (
@@ -177,6 +226,13 @@ export default function RemoteView({
   const currentDancer = dancers?.find(d => d.id === rotationList[currentDancerIndex]);
   const rotationDancers = rotationList.map(id => dancers?.find(d => d.id === id)).filter(Boolean);
   const allActiveDancers = (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name));
+  const currentSetLength = currentDancer
+    ? (Object.prototype.hasOwnProperty.call(songEdits, currentDancer.id)
+      ? normalizeManualSongList(songEdits[currentDancer.id]).length
+      : Object.prototype.hasOwnProperty.call(manualRotationSongs, currentDancer.id)
+        ? normalizeManualSongList(manualRotationSongs[currentDancer.id]).length
+        : songsPerSet)
+    : songsPerSet;
 
   const fetchLib = useCallback(async (search, genre) => {
     setLibLoading(true);
@@ -250,20 +306,28 @@ export default function RemoteView({
   };
 
   const getSongs = (dancerId) => {
-    if (songEdits[dancerId]) return capSongList(songEdits[dancerId], songsPerSet);
+    if (Object.prototype.hasOwnProperty.call(songEdits, dancerId)) {
+      return normalizeManualSongList(songEdits[dancerId]);
+    }
+    if (Object.prototype.hasOwnProperty.call(manualRotationSongs, dancerId)) {
+      return normalizeManualSongList(manualRotationSongs[dancerId]);
+    }
     const songs = rotationSongs[dancerId] || [];
     return capSongList(songs.map(s => typeof s === 'string' ? s : s.name), songsPerSet);
   };
 
   const setSongs = (dancerId, songs) => {
-    setSongEdits(prev => ({ ...prev, [dancerId]: capSongList(songs, songsPerSet) }));
+    const normalized = normalizeManualSongList(songs);
+    setSongEdits(prev => queueLatestManualAssignment(prev, dancerId, normalized));
     setHasUnsaved(true);
+    // Phone edits are live too: apply the current assignment immediately and
+    // retain Save Changes for the workspace/rotation controls.
+    publishManualAssignment(dancerId, normalized);
   };
 
   const addSong = (dancerId, trackName) => {
     const current = getSongs(dancerId);
     if (current.includes(trackName)) return;
-    if (current.length >= songsPerSet) return;
     setSongs(dancerId, [...current, trackName]);
   };
 
@@ -309,9 +373,15 @@ export default function RemoteView({
   };
 
   const handleSaveAll = async () => {
+    await flushManualAssignmentQueues();
     const result = await sendRemoteCommand('saveRotationWorkspace', {
       rotation: rotationList,
-      assignments: capSongAssignments(songEdits, songsPerSet),
+      assignments: Object.fromEntries(
+        Object.entries(songEdits).map(([dancerId, songs]) => [
+          dancerId,
+          normalizeManualSongList(songs),
+        ]),
+      ),
       interstitialSongs,
       manualOverrides: Object.keys(songEdits),
     }, {
@@ -347,7 +417,7 @@ export default function RemoteView({
       setSongs(dancerId, updated);
       if (libraryStandalone) {
         const dancerName = dancers.find(d => d.id === dancerId)?.name || 'entertainer';
-        setLibraryStatus(`${stripExt(trackName)} assigned to ${dancerName}, song ${songIdx + 1}. Use Save Changes when finished.`);
+         setLibraryStatus(`${stripExt(trackName)} assigned to ${dancerName}, song ${songIdx + 1}. Applied live; Save Changes is optional.`);
       } else {
         setAssigningTo(null);
         setTab('rotation');
@@ -369,7 +439,11 @@ export default function RemoteView({
     if (!dancerId) return [];
     const songs = getSongs(dancerId);
     const dancerIndex = rotationList.indexOf(dancerId);
-    const slotCount = Math.min(songsPerSet, songs.length + (songs.length < songsPerSet ? 1 : 0));
+    const isManual = Object.prototype.hasOwnProperty.call(songEdits, dancerId)
+      || Object.prototype.hasOwnProperty.call(manualRotationSongs, dancerId);
+    const slotCount = isManual
+      ? songs.length + 1
+      : Math.min(songsPerSet, songs.length + (songs.length < songsPerSet ? 1 : 0));
     return Array.from({ length: slotCount }, (_, songIdx) => ({
       songIdx,
       disabled: isRotationActive && dancerIndex === currentDancerIndex && songIdx === currentSongNumber - 1,
@@ -432,7 +506,7 @@ export default function RemoteView({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-500 truncate">
-                      {currentDancer.name}{isRotationActive ? ` - Song ${currentSongNumber}/${songsPerSet}` : ''}
+                      {currentDancer.name}{isRotationActive ? ` - Song ${currentSongNumber}/${currentSetLength || 1}` : ''}
                     </p>
                     <p className="text-sm text-white truncate">{currentTrack || 'Select a track'}</p>
                   </div>

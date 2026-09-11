@@ -3,10 +3,50 @@ export function normalizeSongsPerSet(value, fallback = 1) {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
 }
 
+export function currentRotationDancerId(rotation, currentDancerIndex = 0) {
+  if (!Array.isArray(rotation) || rotation.length === 0) return null;
+  return rotation[currentDancerIndex] ?? rotation[0] ?? null;
+}
+
+export function resolveManualSetLength(assignments, manualSetLengths, dancerId, automaticDefault = 1) {
+  const key = String(dancerId);
+  if (manualSetLengths && Object.prototype.hasOwnProperty.call(manualSetLengths, key)) {
+    const explicit = Number(manualSetLengths[key]);
+    if (Number.isFinite(explicit)) return Math.max(0, explicit);
+  }
+  const assigned = assignments?.[dancerId] ?? assignments?.[key];
+  if (Array.isArray(assigned)) return assigned.length;
+  return normalizeSongsPerSet(automaticDefault, 1);
+}
+
 export function capSongList(songs, songsPerSet) {
   if (!Array.isArray(songs)) return [];
   const limit = normalizeSongsPerSet(songsPerSet);
   return songs.length > limit ? songs.slice(0, limit) : songs;
+}
+
+// The global songs-per-set value is an automatic-pick default, not a limit on
+// an explicit DJ set.  Keep the old capped helpers for automatic assignments
+// and use these helpers at every manual persistence/transport boundary.
+export function normalizeManualSongList(songs) {
+  if (!Array.isArray(songs)) return [];
+  return songs.map(getSongName).filter(Boolean);
+}
+
+export function normalizeManualSongAssignments(assignments) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+  return Object.fromEntries(
+    Object.entries(assignments).map(([dancerId, songs]) => [
+      dancerId,
+      normalizeManualSongList(songs),
+    ]),
+  );
+}
+
+export function queueLatestManualAssignment(queue, dancerId, songs) {
+  const next = queue && typeof queue === 'object' && !Array.isArray(queue) ? { ...queue } : {};
+  next[String(dancerId)] = normalizeManualSongList(songs);
+  return next;
 }
 
 export function capSongAssignments(assignments, songsPerSet) {
@@ -60,9 +100,20 @@ export function normalizeSongAssignments(assignments, songsPerSet) {
 // Reconcile the display-layer assignment map with a kiosk snapshot without
 // allocating a new object for an unchanged snapshot. Dirty editor entries are
 // intentionally retained until the command is acknowledged.
-export function reconcileAuthoritativeAssignments(current, authoritative, songsPerSet, dirtyIds = []) {
+export function reconcileAuthoritativeAssignments(current, authoritative, songsPerSet, dirtyIds = [], manualIds = []) {
   const previous = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
   const next = normalizeSongAssignments(authoritative, songsPerSet);
+  const manualSet = new Set((manualIds || []).map(id => String(id)));
+  for (const dancerId of manualSet) {
+    if (Object.prototype.hasOwnProperty.call(authoritative || {}, dancerId)) {
+      next[dancerId] = normalizeManualSongList(authoritative[dancerId]);
+    } else if (Object.prototype.hasOwnProperty.call(previous, dancerId)) {
+      // A consumed one-shot ledger may omit the assignment even though the
+      // persisted manual-length marker still owns it. Keep the last
+      // authoritative local value instead of capping/removing it.
+      next[dancerId] = previous[dancerId];
+    }
+  }
   for (const rawId of dirtyIds || []) {
     const dancerId = String(rawId);
     if (Object.prototype.hasOwnProperty.call(previous, dancerId)) {
@@ -99,15 +150,15 @@ export function applyManualAssignments(assignments, updates, manualOverrides = [
 }
 
 // Keep the one-shot DJ override ledger separate from automatic queue picks.
-// The kiosk broadcasts this filtered map so a remote workspace save cannot
-// promote an old automatic assignment into a new manual override.
+// Explicit empty lists remain meaningful (the DJ removed the final song), so
+// the kiosk broadcasts the marker even when its assignment is empty.
 export function filterManualAssignments(assignments, manualFlags) {
   if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
   if (!manualFlags || typeof manualFlags !== 'object' || Array.isArray(manualFlags)) return {};
 
   const filtered = {};
   for (const [dancerId, songs] of Object.entries(assignments)) {
-    if (!manualFlags[dancerId] || !Array.isArray(songs) || songs.length === 0) continue;
+    if (!manualFlags[dancerId]) continue;
     filtered[dancerId] = songs;
   }
   return filtered;

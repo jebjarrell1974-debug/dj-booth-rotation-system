@@ -208,6 +208,7 @@ export function nextStateRevisions(previous, incoming) {
   const structuralChanged = JSON.stringify(previous.rotation ?? []) !== JSON.stringify(incoming.rotation ?? previous.rotation ?? []) ||
     JSON.stringify(previous.rotationSongs ?? {}) !== JSON.stringify(incoming.rotationSongs ?? previous.rotationSongs ?? {}) ||
     JSON.stringify(previous.manualRotationSongs ?? {}) !== JSON.stringify(incoming.manualRotationSongs ?? previous.manualRotationSongs ?? {}) ||
+    JSON.stringify(previous.manualRotationSetLengths ?? {}) !== JSON.stringify(incoming.manualRotationSetLengths ?? previous.manualRotationSetLengths ?? {}) ||
     JSON.stringify(previous.interstitialSongs ?? {}) !== JSON.stringify(incoming.interstitialSongs ?? previous.interstitialSongs ?? {}) ||
     JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? previous.dancerVipMap ?? {}) ||
     JSON.stringify(previous.placedFeatures ?? {}) !== JSON.stringify(incoming.placedFeatures ?? previous.placedFeatures ?? {});
@@ -235,6 +236,7 @@ export function boothWorkspaceSnapshot(state = {}) {
   return {
     rotation: [...(state.rotation || [])],
     rotationSongs: songs,
+    manualRotationSetLengths: state.manualRotationSetLengths || {},
     interstitialSongs: state.interstitialSongs || {},
     dancerVipMap: state.dancerVipMap || {},
     placedFeatures: state.placedFeatures || {},
@@ -263,6 +265,7 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
     skipLocked: !!read('skipLocked', false),
     rotationSongs: read('rotationSongs', {}) ?? {},
     manualRotationSongs: read('manualRotationSongs', {}) ?? {},
+    manualRotationSetLengths: read('manualRotationSetLengths', {}) ?? {},
     volume: read('volume', 0.8),
     voiceGain: read('voiceGain', 1.5),
     trackTime: read('trackTime', 0),

@@ -53,12 +53,14 @@ test('full structural workspace snapshot normalizes assigned song names', () => 
       2: [{ file_name: 'Two' }],
       3: [{ filename: 'Three' }],
     },
+    manualRotationSetLengths: { 1: 1, 2: 0 },
     interstitialSongs: { 'after-1': ['Break'] },
     dancerVipMap: { 2: { expiresAt: 5000 } },
     placedFeatures: { 2: { chosenSetName: 'Feature Set' } },
   }), {
     rotation: [1, 2],
     rotationSongs: { 1: ['One'], 2: ['Two'], 3: ['Three'] },
+    manualRotationSetLengths: { 1: 1, 2: 0 },
     interstitialSongs: { 'after-1': ['Break'] },
     dancerVipMap: { 2: { expiresAt: 5000 } },
     placedFeatures: { 2: { chosenSetName: 'Feature Set' } },
@@ -74,6 +76,10 @@ test('structural commands and state revisions are distinct', () => {
   assert.deepEqual(nextStateRevisions(
     { ...previous, manualRotationSongs: {} },
     { rotation: [1], rotationSongs: { 1: ['a'] }, manualRotationSongs: { 1: ['dj-pick'] } },
+  ), { stateVersion: 8, rotationVersion: 4 });
+  assert.deepEqual(nextStateRevisions(
+    { ...previous, manualRotationSetLengths: {} },
+    { rotation: [1], rotationSongs: { 1: ['a'] }, manualRotationSetLengths: { 1: 1 } },
   ), { stateVersion: 8, rotationVersion: 4 });
 });
 
@@ -101,6 +107,7 @@ test('legacy omitted fields preserve the confirmed kiosk snapshot while explicit
     rotation: [8],
     rotationSongs: { 8: ['full8'] },
     manualRotationSongs: { 8: ['full8'] },
+    manualRotationSetLengths: { 8: 1 },
     autoplayQueue: [{ name: 'full8' }],
     volume: 0.45,
     voiceGain: 0.5,
@@ -112,6 +119,7 @@ test('legacy omitted fields preserve the confirmed kiosk snapshot while explicit
   assert.equal(legacy.stateEpoch, previous.stateEpoch);
   assert.deepEqual(legacy.rotation, [8]);
   assert.deepEqual(legacy.rotationSongs, { 8: ['full8'] });
+  assert.deepEqual(legacy.manualRotationSetLengths, { 8: 1 });
   assert.deepEqual(legacy.autoplayQueue, [{ name: 'full8' }]);
   assert.equal(legacy.volume, 0.45);
   assert.equal(legacy.voiceGain, 0.5);
@@ -122,6 +130,7 @@ test('legacy omitted fields preserve the confirmed kiosk snapshot while explicit
     rotation: [],
     rotationSongs: {},
     manualRotationSongs: {},
+    manualRotationSetLengths: {},
     autoplayQueue: [],
     currentTrack: null,
   }, 3000);
@@ -130,6 +139,7 @@ test('legacy omitted fields preserve the confirmed kiosk snapshot while explicit
   assert.deepEqual(stopped.rotation, []);
   assert.deepEqual(stopped.rotationSongs, {});
   assert.deepEqual(stopped.manualRotationSongs, {});
+  assert.deepEqual(stopped.manualRotationSetLengths, {});
   assert.deepEqual(stopped.autoplayQueue, []);
   assert.equal(stopped.currentTrack, null);
   assert.equal(stopped.stateVersion, legacy.stateVersion + 1);
