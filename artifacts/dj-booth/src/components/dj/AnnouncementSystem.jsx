@@ -7,6 +7,11 @@ import { localIntegrations } from '@/api/localEntities';
 import { getApiConfig, recoverElevenLabsKey } from '@/components/apiConfig';
 import { VOICE_SETTINGS, buildAnnouncementPrompt } from '@/utils/energyLevels';
 import { prepareTTSText } from '@/utils/ttsText';
+import {
+  REGULAR_ROTATION_VERSION,
+  buildGenericRecordingType,
+  buildLocalRegularRotationScript,
+} from '@/utils/regularRotationScripts';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import { reportScriptFallback } from '@/utils/scriptFallbackAlert';
 
@@ -166,11 +171,13 @@ const cleanupStaleIDBEntries = async () => {
       const keys = request.result || [];
       let removed = 0;
       for (const key of keys) {
-        // Preserve ALL active version namespaces — regular (V17), feature
-        // (FEATURE_V2), and stage-transition (ST_V3) — or valid entries get
-        // purged on every mount and must be refetched/regenerated.
+        // Preserve every active version namespace.  Regular intros/outros use
+        // their own namespace so this change does not invalidate round-two,
+        // feature, or stage-transition audio (and does not delete anything
+        // from the server).
         if (typeof key === 'string'
             && !key.includes(`-${CURRENT_VOICE_VERSION}`)
+            && !key.includes(`-${REGULAR_ROTATION_VERSION}`)
             && !key.includes('-FEATURE_V2')
             && !key.includes('-ST_V3')) {
           store.delete(key);
@@ -318,6 +325,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   };
 
 
+  // Local regular-rotation pool for units without OpenAI. These do NOT depend
+  // on an LLM: the fleet has no OpenAI key. Keep this separate from the
+  // one-song-set stage-transition pool below so regular copy changes cannot
+  // alter feature, house, promo, or multi-stage announcements.
+  const buildLocalRegularScript = (type, dancerName, varNum = 1) => (
+    buildLocalRegularRotationScript(type, dancerName, varNum)
+  );
+
   // Local short send-off pool for one-song-set stage transitions. These do NOT
   // depend on an LLM: the fleet has no OpenAI key, and the generic canned LLM
   // fallback returns long tip-push lines that are exactly what this announcement
@@ -341,6 +356,19 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
   const generateScript = useCallback(async (type, dancerName, nextDancerName = null, roundNumber = 1, varNum = 1, featureMeta = null) => {
     const config = getApiConfig();
+
+    // Regular intros/outros must not depend on an LLM.  In particular, a
+    // missing or rejected OpenAI key must not route a new regular script
+    // through the generic canned fallback, which has historically produced
+    // long announcements without the entertainer's name.
+    if ((type === 'intro' || type === 'outro')
+        && (!config.openaiApiKey || openaiKeyLooksInvalid)) {
+      reportScriptFallback(
+        openaiKeyLooksInvalid ? 'api_error' : 'no_key',
+        `${openaiKeyLooksInvalid ? 'OpenAI key invalid' : 'OpenAI key missing'} — local ${type} pool used`,
+      );
+      return buildLocalRegularScript(type, dancerName, varNum);
+    }
 
     // Stage transitions must NEVER produce a long/wrong script, no matter what
     // state the OpenAI key is in:
@@ -370,6 +398,17 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       } catch (err) {
         console.warn(`⚠️ stage_transition LLM script failed (${err.message}) — using local short send-off pool`);
         return buildLocalStageTransitionScript(dancerName, varNum);
+      }
+    }
+    if (type === 'intro' || type === 'outro') {
+      try {
+        return await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
+      } catch (err) {
+        // A configured-but-unusable key should be no worse than no key. Keep
+        // regular rotation on the short, identity-preserving local pool
+        // instead of dropping to a long generic canned outro.
+        console.warn(`⚠️ ${type} script generation failed (${err.message}) — using local regular pool`);
+        return buildLocalRegularScript(type, dancerName, varNum);
       }
     }
     return await generateScriptViaLLM(type, dancerName, nextDancerName, roundNumber, varNum, featureMeta, config);
@@ -586,12 +625,16 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const ph = phonetic ? `-ph${hashPhonetic(phonetic)}` : '';
     const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
       : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
+      : (type === 'intro' || type === 'outro') ? REGULAR_ROTATION_VERSION
       : CURRENT_VOICE_VERSION;
     return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}${ph}-var${varNum}-${versionTag}`;
   };
 
   const getLegacyL4Key = (type, dancerName, nextDancerName = null) => {
-    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-${CURRENT_VOICE_VERSION}`;
+    const versionTag = (type === 'intro' || type === 'outro')
+      ? REGULAR_ROTATION_VERSION
+      : CURRENT_VOICE_VERSION;
+    return `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-L4-${versionTag}`;
   };
 
   const getKeyForDancer = (type, dancerName, nextDancerName = null, varNum = 1) => {
@@ -715,7 +758,10 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     const maxVariations = 10;
     for (let attempt = 0; attempt < maxVariations; attempt++) {
       idx[typeKey] = ((idx[typeKey] || 0) % maxVariations) + 1;
-      const recType = `${typeKey}_${idx[typeKey]}`;
+      // Regular generic audio gets its own versioned namespace. A new pool
+      // therefore misses old IndexedDB/server recordings without clearing
+      // unrelated round-two recordings or deleting anything fleet-wide.
+      const recType = buildGenericRecordingType(typeKey, idx[typeKey]);
       const cacheKey = `custom-recording-${genericName}-${recType}`;
       const idbCached = await getCachedFromIndexedDB(cacheKey);
       if (idbCached) {
@@ -914,6 +960,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       if (onRemotePlay) {
         const versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
           : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
+          : (type === 'intro' || type === 'outro') ? REGULAR_ROTATION_VERSION
           : CURRENT_VOICE_VERSION;
         const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${versionTag}`;
         const audioResponse = await fetch(result.url);
@@ -932,6 +979,7 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
         // which silently broke recovery for feature voiceovers).
         const _versionTag = type === 'feature_intro' ? FEATURE_VOICE_VERSION
           : type === 'stage_transition' ? STAGE_TRANSITION_VERSION
+          : (type === 'intro' || type === 'outro') ? REGULAR_ROTATION_VERSION
           : CURRENT_VOICE_VERSION;
         const cacheKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}-var${varNum}-${_versionTag}`;
         console.warn(`⚠️ Playback failed for ${cacheKey} — clearing local cache, trying server copy first...`, playError.message);

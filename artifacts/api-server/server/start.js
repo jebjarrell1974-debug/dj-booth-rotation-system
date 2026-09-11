@@ -1,4 +1,5 @@
 import http from 'http';
+import { startGenericVoiceoverRefresh } from './generic-voiceover-refresh.js';
 
 const PORT = process.env.PORT || 5000;
 
@@ -28,6 +29,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     expressApp = app;
     console.log(`🎵 NEON AI DJ server running on port ${PORT}`);
     initMusicScanner();
+    startGenericVoiceoverRefresh();
 
     const gracefulShutdown = () => {
       console.log('🛑 Shutting down gracefully...');

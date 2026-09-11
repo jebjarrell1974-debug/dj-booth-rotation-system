@@ -464,6 +464,54 @@ EXAMPLES (use for inspiration, write something COMPLETELY ORIGINAL — never reu
 Two to four sentences. ${isGeneric ? 'Do not use a specific name.' : `Her name is ${displayName}.`}`;
   }
 
+  // The regular rotation copy above is intentionally replaced with this
+  // compact brief at the final assembly point.  Keeping the feature and
+  // stage-transition branches above separate prevents this shortening rule
+  // from changing those shows, while ensuring every normal intro/outro prompt
+  // has the same one-name/one-cue shape.
+  if (type === 'intro') {
+    const introStyle = varNum <= 2
+      ? 'Bring the energy quickly, with one clean stage-arrival image.'
+      : varNum === 3
+      ? 'Sound conversational and playful, with one clean stage-arrival image.'
+      : varNum === 4
+      ? 'Sound like a confident show host, with one clean stage-arrival image.'
+      : 'Sound smooth and appreciative, with one clean stage-arrival image.';
+    eventInstructions = `EVENT: REGULAR STAGE INTRODUCTION
+
+${displayName} is about to take the main stage.${genericNote}
+
+${introStyle}
+- Use exactly two flowing sentences totaling 17-23 spoken words (emotion tags do not count); keep each sentence within the global 5-14-word limit.
+- Include one natural colorful/showmanship phrase, one crowd address such as "gentlemen" or "fellas", and one concise arrival cue.
+- ${isGeneric ? 'Use "your next entertainer" as the identity once; do not invent a name.' : `Say "${displayName}" exactly once.`}
+- Choose one naturally spoken colorful image or compliment only; do not stack ornate poetry, catchphrases, or crowd cues.
+- Avoid pay-per-view, kings, players, and repetitive slang. Favor gentlemen/fellas naturally.
+
+EXAMPLES (use the approved flow as inspiration; write a fresh line):
+"[energetically] Bringing a little temptation to your night, welcome the lovely ${displayName}! Gentlemen, show her some love."
+"[excitedly] Fellas, welcome ${displayName} — she is bringing a touch of magic to the main stage tonight."
+
+Write only the spoken announcement.`;
+  } else if (type === 'outro') {
+    eventInstructions = `EVENT: REGULAR STAGE EXIT
+
+${displayName} just finished her set on the main stage.${genericNote}
+
+Wrap it up quickly and preserve the private-dance upsell without over-selling.
+- Use exactly two flowing sentences totaling 15-21 spoken words (emotion tags do not count); keep each sentence within the global 5-14-word limit.
+- Include one natural colorful/showmanship phrase, one crowd address such as "gentlemen" or "fellas", and one concise closing cue.
+- ${isGeneric ? 'Use "your next entertainer" or "she" as the identity; do not invent a name.' : `Say "${displayName}" exactly once.`}
+- Choose one naturally spoken colorful image or compliment only; do not stack ornate poetry, catchphrases, or crowd cues.
+- Use at most one private-dance cue. Avoid pay-per-view, kings, players, and repetitive slang. Favor gentlemen/fellas naturally.
+
+EXAMPLES (use the approved flow as inspiration; write a fresh line):
+"[impressed] The gorgeous ${displayName}, gentlemen — leaving you wanting just a little more. Give her a hand right now!"
+"[playfully] That was the radiant ${displayName}, gentlemen — she left the stage glowing. Find her for private time."
+
+Write only the spoken announcement.`;
+  }
+
   const shiftBlock = `TONE (do not reference these labels in the spoken text — just let them guide your delivery):
 Tone: ${shift.tone}. Confidence: ${shift.confidence}.
 ${shift.excitement}`;

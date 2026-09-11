@@ -42,6 +42,7 @@ import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos
 import { listFeatureBeds, listMusicFolders, listFolderTracks, produceFeatureAudio, featureCacheKey, ensureFeatureBedsFolder } from './feature-producer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
+import { startGenericVoiceoverRefresh } from './generic-voiceover-refresh.js';
 import {
   BoothCommandQueue,
   isPhysicalKioskRequestMetadata,
@@ -2858,6 +2859,7 @@ if (isDirectRun) {
       console.warn('⚠️ DJ-only playlist scrub failed:', e.message);
     }
     initMusicScanner();
+    startGenericVoiceoverRefresh();
     startMonitoring();
     startHeartbeat(() => {
       let apiCosts = { total: 0, elevenlabs: 0, openai: 0, calls: 0 };

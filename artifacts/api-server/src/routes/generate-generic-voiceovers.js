@@ -1,6 +1,10 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import {
+  REGULAR_GENERIC_AUDIO_VERSION,
+  REGULAR_GENERIC_SCRIPTS,
+} from '../../server/genericRotationScripts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,18 +44,7 @@ const VOICE_SETTINGS = {
 };
 
 const GENERIC_SCRIPTS = {
-  intro: [
-    "Main stage, gentlemen. Your next entertainer is heading your way — and fellas, this is pay-per-view quality. Get up to that rail with some cash. She don't dance for free. Here she comes.",
-    "All right, all right... main stage. She's about to do her thing, and she's the total package — top to bottom. Get those dollars out, fellas. Coming to the stage right now.",
-    "Listen up, my guys. You came here for the best, and the best is about to deliver. Coming to the main stage — open those wallets wide, gentlemen.",
-    "Right about now... I need all eyes up front. Your next entertainer is heading your way. Fellas, grab some cash — you're gonna need it. Here she comes.",
-    "Who's got cash? I hope it's you, because she's about to earn every single dollar. Main stage, right now. Get comfortable — and get generous.",
-    "You hear that music? That means one thing. Your next entertainer is on deck. She's about to light this place up. Get those ones ready, kings. Here she comes.",
-    "Gentlemen... I need you to do me a favor. Put that phone down, pick that cash up. She's about to take the stage and she deserves your full attention.",
-    "This next one's a problem, fellas — in the best way. About to hit the main stage. These ladies make their living off of what you're giving. Let's go.",
-    "Hold on, hold on... y'all ain't ready for this one. She's about to shut this stage down. Paper up, boys. This is not a drill. Here she comes.",
-    "Big spenders, this one's for you. She's about to show you why she's on this stage. Get those ones out, get up close. Show her some love.",
-  ],
+  intro: REGULAR_GENERIC_SCRIPTS.intro,
   round2: [
     "Round two, gentlemen. Keep it going for her.",
     "We're not done yet... she's still on that stage. Keep those dollars coming.",
@@ -64,18 +57,7 @@ const GENERIC_SCRIPTS = {
     "More of this beautiful lady. Keep tipping, kings.",
     "Stay at that rail, boys. She got more for you. Round two.",
   ],
-  outro: [
-    "All right fellas, that was incredible on the main stage. She's available for private dances now — one on one, make that connection. Don't let somebody else grab her first.",
-    "That was beautiful, gentlemen. Main stage is done... but if you want more, she's heading to V.I.P. Go see her.",
-    "Show some love, fellas. Main stage is done, but your chance for a private dance is just getting started. Don't let her slip away.",
-    "That was lovely, gentlemen. If you want more of that... she's heading to V.I.P. for that one-on-one experience. Trust me, it's worth every dollar.",
-    "Everybody give it up. Now listen... if that had you in your feelings, imagine what a private dance would do. She's available right now. Go find her.",
-    "That was special, gentlemen. If you want the real experience... she's heading to V.I.P. First come, first served, fellas.",
-    "Main stage is wrapped, but the night ain't over. She's taking private dances — and gentlemen, that's where the magic happens.",
-    "That was fire, fellas. She just put on a show. Now she's available for private dances... face to face, one on one. Don't be the one who missed out.",
-    "Stage show is done, but the real fun is in V.I.P. She's waiting — the question is, are you coming?",
-    "She just danced for all of you... now she can dance for just one of you. Private dances available right now. Go treat yourself.",
-  ],
+  outro: REGULAR_GENERIC_SCRIPTS.outro,
   transition: [
     "Show some love for her. Now... we're keeping it back to back tonight. Your next entertainer is heading to the main stage — get up close with some of that hard-earned cash. Here she comes.",
     "That was beautiful. Right about now... your next entertainer is coming to the stage, fellas. These ladies don't dance for free — so get those dollars ready.",
@@ -89,6 +71,13 @@ const GENERIC_SCRIPTS = {
     "That was incredible. And we keep the heat coming. She's up next. Trust me, you want to be at that rail. Cash in hand. Here she comes.",
   ],
 };
+
+function recordingTypeFor(type, index) {
+  const base = `${type}_${index + 1}`;
+  return (type === 'intro' || type === 'outro')
+    ? `${base}_${REGULAR_GENERIC_AUDIO_VERSION}`
+    : base;
+}
 
 async function generateTTS(text) {
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`, {
@@ -134,7 +123,7 @@ async function main() {
   for (const type of types) {
     const scripts = GENERIC_SCRIPTS[type];
     for (let i = 0; i < scripts.length; i++) {
-      const recType = `${type}_${i + 1}`;
+      const recType = recordingTypeFor(type, i);
       const script = scripts[i];
 
       const existing = db.prepare('SELECT id FROM voice_recordings WHERE dancer_name = ? AND recording_type = ?').get('__generic__', recType);
