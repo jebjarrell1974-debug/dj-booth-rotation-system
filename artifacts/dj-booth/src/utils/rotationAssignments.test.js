@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import {
   capSongAssignments,
   capSongList,
+  filterManualAssignments,
   fillSongListToLimit,
+  getSongName,
+  applyManualAssignments,
+  normalizeSongAssignments,
   normalizeSongsPerSet,
 } from './rotationAssignments.js';
 
@@ -31,6 +35,47 @@ test('preserves references when assignments already fit', () => {
   const assignments = { cash: ['one.mp3', 'two.mp3'] };
   assert.equal(capSongAssignments(assignments, 2), assignments);
   assert.equal(capSongList(assignments.cash, 2), assignments.cash);
+});
+
+test('filters automatic assignments out of the DJ override ledger', () => {
+  const autoAndManual = {
+    mira: [{ name: 'auto-one' }],
+    rose: [{ name: 'dj-repeat' }],
+  };
+
+  assert.deepEqual(filterManualAssignments(autoAndManual, { rose: true }), {
+    rose: [{ name: 'dj-repeat' }],
+  });
+});
+
+test('normalizes remote string and legacy file-name track shapes', () => {
+  assert.equal(getSongName({ file_name: 'Tove Lo Habits.mp3' }), 'Tove Lo Habits.mp3');
+  assert.equal(getSongName({ filename: 'Hinder Lips Of An Angel.mp3' }), 'Hinder Lips Of An Angel.mp3');
+  assert.equal(getSongName({ path: '/music/fallback.mp3' }), 'fallback.mp3');
+  assert.deepEqual(normalizeSongAssignments({
+    scarlett: [
+      { file_name: 'Tove Lo Habits.mp3' },
+      { name: 'Hinder Lips Of An Angel.mp3' },
+      {},
+    ],
+  }, 3), {
+    scarlett: ['Tove Lo Habits.mp3', 'Hinder Lips Of An Angel.mp3'],
+  });
+});
+
+test('explicit empty updates clear only that dancer and preserve duplicate picks', () => {
+  assert.deepEqual(applyManualAssignments(
+    { mira: ['auto-pick'], lane: ['keep-me'] },
+    { mira: ['same', 'same'], lane: ['same', 'same'] },
+    ['mira'],
+  ), {
+    mira: ['same', 'same'],
+    lane: ['keep-me'],
+  });
+  assert.deepEqual(
+    applyManualAssignments({ mira: ['stale'] }, {}, ['mira']),
+    { mira: [] },
+  );
 });
 
 test('allows a larger set length without adding or removing tracks', () => {

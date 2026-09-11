@@ -1,4 +1,14 @@
-export function mergeWorkspaceAssignments(plannedAssignments = {}, rotationAssignments = {}) {
+export function mergeWorkspaceAssignments(
+  plannedAssignments = {},
+  rotationAssignments = {},
+  { active = false } = {},
+) {
+  // Once a rotation is running, the kiosk queue is authoritative. Planned
+  // assignments are a display/editor cache and may still contain the dancer
+  // that was just consumed. Re-merging that cache into a live broadcast can
+  // turn an automatic pick back into a DJ override on the next remote save.
+  if (active) return { ...(rotationAssignments || {}) };
+
   const merged = { ...plannedAssignments };
   for (const [id, tracks] of Object.entries(rotationAssignments || {})) {
     merged[id] = tracks || [];

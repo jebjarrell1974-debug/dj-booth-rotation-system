@@ -22,6 +22,74 @@ export function capSongAssignments(assignments, songsPerSet) {
   return changed ? capped : assignments;
 }
 
+// Workspace state can contain either the browser's track objects or the
+// compact names sent by a remote editor. Older scanner payloads used
+// file_name/filename instead of name, so never let that shape reach a React
+// text node or a draggable key as undefined.
+export function getSongName(song) {
+  if (typeof song === 'string') {
+    const value = song.trim();
+    return value || null;
+  }
+  if (!song || typeof song !== 'object') return null;
+  for (const field of ['name', 'file_name', 'filename', 'trackName', 'title', 'path']) {
+    if (typeof song[field] !== 'string') continue;
+    const value = song[field].trim();
+    if (!value) continue;
+    if (field === 'path') return value.split(/[\\/]/).pop() || value;
+    return value;
+  }
+  return null;
+}
+
+export function normalizeSongList(songs, songsPerSet) {
+  if (!Array.isArray(songs)) return [];
+  return capSongList(songs.map(getSongName).filter(Boolean), songsPerSet);
+}
+
+export function normalizeSongAssignments(assignments, songsPerSet) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+  return Object.fromEntries(
+    Object.entries(assignments).map(([dancerId, songs]) => [
+      dancerId,
+      normalizeSongList(songs, songsPerSet),
+    ]),
+  );
+}
+
+// Apply only explicit DJ updates to the live queue. An explicit empty list is
+// meaningful (the DJ removed the final song), while dancers omitted from both
+// the update map and override list must remain untouched.
+export function applyManualAssignments(assignments, updates, manualOverrides = []) {
+  const next = assignments && typeof assignments === 'object' && !Array.isArray(assignments)
+    ? { ...assignments }
+    : {};
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) return next;
+
+  for (const rawId of manualOverrides || []) {
+    const dancerId = String(rawId);
+    next[dancerId] = Object.prototype.hasOwnProperty.call(updates, dancerId)
+      ? updates[dancerId]
+      : [];
+  }
+  return next;
+}
+
+// Keep the one-shot DJ override ledger separate from automatic queue picks.
+// The kiosk broadcasts this filtered map so a remote workspace save cannot
+// promote an old automatic assignment into a new manual override.
+export function filterManualAssignments(assignments, manualFlags) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+  if (!manualFlags || typeof manualFlags !== 'object' || Array.isArray(manualFlags)) return {};
+
+  const filtered = {};
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    if (!manualFlags[dancerId] || !Array.isArray(songs) || songs.length === 0) continue;
+    filtered[dancerId] = songs;
+  }
+  return filtered;
+}
+
 export function fillSongListToLimit(existingSongs, candidateSongs, songsPerSet) {
   const limit = normalizeSongsPerSet(songsPerSet);
   const existing = capSongList(existingSongs, limit);

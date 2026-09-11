@@ -6,6 +6,7 @@ import {
   mergeWorkspaceAssignments,
   runClaimedCommand,
 } from './boothCommandRuntime.js';
+import { applyManualAssignments, filterManualAssignments } from './rotationAssignments.js';
 
 test('canonical assignment merge preserves explicit empty kiosk assignments', () => {
   assert.deepEqual(
@@ -15,6 +16,54 @@ test('canonical assignment merge preserves explicit empty kiosk assignments', ()
     ),
     { dancerA: [], dancerB: [{ name: 'planned' }] },
   );
+});
+
+test('live assignment merge does not resurrect consumed planned picks', () => {
+  assert.deepEqual(
+    mergeWorkspaceAssignments(
+      { dancerA: [{ name: 'already-played' }], dancerB: [{ name: 'stale-auto-pick' }] },
+      { dancerA: [{ name: 'fresh-a' }] },
+      { active: true },
+    ),
+    { dancerA: [{ name: 'fresh-a' }] },
+  );
+});
+
+test('full workspace save clears an explicit final removal without touching absent dancers', () => {
+  assert.deepEqual(
+    applyManualAssignments(
+      {
+        current: [{ name: 'old-manual' }],
+        automatic: [{ name: 'fresh-auto' }],
+      },
+      { current: [] },
+      ['current'],
+    ),
+    {
+      current: [],
+      automatic: [{ name: 'fresh-auto' }],
+    },
+  );
+});
+
+test('three automatic cycles plus an unrelated save keep overrides one-shot', () => {
+  const manualAssignments = { rose: [{ name: 'intentional-repeat' }] };
+  const manualFlags = { rose: true };
+  let planned = { mira: [{ name: 'auto-1' }], rose: [{ name: 'intentional-repeat' }] };
+  let live = { mira: [{ name: 'auto-1' }], rose: [{ name: 'intentional-repeat' }] };
+
+  for (let cycle = 1; cycle <= 3; cycle += 1) {
+    // The kiosk consumes the automatic queue and assigns a fresh one.
+    live = { mira: [{ name: `auto-${cycle + 1}` }], rose: manualAssignments.rose };
+    // A remote editor still has its old display cache and saves an unrelated
+    // workspace field. Live assignments must win, and only explicit picks are
+    // eligible to be sent back as overrides.
+    const broadcast = mergeWorkspaceAssignments(planned, live, { active: true });
+    const overrides = filterManualAssignments(broadcast, manualFlags);
+    assert.deepEqual(broadcast.mira, live.mira);
+    assert.deepEqual(overrides, manualAssignments);
+    planned = { ...planned, mira: broadcast.mira };
+  }
 });
 
 test('applied command retries publication before reporting success and never re-executes', async () => {

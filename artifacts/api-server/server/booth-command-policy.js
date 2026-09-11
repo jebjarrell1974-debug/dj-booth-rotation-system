@@ -193,6 +193,7 @@ export function validateBoothCommand(action, payload = {}) {
 export function nextStateRevisions(previous, incoming) {
   const structuralChanged = JSON.stringify(previous.rotation ?? []) !== JSON.stringify(incoming.rotation ?? []) ||
     JSON.stringify(previous.rotationSongs ?? {}) !== JSON.stringify(incoming.rotationSongs ?? {}) ||
+    JSON.stringify(previous.manualRotationSongs ?? {}) !== JSON.stringify(incoming.manualRotationSongs ?? {}) ||
     JSON.stringify(previous.interstitialSongs ?? {}) !== JSON.stringify(incoming.interstitialSongs ?? {}) ||
     JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? {}) ||
     JSON.stringify(previous.placedFeatures ?? {}) !== JSON.stringify(incoming.placedFeatures ?? {});
@@ -203,9 +204,19 @@ export function nextStateRevisions(previous, incoming) {
 }
 
 export function boothWorkspaceSnapshot(state = {}) {
+  const songName = track => {
+    if (typeof track === 'string') return track;
+    if (!track || typeof track !== 'object') return null;
+    for (const field of ['name', 'file_name', 'filename', 'trackName', 'title', 'path']) {
+      if (typeof track[field] !== 'string' || !track[field].trim()) continue;
+      const value = track[field].trim();
+      return field === 'path' ? (value.split(/[\\/]/).pop() || value) : value;
+    }
+    return null;
+  };
   const songs = {};
   for (const [id, tracks] of Object.entries(state.rotationSongs || {})) {
-    songs[id] = (tracks || []).map(track => typeof track === 'string' ? track : track?.name).filter(Boolean);
+    songs[id] = (tracks || []).map(songName).filter(Boolean);
   }
   return {
     rotation: [...(state.rotation || [])],
@@ -230,6 +241,7 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
     announcementsEnabled: state.announcementsEnabled !== false,
     skipLocked: !!state.skipLocked,
     rotationSongs: state.rotationSongs ?? {},
+    manualRotationSongs: state.manualRotationSongs ?? {},
     volume: state.volume ?? 0.8,
     voiceGain: state.voiceGain ?? 1.5,
     trackTime: state.trackTime ?? 0,

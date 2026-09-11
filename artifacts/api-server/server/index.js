@@ -111,6 +111,7 @@ let liveBoothState = {
   rotation: [],
   announcementsEnabled: true,
   rotationSongs: {},
+  manualRotationSongs: {},
   interstitialSongs: {},
   volume: 0.8,
   voiceGain: 1.5,

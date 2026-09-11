@@ -30,6 +30,12 @@ test('only explicit normal DJ commands validate', () => {
     interstitialSongs: { 'after-1': ['Break A'] },
     manualOverrides: [1],
   }).ok, true);
+  assert.equal(validateBoothCommand('saveRotationWorkspace', {
+    rotation: [1],
+    assignments: { 1: [] },
+    interstitialSongs: {},
+    manualOverrides: [1],
+  }).ok, true);
   assert.equal(validateBoothCommand('setAutoplayQueue', { trackNames: ['Song A'] }).ok, true);
   assert.equal(validateBoothCommand('playFeatureAudio', { dancerId: 1, type: 'intro' }).ok, true);
   assert.equal(validateBoothCommand('placeFeature', { featureId: 1, playPos: 2, audioFlags: {} }).ok, true);
@@ -39,13 +45,17 @@ test('only explicit normal DJ commands validate', () => {
 test('full structural workspace snapshot normalizes assigned song names', () => {
   assert.deepEqual(boothWorkspaceSnapshot({
     rotation: [1, 2],
-    rotationSongs: { 1: [{ name: 'One', url: '/one' }], 2: ['Two'] },
+    rotationSongs: {
+      1: [{ name: 'One', url: '/one' }],
+      2: [{ file_name: 'Two' }],
+      3: [{ filename: 'Three' }],
+    },
     interstitialSongs: { 'after-1': ['Break'] },
     dancerVipMap: { 2: { expiresAt: 5000 } },
     placedFeatures: { 2: { chosenSetName: 'Feature Set' } },
   }), {
     rotation: [1, 2],
-    rotationSongs: { 1: ['One'], 2: ['Two'] },
+    rotationSongs: { 1: ['One'], 2: ['Two'], 3: ['Three'] },
     interstitialSongs: { 'after-1': ['Break'] },
     dancerVipMap: { 2: { expiresAt: 5000 } },
     placedFeatures: { 2: { chosenSetName: 'Feature Set' } },
@@ -58,6 +68,10 @@ test('structural commands and state revisions are distinct', () => {
   const previous = { stateVersion: 7, rotationVersion: 3, rotation: [1], rotationSongs: { 1: ['a'] } };
   assert.deepEqual(nextStateRevisions(previous, { rotation: [1], rotationSongs: { 1: ['a'] } }), { stateVersion: 8, rotationVersion: 3 });
   assert.deepEqual(nextStateRevisions(previous, { rotation: [2], rotationSongs: { 1: ['a'] } }), { stateVersion: 8, rotationVersion: 4 });
+  assert.deepEqual(nextStateRevisions(
+    { ...previous, manualRotationSongs: {} },
+    { rotation: [1], rotationSongs: { 1: ['a'] }, manualRotationSongs: { 1: ['dj-pick'] } },
+  ), { stateVersion: 8, rotationVersion: 4 });
 });
 
 test('zero-valued booth state survives normalization', () => {

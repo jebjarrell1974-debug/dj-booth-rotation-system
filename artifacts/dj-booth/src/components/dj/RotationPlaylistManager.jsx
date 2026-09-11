@@ -9,6 +9,9 @@ import {
   capSongAssignments,
   capSongList,
   fillSongListToLimit,
+  getSongName,
+  normalizeSongAssignments,
+  normalizeSongList,
 } from '@/utils/rotationAssignments';
 
 const TRACKS_PER_PAGE = 200;
@@ -123,6 +126,7 @@ export default function RotationPlaylistManager({
   songsPerSet,
   onSongsPerSetChange,
   activeRotationSongs,
+  authoritativeManualAssignments = {},
   savedInterstitials,
   interstitialRemoteVersion,
   activeBreakInfo,
@@ -188,7 +192,7 @@ export default function RotationPlaylistManager({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
-          return capSongAssignments(parsed.assignments, songsPerSet);
+          return normalizeSongAssignments(parsed.assignments, songsPerSet);
         }
       }
     } catch {}
@@ -273,6 +277,16 @@ export default function RotationPlaylistManager({
     } catch {}
     return new Set();
   })());
+  // Overrides restored from storage are acknowledged kiosk state. Edits made
+  // in this editor are dirty until Save All succeeds, so an authoritative
+  // kiosk update can clear consumed overrides without discarding an unsaved
+  // remote edit.
+  const dirtyOverridesRef = React.useRef(new Set());
+  const markDjOverride = (dancerId) => {
+    const normalizedId = String(dancerId);
+    djOverridesRef.current.add(normalizedId);
+    dirtyOverridesRef.current.add(normalizedId);
+  };
   const prevCurrentDancerIdRef = React.useRef(null);
   const saveGuardRef = React.useRef(0);
   const libraryPanelRef = useRef(null);
@@ -370,6 +384,7 @@ export default function RotationPlaylistManager({
     if (prevCurrentDancerIdRef.current && prevCurrentDancerIdRef.current !== currentId) {
       const finishedId = prevCurrentDancerIdRef.current;
       djOverridesRef.current.delete(finishedId);
+      dirtyOverridesRef.current.delete(String(finishedId));
       setSongAssignments(prev => {
         const updated = { ...prev };
         delete updated[finishedId];
@@ -385,16 +400,15 @@ export default function RotationPlaylistManager({
         const fromActive = { ...prev };
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
           if (djOverridesRef.current.has(dancerId)) return;
-          if (trackList && trackList.length > 0) {
-            const mapped = capSongList(trackList.map(t => t.name), songsPerSet);
-            // Don't downgrade: if the dancer already has the right number of songs assigned
-            // and the incoming pre-pick has fewer (stale from before a songsPerSet change),
-            // keep what we have rather than overwriting with a short array that will then
-            // trigger auto-assign to fill the gap from the genre pool.
-            const existing = prev[dancerId];
-            if (existing && existing.length >= songsPerSet && mapped.length < songsPerSet) return;
-            fromActive[dancerId] = mapped;
-          }
+          const mapped = normalizeSongList(trackList, songsPerSet);
+          // Don't downgrade: if the dancer already has the right number of songs assigned
+          // and the incoming pre-pick has fewer (stale from before a songsPerSet change),
+          // keep what we have rather than overwriting with a short array that will then
+          // trigger auto-assign to fill the gap from the genre pool. Invalid legacy
+          // entries are different: clear them so blank rows cannot survive.
+          const existing = prev[dancerId];
+          if (existing && existing.length >= songsPerSet && mapped.length > 0 && mapped.length < songsPerSet) return;
+          fromActive[dancerId] = mapped;
         });
         return fromActive;
       });
@@ -512,6 +526,35 @@ export default function RotationPlaylistManager({
       }
     })();
   }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs, djOptions]);
+
+  // The kiosk is authoritative about which one-shot DJ overrides are still
+  // pending. Once a saved set starts, it disappears from that ledger; remove
+  // the stale editor marker so an unrelated remote Save All cannot re-save it
+  // as a fresh manual override. Dirty local edits remain protected until the
+  // save call succeeds.
+  useEffect(() => {
+    const authoritativeIds = new Set(
+      Object.keys(authoritativeManualAssignments || {}).map(id => String(id)),
+    );
+    const activeAssignments = activeRotationSongs || {};
+    let changed = false;
+    setSongAssignments(prev => {
+      const next = { ...prev };
+      for (const dancerId of [...djOverridesRef.current]) {
+        const key = String(dancerId);
+        if (authoritativeIds.has(key) || dirtyOverridesRef.current.has(key)) continue;
+        djOverridesRef.current.delete(dancerId);
+        changed = true;
+        // If playback has already moved on to a fresh automatic queue, remove
+        // the stale display value as well.
+        if (!Object.prototype.hasOwnProperty.call(activeAssignments, dancerId) &&
+            !Object.prototype.hasOwnProperty.call(activeAssignments, key)) {
+          delete next[dancerId];
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [authoritativeManualAssignments, activeRotationSongs]);
 
   const prevMusicModeRef = useRef(djOptions?.musicMode || 'dancer_first');
   useEffect(() => {
@@ -726,7 +769,7 @@ export default function RotationPlaylistManager({
         toast.error(`This set is limited to ${songsPerSet} song${songsPerSet === 1 ? '' : 's'}`);
         return prev;
       }
-      djOverridesRef.current.add(dancerId);
+      markDjOverride(dancerId);
       current.push(trackName);
       const updated = { ...prev, [dancerId]: current };
       return updated;
@@ -773,7 +816,7 @@ export default function RotationPlaylistManager({
           toast.error(`This set is limited to ${songsPerSet} song${songsPerSet === 1 ? '' : 's'}`);
           return prev;
         }
-        djOverridesRef.current.add(dancerId);
+        markDjOverride(dancerId);
         current.splice(destination.index, 0, trackName);
         const updated = { ...prev, [dancerId]: current };
         return updated;
@@ -799,7 +842,7 @@ export default function RotationPlaylistManager({
 
     if (source.droppableId === destination.droppableId && source.droppableId.startsWith('songs-')) {
       const dancerId = source.droppableId.replace('songs-', '');
-      djOverridesRef.current.add(dancerId);
+      markDjOverride(dancerId);
       setSongAssignments(prev => {
         const current = [...(prev[dancerId] || [])];
         const [removed] = current.splice(source.index, 1);
@@ -847,7 +890,7 @@ export default function RotationPlaylistManager({
   };
 
   const removeSong = (dancerId, songIndex) => {
-    djOverridesRef.current.add(dancerId);
+    markDjOverride(dancerId);
     setSongAssignments(prev => {
       const current = [...(prev[dancerId] || [])];
       const removedSong = current[songIndex];
@@ -895,7 +938,7 @@ export default function RotationPlaylistManager({
           const data = await res.json();
           const newTrack = data.tracks?.[0];
           if (newTrack) {
-            djOverridesRef.current.add(dancerId);
+            markDjOverride(dancerId);
             setSongAssignments(prev => {
               const current = [...(prev[dancerId] || [])];
               current[songIndex] = newTrack.name;
@@ -921,7 +964,7 @@ export default function RotationPlaylistManager({
       const available = freshPool.length > 0 ? freshPool : candidatePool;
       if (available.length > 0) {
         const pick = available[Math.floor(Math.random() * available.length)];
-        djOverridesRef.current.add(dancerId);
+        markDjOverride(dancerId);
         setSongAssignments(prev => {
           const current = [...(prev[dancerId] || [])];
           current[songIndex] = pick.name;
@@ -1036,7 +1079,7 @@ export default function RotationPlaylistManager({
     lastSaveTimeRef.current = now;
     const playlists = {};
     Object.entries(songAssignments).forEach(([dancerId, songs]) => {
-      const limited = capSongList(songs, songsPerSet);
+      const limited = normalizeSongList(songs, songsPerSet);
       playlists[dancerId] = limited;
       appliedPlaylistsRef.current[dancerId] = limited.join(',');
     });
@@ -1047,6 +1090,7 @@ export default function RotationPlaylistManager({
     saveGuardRef.current = Date.now() + 30000;
     try {
       await onSaveAll?.(localRotation, playlists, finalInterstitials, manualOverrides);
+      manualOverrides.forEach(id => dirtyOverridesRef.current.delete(String(id)));
       toast.success('Rotation & playlists saved');
     } catch (error) {
       // Keep every local edit intact on conflict/failure. The operator can
@@ -1628,16 +1672,26 @@ export default function RotationPlaylistManager({
                                   {assigned.length > 0 ? (
                                     <div className="space-y-1">
                                       {assigned.map((songName, songIdx) => {
+                                           const normalizedSongName = getSongName(songName);
+                                           // Keep an invalid legacy entry visible and uniquely
+                                           // keyed while it is being replaced; never render
+                                           // undefined or reuse the same draggable key.
+                                           const displaySongName = normalizedSongName || `Unnamed track ${songIdx + 1}`;
                                         const isCurrentDancer = isRotationActive && index === currentDancerIndex;
-                                        const currentTrackIdx = isCurrentDancer && currentTrack ? assigned.indexOf(currentTrack) : -1;
-                                        const isNowPlaying = isCurrentDancer && currentTrack ? songName === currentTrack : isCurrentDancer && songIdx === (currentSongNumber - 1);
+                                           const currentTrackName = getSongName(currentTrack);
+                                           const currentTrackIdx = isCurrentDancer && currentTrackName
+                                             ? assigned.findIndex(track => getSongName(track) === currentTrackName)
+                                             : -1;
+                                           const isNowPlaying = isCurrentDancer && currentTrackName
+                                             ? normalizedSongName === currentTrackName
+                                             : isCurrentDancer && songIdx === (currentSongNumber - 1);
                                         const isPlayed = isCurrentDancer && (currentTrackIdx >= 0 ? songIdx < currentTrackIdx : songIdx < (currentSongNumber - 1));
                                         if (isPlayed) return null;
                                         const rerollKey = `${dancer.id}-${songIdx}`;
                                         const isRerollingSlot = rerollingKeys.has(rerollKey);
                                         const canReroll = !isNowPlaying && !isRerollingSlot;
                                         return (
-                                          <Draggable key={`${dancer.id}-${songName}`} draggableId={`assigned-${dancer.id}-${songName}`} index={songIdx}>
+                                           <Draggable key={`${dancer.id}-${songIdx}-${displaySongName}`} draggableId={`assigned-${dancer.id}-${songIdx}-${displaySongName}`} index={songIdx}>
                                             {(songDragProvided, songDragSnapshot) => (
                                               <div
                                                 ref={songDragProvided.innerRef}
@@ -1662,9 +1716,9 @@ export default function RotationPlaylistManager({
                                                 ) : canReroll ? (
                                                   <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
                                                 ) : (
-                                                  <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-400' : 'text-gray-500'}`} />
+                                                   <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && normalizedSongName && songCooldowns[normalizedSongName] && (Date.now() - songCooldowns[normalizedSongName]) < FOUR_HOURS_MS) ? 'text-orange-400' : 'text-gray-500'}`} />
                                                 )}
-                                                <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{songName}</span>
+                                                 <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && normalizedSongName && songCooldowns[normalizedSongName] && (Date.now() - songCooldowns[normalizedSongName]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{displaySongName}</span>
                                                 <button
                                                   onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
                                                   className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
