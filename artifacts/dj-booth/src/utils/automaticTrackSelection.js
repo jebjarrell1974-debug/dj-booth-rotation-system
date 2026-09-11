@@ -19,3 +19,17 @@ export function filterAutomaticTracks(tracks) {
   if (!Array.isArray(tracks)) return [];
   return tracks.filter(track => track && !isAutomaticSelectionExcluded(track));
 }
+
+// Automatic history is an all-time no-repeat ledger, not a four-hour
+// cooldown. Accept either the persisted name→timestamp map or a Set so every
+// offline fallback can apply the same rule as the server selector.
+export function filterUnplayedAutomaticTracks(tracks, playedSongs = {}) {
+  const played = playedSongs instanceof Set
+    ? playedSongs
+    : new Set(
+      playedSongs && typeof playedSongs === 'object'
+        ? Object.keys(playedSongs)
+        : [],
+    );
+  return filterAutomaticTracks(tracks).filter(track => track?.name && !played.has(track.name));
+}

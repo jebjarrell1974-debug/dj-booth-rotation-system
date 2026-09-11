@@ -19,7 +19,7 @@ const STRUCTURAL_COMMANDS = new Set([
   'updateRotation', 'removeDancerFromRotation', 'addDancerToRotation',
   'moveInRotation', 'saveRotation', 'updateSongAssignments',
   'saveRotationWorkspace',
-  'updateInterstitialSongs', 'sendToVip', 'releaseFromVip',
+  'sendToVip', 'releaseFromVip',
   'placeFeature', 'cancelFeaturePlacement',
 ]);
 
@@ -135,6 +135,11 @@ export function validateBoothCommand(action, payload = {}) {
       break;
     case 'updateInterstitialSongs':
       if (!isPlainObject(payload.interstitialSongs) || Object.keys(payload.interstitialSongs).length > 100) return invalid('interstitialSongs must be an object');
+      if (payload.manualInterstitialBreaks != null &&
+          (!isPlainObject(payload.manualInterstitialBreaks) || Object.keys(payload.manualInterstitialBreaks).length > 100 ||
+           !Object.values(payload.manualInterstitialBreaks).every(value => typeof value === 'boolean'))) {
+        return invalid('manualInterstitialBreaks must be an object of boolean break ownership markers');
+      }
       break;
     case 'updateSongAssignments':
       if (!isPlainObject(payload.assignments) || Object.keys(payload.assignments).length > 500 ||
@@ -148,6 +153,11 @@ export function validateBoothCommand(action, payload = {}) {
       }
       if (!isPlainObject(payload.interstitialSongs) || Object.keys(payload.interstitialSongs).length > 100) {
         return invalid('interstitialSongs must be an object');
+      }
+      if (payload.manualInterstitialBreaks != null &&
+          (!isPlainObject(payload.manualInterstitialBreaks) || Object.keys(payload.manualInterstitialBreaks).length > 100 ||
+           !Object.values(payload.manualInterstitialBreaks).every(value => typeof value === 'boolean'))) {
+        return invalid('manualInterstitialBreaks must be an object of boolean break ownership markers');
       }
       if (payload.manualOverrides != null && !isIdArray(payload.manualOverrides)) {
         return invalid('manualOverrides must be an array of dancer IDs');
@@ -209,7 +219,6 @@ export function nextStateRevisions(previous, incoming) {
     JSON.stringify(previous.rotationSongs ?? {}) !== JSON.stringify(incoming.rotationSongs ?? previous.rotationSongs ?? {}) ||
     JSON.stringify(previous.manualRotationSongs ?? {}) !== JSON.stringify(incoming.manualRotationSongs ?? previous.manualRotationSongs ?? {}) ||
     JSON.stringify(previous.manualRotationSetLengths ?? {}) !== JSON.stringify(incoming.manualRotationSetLengths ?? previous.manualRotationSetLengths ?? {}) ||
-    JSON.stringify(previous.interstitialSongs ?? {}) !== JSON.stringify(incoming.interstitialSongs ?? previous.interstitialSongs ?? {}) ||
     JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? previous.dancerVipMap ?? {}) ||
     JSON.stringify(previous.placedFeatures ?? {}) !== JSON.stringify(incoming.placedFeatures ?? previous.placedFeatures ?? {});
   return {
@@ -233,7 +242,7 @@ export function boothWorkspaceSnapshot(state = {}) {
   for (const [id, tracks] of Object.entries(state.rotationSongs || {})) {
     songs[id] = (tracks || []).map(songName).filter(Boolean);
   }
-  return {
+  const snapshot = {
     rotation: [...(state.rotation || [])],
     rotationSongs: songs,
     manualRotationSetLengths: state.manualRotationSetLengths || {},
@@ -241,6 +250,12 @@ export function boothWorkspaceSnapshot(state = {}) {
     dancerVipMap: state.dancerVipMap || {},
     placedFeatures: state.placedFeatures || {},
   };
+  // Preserve the legacy snapshot shape for callers that do not publish the
+  // ownership ledger, while including it for current kiosk state.
+  if (Object.prototype.hasOwnProperty.call(state, 'manualInterstitialBreaks')) {
+    snapshot.manualInterstitialBreaks = state.manualInterstitialBreaks || {};
+  }
+  return snapshot;
 }
 
 export function normalizeBoothState(previous, state, now = Date.now()) {
@@ -252,6 +267,9 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
   const read = (key, fallback) => source[key] !== undefined
     ? source[key]
     : (prior[key] !== undefined ? prior[key] : fallback);
+  const interstitialSongs = read('interstitialSongs', {}) ?? {};
+  const activeBreakKey = read('activeBreakKey', null);
+  const publishedBreakTotal = source.breakSongTotal !== undefined ? source.breakSongTotal : null;
   const normalized = {
     isRotationActive: !!read('isRotationActive', false),
     currentDancerIndex: read('currentDancerIndex', 0),
@@ -271,9 +289,14 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
     trackTime: read('trackTime', 0),
     trackDuration: read('trackDuration', 0),
     trackTimeAt: read('trackTimeAt', 0),
-    breakSongsPerSet: read('breakSongsPerSet', 0),
+    breakSongsPerSet: Math.max(0, Math.min(3, Number(read('breakSongsPerSet', 0)) || 0)),
     breakSongIndex: read('breakSongIndex', null),
-    interstitialSongs: read('interstitialSongs', {}) ?? {},
+    breakSongTotal: Array.isArray(interstitialSongs?.[activeBreakKey])
+      ? interstitialSongs[activeBreakKey].length
+      : (publishedBreakTotal == null ? 0 : publishedBreakTotal),
+    activeBreakKey,
+    interstitialSongs,
+    manualInterstitialBreaks: read('manualInterstitialBreaks', {}) ?? {},
     commercialFreq: read('commercialFreq', 'off'),
     commercialCounter: read('commercialCounter', 0),
     promoQueue: read('promoQueue', []) ?? [],

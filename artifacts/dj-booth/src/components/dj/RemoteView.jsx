@@ -22,7 +22,6 @@ const STRUCTURAL_COMMANDS = new Set([
   'saveRotation',
   'updateSongAssignments',
   'saveRotationWorkspace',
-  'updateInterstitialSongs',
   'sendToVip',
   'releaseFromVip',
   'placeFeature',
@@ -38,10 +37,8 @@ export default function RemoteView({
   onLogout,
   songCooldowns = {},
 }) {
-  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const isOnCooldown = (name) => {
-    const ts = songCooldowns[name];
-    return !!(ts && (Date.now() - ts) < FOUR_HOURS_MS);
+    return Object.prototype.hasOwnProperty.call(songCooldowns, name);
   };
 
   const [tab, setTab] = useState('rotation');
@@ -55,6 +52,7 @@ export default function RemoteView({
 
   const [assigningTo, setAssigningTo] = useState(null);
   const [assigningBreak, setAssigningBreak] = useState(null);
+  const [breakQueueDraft, setBreakQueueDraft] = useState(null);
   const [rerolling, setRerolling] = useState({});
 
   const [libSearch, setLibSearch] = useState('');
@@ -108,8 +106,12 @@ export default function RemoteView({
   const manualRotationSongs = liveBoothState?.manualRotationSongs || {};
   const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
   const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
-  const breakSongsPerSet = liveBoothState?.breakSongsPerSet || 0;
+  const breakSongsPerSet = liveBoothState?.breakSongsPerSet ?? 0;
   const interstitialSongs = liveBoothState?.interstitialSongs || {};
+  const displayedInterstitialSongs = breakQueueDraft || interstitialSongs;
+  const manualInterstitialBreaks = liveBoothState?.manualInterstitialBreaks || {};
+  const activeBreakKey = liveBoothState?.activeBreakKey || null;
+  const activeBreakIndex = liveBoothState?.breakSongIndex ?? null;
   const dancerVipMap = liveBoothState?.dancerVipMap || {};
   const promoQueue = liveBoothState?.promoQueue || [];
   const skippedCommercials = new Set(liveBoothState?.skippedCommercials || []);
@@ -175,6 +177,34 @@ export default function RemoteView({
     }
     return queue.promise;
   }, [sendRemoteCommand]);
+  const publishBreakQueue = useCallback((nextSongs, breakKey) => {
+    const normalized = {};
+    for (const [key, songs] of Object.entries(nextSongs || {})) {
+      const names = (Array.isArray(songs) ? songs : []).filter(Boolean);
+      if (names.length > 0) normalized[key] = names;
+    }
+    const nextManual = { ...manualInterstitialBreaks };
+    if (breakKey && normalized[breakKey]?.length > 0) nextManual[breakKey] = true;
+    Object.keys(nextManual).forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(normalized, key)) delete nextManual[key];
+    });
+    // Paint the phone/full-remote queue immediately; the kiosk remains the
+    // authority and the draft is reconciled as soon as its snapshot arrives.
+    setBreakQueueDraft(normalized);
+    return sendRemoteCommand('updateInterstitialSongs', {
+      interstitialSongs: normalized,
+      manualInterstitialBreaks: nextManual,
+    }).then(result => {
+      if (!result) setBreakQueueDraft(null);
+      return result;
+    });
+  }, [manualInterstitialBreaks, sendRemoteCommand]);
+  useEffect(() => {
+    if (!breakQueueDraft) return;
+    if (JSON.stringify(interstitialSongs) === JSON.stringify(breakQueueDraft)) {
+      setBreakQueueDraft(null);
+    }
+  }, [interstitialSongs, breakQueueDraft]);
   const flushManualAssignmentQueues = useCallback(async () => {
     const pending = [...manualAssignmentQueuesRef.current.values()]
       .map(queue => queue.promise)
@@ -248,7 +278,9 @@ export default function RemoteView({
         setLibTotal(data.total || 0);
         if (data.genres?.length > 0) setLibGenres(data.genres);
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`⚠️ Remote library load failed: ${err.message}`);
+    }
     setLibLoading(false);
   }, []);
 
@@ -356,19 +388,33 @@ export default function RemoteView({
       const res = await fetch('/api/music/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ count: 1, excludeNames: [...new Set(allAssigned)], dancerPlaylist, strictPlaylist: true }),
+        body: JSON.stringify({
+          count: 1,
+          excludeNames: [...new Set(allAssigned)],
+          dancerPlaylist,
+          strictPlaylist: true,
+          automatic: true,
+        }),
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
         const data = await res.json();
-        const newTrack = data.tracks?.[0];
+        const newTrack = (data.tracks || []).find(track =>
+          !Object.prototype.hasOwnProperty.call(songCooldowns, track?.name),
+        );
         if (newTrack) {
           const current = [...getSongs(dancerId)];
           current[songIdx] = newTrack.name;
           setSongs(dancerId, current);
+         } else {
+           console.warn('⚠️ Remote reroll: automatic pool exhausted; no unplayed track available');
         }
+       } else {
+         console.warn(`⚠️ Remote reroll: automatic selection failed (${res.status})`);
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`⚠️ Remote reroll failed: ${err.message}`);
+    }
     setRerolling(prev => { const n = { ...prev }; delete n[key]; return n; });
   };
 
@@ -382,7 +428,8 @@ export default function RemoteView({
           normalizeManualSongList(songs),
         ]),
       ),
-      interstitialSongs,
+      interstitialSongs: displayedInterstitialSongs,
+      manualInterstitialBreaks,
       manualOverrides: Object.keys(songEdits),
     }, {
       nowPlayingGuard: isRotationActive ? {
@@ -400,11 +447,12 @@ export default function RemoteView({
   const handleAssignTrack = (trackName) => {
     if (assigningBreak) {
       const { breakKey, index } = assigningBreak;
-      const updated = { ...interstitialSongs };
+      const updated = { ...displayedInterstitialSongs };
       const arr = [...(updated[breakKey] || [])];
-      arr[index] = trackName;
+      if (index >= arr.length) arr.push(trackName);
+      else arr[index] = trackName;
       updated[breakKey] = arr;
-      sendRemoteCommand('updateInterstitialSongs', { interstitialSongs: updated });
+      publishBreakQueue(updated, breakKey);
       setAssigningBreak(null);
       setAssigningTo(null);
       setTab('rotation');
@@ -711,8 +759,11 @@ export default function RemoteView({
                   const songs = getSongs(dancer.id);
                   const isExpanded = expandedDancer === dancer.id;
                   const showVipPicker = vipPickerFor === dancer.id;
-                  const breakKey = String(idx + 1);
-                  const breakSlots = Array.from({ length: breakSongsPerSet }).map((_, i) => (interstitialSongs[breakKey] || [])[i] || '');
+                  // Break queues are keyed by dancer identity (the kiosk
+                  // playback path), not the display position. They remain
+                  // editable even when the automatic default is zero.
+                  const breakKey = `after-${dancer.id}`;
+                  const breakSlots = displayedInterstitialSongs[breakKey] || [];
 
                   return (
                     <div key={dancer.id} className={`rounded-xl border transition-colors bg-[#08081a] ${isOnStage ? 'border-[#00d4ff]/50' : 'border-[#1e293b]'}`}>
@@ -724,7 +775,7 @@ export default function RemoteView({
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className={`text-lg font-semibold truncate ${isOnStage ? 'text-white' : 'text-gray-300'}`}>{dancer.name}</div>
-                            <div className="text-sm text-gray-500 truncate">{songs.length} song{songs.length !== 1 ? 's' : ''} assigned{breakSongsPerSet > 0 ? ` · ${breakSongsPerSet} breaks` : ''}</div>
+                            <div className="text-sm text-gray-500 truncate">{songs.length} song{songs.length !== 1 ? 's' : ''} assigned · {breakSlots.length} break song{breakSlots.length !== 1 ? 's' : ''}{breakSongsPerSet > 0 ? ` (${breakSongsPerSet} automatic)` : ' (manual only)'}</div>
                           </div>
                         </div>
 
@@ -777,20 +828,81 @@ export default function RemoteView({
 
                       {isExpanded && (
                         <div className="px-4 pb-4 border-t border-[#1e293b]">
-                          {breakSongsPerSet > 0 && (
-                            <div className="pt-3 pb-2">
-                              <div className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">Break Slots</div>
-                              <div className="space-y-1.5">
-                                {breakSlots.map((slot, i) => (
-                                  <button key={i} onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }} className="w-full flex items-center gap-3 px-3 py-3 rounded-lg border border-violet-500/25 bg-violet-900/10 hover:bg-violet-500/15 transition-colors text-left">
-                                    <span className="text-xs font-bold text-violet-400 w-5">B{i + 1}</span>
-                                    <span className="text-sm flex-1 truncate">{slot ? <span className="text-gray-200">{stripExt(slot)}</span> : <span className="text-gray-500 italic">Tap to assign break song</span>}</span>
-                                    <Music className="w-4 h-4 text-violet-400 opacity-70" />
-                                  </button>
-                                ))}
+                          <div className="pt-3 pb-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-xs font-semibold text-violet-400 uppercase tracking-wider">
+                                Break Queue {activeBreakKey === breakKey ? '(playing)' : ''}
                               </div>
+                              <button
+                                onClick={() => { setAssigningBreak({ breakKey, index: breakSlots.length }); setTab('library'); }}
+                                className="h-7 px-2 rounded-md bg-violet-500/15 text-violet-300 text-xs font-semibold flex items-center gap-1 hover:bg-violet-500/25"
+                              >
+                                <Plus className="w-3.5 h-3.5" /> Add song
+                              </button>
                             </div>
-                          )}
+                            <div className="space-y-1.5">
+                              {breakSlots.length === 0 && (
+                                <div className="text-sm text-gray-500 py-2 italic">
+                                  No manual songs. The automatic default applies when this break starts.
+                                </div>
+                              )}
+                              {breakSlots.map((slot, i) => {
+                                const isCurrentBreakSong = activeBreakKey === breakKey && i === activeBreakIndex;
+                                return (
+                                  <div key={`${slot}-${i}`} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border ${isCurrentBreakSong ? 'border-cyan-400/40 bg-cyan-900/15' : 'border-violet-500/25 bg-violet-900/10'}`}>
+                                    <span className="text-xs font-bold text-violet-400 w-5">B{i + 1}</span>
+                                    <button
+                                      disabled={isCurrentBreakSong}
+                                      onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
+                                      className="text-sm flex-1 min-w-0 truncate text-left text-gray-200 hover:text-white disabled:text-cyan-300"
+                                      title={isCurrentBreakSong ? 'The current break song continues until Skip' : 'Replace this break song'}
+                                    >
+                                      {stripExt(slot)}
+                                    </button>
+                                    <button
+                                      disabled={isCurrentBreakSong || i === 0}
+                                      onClick={() => {
+                                        const next = [...breakSlots];
+                                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                                        publishBreakQueue({ ...displayedInterstitialSongs, [breakKey]: next }, breakKey);
+                                      }}
+                                      className="w-7 h-7 rounded-md bg-[#1e293b] text-gray-400 flex items-center justify-center disabled:opacity-25"
+                                      title="Move up"
+                                    >
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      disabled={isCurrentBreakSong || i === breakSlots.length - 1}
+                                      onClick={() => {
+                                        const next = [...breakSlots];
+                                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                                        publishBreakQueue({ ...displayedInterstitialSongs, [breakKey]: next }, breakKey);
+                                      }}
+                                      className="w-7 h-7 rounded-md bg-[#1e293b] text-gray-400 flex items-center justify-center disabled:opacity-25"
+                                      title="Move down"
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      disabled={isCurrentBreakSong}
+                                      onClick={() => {
+                                        const next = [...breakSlots];
+                                        next.splice(i, 1);
+                                        const updated = { ...displayedInterstitialSongs };
+                                        if (next.length > 0) updated[breakKey] = next;
+                                        else delete updated[breakKey];
+                                        publishBreakQueue(updated, breakKey);
+                                      }}
+                                      className="w-7 h-7 rounded-md bg-red-500/10 text-red-400 flex items-center justify-center disabled:opacity-25"
+                                      title="Remove break song"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
 
                           <div className="pt-3">
                             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Playlist Songs</div>

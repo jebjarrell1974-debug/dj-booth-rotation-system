@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:db-selection": "node --test server/db.test.js",
     "test:zonepro": "node --test server/zonepro.test.js",
     "test:booth-policy": "node --test server/booth-command-policy.test.js"
   },

@@ -16,7 +16,7 @@ import {
   getVoiceoverDirPath,
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB, filterDjOnlyFromNames, scrubDjOnlyFromAllPlaylists,
-  logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns,
+  logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns, getAllPlayHistory,
   blockTrack, unblockTrack, getBlockedTracks,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
   exportDancers, importDancers, saveClientSettings, getClientSettings,
@@ -111,6 +111,8 @@ let liveBoothState = {
   songsPerSet: 3,
   breakSongsPerSet: 0,
   breakSongIndex: null,
+  breakSongTotal: 0,
+  activeBreakKey: null,
   isPlaying: false,
   rotation: [],
   announcementsEnabled: true,
@@ -118,6 +120,7 @@ let liveBoothState = {
   manualRotationSongs: {},
   manualRotationSetLengths: {},
   interstitialSongs: {},
+  manualInterstitialBreaks: {},
   volume: 0.8,
   voiceGain: 1.5,
   trackTime: 0,
@@ -1754,6 +1757,9 @@ app.get('/api/diag/log/info', authenticate, requireDJ, (req, res) => {
 });
 
 app.get('/api/booth/display', (req, res) => {
+  const activeBreakSongs = liveBoothState.activeBreakKey
+    ? liveBoothState.interstitialSongs?.[liveBoothState.activeBreakKey]
+    : null;
   res.json({
     isRotationActive: liveBoothState.isRotationActive,
     isPlaying: liveBoothState.isPlaying,
@@ -1764,6 +1770,9 @@ app.get('/api/booth/display', (req, res) => {
     trackTimeAt: liveBoothState.trackTimeAt,
     breakSongsPerSet: liveBoothState.breakSongsPerSet,
     breakSongIndex: liveBoothState.breakSongIndex,
+    breakSongTotal: Array.isArray(activeBreakSongs)
+      ? activeBreakSongs.length
+      : (liveBoothState.breakSongTotal ?? liveBoothState.breakSongsPerSet ?? 0),
   });
 });
 
@@ -2307,8 +2316,15 @@ app.post('/api/history/played', authenticate, (req, res) => {
 
 app.get('/api/history/cooldowns', authenticate, requireDJ, (req, res) => {
   try {
+    // Legacy clients use this endpoint for recent cooldowns.  Live automatic
+    // history consumers can request the complete persisted map explicitly
+    // without relying on a synthetic 100-year hours value.
+    const scope = String(req.query.scope || '').toLowerCase();
+    const allHistory = scope === 'all'
+      || String(req.query.all || '').toLowerCase() === 'true'
+      || String(req.query.all || '') === '1';
     const hours = parseInt(req.query.hours) || 4;
-    const rows = getRecentCooldowns(hours);
+    const rows = allHistory ? getAllPlayHistory() : getRecentCooldowns(hours);
     const cooldowns = {};
     for (const row of rows) {
       cooldowns[row.track_name] = new Date(row.last_played).getTime();

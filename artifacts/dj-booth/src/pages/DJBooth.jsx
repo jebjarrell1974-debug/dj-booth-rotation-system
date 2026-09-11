@@ -66,8 +66,14 @@ import {
 } from '@/utils/rotationAssignments';
 import {
   filterAutomaticTracks,
+  filterUnplayedAutomaticTracks,
   isAutomaticSelectionExcluded,
 } from '@/utils/automaticTrackSelection';
+import {
+  clearInterstitialBreak,
+  commitInterstitialWorkspace as normalizeInterstitialWorkspace,
+  retainInterstitialQueuesForAutomaticCount,
+} from '@/utils/interstitialWorkspace';
 import { createCommercialSession } from '@/utils/commercialPlayback';
 import {
   canCommitAssignmentRefill,
@@ -86,6 +92,7 @@ import { acceptBoothSnapshot } from '@/utils/boothStateSnapshot';
 
 const DEFAULT_SONGS_PER_SET = 2;
 const EMPTY_MANUAL_ASSIGNMENTS = Object.freeze({});
+const SONG_HISTORY_STORAGE_KEY = 'djbooth_song_cooldowns';
 // Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
 // stop accepting presses in the final N seconds of a track (an announcement is about
 // to fire at track end) and while the transition/announcement itself is running.
@@ -99,6 +106,24 @@ function auditEvent(action, details) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ action, details: details || undefined }),
   }).catch(() => {});
+}
+
+// This used to be treated as a four-hour cooldown cache. Automatic selection
+// is now a one-shot ledger: retain every locally observed play so an offline
+// fallback never starts recycling tracks after the cooldown expires. The
+// server remains authoritative when online and supplies the same ledger.
+function readPersistedSongHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SONG_HISTORY_STORAGE_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([name, timestamp]) =>
+        !!name && Number.isFinite(Number(timestamp)) && Number(timestamp) > 0,
+      ),
+    );
+  } catch {
+    return {};
+  }
 }
 
 // Diagnostic: track every songsPerSet change with its source so we can find
@@ -135,7 +160,7 @@ function setStateIfChanged(setter, next) {
   setter(previous => stableJson(previous) === stableJson(next) ? previous : next);
 }
 
-function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef) {
+function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef, manualInterstitialBreaksRef) {
   const songs = {};
   const assignments = mergeWorkspaceAssignments(
     plannedSongAssignmentsRef.current,
@@ -149,6 +174,7 @@ function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssi
     rotation: [...(rotationRef.current || [])],
     rotationSongs: songs,
     interstitialSongs: interstitialSongsRef.current || {},
+    manualInterstitialBreaks: manualInterstitialBreaksRef?.current || {},
     dancerVipMap: dancerVipMapRef.current || {},
     placedFeatures: placedFeaturesRef.current || {},
   };
@@ -162,7 +188,7 @@ function requireExecutor(ref, name) {
 const STRUCTURAL_REMOTE_ACTIONS = new Set([
   'updateRotation', 'removeDancerFromRotation', 'addDancerToRotation',
   'moveInRotation', 'saveRotation', 'updateSongAssignments',
-  'saveRotationWorkspace', 'updateInterstitialSongs', 'sendToVip',
+  'saveRotationWorkspace', 'sendToVip',
   'releaseFromVip', 'placeFeature', 'cancelFeaturePlacement',
 ]);
 
@@ -470,6 +496,24 @@ export default function DJBooth() {
       return saved ? JSON.parse(saved) : {};
     } catch { return {}; }
   })());
+  // Automatic break count is only a default. A DJ-edited queue owns its
+  // one-shot break until that break is consumed, even when it has zero
+  // automatic slots or contains 20+ songs. Keep ownership separate from the
+  // song map so a manual list with the same length as the default is not
+  // mistaken for an automatic list after a reload.
+  const manualInterstitialBreaksRef = useRef((() => {
+    if (remoteMode) return {};
+    try {
+      const saved = JSON.parse(localStorage.getItem('djbooth_manual_interstitial_breaks') || '{}');
+      if (!saved || typeof saved !== 'object') return {};
+      return Object.fromEntries(
+        Object.entries(saved).filter(([key, owned]) =>
+          owned === true && Array.isArray(interstitialSongsRef.current?.[key])
+            && interstitialSongsRef.current[key].length > 0,
+        ),
+      );
+    } catch { return {}; }
+  })());
   const [interstitialSongsState, setInterstitialSongsState] = useState(() => interstitialSongsRef.current);
   const [interstitialRemoteVersion, setInterstitialRemoteVersion] = useState(0);
   const [plannedSongAssignments, setPlannedSongAssignments] = useState({});
@@ -479,6 +523,50 @@ export default function DJBooth() {
   const playingInterstitialBreakKeyRef = useRef(null);
   const interstitialIndexRef = useRef(0);
   const [activeBreakInfo, setActiveBreakInfo] = useState(null);
+  const interstitialMutationVersionRef = useRef(0);
+
+  const commitInterstitialWorkspace = useCallback((nextSongs, {
+    manualBreaks = manualInterstitialBreaksRef.current,
+    markManual = [],
+  } = {}) => {
+    const {
+      songs: normalizedSongs,
+      manualBreaks: nextManual,
+    } = normalizeInterstitialWorkspace(nextSongs, { manualBreaks, markManual });
+    interstitialMutationVersionRef.current += 1;
+    interstitialSongsRef.current = normalizedSongs;
+    manualInterstitialBreaksRef.current = nextManual;
+    setInterstitialSongsState(normalizedSongs);
+    const activeKey = playingInterstitialBreakKeyRef.current;
+    if (activeKey) {
+      const activeSongs = normalizedSongs[activeKey] || [];
+      setActiveBreakInfo(previous => previous
+        && previous.breakKey === activeKey
+        ? {
+          ...previous,
+          songs: activeSongs,
+          currentIndex: Math.min(previous.currentIndex ?? 0, Math.max(0, activeSongs.length - 1)),
+        }
+        : previous);
+    }
+    setInterstitialRemoteVersion(v => v + 1);
+    if (!remoteMode) {
+      try {
+        localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(normalizedSongs));
+        localStorage.setItem('djbooth_manual_interstitial_breaks', JSON.stringify(nextManual));
+      } catch {}
+    }
+    return { songs: normalizedSongs, manualBreaks: nextManual };
+  }, [remoteMode]);
+
+  const clearInterstitialWorkspace = useCallback((breakKey) => {
+    const cleared = clearInterstitialBreak(
+      interstitialSongsRef.current,
+      manualInterstitialBreaksRef.current,
+      breakKey,
+    );
+    return commitInterstitialWorkspace(cleared.songs, { manualBreaks: cleared.manualBreaks });
+  }, [commitInterstitialWorkspace]);
   // FEATURE SHOW setup window: holds the upcoming feature's id while the pre-feature break
   // is playing, so the on-screen "Add Setup Song" / "Start Her Set Now" controls can show.
   const featureSetupActiveRef = useRef(null);
@@ -570,37 +658,32 @@ export default function DJBooth() {
     return a;
   };
 
-  const COOLDOWN_MS = 4 * 60 * 60 * 1000;
-  const songCooldownRef = useRef(null);
-  const [playedSongsMap, setPlayedSongsMap] = useState({});
+  const songCooldownRef = useRef(readPersistedSongHistory());
+  const songHistoryLoadStartedRef = useRef(false);
+  const songHistoryReadyRef = useRef(false);
+  const [playedSongsMap, setPlayedSongsMap] = useState(() => ({ ...songCooldownRef.current }));
+  const [songHistoryReady, setSongHistoryReady] = useState(false);
 
   useEffect(() => {
-    if (songCooldownRef.current !== null) return;
+    if (songHistoryLoadStartedRef.current) return;
+    songHistoryLoadStartedRef.current = true;
     const loadCooldowns = async () => {
-      let cooldowns = {};
-      try {
-        const raw = localStorage.getItem('djbooth_song_cooldowns');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const now = Date.now();
-          for (const [k, v] of Object.entries(parsed)) {
-            if (now - v < COOLDOWN_MS) cooldowns[k] = v;
-          }
-        }
-      } catch {}
+      // Never prune the local ledger by age. It is also the offline source of
+      // truth for automatic no-repeat selection.
+      const cooldowns = { ...songCooldownRef.current };
       try {
         const token = localStorage.getItem('djbooth_token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch('/api/history/cooldowns?hours=6', { headers });
+        // The endpoint is named "cooldowns" for legacy clients; scope=all
+        // imports the complete persisted play-history ledger.
+        const res = await fetch('/api/history/cooldowns?scope=all', { headers });
         if (res.ok) {
           const data = await res.json();
           if (data.cooldowns) {
-            const now = Date.now();
             for (const [k, v] of Object.entries(data.cooldowns)) {
-              if (now - v < COOLDOWN_MS) {
-                if (!cooldowns[k] || v > cooldowns[k]) {
-                  cooldowns[k] = v;
-                }
+              if (Number.isFinite(Number(v)) && Number(v) > 0 &&
+                  (!cooldowns[k] || Number(v) > Number(cooldowns[k]))) {
+                cooldowns[k] = Number(v);
               }
             }
             console.log(`🎵 Loaded ${Object.keys(data.cooldowns).length} song cooldowns from server`);
@@ -612,8 +695,10 @@ export default function DJBooth() {
       songCooldownRef.current = cooldowns;
       setPlayedSongsMap({ ...cooldowns });
       try {
-        localStorage.setItem('djbooth_song_cooldowns', JSON.stringify(cooldowns));
+        localStorage.setItem(SONG_HISTORY_STORAGE_KEY, JSON.stringify(cooldowns));
       } catch {}
+      songHistoryReadyRef.current = true;
+      setSongHistoryReady(true);
     };
     loadCooldowns();
   }, []);
@@ -621,10 +706,11 @@ export default function DJBooth() {
   const recordSongPlayed = useCallback((trackName, dancerName = null, genre = null) => {
     if (!trackName || !songCooldownRef.current) return;
     if (playingCommercialRef.current) return;
-    songCooldownRef.current[trackName] = Date.now();
-    setPlayedSongsMap(prev => ({ ...prev, [trackName]: Date.now() }));
+    const playedAt = Date.now();
+    songCooldownRef.current[trackName] = playedAt;
+    setPlayedSongsMap(prev => ({ ...prev, [trackName]: playedAt }));
     try {
-      localStorage.setItem('djbooth_song_cooldowns', JSON.stringify(songCooldownRef.current));
+      localStorage.setItem(SONG_HISTORY_STORAGE_KEY, JSON.stringify(songCooldownRef.current));
     } catch {}
     let resolvedDancer = dancerName;
     if (!resolvedDancer && isRotationActiveRef.current && rotationRef.current.length > 0) {
@@ -647,19 +733,11 @@ export default function DJBooth() {
   const filterCooldown = useCallback((trackList) => {
     if (!trackList || trackList.length === 0) return trackList;
     if (!songCooldownRef.current) return trackList;
-    const now = Date.now();
-    const available = trackList.filter(t => {
-      const lastPlayed = songCooldownRef.current[t.name];
-      return !lastPlayed || (now - lastPlayed) >= COOLDOWN_MS;
-    });
-    if (available.length > 0) return available;
-    const sorted = fisherYatesShuffle(trackList);
-    sorted.sort((a, b) => {
-      const aTime = songCooldownRef.current[a.name] || 0;
-      const bTime = songCooldownRef.current[b.name] || 0;
-      return aTime - bTime;
-    });
-    return sorted;
+    const available = filterUnplayedAutomaticTracks(trackList, songCooldownRef.current);
+    if (available.length === 0) {
+      console.warn('⚠️ Automatic selection exhausted: no unplayed local tracks remain');
+    }
+    return available;
   }, []);
 
   const filterByActiveGenres = useCallback((trackList) => {
@@ -1033,7 +1111,7 @@ export default function DJBooth() {
     const nextVolume = liveBoothState.volume ?? 0.8;
     const nextVoiceGain = liveBoothState.voiceGain ?? 0.8;
     const nextAnnouncementsEnabled = liveBoothState.announcementsEnabled !== false;
-    const nextBreakSongsPerSet = liveBoothState.breakSongsPerSet ?? 0;
+    const nextBreakSongsPerSet = Math.max(0, Math.min(3, Number(liveBoothState.breakSongsPerSet) || 0));
     const nextDancerVipMap = liveBoothState.dancerVipMap || {};
     setStateIfChanged(setIsRotationActive, nextIsRotationActive);
     isRotationActiveRef.current = nextIsRotationActive;
@@ -1068,10 +1146,30 @@ export default function DJBooth() {
       commitRotationSongs(liveBoothState.rotationSongs || {});
       const interstitials = liveBoothState.interstitialSongs || {};
       interstitialSongsRef.current = interstitials;
+      manualInterstitialBreaksRef.current = liveBoothState.manualInterstitialBreaks || {};
       setInterstitialSongsState(interstitials);
       setInterstitialRemoteVersion(v => v + 1);
     }
   }, [remoteMode, liveBoothState, commitRotationSongs]);
+
+  // Break edits are intentionally non-structural, so their state updates do
+  // not necessarily change rotationVersion. Consume every newer live snapshot
+  // for the remote manager instead of waiting for a rotation mutation.
+  const lastRemoteInterstitialSnapshotRef = useRef('');
+  useEffect(() => {
+    if (!remoteMode || !liveBoothState) return;
+    const snapshot = JSON.stringify([
+      liveBoothState.interstitialSongs || {},
+      liveBoothState.manualInterstitialBreaks || {},
+    ]);
+    if (snapshot === lastRemoteInterstitialSnapshotRef.current) return;
+    lastRemoteInterstitialSnapshotRef.current = snapshot;
+    const nextSongs = liveBoothState.interstitialSongs || {};
+    interstitialSongsRef.current = nextSongs;
+    manualInterstitialBreaksRef.current = liveBoothState.manualInterstitialBreaks || {};
+    setInterstitialSongsState(nextSongs);
+    setInterstitialRemoteVersion(v => v + 1);
+  }, [remoteMode, liveBoothState]);
 
   // Fetch dancers
   const { data: dancers = [] } = useQuery({
@@ -1313,6 +1411,7 @@ export default function DJBooth() {
   const autoPopulateBreakSongs = useCallback(async (count) => {
     const rot = rotationRef.current || [];
     if (count <= 0 || rot.length === 0) return;
+    const populateVersion = interstitialMutationVersionRef.current;
     try {
       const current = { ...(interstitialSongsRef.current || {}) };
       const slotsNeeding = [];
@@ -1320,12 +1419,19 @@ export default function DJBooth() {
       for (const dancerId of rot) {
         const key = `after-${dancerId}`;
         const existing = current[key] || [];
-        if (existing.length > count) {
-          current[key] = existing.slice(0, count);
-        }
-        if (existing.length === 0) {
-          slotsNeeding.push({ key, existing: [], need: count });
-          totalNeeded += count;
+        // An explicit DJ queue is never trimmed or filled by changing the
+        // automatic default. This also protects a 20+ song live queue from a
+        // late auto-populate response.
+        // The currently playing one-shot queue is also left untouched so a
+        // count control change cannot interrupt the audio already on air.
+        if (manualInterstitialBreaksRef.current[key]
+            || playingInterstitialBreakKeyRef.current === key) continue;
+        const retained = existing.slice(0, count);
+        current[key] = retained;
+        const need = count - retained.length;
+        if (need > 0) {
+          slotsNeeding.push({ key, existing: retained, need });
+          totalNeeded += need;
         }
       }
       if (totalNeeded > 0) {
@@ -1333,10 +1439,7 @@ export default function DJBooth() {
         const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
         const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
         const cooldowns = songCooldownRef.current || {};
-        const nowMs = Date.now();
-        const cooldownNames = Object.entries(cooldowns)
-          .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
-          .map(([name]) => name);
+        const cooldownNames = Object.keys(cooldowns);
         const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
         const existingBreakNames = Object.values(current).flat();
         const excludeNames = [...new Set([...cooldownNames, ...assignedNames, ...existingBreakNames])];
@@ -1347,7 +1450,14 @@ export default function DJBooth() {
         });
         if (res.ok) {
           const data = await res.json();
-          const pool = (data.tracks || []).map(t => t.name).sort(() => Math.random() - 0.5);
+           const pool = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+             .map(t => t.name)
+             .sort(() => Math.random() - 0.5);
+           if (pool.length === 0) {
+             console.warn('⚠️ Automatic break population exhausted: no eligible unplayed tracks remain');
+           } else if (pool.length < totalNeeded) {
+             console.warn(`⚠️ Automatic break population exhausted: only ${pool.length}/${totalNeeded} unplayed tracks available`);
+           }
           let pi = 0;
           for (const slot of slotsNeeding) {
             const filled = [...slot.existing];
@@ -1357,14 +1467,16 @@ export default function DJBooth() {
           console.log('🎵 Break songs auto-populated:', slotsNeeding.length, 'slots,', count, 'per set');
         }
       }
-      interstitialSongsRef.current = current;
-      setInterstitialSongsState(current);
-      setInterstitialRemoteVersion(v => v + 1);
-      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(current)); } catch {}
+      // A manual edit may have arrived while the selector was in flight.
+      // Never let the late automatic result overwrite that newer queue.
+      if (populateVersion !== interstitialMutationVersionRef.current) return;
+      commitInterstitialWorkspace(current, {
+        manualBreaks: manualInterstitialBreaksRef.current,
+      });
     } catch (err) {
       console.warn('⚠️ Break song auto-populate failed:', err.message);
     }
-  }, []);
+  }, [commitInterstitialWorkspace]);
 
   const executeCommand = useCallback(async (cmd) => {
     const structural = STRUCTURAL_REMOTE_ACTIONS.has(cmd.action);
@@ -1384,7 +1496,7 @@ export default function DJBooth() {
         throw new Error('The kiosk rotation changed before this command could be applied');
       }
       if (cmd.expectedWorkspace && stableJson(cmd.expectedWorkspace) !== stableJson(
-        currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef)
+         currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef, manualInterstitialBreaksRef)
       )) {
         throw new Error('The kiosk workspace changed before this command could be applied');
       }
@@ -1544,15 +1656,22 @@ export default function DJBooth() {
         case 'setBreakSongsPerSet':
           if (cmd.payload.count != null) {
             const c = Math.max(0, Math.min(3, cmd.payload.count));
+            interstitialMutationVersionRef.current += 1;
             setBreakSongsPerSet(c);
             breakSongsPerSetRef.current = c;
             if (c > 0) {
               await autoPopulateBreakSongs(c);
             } else {
-              interstitialSongsRef.current = {};
-              setInterstitialSongsState({});
-              setInterstitialRemoteVersion(v => v + 1);
-              try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
+              // Zero disables automatic breaks; it must not erase a DJ's
+              // already-edited one-shot queue (including one entered while
+              // the break default was zero).
+              const retained = retainInterstitialQueuesForAutomaticCount(
+                interstitialSongsRef.current,
+                manualInterstitialBreaksRef.current,
+                c,
+                playingInterstitialBreakKeyRef.current,
+              );
+              commitInterstitialWorkspace(retained.songs, { manualBreaks: retained.manualBreaks });
             }
           }
           break;
@@ -1651,18 +1770,16 @@ export default function DJBooth() {
             }
             persistDjSaved();
              persistManualSetState();
-            interstitialSongsRef.current = cmd.payload.interstitialSongs;
-            setInterstitialSongsState({ ...cmd.payload.interstitialSongs });
-            setInterstitialRemoteVersion(v => v + 1);
-            try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(cmd.payload.interstitialSongs)); } catch {}
+            commitInterstitialWorkspace(cmd.payload.interstitialSongs, {
+              manualBreaks: cmd.payload.manualInterstitialBreaks ?? manualInterstitialBreaksRef.current,
+            });
           }
           break;
         case 'updateInterstitialSongs':
           if (cmd.payload.interstitialSongs) {
-            interstitialSongsRef.current = cmd.payload.interstitialSongs;
-            setInterstitialSongsState({ ...cmd.payload.interstitialSongs });
-            setInterstitialRemoteVersion(v => v + 1);
-            try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(cmd.payload.interstitialSongs)); } catch {}
+            commitInterstitialWorkspace(cmd.payload.interstitialSongs, {
+              manualBreaks: cmd.payload.manualInterstitialBreaks ?? manualInterstitialBreaksRef.current,
+            });
             console.log('🎵 Remote updated break songs');
           }
           break;
@@ -1984,6 +2101,11 @@ export default function DJBooth() {
           manualRotationSongs,
           manualRotationSetLengths: { ...manualSetLengthsRef.current },
           interstitialSongs: interstitialSongsRef.current || {},
+          manualInterstitialBreaks: manualInterstitialBreaksRef.current || {},
+          activeBreakKey: activeBreakInfo?.breakKey || playingInterstitialBreakKeyRef.current || null,
+           breakSongTotal: activeBreakInfo?.songs?.length
+             ?? interstitialSongsRef.current?.[activeBreakInfo?.breakKey || playingInterstitialBreakKeyRef.current]?.length
+             ?? 0,
           breakSongIndex: activeBreakInfo?.currentIndex ?? null,
           commercialFreq: localStorage.getItem('neonaidj_commercial_freq') || 'off',
           commercialCounter: commercialCounterRef.current,
@@ -2128,7 +2250,11 @@ export default function DJBooth() {
           setSongsPerSet(restoredSetSize);
           songsPerSetRef.current = restoredSetSize;
         }
-        if (s.breakSongsPerSet != null) { setBreakSongsPerSet(s.breakSongsPerSet); breakSongsPerSetRef.current = s.breakSongsPerSet; }
+        if (s.breakSongsPerSet != null) {
+          const restoredBreakSize = Math.max(0, Math.min(3, Number.parseInt(s.breakSongsPerSet, 10) || 0));
+          setBreakSongsPerSet(restoredBreakSize);
+          breakSongsPerSetRef.current = restoredBreakSize;
+        }
         if (s.currentSongNumber != null) {
           const restoredSongNumber = Number.parseInt(s.currentSongNumber, 10);
           // Older builds used 999 as a hard-skip sentinel. Do not resurrect it
@@ -2266,6 +2392,10 @@ export default function DJBooth() {
   }, []);
 
   const playFallbackTrack = useCallback(async (crossfade = false, rotationSongNumber = null) => {
+    if (!songHistoryReadyRef.current) {
+      console.warn('⚠️ PlayFallback: automatic history is not loaded; refusing an offline repeat');
+      return false;
+    }
     const updateRotationUI = (track) => {
       if (isRotationActiveRef.current && rotationRef.current.length > 0) {
         const currentDancerId = rotationRef.current[currentDancerIndexRef.current];
@@ -2312,10 +2442,7 @@ export default function DJBooth() {
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
       const cooldowns = songCooldownRef.current || {};
-      const nowMs = Date.now();
-      const recentNames = Object.entries(cooldowns)
-        .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
-        .map(([name]) => name);
+      const recentNames = Object.keys(cooldowns);
       const excludeParam = recentNames.length > 0 ? `&exclude=${encodeURIComponent(recentNames.join(','))}` : '';
       const res = await fetch(`/api/music/random?count=5&automatic=true${genresParam}${excludeParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -2323,7 +2450,7 @@ export default function DJBooth() {
       });
       if (res.ok) {
         const data = await res.json();
-        const serverTracks = filterAutomaticTracks(data.tracks || [])
+        const serverTracks = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
           .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
         for (let i = 0; i < serverTracks.length; i++) {
           if (hitSuspension) await waitForVisible();
@@ -2353,6 +2480,10 @@ export default function DJBooth() {
       return false;
     }
     const pool = filterCooldown(validTracks);
+    if (pool.length === 0) {
+      console.warn('⚠️ PlayFallback: no eligible unplayed automatic tracks remain');
+      return false;
+    }
     const cooldowns = songCooldownRef.current || {};
     const shuffled = fisherYatesShuffle(pool);
     shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
@@ -2398,10 +2529,7 @@ export default function DJBooth() {
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
       const cooldowns = songCooldownRef.current || {};
-      const nowMs = Date.now();
-      const recentNames = Object.entries(cooldowns)
-        .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
-        .map(([name]) => name);
+      const recentNames = Object.keys(cooldowns);
       const queueNames = currentQueue.map(t => t.name);
       const allExclude = [...new Set([...recentNames, ...queueNames])];
       const excludeParam = allExclude.length > 0 ? `&exclude=${encodeURIComponent(allExclude.join(','))}` : '';
@@ -2414,7 +2542,7 @@ export default function DJBooth() {
         const data = await res.json();
         const latestQueue = autoplayQueueRef.current;
         const latestNames = new Set(latestQueue.map(t => t.name));
-        const newTracks = filterAutomaticTracks(data.tracks || [])
+        const newTracks = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
           .filter(t => !latestNames.has(t.name))
           .map(t => ({ ...t, url: `/api/music/stream/${t.id}`, autoFilled: true }));
         const filled = [...latestQueue, ...newTracks].slice(0, AUTOPLAY_QUEUE_SIZE);
@@ -2585,7 +2713,7 @@ export default function DJBooth() {
   const tracksLoadedRef = useRef(false);
   const initialLoadGraceRef = useRef(true);
   useEffect(() => {
-    if (remoteMode || tracksLoadedRef.current) return;
+    if (remoteMode || tracksLoadedRef.current || !songHistoryReady) return;
     tracksLoadedRef.current = true;
     lastAudioActivityRef.current = Date.now();
     (async () => {
@@ -2597,11 +2725,13 @@ export default function DJBooth() {
           lastAudioActivityRef.current = Date.now();
           await playTrack(randomTrack.url, false, randomTrack.name, randomTrack.genre);
           lastAudioActivityRef.current = Date.now();
+        } else {
+          console.warn('⚠️ Initial automatic playback skipped: no eligible unplayed tracks remain');
         }
       }
       setTimeout(() => { initialLoadGraceRef.current = false; }, 15000);
     })();
-  }, [remoteMode]);
+  }, [remoteMode, songHistoryReady]);
 
   useEffect(() => {
     if (remoteMode) return;
@@ -2623,7 +2753,10 @@ export default function DJBooth() {
       return aTime - bTime;
     });
     const selected = shuffled.slice(0, count);
-    console.log(`🎵 GetRandomTracks: Selected ${selected.length} tracks from ${pool.length} available (${tracks.length} total, cooldown filtered)`);
+    if (selected.length < count) {
+      console.warn(`⚠️ GetRandomTracks: automatic pool exhausted (${selected.length}/${count})`);
+    }
+    console.log(`🎵 GetRandomTracks: Selected ${selected.length} tracks from ${pool.length} available (${tracks.length} total, history filtered)`);
     return selected;
   }, [tracks, filterCooldown]);
 
@@ -2693,9 +2826,10 @@ export default function DJBooth() {
       ? dayShiftGenres
       : (opts?.activeGenres?.length > 0 ? opts.activeGenres : []);
 
-    // Rule 7 (locked spec May 21): when dancer's playlist can't produce enough FRESH
-    // off-cooldown songs, top up the remainder from the manager-assigned break-song pool
-    // (same pool as interstitial break songs — genre-filtered library minus cooldown/assigned).
+    // Rule 7 (locked spec May 21): when dancer's playlist can't produce enough
+    // unplayed songs, top up the remainder from the manager-assigned break-song
+    // pool (same pool as interstitial break songs — genre-filtered library minus
+    // history/assigned).
     // Only applies when dancer has a playlist (rawPlaylist.length > 0); folders_only path is
     // left as-is so caller's random-library fallback still runs.
     const topUpFromBreakPool = async (current) => {
@@ -2704,9 +2838,8 @@ export default function DJBooth() {
       const currentNames = new Set(current.map(t => t?.name).filter(Boolean));
       const allExcl = new Set([...excludeNames, ...currentNames]);
       const cdMap = songCooldownRef.current || {};
-      const nowMs = Date.now();
       Object.entries(cdMap).forEach(([n, ts]) => {
-        if (ts && (nowMs - ts) < COOLDOWN_MS) allExcl.add(n);
+        if (ts) allExcl.add(n);
       });
       try {
         const tk = localStorage.getItem('djbooth_token');
@@ -2718,12 +2851,13 @@ export default function DJBooth() {
         });
         if (r.ok) {
           const d = await r.json();
-          const extras = filterAutomaticTracks(d.tracks || []);
+          const extras = filterUnplayedAutomaticTracks(d.tracks || [], songCooldownRef.current);
           if (extras.length > 0) {
             console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} — topping up ${extras.length} from break-song pool (had ${current.length}/${count})`);
             logDiag?.('cooldown_fallback_breakpool', { dancer: dancer?.name, had: current.length, need, got: extras.length });
             return [...current, ...extras];
           }
+           console.warn(`⚠️ getDancerTracks: automatic break-pool exhausted for ${dancer?.name || 'unknown'} (${current.length}/${count})`);
         }
       } catch (err) {
         console.warn(`⚠️ getDancerTracks: break-pool top-up failed for ${dancer?.name}: ${err.message}`);
@@ -2751,7 +2885,10 @@ export default function DJBooth() {
 
       if (res.ok) {
         const data = await res.json();
-        const result = filterAutomaticTracks(data.tracks || []);
+        const result = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current);
+         if (result.length < count) {
+           console.warn(`⚠️ getDancerTracks: automatic selection exhausted for ${dancer?.name || 'unknown'} (${result.length}/${count})`);
+         }
         console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (${result.length} tracks, playlist: ${rawPlaylist.length})`);
         return await topUpFromBreakPool(result);
       }
@@ -2759,11 +2896,16 @@ export default function DJBooth() {
       console.warn(`⚠️ getDancerTracks: Server select failed for ${dancer?.name}: ${err.message}, using local fallback`);
     }
 
-    // Local fallback (server unavailable) — playlist-strict, fresh first then oldest-cooldown
-    // folders_only mode: rawPlaylist is [] so we return [] and caller uses random library (correct)
+    // Local fallback (server unavailable) — playlist-strict and never recycling:
+    // expired cooldowns remain in the all-time history ledger. folders_only mode
+    // has no safe local automatic source, so return [] and let the caller report
+    // the exhausted automatic pool rather than inventing a repeat.
+    if (!songHistoryReadyRef.current) {
+      console.warn(`⚠️ getDancerTracks: automatic history is not loaded for ${dancer?.name || 'unknown'}; refusing offline fallback`);
+      return [];
+    }
     const excludeSet = new Set(excludeNames);
     const cooldowns = songCooldownRef.current || {};
-    const now = Date.now();
 
     if (rawPlaylist.length > 0) {
       const allPlaylistTracks = rawPlaylist
@@ -2771,19 +2913,13 @@ export default function DJBooth() {
         .filter(Boolean)
         .filter(t => !isAutomaticSelectionExcluded(t))
         .filter(t => !excludeSet.has(t.name));
-      const freshTracks = allPlaylistTracks.filter(t => {
-        const lp = cooldowns[t.name] || 0;
-        return !lp || (now - lp) >= COOLDOWN_MS;
-      });
-      const cooldownTracks = allPlaylistTracks
-        .filter(t => {
-          const lp = cooldowns[t.name] || 0;
-          return lp && (now - lp) < COOLDOWN_MS;
-        })
-        .sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0)); // oldest-played first
+      const freshTracks = allPlaylistTracks.filter(t =>
+        !Object.prototype.hasOwnProperty.call(cooldowns, t.name),
+      );
 
-      // Rule 7: only stack cooldown repeats if break-pool top-up also fails. Prefer fresh
-      // playlist tracks alone first, let topUp fill the rest from break pool.
+      // Rule 7: fill only from unplayed playlist/break-pool tracks. An
+      // exhausted automatic pool is explicit; DJ-saved/manual tracks bypass
+      // this path elsewhere.
       const result = fisherYatesShuffle([...freshTracks]).slice(0, count);
       if (result.length >= count) {
         console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${result.map(t => t.name).join(', ')}] (local fallback, ${freshTracks.length} fresh)`);
@@ -2794,11 +2930,9 @@ export default function DJBooth() {
         console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${toppedUp.map(t => t.name).join(', ')}] (local fallback ${result.length} fresh + ${toppedUp.length - result.length} break-pool)`);
         return toppedUp;
       }
-      // Last resort: stack oldest-cooldown playlist tracks to reach count
-      const combined = [...toppedUp, ...cooldownTracks.filter(t => !toppedUp.some(x => x.name === t.name))].slice(0, count);
-      console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} → [${combined.map(t => t.name).join(', ')}] (local fallback EXHAUSTED — fresh+breakpool+cooldown stack)`);
-      logDiag?.('getDancerTracks_exhausted', { dancer: dancer?.name, fresh: result.length, afterTopUp: toppedUp.length, final: combined.length, need: count });
-      return combined.length > 0 ? combined : await topUpFromBreakPool([]);
+      console.warn(`⚠️ getDancerTracks: automatic pool exhausted for ${dancer?.name || 'unknown'} — no repeat fallback`);
+      logDiag?.('getDancerTracks_exhausted', { dancer: dancer?.name, fresh: result.length, afterTopUp: toppedUp.length, final: toppedUp.length, need: count });
+      return toppedUp;
     }
 
     console.warn(`⚠️ getDancerTracks: ${dancer?.name || 'unknown'} has no playlist — returning empty`);
@@ -3909,12 +4043,7 @@ export default function DJBooth() {
         // on-screen setup buttons disappear immediately.
         featureSetupActiveRef.current = null;
         setFeatureSetupActive(null);
-        const clearedInterstitials = { ...interstitialSongsRef.current };
-        delete clearedInterstitials[breakKey];
-        interstitialSongsRef.current = clearedInterstitials;
-        setInterstitialSongsState(clearedInterstitials);
-        setInterstitialRemoteVersion(v => v + 1);
-        try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
+        clearInterstitialWorkspace(breakKey);
       } else {
         const breakSongs = interstitialSongsRef.current[breakKey] || [];
         const breakIdx = interstitialIndexRef.current;
@@ -3948,12 +4077,7 @@ export default function DJBooth() {
         interstitialIndexRef.current = 0;
         setActiveBreakInfo(null);
         console.log('⏭️ HandleSkip: No more break songs, advancing to next dancer');
-        const clearedInterstitials = { ...interstitialSongsRef.current };
-        delete clearedInterstitials[breakKey];
-        interstitialSongsRef.current = clearedInterstitials;
-        setInterstitialSongsState(clearedInterstitials);
-        setInterstitialRemoteVersion(v => v + 1);
-        try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
+        clearInterstitialWorkspace(breakKey);
       }
     }
 
@@ -4198,9 +4322,7 @@ export default function DJBooth() {
           // next dancer immediately. A finishing FEATURE is NOT a hard skip: she still gets
           // one post-feature break song (handled via _wantBreakCount below).
           breakSongs = [];
-          const cleared = { ...interstitialSongsRef.current };
-          delete cleared[breakKey];
-          interstitialSongsRef.current = cleared;
+          clearInterstitialWorkspace(breakKey);
         }
 
         // FEATURE SHOW: upcoming dancer is the feature → normal break(s) + 1 setup song and
@@ -4213,14 +4335,12 @@ export default function DJBooth() {
           : (_finishingFeature ? 1 : (breakSongsPerSetRef.current + (_upcomingIsFeature ? 1 : 0)));
 
         if (breakSongs.length === 0 && _wantBreakCount > 0) {
+          const breakSelectionVersion = interstitialMutationVersionRef.current;
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
             const cooldowns = songCooldownRef.current || {};
-            const nowMs = Date.now();
-            const cooldownNames = Object.entries(cooldowns)
-              .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
-              .map(([name]) => name);
+            const cooldownNames = Object.keys(cooldowns);
             const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
             const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
             const _dsSkip = djOptionsRef.current?.dayShift;
@@ -4243,12 +4363,23 @@ export default function DJBooth() {
             });
             if (res.ok) {
               const data = await res.json();
-              breakSongs = (data.tracks || []).map(t => t.name);
+              breakSongs = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+                .map(t => t.name);
+              if (breakSongs.length === 0) {
+                console.warn('⚠️ HandleSkip: automatic break pool exhausted; continuing without a recycled break');
+              }
               console.log('🎵 HandleSkip: Auto-selected', breakSongs.length, 'break song(s):', breakSongs);
-              interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: breakSongs };
-              setInterstitialSongsState({ ...interstitialSongsRef.current });
-              setInterstitialRemoteVersion(v => v + 1);
-              try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
+              if (breakSelectionVersion === interstitialMutationVersionRef.current
+                  && !manualInterstitialBreaksRef.current[breakKey]) {
+                commitInterstitialWorkspace({
+                  ...interstitialSongsRef.current,
+                  [breakKey]: breakSongs,
+                }, { manualBreaks: manualInterstitialBreaksRef.current });
+              } else {
+                // A manual command arrived while selection was in flight.
+                // Continue with that authoritative queue instead.
+                breakSongs = interstitialSongsRef.current[breakKey] || [];
+              }
             }
           } catch (err) {
             console.warn('⚠️ HandleSkip: Failed to auto-select break songs:', err.message);
@@ -4475,7 +4606,8 @@ export default function DJBooth() {
           : djSavedNextValid || djSavedManualRef.current[nextDancerId]
           ? (djSavedNextValid ? djSavedNext : scratchSongs[nextDancerId])
           : filterAutomaticTracks(scratchSongs[nextDancerId]);
-        // Filter stale pre-picks: remove any tracks now inside the 4-hour cooldown window
+        // Filter stale pre-picks: automatic history is permanent, so never
+        // recycle a track that has already played.
         // (DJ-saved tracks bypass this filter — handled above)
         const validPrePicks = nextDancerManualIsEmpty
           ? []
@@ -4486,8 +4618,7 @@ export default function DJBooth() {
             : (existingTracks
             ? existingTracks.filter(t => {
                 if (!t?.url) return false;
-                const lp = songCooldownRef.current?.[t.name];
-                return !lp || (Date.now() - lp) >= COOLDOWN_MS;
+                 return !Object.prototype.hasOwnProperty.call(songCooldownRef.current || {}, t.name);
               })
             : null));
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
@@ -4656,10 +4787,7 @@ export default function DJBooth() {
     try {
       const token = localStorage.getItem('djbooth_token');
       const cooldowns = songCooldownRef.current || {};
-      const nowMs = Date.now();
-      const cooldownNames = Object.entries(cooldowns)
-        .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
-        .map(([n]) => n);
+      const cooldownNames = Object.keys(cooldowns);
       const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
       const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
       const excludeAll = [...new Set([...cooldownNames, ...assignedNames, ...allBreakNames])];
@@ -4676,18 +4804,25 @@ export default function DJBooth() {
         signal: AbortSignal.timeout(5000)
       });
       if (!res.ok) throw new Error(`select failed (${res.status})`);
-      const data = await res.json();
-      const name = data.tracks?.[0]?.name;
-      if (!name) { toast('No song available to add'); return; }
+       const data = await res.json();
+       const name = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)[0]?.name;
+       if (!name) {
+         console.warn('⚠️ Feature setup: automatic pool exhausted; no unplayed song available');
+         toast('No song available to add');
+         return;
+       }
       const cur = interstitialSongsRef.current[breakKey] || [];
       const updated = [...cur, name];
-      interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: updated };
-      setInterstitialSongsState({ ...interstitialSongsRef.current });
-      setInterstitialRemoteVersion(v => v + 1);
+      commitInterstitialWorkspace({
+        ...interstitialSongsRef.current,
+        [breakKey]: updated,
+      }, {
+        manualBreaks: manualInterstitialBreaksRef.current,
+        markManual: [breakKey],
+      });
       const nextPlacedFeatures = liveBoothState.placedFeatures || {};
       placedFeaturesRef.current = nextPlacedFeatures;
       setPlacedFeatures(nextPlacedFeatures);
-      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
       setActiveBreakInfo({ songs: updated, currentIndex: Math.max(0, interstitialIndexRef.current - 1), breakKey });
       console.log('🌟 Setup: added setup song', name, '→ queue now', updated.length);
       toast('Setup song added 🎵');
@@ -4713,12 +4848,7 @@ export default function DJBooth() {
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
       if (breakKey) {
-        const cleared = { ...interstitialSongsRef.current };
-        delete cleared[breakKey];
-        interstitialSongsRef.current = cleared;
-        setInterstitialSongsState(cleared);
-        setInterstitialRemoteVersion(v => v + 1);
-        try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(cleared)); } catch {}
+        clearInterstitialWorkspace(breakKey);
       }
       const featureDancer = dancersRef.current.find(d => d.id === featureId);
       if (!featureDancer) {
@@ -4994,12 +5124,7 @@ export default function DJBooth() {
       playingInterstitialBreakKeyRef.current = null;
       interstitialIndexRef.current = 0;
       setActiveBreakInfo(null);
-      const clearedInterstitials2 = { ...interstitialSongsRef.current };
-      delete clearedInterstitials2[breakKey];
-      interstitialSongsRef.current = clearedInterstitials2;
-      setInterstitialSongsState(clearedInterstitials2);
-      setInterstitialRemoteVersion(v => v + 1);
-      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials2)); } catch {}
+      clearInterstitialWorkspace(breakKey);
 
       const newRotation = [...rot];
       const newIdx = idx;
@@ -5039,7 +5164,6 @@ export default function DJBooth() {
         }
         const existingTracks = rotationSongsRef.current[_piDancerId];
         const _postCd = songCooldownRef.current || {};
-        const _postNow = Date.now();
         // DJ-saved picks bypass the cooldown/length re-validation entirely — the DJ's
         // explicit choice always wins over auto filters (Jul 25 override law).
          const _piManual = isManualSet(_piDancerId);
@@ -5057,7 +5181,9 @@ export default function DJBooth() {
          const _postValid = _piManualIsEmpty || (_safeExistingTracks && (_piManual
           ? _safeExistingTracks.length >= 1
           : (_safeExistingTracks.length >= songsPerSetRef.current &&
-              _safeExistingTracks.every(t => !_postCd[t.name] || ((_postNow - _postCd[t.name]) >= COOLDOWN_MS)))));
+               _safeExistingTracks.every(t =>
+                 !Object.prototype.hasOwnProperty.call(_postCd, t.name),
+               ))));
          let freshTracks = _piDjSavedValid
            ? _piDjSaved
            : _piManualIsEmpty
@@ -5457,14 +5583,12 @@ export default function DJBooth() {
           : (breakSongsPerSetRef.current + (_upcomingIsFeature ? 1 : 0));
 
         if (breakSongs.length === 0 && _wantBreakCount > 0) {
+          const breakSelectionVersion = interstitialMutationVersionRef.current;
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
             const cooldowns = songCooldownRef.current || {};
-            const nowMs = Date.now();
-            const cooldownNames = Object.entries(cooldowns)
-              .filter(([, ts]) => ts && (nowMs - ts) < COOLDOWN_MS)
-              .map(([name]) => name);
+            const cooldownNames = Object.keys(cooldowns);
             const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
             const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
             const _dsTE = djOptionsRef.current?.dayShift;
@@ -5487,12 +5611,21 @@ export default function DJBooth() {
             });
             if (res.ok) {
               const data = await res.json();
-              breakSongs = (data.tracks || []).map(t => t.name);
+              breakSongs = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+                .map(t => t.name);
+              if (breakSongs.length === 0) {
+                console.warn('⚠️ HandleTrackEnd: automatic break pool exhausted; continuing without a recycled break');
+              }
               console.log('🎵 Auto-selected', breakSongs.length, 'break song(s):', breakSongs);
-              interstitialSongsRef.current = { ...interstitialSongsRef.current, [breakKey]: breakSongs };
-              setInterstitialSongsState({ ...interstitialSongsRef.current });
-              setInterstitialRemoteVersion(v => v + 1);
-              try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongsRef.current)); } catch {}
+              if (breakSelectionVersion === interstitialMutationVersionRef.current
+                  && !manualInterstitialBreaksRef.current[breakKey]) {
+                commitInterstitialWorkspace({
+                  ...interstitialSongsRef.current,
+                  [breakKey]: breakSongs,
+                }, { manualBreaks: manualInterstitialBreaksRef.current });
+              } else {
+                breakSongs = interstitialSongsRef.current[breakKey] || [];
+              }
             }
           } catch (err) {
             console.warn('⚠️ Failed to auto-select break songs:', err.message);
@@ -5735,7 +5868,8 @@ export default function DJBooth() {
           : djSavedNextValid || djSavedManualRef.current[nextDancerId]
           ? (djSavedNextValid ? djSavedNext : scratchSongs[nextDancerId])
           : filterAutomaticTracks(scratchSongs[nextDancerId]);
-        // Filter stale pre-picks: remove any tracks now inside the 4-hour cooldown window
+        // Filter stale pre-picks: automatic history is permanent, so never
+        // recycle a track that has already played.
         // (DJ-saved tracks bypass this filter — handled above)
         const validPrePicks = nextDancerManualIsEmpty
           ? []
@@ -5746,8 +5880,7 @@ export default function DJBooth() {
             : (existingTracks
             ? existingTracks.filter(t => {
                 if (!t?.url) return false;
-                const lp = songCooldownRef.current?.[t.name];
-                return !lp || (Date.now() - lp) >= COOLDOWN_MS;
+                 return !Object.prototype.hasOwnProperty.call(songCooldownRef.current || {}, t.name);
               })
             : null));
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
@@ -6105,15 +6238,15 @@ export default function DJBooth() {
         // First: try songs from the current dancer's playlist
         if (wdDancerId && !recovered && !watchdogManualIsEmpty) {
           const cooldowns = songCooldownRef.current || {};
-          const nowMs = Date.now();
           const watchdogAssignment = rotationSongsRef.current[wdDancerId] || [];
           const watchdogPlaylist = isManualSet(wdDancerId)
             ? watchdogAssignment
             : filterAutomaticTracks(watchdogAssignment);
           const playlist = watchdogPlaylist.filter(t => {
             if (!t || !t.url) return false;
-            const lp = cooldowns[t.name];
-            return !lp || (nowMs - lp) >= COOLDOWN_MS;
+             return isManualSet(wdDancerId)
+               || (songHistoryReadyRef.current
+                 && !Object.prototype.hasOwnProperty.call(cooldowns, t.name));
           });
           const sorted = [...playlist].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
           for (const track of sorted.slice(0, 8)) {
@@ -6135,14 +6268,11 @@ export default function DJBooth() {
         }
 
         // Second: try server random tracks
-        if (!recovered && !watchdogManualIsEmpty) {
+        if (!recovered && !watchdogManualIsEmpty && songHistoryReadyRef.current) {
           try {
             const token = localStorage.getItem('djbooth_token');
             const wdCooldowns = songCooldownRef.current || {};
-            const wdNow = Date.now();
-            const wdRecent = Object.entries(wdCooldowns)
-              .filter(([, ts]) => ts && (wdNow - ts) < COOLDOWN_MS)
-              .map(([name]) => name);
+            const wdRecent = Object.keys(wdCooldowns);
             const wdExclude = wdRecent.length > 0 ? `&exclude=${encodeURIComponent(wdRecent.join(','))}` : '';
             const res = await fetch(`/api/music/random?count=5&automatic=true${wdExclude}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -6150,7 +6280,7 @@ export default function DJBooth() {
             });
             if (res.ok) {
               const data = await res.json();
-              const serverTracks = filterAutomaticTracks(data.tracks || [])
+              const serverTracks = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
                 .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
               for (let i = 0; i < serverTracks.length; i++) {
                 try {
@@ -6178,11 +6308,9 @@ export default function DJBooth() {
         // Third: local pool fallback
         if (!recovered && !watchdogManualIsEmpty) {
           const cooldowns = songCooldownRef.current || {};
-          const nowMs = Date.now();
           const validTracks = filterAutomaticTracks(tracks).filter(t => {
             if (!t || !t.url) return false;
-            const lp = cooldowns[t.name];
-            return !lp || (nowMs - lp) >= COOLDOWN_MS;
+            return !Object.prototype.hasOwnProperty.call(cooldowns, t.name);
           });
           const shuffled = fisherYatesShuffle(validTracks);
           shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
@@ -7034,7 +7162,8 @@ export default function DJBooth() {
                   ? (featureId) => sendBoothCommand('cancelFeaturePlacement', { featureId })
                   : cancelFeaturePlacement}
                 djOptions={djOptions}
-                songCooldowns={playedSongsMap}
+                 songCooldowns={playedSongsMap}
+                 songCooldownsReady={songHistoryReady}
                 activeRotationSongs={remoteMode
                   ? (liveBoothState ? (liveBoothState.rotationSongs || {}) : null)
                   : (isRotationActive ? rotationSongs : null)}
@@ -7043,7 +7172,33 @@ export default function DJBooth() {
                 remoteMode={remoteMode}
                 savedInterstitials={interstitialSongsState}
                 interstitialRemoteVersion={interstitialRemoteVersion}
-                activeBreakInfo={activeBreakInfo}
+                activeBreakInfo={remoteMode && liveBoothState?.activeBreakKey
+                  ? {
+                    songs: interstitialSongsState[liveBoothState.activeBreakKey] || [],
+                    currentIndex: liveBoothState.breakSongIndex ?? 0,
+                    breakKey: liveBoothState.activeBreakKey,
+                  }
+                  : activeBreakInfo}
+                authoritativeManualBreaks={manualInterstitialBreaksRef.current}
+                onInterstitialSongsChange={(nextInterstitials, manualBreaks) => {
+                  if (remoteMode) {
+                    commitInterstitialWorkspace(nextInterstitials, { manualBreaks });
+                    return sendBoothCommand('updateInterstitialSongs', {
+                      interstitialSongs: nextInterstitials,
+                      manualInterstitialBreaks: manualBreaks,
+                    }).then(result => {
+                      if (!result) {
+                        commitInterstitialWorkspace(
+                          liveBoothState?.interstitialSongs || {},
+                          { manualBreaks: liveBoothState?.manualInterstitialBreaks || {} },
+                        );
+                      }
+                      return result;
+                    });
+                  }
+                  commitInterstitialWorkspace(nextInterstitials, { manualBreaks });
+                  return Promise.resolve();
+                }}
                 onRemoveActiveBreakSong={(breakKey, actualIndex) => {
                   const currentSongs = interstitialSongsRef.current[breakKey] || [];
                   const updated = [...currentSongs];
@@ -7056,13 +7211,27 @@ export default function DJBooth() {
                   } else {
                     newInterstitials[breakKey] = updated;
                   }
+                  const manualBreaks = {
+                    ...(manualInterstitialBreaksRef.current || {}),
+                  };
+                  if (updated.length > 0) manualBreaks[breakKey] = true;
+                  else delete manualBreaks[breakKey];
                   if (remoteMode) {
-                    sendBoothCommand('updateInterstitialSongs', { interstitialSongs: newInterstitials });
+                    commitInterstitialWorkspace(newInterstitials, { manualBreaks });
+                    sendBoothCommand('updateInterstitialSongs', {
+                      interstitialSongs: newInterstitials,
+                      manualInterstitialBreaks: manualBreaks,
+                    }).then(result => {
+                      if (!result) {
+                        commitInterstitialWorkspace(
+                          liveBoothState?.interstitialSongs || {},
+                          { manualBreaks: liveBoothState?.manualInterstitialBreaks || {} },
+                        );
+                      }
+                    });
                     return;
                   }
-                  interstitialSongsRef.current = newInterstitials;
-                  setInterstitialSongsState({ ...newInterstitials });
-                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(newInterstitials)); } catch {}
+                  commitInterstitialWorkspace(newInterstitials, { manualBreaks });
                   if (activeBreakInfo && activeBreakInfo.breakKey === breakKey) {
                     const newSongs = [...activeBreakInfo.songs];
                     if (actualIndex >= 0 && actualIndex < newSongs.length) {
@@ -7081,13 +7250,27 @@ export default function DJBooth() {
                   } else {
                     newInterstitials[breakKey] = newFullSongs;
                   }
+                  const manualBreaks = {
+                    ...(manualInterstitialBreaksRef.current || {}),
+                  };
+                  if (newFullSongs.length > 0) manualBreaks[breakKey] = true;
+                  else delete manualBreaks[breakKey];
                   if (remoteMode) {
-                    sendBoothCommand('updateInterstitialSongs', { interstitialSongs: newInterstitials });
+                    commitInterstitialWorkspace(newInterstitials, { manualBreaks });
+                    sendBoothCommand('updateInterstitialSongs', {
+                      interstitialSongs: newInterstitials,
+                      manualInterstitialBreaks: manualBreaks,
+                    }).then(result => {
+                      if (!result) {
+                        commitInterstitialWorkspace(
+                          liveBoothState?.interstitialSongs || {},
+                          { manualBreaks: liveBoothState?.manualInterstitialBreaks || {} },
+                        );
+                      }
+                    });
                     return;
                   }
-                  interstitialSongsRef.current = newInterstitials;
-                  setInterstitialSongsState({ ...newInterstitials });
-                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(newInterstitials)); } catch {}
+                  commitInterstitialWorkspace(newInterstitials, { manualBreaks });
                   if (activeBreakInfo && activeBreakInfo.breakKey === breakKey) {
                     setActiveBreakInfo({ ...activeBreakInfo, songs: newFullSongs });
                   }
@@ -7178,12 +7361,13 @@ export default function DJBooth() {
                     }
                   }
                 }}
-                onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = []) => {
+                onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = [], manualBreaks = {}) => {
                   if (remoteMode) {
                     await sendBoothCommand('saveRotationWorkspace', {
                       rotation: newRotation,
                       assignments: playlists,
                       interstitialSongs: interstitials,
+                      manualInterstitialBreaks: manualBreaks,
                       manualOverrides,
                     }, {
                       expectedRotationVersion: liveBoothState?.rotationVersion,
@@ -7228,10 +7412,7 @@ export default function DJBooth() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ rotation_order: newRotation, current_dancer_index: _saveIdx, is_active: true })
                   }).catch(() => {});
-                  interstitialSongsRef.current = interstitials;
-                  setInterstitialSongsState(interstitials);
-                  setInterstitialRemoteVersion(v => v + 1);
-                  try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitials)); } catch {}
+                  commitInterstitialWorkspace(interstitials, { manualBreaks });
                   const overrideSet = new Set(manualOverrides.map(id => String(id)));
                   const immediateUpdates = {};
                   const immediateSavedUpdates = {};
@@ -7525,6 +7706,7 @@ export default function DJBooth() {
                     return;
                   }
                   const wasBreak = breakSongsPerSetRef.current > 0;
+                  interstitialMutationVersionRef.current += 1;
                   setBreakSongsPerSet(n);
                   breakSongsPerSetRef.current = n;
                   if (n > 0) {
@@ -7532,10 +7714,13 @@ export default function DJBooth() {
                     autoPopulateBreakSongs(n);
                   } else {
                     if (wasBreak) auditEvent('break_mode_off');
-                    interstitialSongsRef.current = {};
-                    setInterstitialSongsState({});
-                    setInterstitialRemoteVersion(v => v + 1);
-                    try { localStorage.setItem('djbooth_interstitial_songs', '{}'); } catch {}
+                    const retained = retainInterstitialQueuesForAutomaticCount(
+                      interstitialSongsRef.current,
+                      manualInterstitialBreaksRef.current,
+                      n,
+                      playingInterstitialBreakKeyRef.current,
+                    );
+                    commitInterstitialWorkspace(retained.songs, { manualBreaks: retained.manualBreaks });
                   }
                 }}
                 songsPerSet={songsPerSet}

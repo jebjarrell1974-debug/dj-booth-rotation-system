@@ -16,7 +16,7 @@ import {
   normalizeSongList,
   reconcileAuthoritativeAssignments,
 } from '@/utils/rotationAssignments';
-import { filterAutomaticTracks } from '@/utils/automaticTrackSelection';
+import { filterAutomaticTracks, filterUnplayedAutomaticTracks } from '@/utils/automaticTrackSelection';
 
 const TRACKS_PER_PAGE = 200;
 const EMPTY_ASSIGNMENTS = Object.freeze({});
@@ -148,10 +148,12 @@ export default function RotationPlaylistManager({
   authoritativeManualAssignments = EMPTY_ASSIGNMENTS,
   authoritativeManualSetLengths = EMPTY_ASSIGNMENTS,
   savedInterstitials,
+  authoritativeManualBreaks = EMPTY_ASSIGNMENTS,
   interstitialRemoteVersion,
   activeBreakInfo,
   onRemoveActiveBreakSong,
   onUpdateActiveBreakSongs,
+  onInterstitialSongsChange,
   djOptions,
   announcementsEnabled,
   onAnnouncementsToggle,
@@ -176,6 +178,7 @@ export default function RotationPlaylistManager({
   onAutoplayQueueChange,
   onAutoplayQueueRemove,
   songCooldowns = {},
+  songCooldownsReady = true,
   currentTrack = null,
   dancerVipMap = {},
   pendingVipMap = {},
@@ -186,7 +189,6 @@ export default function RotationPlaylistManager({
   onCancelFeature,
   remoteMode = false
 }) {
-  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeGenre, setActiveGenre] = useState(null);
@@ -239,6 +241,7 @@ export default function RotationPlaylistManager({
   });
   const [selectedDancerId, setSelectedDancerId] = useState(null);
   const [selectedBreakKey, setSelectedBreakKey] = useState(null);
+  const [breakReplacement, setBreakReplacement] = useState(null);
   const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
   const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
   const [skippedCommercials, setSkippedCommercials] = useState(() => {
@@ -294,9 +297,12 @@ export default function RotationPlaylistManager({
   const appliedPlaylistsRef = React.useRef({});
   const lastAuthoritativeRotationRef = React.useRef(rotation);
   const lastAuthoritativeInterstitialsRef = React.useRef(savedInterstitials || {});
+  const interstitialSongsRef = React.useRef(interstitialSongs);
+  const manualInterstitialBreaksRef = React.useRef(authoritativeManualBreaks || {});
   const activeRotationSongsKey = stableAssignmentKey(activeRotationSongs || {});
   const authoritativeManualAssignmentsKey = stableAssignmentKey(authoritativeManualAssignments || {});
   const authoritativeManualSetLengthsKey = stableAssignmentKey(authoritativeManualSetLengths || {});
+  const authoritativeManualBreaksKey = stableAssignmentKey(authoritativeManualBreaks || {});
   const songAssignmentsRef = React.useRef({});
   const assignmentSongsPerSetRef = React.useRef(songsPerSet);
   const assignmentGenerationRef = React.useRef(0);
@@ -340,6 +346,29 @@ export default function RotationPlaylistManager({
       toast.error(error?.message || 'Could not apply the playlist edit');
     });
   }, [onAutoSavePlaylist]);
+  // Break queues are live one-shot edits, not Save All drafts. Keep a ref so
+  // rapid library drops/reorders compose from the newest queue and publish the
+  // complete unlimited list to the kiosk immediately.
+  const publishInterstitialSongs = useCallback((nextSongs, markBreakKey = null) => {
+    const normalized = {};
+    for (const [rawKey, songs] of Object.entries(nextSongs || {})) {
+      const names = (Array.isArray(songs) ? songs : []).map(getSongName).filter(Boolean);
+      if (names.length > 0) normalized[String(rawKey)] = names;
+    }
+    const manualBreaks = { ...(manualInterstitialBreaksRef.current || {}) };
+    if (markBreakKey != null && normalized[String(markBreakKey)]?.length > 0) {
+      manualBreaks[String(markBreakKey)] = true;
+    }
+    Object.keys(manualBreaks).forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(normalized, key)) delete manualBreaks[key];
+    });
+    interstitialSongsRef.current = normalized;
+    manualInterstitialBreaksRef.current = manualBreaks;
+    setInterstitialSongs(normalized);
+    Promise.resolve(onInterstitialSongsChange?.(normalized, manualBreaks)).catch(error => {
+      toast.error(error?.message || 'Could not apply the break queue edit');
+    });
+  }, [onInterstitialSongsChange]);
   const normalizeDisplayedAssignments = useCallback((assignments) => {
     const capped = capSongAssignments(assignments, songsPerSet);
     const manualIds = new Set([
@@ -434,8 +463,12 @@ export default function RotationPlaylistManager({
   }, [musicSource]);
 
   useEffect(() => {
-    if (!remoteMode && Object.keys(interstitialSongs).length > 0) {
-      try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongs)); } catch {}
+    interstitialSongsRef.current = interstitialSongs;
+    if (!remoteMode) {
+      try {
+        localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongs));
+        localStorage.setItem('djbooth_manual_interstitial_breaks', JSON.stringify(manualInterstitialBreaksRef.current || {}));
+      } catch {}
     }
   }, [interstitialSongs, remoteMode]);
 
@@ -444,10 +477,13 @@ export default function RotationPlaylistManager({
       setInterstitialSongs(current => {
         const wasUnedited = JSON.stringify(current) === JSON.stringify(lastAuthoritativeInterstitialsRef.current);
         lastAuthoritativeInterstitialsRef.current = savedInterstitials || {};
-        return wasUnedited ? (savedInterstitials || {}) : current;
+        if (!wasUnedited) return current;
+        interstitialSongsRef.current = savedInterstitials || {};
+        manualInterstitialBreaksRef.current = authoritativeManualBreaks || {};
+        return savedInterstitials || {};
       });
     }
-  }, [interstitialRemoteVersion, savedInterstitials]);
+  }, [interstitialRemoteVersion, savedInterstitials, authoritativeManualBreaksKey]);
 
   useEffect(() => {
     if (!isRotationActive || !localRotation || localRotation.length === 0) return;
@@ -509,13 +545,13 @@ export default function RotationPlaylistManager({
     // A remote editor is command-only. It may display the kiosk's assignments,
     // but it must never invent a queue from its own local tracks.
     if (remoteMode) return;
+    if (!songCooldownsReady) return;
     if (saveGuardRef.current > Date.now()) return;
 
     const dancersNeedingAssignment = localRotation.filter(dancerId => {
       if (djOverridesRef.current.has(dancerId)) return false;
       const current = songAssignmentsRef.current[dancerId];
-      if (current && current.length > 0) return false;
-      return true;
+      return !current || current.length < songsPerSet;
     });
     if (dancersNeedingAssignment.length === 0) return;
 
@@ -569,7 +605,11 @@ export default function RotationPlaylistManager({
           });
           if (res.ok) {
             const data = await res.json();
-            const selected = (data.tracks || []).map(t => t.name);
+            const selected = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)
+              .map(t => t.name);
+            if (selected.length === 0) {
+              console.warn(`⚠️ RotationPlaylist: automatic selection exhausted for ${dancer.name}`);
+            }
             newAssignments[dancerId] = selected;
             selected.forEach(n => batchExcludes.push(n));
             if (serverPlaylist.length > 0) {
@@ -582,28 +622,29 @@ export default function RotationPlaylistManager({
         }
 
         const excludeSet = new Set(batchExcludes);
-        const fallbackNow = Date.now();
-        const isOnCooldown = (name) => !!(songCooldowns[name] && (fallbackNow - songCooldowns[name]) < FOUR_HOURS_MS);
         const fallbackPlaylist = dancer?.playlist || [];
         let assigned = [];
         if (!isFoldersOnly && fallbackPlaylist.length > 0) {
-          // PLAYLIST RULE: when dancer has a playlist, use ONLY her playlist songs.
-          // Fresh first, then on-cooldown (oldest played first). Never random library.
-          // Mirrors server-side selectTracksForSet behavior in db.js.
+          // PLAYLIST RULE: when dancer has a playlist, use ONLY her unplayed
+          // playlist songs. An exhausted playlist is a real no-eligible result;
+          // never recycle a track from the permanent automatic history in an
+          // offline fallback.
           const playlistSet = new Set(fallbackPlaylist);
            const playlistTracks = filterAutomaticTracks(tracks)
              .filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
-          const fresh = playlistTracks.filter(t => !isOnCooldown(t.name));
-          const cooldown = playlistTracks
-            .filter(t => isOnCooldown(t.name))
-            .sort((a, b) => (songCooldowns[a.name] || 0) - (songCooldowns[b.name] || 0));
-          assigned = [...fisherYatesShuffle(fresh).map(t => t.name), ...cooldown.map(t => t.name)].slice(0, songsPerSet);
+          const fresh = filterUnplayedAutomaticTracks(playlistTracks, songCooldowns);
+          assigned = fisherYatesShuffle(fresh).slice(0, songsPerSet).map(t => t.name);
         } else {
           // No playlist or folders_only mode — random from genre pool is correct
            const genrePool = filterByGenres(filterAutomaticTracks(tracks), activeGenres);
-          const fresh = genrePool.filter(t => !excludeSet.has(t.name) && !isOnCooldown(t.name));
-          const fill = fresh.length > 0 ? fresh : genrePool.filter(t => !excludeSet.has(t.name));
-          assigned = fisherYatesShuffle(fill).slice(0, songsPerSet).map(t => t.name);
+          const fresh = filterUnplayedAutomaticTracks(
+            genrePool.filter(t => !excludeSet.has(t.name)),
+            songCooldowns,
+          );
+          assigned = fisherYatesShuffle(fresh).slice(0, songsPerSet).map(t => t.name);
+        }
+        if (assigned.length === 0 && songsPerSet > 0) {
+          console.warn(`⚠️ RotationPlaylist: no eligible unplayed automatic tracks remain for ${dancer.name}`);
         }
         newAssignments[dancerId] = assigned;
         assigned.forEach(n => batchExcludes.push(n));
@@ -621,7 +662,7 @@ export default function RotationPlaylistManager({
         });
       }
     })();
-  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongsKey, djOptions, remoteMode]);
+  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongsKey, djOptions, remoteMode, songCooldownsReady]);
 
   // The kiosk is authoritative about which one-shot DJ overrides are still
   // pending. Once a saved set starts, it disappears from that ledger; remove
@@ -670,6 +711,7 @@ export default function RotationPlaylistManager({
   const prevSongsPerSetRef = useRef(songsPerSet);
   useEffect(() => {
     if (remoteMode) return;
+    if (!songCooldownsReady) return;
     if (prevSongsPerSetRef.current === songsPerSet) return;
     prevSongsPerSetRef.current = songsPerSet;
 
@@ -732,7 +774,11 @@ export default function RotationPlaylistManager({
           });
           if (res.ok) {
             const data = await res.json();
-            const selected = (data.tracks || []).map(t => t.name);
+            const selected = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)
+              .map(t => t.name);
+            if (selected.length === 0) {
+              console.warn(`⚠️ songsPerSet grow: automatic selection exhausted for ${dancer.name}`);
+            }
             additions[dancerId] = selected;
             selected.forEach(n => allUsed.add(n));
             continue;
@@ -742,24 +788,25 @@ export default function RotationPlaylistManager({
         }
 
         // Local fallback — playlist-strict, NEVER random library when dancer has a playlist
-        const fallbackPlaylist = dancer?.playlist || [];
+          const fallbackPlaylist = dancer?.playlist || [];
         let fillNames = [];
         if (!isFoldersOnly && fallbackPlaylist.length > 0) {
-          const fallbackNow = Date.now();
-          const isOnCooldown = (name) => !!(songCooldowns[name] && (fallbackNow - songCooldowns[name]) < FOUR_HOURS_MS);
           const playlistSet = new Set(fallbackPlaylist);
            const playlistTracks = filterAutomaticTracks(tracks)
              .filter(t => playlistSet.has(t.name) && !allUsed.has(t.name));
-          const fresh = playlistTracks.filter(t => !isOnCooldown(t.name));
-          const cooldown = playlistTracks
-            .filter(t => isOnCooldown(t.name))
-            .sort((a, b) => (songCooldowns[a.name] || 0) - (songCooldowns[b.name] || 0));
-          fillNames = [...fisherYatesShuffle(fresh).map(t => t.name), ...cooldown.map(t => t.name)].slice(0, needed);
+          const fresh = filterUnplayedAutomaticTracks(playlistTracks, songCooldowns);
+          fillNames = fisherYatesShuffle(fresh).slice(0, needed).map(t => t.name);
         } else {
           // folders_only or no playlist — random from genre pool is correct
            const genrePool = filterByGenres(filterAutomaticTracks(tracks), activeGenres);
-          const available = genrePool.filter(t => !allUsed.has(t.name));
+          const available = filterUnplayedAutomaticTracks(
+            genrePool.filter(t => !allUsed.has(t.name)),
+            songCooldowns,
+          );
           fillNames = fisherYatesShuffle(available).slice(0, needed).map(t => t.name);
+        }
+        if (fillNames.length === 0) {
+          console.warn(`⚠️ RotationPlaylist: no eligible unplayed tracks remain while growing ${dancer.name}'s set`);
         }
         additions[dancerId] = fillNames;
         fillNames.forEach(n => allUsed.add(n));
@@ -780,7 +827,7 @@ export default function RotationPlaylistManager({
         });
       }
     })();
-  }, [songsPerSet, tracks, dancers, djOptions, remoteMode]);
+  }, [songsPerSet, tracks, dancers, djOptions, remoteMode, songCooldownsReady]);
 
   const getAuthHeaders = useCallback(() => {
     const token = localStorage.getItem('djbooth_token');
@@ -912,15 +959,16 @@ export default function RotationPlaylistManager({
       const breakKey = destination.droppableId.replace('break-', '');
       const trackName = resolveTrackName();
       if (!trackName) return;
-      setInterstitialSongs(prev => {
-        const current = [...(prev[breakKey] || [])];
-        if (current.includes(trackName)) {
-          toast.error('Already in this slot');
-          return prev;
-        }
-        current.splice(destination.index, 0, trackName);
-        return { ...prev, [breakKey]: current };
-      });
+      const current = [...(interstitialSongsRef.current[breakKey] || [])];
+      if (current.includes(trackName)) {
+        toast.error('Already in this slot');
+        return;
+      }
+      current.splice(destination.index, 0, trackName);
+      publishInterstitialSongs({
+        ...interstitialSongsRef.current,
+        [breakKey]: current,
+      }, breakKey);
       return;
     }
 
@@ -935,12 +983,14 @@ export default function RotationPlaylistManager({
 
     if (source.droppableId === destination.droppableId && source.droppableId.startsWith('break-')) {
       const breakKey = source.droppableId.replace('break-', '');
-      setInterstitialSongs(prev => {
-        const current = [...(prev[breakKey] || [])];
-        const [removed] = current.splice(source.index, 1);
-        current.splice(destination.index, 0, removed);
-        return { ...prev, [breakKey]: current };
-      });
+      const current = [...(interstitialSongsRef.current[breakKey] || [])];
+      const [removed] = current.splice(source.index, 1);
+      if (!removed) return;
+      current.splice(destination.index, 0, removed);
+      publishInterstitialSongs({
+        ...interstitialSongsRef.current,
+        [breakKey]: current,
+      }, breakKey);
       return;
     }
 
@@ -1005,13 +1055,14 @@ export default function RotationPlaylistManager({
             count: 1,
             excludeNames: [...new Set(allAssigned)],
             genres: activeGenres,
-            dancerPlaylist
+            dancerPlaylist,
+            automatic: true,
           }),
           signal: AbortSignal.timeout(5000)
         });
         if (res.ok) {
           const data = await res.json();
-          const newTrack = data.tracks?.[0];
+          const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
           if (newTrack) {
             const current = [...(songAssignmentsRef.current[dancerId] || [])];
             current[songIndex] = newTrack.name;
@@ -1025,15 +1076,12 @@ export default function RotationPlaylistManager({
       }
 
       const excludeSet = new Set(allAssigned);
-      const rerollNow = Date.now();
-      const notOnCooldown = (name) => !(songCooldowns[name] && (rerollNow - songCooldowns[name]) < FOUR_HOURS_MS);
       const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
       const playlistSet = new Set(dancerPlaylist);
       const candidatePool = dancerPlaylist.length > 0
         ? allTracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name))
         : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
-      const freshPool = candidatePool.filter(t => notOnCooldown(t.name));
-      const available = freshPool.length > 0 ? freshPool : candidatePool;
+      const available = filterUnplayedAutomaticTracks(candidatePool, songCooldowns);
       if (available.length > 0) {
         const pick = available[Math.floor(Math.random() * available.length)];
         const current = [...(songAssignmentsRef.current[dancerId] || [])];
@@ -1041,6 +1089,7 @@ export default function RotationPlaylistManager({
         publishManualAssignment(dancerId, current);
         toast.success(`Re-rolled: ${pick.name.replace(/\.[^.]+$/, '')}`);
       } else {
+        console.warn(`⚠️ RotationPlaylist: automatic re-roll exhausted for ${dancer?.name || dancerId}`);
         toast.error('No other songs available to pick from');
       }
     } finally {
@@ -1060,27 +1109,40 @@ export default function RotationPlaylistManager({
     const updated = { ...songAssignments };
     delete updated[dancerId];
     setSongAssignments(updated);
-    setInterstitialSongs(prev => {
-      const cleaned = { ...prev };
-      delete cleaned[`after-${dancerId}`];
-      return cleaned;
-    });
+    const cleaned = { ...interstitialSongsRef.current };
+    delete cleaned[`after-${dancerId}`];
+    publishInterstitialSongs(cleaned);
     onRemoveFromRotation?.(dancerId);
   };
 
   const addInterstitialSong = useCallback((breakKey, trackName) => {
-    setInterstitialSongs(prev => {
-      const current = [...(prev[breakKey] || [])];
-      if (current.includes(trackName)) {
-        toast.error('Song already in break slot');
-        return prev;
-      }
-      current.push(trackName);
-      return { ...prev, [breakKey]: current };
-    });
-  }, []);
+    const current = [...(interstitialSongsRef.current[breakKey] || [])];
+    if (current.includes(trackName)) {
+      toast.error('Song already in break slot');
+      return;
+    }
+    current.push(trackName);
+    publishInterstitialSongs({
+      ...interstitialSongsRef.current,
+      [breakKey]: current,
+    }, breakKey);
+  }, [publishInterstitialSongs]);
 
   const handleLibraryTrackClick = useCallback((trackName) => {
+    if (breakReplacement) {
+      const { breakKey, songIndex } = breakReplacement;
+      const current = [...(interstitialSongsRef.current[breakKey] || [])];
+      if (current.includes(trackName)) {
+        toast.error('Song already in break slot');
+        return;
+      }
+      if (songIndex >= 0 && songIndex < current.length) {
+        current[songIndex] = trackName;
+        publishInterstitialSongs({ ...interstitialSongsRef.current, [breakKey]: current }, breakKey);
+      }
+      setBreakReplacement(null);
+      return;
+    }
     if (selectedBreakKey) {
       addInterstitialSong(selectedBreakKey, trackName);
       return;
@@ -1091,20 +1153,22 @@ export default function RotationPlaylistManager({
       return;
     }
     addSongToDancer(targetId, trackName);
-  }, [selectedBreakKey, selectedDancerId, rotationDancers, addSongToDancer, addInterstitialSong]);
+  }, [breakReplacement, selectedBreakKey, selectedDancerId, rotationDancers, addSongToDancer, addInterstitialSong, publishInterstitialSongs]);
 
   const removeInterstitialSong = useCallback((breakKey, songIndex) => {
-    setInterstitialSongs(prev => {
-      const current = [...(prev[breakKey] || [])];
-      current.splice(songIndex, 1);
-      const updated = { ...prev };
-      if (current.length === 0) {
-        delete updated[breakKey];
-      } else {
-        updated[breakKey] = current;
-      }
-      return updated;
-    });
+    const current = [...(interstitialSongsRef.current[breakKey] || [])];
+    current.splice(songIndex, 1);
+    const updated = { ...interstitialSongsRef.current };
+    if (current.length === 0) delete updated[breakKey];
+    else updated[breakKey] = current;
+    publishInterstitialSongs(updated, breakKey);
+  }, [publishInterstitialSongs]);
+
+  const replaceInterstitialSong = useCallback((breakKey, songIndex) => {
+    setBreakReplacement({ breakKey, songIndex });
+    setSelectedBreakKey(null);
+    setSelectedDancerId(null);
+    toast('Tap a library song to replace this break song', { icon: '🎵' });
   }, []);
 
   const moveActiveBreakSong = useCallback((upcomingIdx, direction) => {
@@ -1160,7 +1224,13 @@ export default function RotationPlaylistManager({
 
     saveGuardRef.current = Date.now() + 30000;
     try {
-      await onSaveAll?.(localRotation, playlists, finalInterstitials, manualOverrides);
+      await onSaveAll?.(
+        localRotation,
+        playlists,
+        finalInterstitials,
+        manualOverrides,
+        manualInterstitialBreaksRef.current || {},
+      );
       manualOverrides.forEach(id => dirtyOverridesRef.current.delete(String(id)));
       toast.success('Rotation & playlists saved');
     } catch (error) {
@@ -1276,7 +1346,7 @@ export default function RotationPlaylistManager({
                   playlistSongs.map((songName, idx) => (
                     <Draggable key={`playlist-${idx}-${songName}`} draggableId={`playlist-${idx}-${songName}`} index={idx}>
                       {(provided, snapshot) => {
-                        const onCool = !!(songCooldowns[songName] && (Date.now() - songCooldowns[songName]) < FOUR_HOURS_MS);
+                        const onCool = Object.prototype.hasOwnProperty.call(songCooldowns, songName);
                         return (
                     <div
                       ref={provided.innerRef}
@@ -1327,11 +1397,11 @@ export default function RotationPlaylistManager({
                           } cursor-grab active:cursor-grabbing cursor-pointer`}
                           onClick={() => handleLibraryTrackClick(track.name)}
                         >
-                          {(() => { const onCool = !!(songCooldowns[track.name] && (Date.now() - songCooldowns[track.name]) < FOUR_HOURS_MS); return (
+                          {(() => { const onCool = Object.prototype.hasOwnProperty.call(songCooldowns, track.name); return (
                           <Music2 className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-gray-500'}`} />
                           ); })()}
                           <div className="flex-1 min-w-0">
-                            {(() => { const onCool = !!(songCooldowns[track.name] && (Date.now() - songCooldowns[track.name]) < FOUR_HOURS_MS); return (
+                            {(() => { const onCool = Object.prototype.hasOwnProperty.call(songCooldowns, track.name); return (
                             <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{track.name}</span>
                             ); })()}
                             {!activeGenre && (track.genre || (track.path && track.path.includes('/'))) && (
@@ -1787,9 +1857,9 @@ export default function RotationPlaylistManager({
                                                 ) : canReroll ? (
                                                   <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
                                                 ) : (
-                                                   <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && normalizedSongName && songCooldowns[normalizedSongName] && (Date.now() - songCooldowns[normalizedSongName]) < FOUR_HOURS_MS) ? 'text-orange-400' : 'text-gray-500'}`} />
+                                                   <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && normalizedSongName && Object.prototype.hasOwnProperty.call(songCooldowns, normalizedSongName)) ? 'text-orange-400' : 'text-gray-500'}`} />
                                                 )}
-                                                 <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && normalizedSongName && songCooldowns[normalizedSongName] && (Date.now() - songCooldowns[normalizedSongName]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{displaySongName}</span>
+                                                 <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && normalizedSongName && Object.prototype.hasOwnProperty.call(songCooldowns, normalizedSongName)) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{displaySongName}</span>
                                                 <button
                                                   onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
                                                   className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
@@ -1852,7 +1922,12 @@ export default function RotationPlaylistManager({
                                 {breakSongs.length > 0 ? (
                                   <div className="space-y-1 pt-1">
                                     {breakSongs.map((songName, songIdx) => (
-                                      <Draggable key={`breakitem-${breakKey}-${songIdx}`} draggableId={`breakitem-${breakKey}-${songIdx}-${songName}`} index={songIdx}>
+                                      <Draggable
+                                        key={`breakitem-${breakKey}-${songIdx}`}
+                                        draggableId={`breakitem-${breakKey}-${songIdx}-${songName}`}
+                                        index={songIdx}
+                                        isDragDisabled={activeBreakInfo?.breakKey === breakKey}
+                                      >
                                         {(itemProv, itemSnap) => (
                                           <div
                                             ref={itemProv.innerRef}
@@ -1862,10 +1937,21 @@ export default function RotationPlaylistManager({
                                           >
                                             <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
                                             <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                                            <span className="text-sm truncate flex-1 text-violet-300">{songName}</span>
+                                             <button
+                                               type="button"
+                                               onClick={(e) => {
+                                                 e.stopPropagation();
+                                                 replaceInterstitialSong(breakKey, songIdx);
+                                               }}
+                                               className="text-sm truncate flex-1 text-left text-violet-300 hover:text-[#00d4ff]"
+                                               title="Replace this break song from the music library"
+                                             >
+                                               {songName}
+                                             </button>
                                             <button
+                                               disabled={activeBreakInfo?.breakKey === breakKey && activeBreakInfo.currentIndex === songIdx}
                                               onClick={(e) => { e.stopPropagation(); removeInterstitialSong(breakKey, songIdx); }}
-                                              className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                               className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
                                             >
                                               <X className="w-5 h-5" />
                                             </button>

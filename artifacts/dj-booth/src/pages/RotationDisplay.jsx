@@ -244,7 +244,10 @@ export default function RotationDisplay() {
 
   const isBreak = displayData?.breakSongIndex != null && displayData?.isRotationActive;
   const breakSongIndex = displayData?.breakSongIndex ?? null;
-  const breakSongTotal = displayData?.breakSongsPerSet ?? 0;
+  // A DJ-edited one-shot queue is intentionally allowed to be longer (or
+  // shorter, including zero) than the automatic break default. The kiosk
+  // publishes the actual queue length while it is live.
+  const breakSongTotal = displayData?.breakSongTotal ?? displayData?.breakSongsPerSet ?? 0;
 
   const startOffset = isBreak ? 0 : 1;
   const nextDancers = [];

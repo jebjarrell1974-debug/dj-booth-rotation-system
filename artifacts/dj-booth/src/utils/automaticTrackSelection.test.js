@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   AUTOMATIC_SELECTION_EXCLUDED_GENRES,
   filterAutomaticTracks,
+  filterUnplayedAutomaticTracks,
   isAutomaticSelectionExcluded,
 } from './automaticTrackSelection.js';
 
@@ -31,4 +32,26 @@ test('manual/library track metadata remains available to callers', () => {
   assert.equal(isAutomaticSelectionExcluded(promoBed), true);
   assert.equal(manualSelection[0], promoBed);
   assert.deepEqual(automaticPool, [{ name: 'song.mp3', genre: 'House' }]);
+});
+
+test('automatic fallback treats expired cooldown entries as permanently played', () => {
+  const tracks = [
+    { name: 'old-play.mp3', genre: 'House' },
+    { name: 'never-played.mp3', genre: 'House' },
+  ];
+  assert.deepEqual(
+    filterUnplayedAutomaticTracks(tracks, { 'old-play.mp3': 1 }),
+    [tracks[1]],
+  );
+});
+
+test('automatic fallback returns an empty pool instead of recycling exhausted tracks', () => {
+  const tracks = [
+    { name: 'one.mp3', genre: 'House' },
+    { name: 'two.mp3', genre: 'House' },
+  ];
+  assert.deepEqual(
+    filterUnplayedAutomaticTracks(tracks, new Set(['one.mp3', 'two.mp3'])),
+    [],
+  );
 });
