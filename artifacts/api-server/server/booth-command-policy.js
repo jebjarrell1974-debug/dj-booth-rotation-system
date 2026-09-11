@@ -12,6 +12,7 @@ export const NORMAL_REMOTE_COMMANDS = new Set([
   'setBeatMatch', 'setMusicEq',
   'playLibraryTrack',
   'resetDancerVoiceovers',
+  'acquireDuck', 'renewDuck', 'releaseDuck',
 ]);
 
 const STRUCTURAL_COMMANDS = new Set([
@@ -91,6 +92,14 @@ export function validateBoothCommand(action, payload = {}) {
       break;
     case 'setVoiceGain':
       if (!isFiniteNumber(payload.gain, 0.5, 1.2)) return invalid('gain must be a number from 0.5 to 1.2');
+      break;
+    case 'acquireDuck':
+    case 'renewDuck':
+    case 'releaseDuck':
+      if (!isString(payload.leaseId, 128)) return invalid('leaseId is required');
+      if (payload.leaseMs != null && !isFiniteNumber(payload.leaseMs, 1000, 10_000)) {
+        return invalid('leaseMs must be between 1000 and 10000 milliseconds');
+      }
       break;
     case 'setBeatMatch':
       if (typeof payload.enabled !== 'boolean') return invalid('enabled must be boolean');

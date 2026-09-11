@@ -1,4 +1,9 @@
 import React, { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
+import {
+  createDuckOwnerStore,
+  VOICE_DUCK_GAIN,
+  DUCK_LEASE_MS,
+} from '@/utils/ducking';
 
 const MAX_SONG_DURATION = 190;
 const MAX_FEATURE_DURATION = 3600;
@@ -7,9 +12,9 @@ const CROSSFADE_DURATION = 5;
 const SAFETY_FADE_SECONDS = 5;
 const MICRO_CROSSFADE_DURATION = 1.2;
 
-const DUCK_LEVEL = 0.18;
 const DUCK_ATTACK_MS = 200;
 const DUCK_RELEASE_MS = 600;
+const VOICE_DUCK_OWNER = 'voiceover';
 
 const NEAR_END_SECONDS = 3;
 
@@ -59,7 +64,16 @@ const AudioEngine = forwardRef(({
   const activeDeck = useRef('A');
   const masterVolume = useRef(0.8);
   const isPlayingRef = useRef(false);
-  const isDucked = useRef(false);
+  const applyDuckGainRef = useRef(() => {});
+  const duckOwnersRef = useRef(null);
+  if (!duckOwnersRef.current) {
+    duckOwnersRef.current = createDuckOwnerStore({
+      onChange: change => applyDuckGainRef.current(change),
+    });
+  }
+  useEffect(() => () => {
+    duckOwnersRef.current?.clear();
+  }, []);
   const crossfadeInProgressRef = useRef(false);
   const playTrackLockRef = useRef(null);
 
@@ -773,26 +787,64 @@ const AudioEngine = forwardRef(({
     }
   }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource, analyzeTrackLoudness]);
 
-  const duck = useCallback(() => {
+  const applyDuckGain = useCallback((change = {}) => {
     const ctx = ensureAudioContext();
-    isDucked.current = true;
     const busGain = musicBusGainRef.current;
     if (!busGain) return;
+    const target = duckOwnersRef.current.getTargetGain(1.0);
+    const current = Math.max(busGain.gain.value, 0.001);
     busGain.gain.cancelScheduledValues(ctx.currentTime);
-    busGain.gain.setValueAtTime(busGain.gain.value, ctx.currentTime);
-    busGain.gain.exponentialRampToValueAtTime(Math.max(DUCK_LEVEL, 0.001), ctx.currentTime + DUCK_ATTACK_MS / 1000);
+    busGain.gain.setValueAtTime(current, ctx.currentTime);
+    if (Math.abs(target - current) < 0.0001) return;
+    if (change.immediate) {
+      busGain.gain.setValueAtTime(target, ctx.currentTime);
+      return;
+    }
+    const durationMs = target < current
+      ? (change.attackMs ?? DUCK_ATTACK_MS)
+      : (change.releaseMs ?? DUCK_RELEASE_MS);
+    busGain.gain.exponentialRampToValueAtTime(
+      Math.max(target, 0.001),
+      ctx.currentTime + Math.max(0, durationMs) / 1000,
+    );
+  }, [ensureAudioContext]);
+  applyDuckGainRef.current = applyDuckGain;
+
+  // The voice element is a single shared voiceover owner. Manual and remote
+  // owners live beside it in the registry, so releasing either one cannot
+  // cancel the other.
+  const duck = useCallback(() => {
+    ensureAudioContext();
+    duckOwnersRef.current.acquire(VOICE_DUCK_OWNER, {
+      gain: VOICE_DUCK_GAIN,
+      attackMs: DUCK_ATTACK_MS,
+    });
+    return VOICE_DUCK_OWNER;
   }, [ensureAudioContext]);
 
   const unduck = useCallback(() => {
-    if (!isDucked.current) return;
-    const ctx = ensureAudioContext();
-    isDucked.current = false;
-    const busGain = musicBusGainRef.current;
-    if (!busGain) return;
-    busGain.gain.cancelScheduledValues(ctx.currentTime);
-    busGain.gain.setValueAtTime(busGain.gain.value, ctx.currentTime);
-    busGain.gain.exponentialRampToValueAtTime(1.0, ctx.currentTime + DUCK_RELEASE_MS / 1000);
+    duckOwnersRef.current.release(VOICE_DUCK_OWNER);
+  }, []);
+
+  const acquireDuck = useCallback((ownerId, {
+    gain = VOICE_DUCK_GAIN,
+    leaseMs = null,
+    immediate = true,
+  } = {}) => {
+    ensureAudioContext();
+    const id = duckOwnersRef.current.acquire(ownerId, { gain, leaseMs, immediate });
+    // The store callback carries the transition metadata. Keeping this
+    // explicit return value lets remote leases renew/release by owner key.
+    return id;
   }, [ensureAudioContext]);
+
+  const renewDuck = useCallback((ownerId, { leaseMs = DUCK_LEASE_MS } = {}) => (
+    duckOwnersRef.current.renew(ownerId, { leaseMs })
+  ), []);
+
+  const releaseDuck = useCallback((ownerId, options = {}) => (
+    duckOwnersRef.current.release(ownerId, options)
+  ), []);
 
   const playAnnouncement = useCallback(async (audioUrl, { autoDuck = true, onNearEnd = null, waitForEnd = true } = {}) => {
     return new Promise(async (resolve, reject) => {
@@ -970,7 +1022,7 @@ const AudioEngine = forwardRef(({
       voice.onerror = null;
       voice.ontimeupdate = null;
     }
-    if (isDucked.current) unduck();
+    unduck();
   }, [unduck]);
 
   const setVoiceEq = useCallback((band, value) => {
@@ -993,6 +1045,9 @@ const AudioEngine = forwardRef(({
     resume,
     duck,
     unduck,
+    acquireDuck,
+    renewDuck,
+    releaseDuck,
     playAnnouncement,
     stopVoice,
     setVolume,

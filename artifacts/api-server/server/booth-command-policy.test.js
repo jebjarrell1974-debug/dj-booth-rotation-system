@@ -91,6 +91,14 @@ test('zero-valued booth state survives normalization', () => {
   assert.equal(state.updatedAt, 1234);
 });
 
+test('duck lease commands accept scoped lease IDs and reject malformed leases', () => {
+  assert.equal(validateBoothCommand('acquireDuck', { leaseId: 'session-a', leaseMs: 3000 }).ok, true);
+  assert.equal(validateBoothCommand('renewDuck', { leaseId: 'session-a' }).ok, true);
+  assert.equal(validateBoothCommand('releaseDuck', { leaseId: 'session-a' }).ok, true);
+  assert.equal(validateBoothCommand('releaseDuck', { leaseId: '' }).ok, false);
+  assert.equal(validateBoothCommand('renewDuck', { leaseId: 'session-a', leaseMs: 100 }).ok, false);
+});
+
 test('kiosk locality uses the socket peer rather than forwarded headers', () => {
   const selfIps = new Set(['127.0.0.1', '192.168.1.50']);
   assert.equal(isPhysicalKioskAddress('::ffff:127.0.0.1', selfIps), true);

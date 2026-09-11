@@ -32,6 +32,7 @@ import {
   Star
 } from 'lucide-react';
 import AudioEngine from '@/components/dj/AudioEngine';
+import PressAndHoldDuckButton from '@/components/dj/PressAndHoldDuckButton';
 import MusicLibrary from '@/components/dj/MusicLibrary';
 import { isRemoteMode, isPhoneRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
 import {
@@ -73,6 +74,13 @@ import {
   remoteSkipPayload,
   songNumberAfterPlayback,
 } from '@/utils/skipPlayback';
+import {
+  DUCK_COMMAND_TIMEOUT_MS,
+  DUCK_HEARTBEAT_MS,
+  DUCK_LEASE_MS,
+  VOICE_DUCK_GAIN,
+} from '@/utils/ducking';
+import { createRemoteDuckLease } from '@/utils/duckLease';
 
 const DEFAULT_SONGS_PER_SET = 2;
 // Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
@@ -804,6 +812,57 @@ export default function DJBooth() {
       ...options,
     } : options);
   }, [liveBoothState]);
+  const localDuckOwnerRef = useRef(null);
+  const acquireLocalDuck = useCallback(() => {
+    if (remoteMode || !audioEngineRef.current?.acquireDuck) return;
+    const ownerId = localDuckOwnerRef.current || (
+      `manual:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`
+    );
+    localDuckOwnerRef.current = ownerId;
+    audioEngineRef.current.acquireDuck(ownerId, {
+      gain: VOICE_DUCK_GAIN,
+      immediate: true,
+    });
+  }, [remoteMode]);
+  const releaseLocalDuck = useCallback(() => {
+    const ownerId = localDuckOwnerRef.current;
+    localDuckOwnerRef.current = null;
+    if (ownerId) audioEngineRef.current?.releaseDuck?.(ownerId, { immediate: true });
+  }, []);
+  const remoteDuckSendRef = useRef(null);
+  const remoteDuckLeaseRef = useRef(null);
+  remoteDuckSendRef.current = (action, payload, options) => sendBoothCommand(action, payload, options);
+  if (!remoteDuckLeaseRef.current) {
+    remoteDuckLeaseRef.current = createRemoteDuckLease({
+      send: (action, payload, options) => remoteDuckSendRef.current?.(action, payload, options),
+      leaseMs: DUCK_LEASE_MS,
+      heartbeatMs: DUCK_HEARTBEAT_MS,
+      commandTimeoutMs: DUCK_COMMAND_TIMEOUT_MS,
+      onError: () => remoteDuckLeaseRef.current?.stop('command-error'),
+    });
+  }
+  const acquireRemoteDuck = useCallback(
+    () => remoteDuckLeaseRef.current?.start(),
+    [],
+  );
+  const releaseRemoteDuck = useCallback(
+    reason => remoteDuckLeaseRef.current?.stop(reason),
+    [],
+  );
+  useEffect(() => () => {
+    releaseLocalDuck();
+    remoteDuckLeaseRef.current?.stop('unmount');
+  }, [releaseLocalDuck]);
+  useEffect(() => {
+    if (!remoteMode) return undefined;
+    const timer = setInterval(() => {
+      const updatedAt = liveBoothState?.updatedAt || 0;
+      if (!updatedAt || Date.now() - updatedAt > 10_000) {
+        remoteDuckLeaseRef.current?.stop('connection-stale');
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [remoteMode, liveBoothState?.updatedAt]);
   const sseRef = useRef(null);
   const hydratedRotationVersionRef = useRef(-1);
 
@@ -1338,6 +1397,32 @@ export default function DJBooth() {
             await audioEngineRef.current.setVolume(vol);
           }
           break;
+        case 'acquireDuck':
+        case 'renewDuck':
+        case 'releaseDuck': {
+          if (!audioEngineRef.current) throw new Error('Ducking executor is unavailable');
+          const leaseId = String(cmd.payload.leaseId || '').trim();
+          const ownerId = `remote:${cmd.actor || 'unknown'}:${leaseId}`;
+          const leaseMs = Math.min(
+            DUCK_LEASE_MS,
+            Math.max(1000, Number(cmd.payload.leaseMs) || DUCK_LEASE_MS),
+          );
+          if (cmd.action === 'acquireDuck') {
+            if (!audioEngineRef.current.acquireDuck) throw new Error('Ducking acquire executor is unavailable');
+            await audioEngineRef.current.acquireDuck(ownerId, {
+              gain: VOICE_DUCK_GAIN,
+              leaseMs,
+              immediate: true,
+            });
+          } else if (cmd.action === 'renewDuck') {
+            if (!audioEngineRef.current.renewDuck) throw new Error('Ducking renew executor is unavailable');
+            await audioEngineRef.current.renewDuck(ownerId, { leaseMs });
+          } else {
+            if (!audioEngineRef.current.releaseDuck) throw new Error('Ducking release executor is unavailable');
+            await audioEngineRef.current.releaseDuck(ownerId, { immediate: true });
+          }
+          break;
+        }
         case 'setVoiceGain':
           if (cmd.payload.gain != null) {
             const g = Math.max(0.5, Math.min(1.2, Math.round(cmd.payload.gain * 20) / 20));
@@ -6274,6 +6359,12 @@ export default function DJBooth() {
                   >
                     {liveBoothState?.announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                   </Button>
+                  <PressAndHoldDuckButton
+                    label="AUTO DUCK"
+                    onPress={acquireRemoteDuck}
+                    onRelease={releaseRemoteDuck}
+                    disabled={!liveBoothState?.updatedAt}
+                  />
                   <Button
                     size="sm"
                     variant="ghost"
@@ -6363,6 +6454,11 @@ export default function DJBooth() {
                   </Button>
                   
                   <div className="flex-1 flex items-center gap-1.5 justify-end">
+                     <PressAndHoldDuckButton
+                        label="AUTO DUCK"
+                       onPress={acquireLocalDuck}
+                       onRelease={releaseLocalDuck}
+                     />
                     <Volume2 className="w-4 h-4 text-gray-500" />
                     <button
                       onClick={() => {

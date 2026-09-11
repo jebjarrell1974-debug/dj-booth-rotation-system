@@ -1852,7 +1852,11 @@ app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
       nowPlayingGuard,
       expectedRotation: isStructuralCommand(action) ? [...(liveBoothState.rotation || [])] : undefined,
       expectedWorkspace: isStructuralCommand(action) ? boothWorkspaceSnapshot(liveBoothState) : undefined,
-      ttlMs: ['playHouseAnnouncement', 'playFeatureAudio'].includes(action) ? 180_000 : undefined,
+      ttlMs: ['playHouseAnnouncement', 'playFeatureAudio'].includes(action)
+        ? 180_000
+        : ['acquireDuck', 'renewDuck', 'releaseDuck'].includes(action)
+          ? 2_500
+          : undefined,
     });
   } catch (error) {
     if (error?.code === 'BOOTH_COMMAND_QUEUE_FULL') {

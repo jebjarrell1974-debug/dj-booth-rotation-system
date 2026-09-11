@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { boothApi, djOptionsApi, musicApi } from '@/api/serverApi';
+import PressAndHoldDuckButton from '@/components/dj/PressAndHoldDuckButton';
+import { createRemoteDuckLease } from '@/utils/duckLease';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { capSongAssignments, capSongList } from '@/utils/rotationAssignments';
 import { remoteSkipPayload } from '@/utils/skipPlayback';
@@ -130,6 +132,28 @@ export default function RemoteView({
       return null;
     }
   }, [isConnected, liveBoothState?.rotationVersion]);
+  const remoteDuckLeaseRef = useRef(null);
+  const remoteDuckSendRef = useRef(null);
+  remoteDuckSendRef.current = (action, payload, options) => (
+    sendRemoteCommand(action, payload, options).then(result => {
+      if (!result) throw new Error('The kiosk did not accept the duck command');
+      return result;
+    })
+  );
+  if (!remoteDuckLeaseRef.current) {
+    remoteDuckLeaseRef.current = createRemoteDuckLease({
+      send: (action, payload, options) => remoteDuckSendRef.current?.(action, payload, options),
+      onError: () => remoteDuckLeaseRef.current?.stop('command-error'),
+    });
+  }
+  useEffect(() => () => {
+    remoteDuckLeaseRef.current?.stop('unmount');
+  }, []);
+  useEffect(() => {
+    if (isConnected) return undefined;
+    remoteDuckLeaseRef.current?.stop('connection-stale');
+    return undefined;
+  }, [isConnected]);
 
   const openDeactivate = () => {
     if (!currentTrack || !isConnected) return;
@@ -436,6 +460,12 @@ export default function RemoteView({
                 </button>
 
                 <div className="flex items-center gap-1.5 justify-end hidden xs:flex">
+                  <PressAndHoldDuckButton
+                    label="AUTO DUCK"
+                    onPress={() => remoteDuckLeaseRef.current?.start()}
+                    onRelease={reason => remoteDuckLeaseRef.current?.stop(reason)}
+                    disabled={!boothStateLoaded}
+                  />
                   <Volume2 className="w-4 h-4 text-gray-500" />
                   <button onClick={() => sendRemoteCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })} disabled={!boothStateLoaded || Math.round(currentVolume * 100) <= 0} className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors">
                     <Minus className="w-3.5 h-3.5" />
