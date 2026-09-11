@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { boothApi, djOptionsApi, musicApi } from '@/api/serverApi';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { capSongAssignments, capSongList } from '@/utils/rotationAssignments';
+import { remoteSkipPayload } from '@/utils/skipPlayback';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Shuffle,
@@ -427,7 +428,7 @@ export default function RemoteView({
                 </button>
                 <button
                   disabled={!boothStateLoaded || skipLocked}
-                  onClick={() => sendRemoteCommand('skip')}
+                  onClick={() => sendRemoteCommand('skip', remoteSkipPayload(false))}
                   title={skipLocked ? 'Skip is locked during announcements and the final 10 seconds' : 'Skip'}
                   className="w-7 h-7 rounded-md text-white hover:bg-[#1e293b] flex items-center justify-center disabled:opacity-30 transition-colors"
                 >

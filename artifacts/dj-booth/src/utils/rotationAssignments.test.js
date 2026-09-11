@@ -98,6 +98,20 @@ test('growing a set adds exactly the missing number and preserves DJ picks', () 
   ]);
 });
 
+test('fills short name-only and legacy-shaped queues without duplicate additions', () => {
+  const existing = ['picked-one.mp3', { file_name: 'picked-two.mp3' }];
+  const candidates = [
+    { name: 'picked-two.mp3' },
+    { name: 'new-three.mp3' },
+  ];
+
+  assert.deepEqual(fillSongListToLimit(existing, candidates, 3), [
+    'picked-one.mp3',
+    { file_name: 'picked-two.mp3' },
+    { name: 'new-three.mp3' },
+  ]);
+});
+
 test('a late async result is capped against the latest set length at commit time', async () => {
   let currentSetLength = 3;
   let releaseResult;

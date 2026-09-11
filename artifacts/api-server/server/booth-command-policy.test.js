@@ -12,6 +12,9 @@ import {
 } from './booth-command-policy.js';
 
 test('only explicit normal DJ commands validate', () => {
+  assert.equal(validateBoothCommand('skip', {}).ok, true);
+  assert.equal(validateBoothCommand('skip', { skipBreaks: true }).ok, true);
+  assert.equal(validateBoothCommand('skip', { skipBreaks: 'true' }).ok, false);
   assert.equal(validateBoothCommand('setVolume', { volume: 0 }).ok, true);
   assert.equal(validateBoothCommand('deactivateTrack', {}).ok, false);
   assert.equal(validateBoothCommand('deactivateTrack', { trackName: 'Song A.mp3', pin: '12345' }).ok, true);

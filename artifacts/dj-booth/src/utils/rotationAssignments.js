@@ -95,7 +95,7 @@ export function fillSongListToLimit(existingSongs, candidateSongs, songsPerSet) 
   const existing = capSongList(existingSongs, limit);
   if (existing.length >= limit || !Array.isArray(candidateSongs)) return existing;
 
-  const songKey = (song) => typeof song === 'string' ? song : song?.name;
+  const songKey = getSongName;
   const seen = new Set(existing.map(songKey).filter(Boolean));
   const additions = [];
   for (const song of candidateSongs) {

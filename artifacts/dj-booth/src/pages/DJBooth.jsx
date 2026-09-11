@@ -67,6 +67,12 @@ import {
   isAutomaticSelectionExcluded,
 } from '@/utils/automaticTrackSelection';
 import { createCommercialSession } from '@/utils/commercialPlayback';
+import {
+  canCommitAssignmentRefill,
+  planSkipAdvance,
+  remoteSkipPayload,
+  songNumberAfterPlayback,
+} from '@/utils/skipPlayback';
 
 const DEFAULT_SONGS_PER_SET = 2;
 // Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
@@ -1244,7 +1250,12 @@ export default function DJBooth() {
       }
       switch (cmd.action) {
         case 'skip':
-          await requireExecutor(handleSkipRef, 'Skip')();
+          // One command is retained for receipt compatibility; the payload
+          // carries the explicit distinction between a song skip and the
+          // separate whole-set "Next Entertainer" control.
+          await requireExecutor(handleSkipRef, 'Skip')({
+            skipBreaks: cmd.payload?.skipBreaks === true,
+          });
           break;
         case 'startRotation':
           await requireExecutor(beginRotationRef, 'Start rotation')(true);
@@ -1928,9 +1939,25 @@ export default function DJBooth() {
       const raw = localStorage.getItem('djbooth_playback_state');
       if (raw) {
         const s = JSON.parse(raw);
-        if (s.songsPerSet != null) { auditSongsPerSet(songsPerSetRef.current, s.songsPerSet, 'localstorage-mount'); setSongsPerSet(s.songsPerSet); songsPerSetRef.current = s.songsPerSet; }
+        if (s.songsPerSet != null) {
+          const restoredSetSize = normalizeSongsPerSet(s.songsPerSet, songsPerSetRef.current);
+          auditSongsPerSet(songsPerSetRef.current, restoredSetSize, 'localstorage-mount');
+          setSongsPerSet(restoredSetSize);
+          songsPerSetRef.current = restoredSetSize;
+        }
         if (s.breakSongsPerSet != null) { setBreakSongsPerSet(s.breakSongsPerSet); breakSongsPerSetRef.current = s.breakSongsPerSet; }
-        if (s.currentSongNumber != null) { setCurrentSongNumber(s.currentSongNumber); currentSongNumberRef.current = s.currentSongNumber; }
+        if (s.currentSongNumber != null) {
+          const restoredSongNumber = Number.parseInt(s.currentSongNumber, 10);
+          // Older builds used 999 as a hard-skip sentinel. Do not resurrect it
+          // into the soft song-skip state after a watchdog/browser restart.
+          const safeSongNumber = Number.isInteger(restoredSongNumber) &&
+            restoredSongNumber >= 0 &&
+            restoredSongNumber <= songsPerSetRef.current
+            ? restoredSongNumber
+            : 0;
+          setCurrentSongNumber(safeSongNumber);
+          currentSongNumberRef.current = safeSongNumber;
+        }
       }
     } catch (e) {}
     const token = localStorage.getItem('djbooth_token');
@@ -2055,13 +2082,15 @@ export default function DJBooth() {
     }
   }, []);
 
-  const playFallbackTrack = useCallback(async (crossfade = false) => {
+  const playFallbackTrack = useCallback(async (crossfade = false, rotationSongNumber = null) => {
     const updateRotationUI = (track) => {
       if (isRotationActiveRef.current && rotationRef.current.length > 0) {
         const currentDancerId = rotationRef.current[currentDancerIndexRef.current];
         if (currentDancerId) {
           const currentSongs = rotationSongsRef.current[currentDancerId] || [];
-          const songIdx = currentSongNumberRef.current - 1;
+          const songIdx = Number.isInteger(rotationSongNumber)
+            ? rotationSongNumber - 1
+            : currentSongNumberRef.current - 1;
           const updatedSongs = [...currentSongs];
           updatedSongs[songIdx] = track;
           const newRotationSongs = { ...rotationSongsRef.current, [currentDancerId]: updatedSongs };
@@ -2119,7 +2148,7 @@ export default function DJBooth() {
           console.log(`🎵 PlayFallback: Server attempt ${i + 1}/${serverTracks.length} with "${track.name}"`);
           try {
             const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, crossfade);
-            if (success !== false) {
+            if (success === true) {
               recordSongPlayed(track.name);
               setIsPlaying(true);
               updateRotationUI(track);
@@ -2152,7 +2181,7 @@ export default function DJBooth() {
       console.log(`🎵 PlayFallback: Local attempt ${attempt + 1}/${maxAttempts} with "${randomTrack.name}"`);
       try {
         const success = await audioEngineRef.current?.playTrack({ url: randomTrack.url, name: randomTrack.name }, crossfade);
-        if (success !== false) {
+        if (success === true) {
           recordSongPlayed(randomTrack.name);
           setIsPlaying(true);
           updateRotationUI(randomTrack);
@@ -2280,7 +2309,13 @@ export default function DJBooth() {
     return track?.genre?.toUpperCase() === 'FEATURE' || track?.path?.toUpperCase()?.startsWith('FEATURE/');
   }, [tracks]);
 
-  const playTrack = useCallback(async (trackUrl, crossfade = true, trackName = null, trackGenre = null) => {
+  const playTrack = useCallback(async (
+    trackUrl,
+    crossfade = true,
+    trackName = null,
+    trackGenre = null,
+    { allowFallback = true, rotationSongNumber = null } = {},
+  ) => {
     if (!trackUrl) {
       console.error('❌ PlayTrack: No track URL provided');
       return false;
@@ -2325,13 +2360,20 @@ export default function DJBooth() {
         console.log(`📢 Commercial: "${trackName}" has no pre-computed auto_gain — boost skipped (AudioEngine will do its own RMS, no lift applied)`);
       }
     }
-    const success = await audioEngineRef.current.playTrack(trackPayload, crossfade);
-    if (success !== false) {
+    let success;
+    try {
+      success = await audioEngineRef.current.playTrack(trackPayload, crossfade);
+    } catch (error) {
+      console.warn('⚠️ PlayTrack: Engine rejected requested track:', error?.message || error);
+      success = false;
+    }
+    if (success === true) {
       lastAudioActivityRef.current = Date.now();
     }
-    if (success === false) {
+    if (success !== true) {
+      if (!allowFallback) return false;
       console.warn('⚠️ PlayTrack: Engine returned failure, trying fallback');
-      const fallbackOk = await playFallbackTrack(crossfade);
+      const fallbackOk = await playFallbackTrack(crossfade, rotationSongNumber);
       if (!fallbackOk) {
         console.error('🚨 PlayTrack: All recovery failed — resuming whatever is on active deck');
         audioEngineRef.current?.resume();
@@ -3566,9 +3608,12 @@ export default function DJBooth() {
     const bypassLockout = opts && typeof opts === 'object' && opts.bypassLockout === true;
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
-    lastSkipTimeRef.current = now;
-    auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
+    // Commercial playback has its own dedicated skip path. It is not a
+    // rotation track, so the announcement/final-seconds guard below must not
+    // swallow a commercial skip.
     if (playingCommercialRef.current) {
+      lastSkipTimeRef.current = now;
+      auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
       console.log('📺 HandleSkip: Skipping commercial');
       if (commercialSessionRef.current) {
         commercialSessionRef.current.cancel();
@@ -3592,9 +3637,6 @@ export default function DJBooth() {
       if (durG > 0 && remG > 0 && remG <= SKIP_LOCKOUT_SECONDS) {
         console.log(`🔒 HandleSkip: Locked — track ends in ${remG.toFixed(1)}s and an announcement is armed, press ignored`);
         logDiag('skip_locked', { remaining: Math.round(remG * 10) / 10, skipBreaks });
-        // Don't let a rejected locked press consume the 2s debounce — the button must
-        // work on the very first press after the announcement finishes.
-        lastSkipTimeRef.current = 0;
         return;
       }
     }
@@ -3604,6 +3646,12 @@ export default function DJBooth() {
       console.warn('⚠️ HandleSkip: Transition lock stuck for', Math.round(elapsed/1000), 's — forcing clear');
       transitionInProgressRef.current = false;
     }
+
+    // Only accepted rotation skips consume the debounce and write the audit
+    // event. Rejected final-seconds/transition requests above must not mutate
+    // playback state or poison the next legitimate song skip.
+    lastSkipTimeRef.current = now;
+    auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
     
     if (!isRotationActiveRef.current || rotationRef.current.length === 0) {
       if (rotationPendingRef.current) {
@@ -3634,10 +3682,6 @@ export default function DJBooth() {
       return;
     }
 
-    // Tracks whether we cleaned up an interstitial because of a skipBreaks request.
-    // When true, rotation was already flipped at break-start, idx points at the new
-    // top dancer, and songNum should stay at 0 so we play her song 1 + intro on fall-through.
-    let skipBreaksFromInterstitial = false;
     if (playingInterstitialRef.current) {
       const rot = rotationRef.current;
       const idx = currentDancerIndexRef.current;
@@ -3663,7 +3707,6 @@ export default function DJBooth() {
         setInterstitialSongsState(clearedInterstitials);
         setInterstitialRemoteVersion(v => v + 1);
         try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(clearedInterstitials)); } catch {}
-        skipBreaksFromInterstitial = true;
       } else {
         const breakSongs = interstitialSongsRef.current[breakKey] || [];
         const breakIdx = interstitialIndexRef.current;
@@ -3710,15 +3753,6 @@ export default function DJBooth() {
     transitionStartTimeRef.current = Date.now();
     lastAudioActivityRef.current = Date.now();
 
-    // Force end-of-set path for "Next Entertainer" hard-skip when we were NOT just
-    // in an interstitial (rotation hasn't been flipped yet — we need to flip it now).
-    // Done HERE (after all early returns/guards) instead of in the caller so a
-    // debounced/rejected click never leaves a stale 999 sentinel behind.
-    if (skipBreaks && !skipBreaksFromInterstitial) {
-      currentSongNumberRef.current = 999;
-      setCurrentSongNumber(999);
-    }
-
     const idx = currentDancerIndexRef.current;
     const songNum = currentSongNumberRef.current;
     const songs = rotationSongsRef.current;
@@ -3735,16 +3769,34 @@ export default function DJBooth() {
     
     const dancerHasManualAssignment = manualSetDancersRef.current.has(rot[idx])
       || !!djSavedManualRef.current[rot[idx]];
-    let dancerTracks = dancerHasManualAssignment
+    let effectiveManualAssignment = dancerHasManualAssignment;
+    let dancerTracks = effectiveManualAssignment
       ? songs[rot[idx]]
       : filterAutomaticTracks(songs[rot[idx]]);
     if (!dancerTracks || dancerTracks.length === 0) {
       console.log('🎵 HandleSkip: no pre-selected tracks for', dancer.name, ', auto-selecting via getDancerTracks');
+      const initialAssignmentVersion = rotationAssignmentVersionRef.current;
       try {
-        dancerTracks = await getDancerTracks(dancer);
-        if (dancerTracks && dancerTracks.length > 0) {
+        const selectedTracks = await getDancerTracks(dancer);
+        if (canCommitAssignmentRefill(initialAssignmentVersion, rotationAssignmentVersionRef.current)) {
+          dancerTracks = selectedTracks;
           const updatedSongs = { ...rotationSongsRef.current, [rot[idx]]: dancerTracks };
-          commitRotationSongs(updatedSongs);
+          if (dancerTracks && dancerTracks.length > 0) commitRotationSongs(updatedSongs);
+        } else {
+          const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+            || !!djSavedManualRef.current[rot[idx]];
+          effectiveManualAssignment = latestManualAssignment;
+          const latestTracks = latestManualAssignment
+            ? rotationSongsRef.current[rot[idx]]
+            : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+          dancerTracks = Array.isArray(latestTracks)
+            ? latestTracks.filter(track => getSongName(track))
+            : [];
+          logDiag?.('skip_song_initial_pick_stale', {
+            dancer: dancer.name,
+            observedVersion: initialAssignmentVersion,
+            currentVersion: rotationAssignmentVersionRef.current,
+          });
         }
       } catch (err) {
         console.warn('⚠️ HandleSkip: getDancerTracks failed for', dancer.name, ':', err.message);
@@ -3757,29 +3809,118 @@ export default function DJBooth() {
       }
     }
     
-    const dancerSongCountSkip = dancerTracks.length;
+    // A live assignment can lag the configured set length (for example after
+    // a remote workspace save), and compact remote assignments may contain
+    // names rather than hydrated track objects. Never let that short queue
+    // masquerade as an end-of-set: top it up before deciding the skip route.
+    dancerTracks = Array.isArray(dancerTracks)
+      ? dancerTracks.filter(track => getSongName(track))
+      : [];
+    const configuredSetSize = songsPerSetRef.current;
+    if (!skipBreaks && dancerTracks.length < configuredSetSize) {
+      const existingNames = dancerTracks.map(getSongName).filter(Boolean);
+      const refillVersion = rotationAssignmentVersionRef.current;
+      try {
+        const candidates = await getDancerTracks(
+          dancer,
+          [...new Set([...existingNames, currentTrackRef.current].filter(Boolean))],
+          true,
+          5000,
+        );
+        if (!canCommitAssignmentRefill(refillVersion, rotationAssignmentVersionRef.current)) {
+          const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+            || !!djSavedManualRef.current[rot[idx]];
+          effectiveManualAssignment = latestManualAssignment;
+          const latestTracks = latestManualAssignment
+            ? rotationSongsRef.current[rot[idx]]
+            : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+          dancerTracks = Array.isArray(latestTracks)
+            ? latestTracks.filter(track => getSongName(track))
+            : [];
+          logDiag?.('skip_song_queue_refill_stale', {
+            dancer: dancer.name,
+            observedVersion: refillVersion,
+            currentVersion: rotationAssignmentVersionRef.current,
+          });
+        } else {
+          const filledTracks = fillSongListToLimit(
+            dancerTracks,
+            candidates,
+            configuredSetSize,
+          );
+          if (filledTracks.length > dancerTracks.length) {
+            dancerTracks = filledTracks;
+            commitRotationSongs({
+              ...rotationSongsRef.current,
+              [rot[idx]]: filledTracks,
+            });
+            logDiag?.('skip_song_queue_topped_up', {
+              dancer: dancer.name,
+              got: filledTracks.length,
+              need: configuredSetSize,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`⚠️ HandleSkip: queue top-up failed for ${dancer.name}:`, err.message);
+      }
+    }
+
+    const skipAdvance = planSkipAdvance({
+      skipBreaks,
+      currentSongNumber: songNum,
+      songsPerSet: configuredSetSize,
+    });
 
     try {
-      if (songNum < songsPerSetRef.current && songNum < dancerSongCountSkip) {
-        let nextTrack = dancerTracks[songNum];
-        const newSongNum = songNum + 1;
-        currentSongNumberRef.current = newSongNum;
-        setCurrentSongNumber(newSongNum);
+      if (skipAdvance.kind === 'song') {
+        let nextTrack = dancerTracks[skipAdvance.trackIndex];
+        const newSongNum = skipAdvance.songNumber;
         
-        if (nextTrack && !nextTrack.url && nextTrack.name) {
-          let fresh = tracks.find(t => t.name === nextTrack.name && t.url);
-          if (!fresh) fresh = await resolveTrackByName(nextTrack.name);
+        const nextTrackName = getSongName(nextTrack);
+        if (nextTrack && !nextTrack.url && nextTrackName) {
+          const nameResolutionVersion = rotationAssignmentVersionRef.current;
+          const norm = (value) => (value || '').toLowerCase().replace(/\.mp3$/i, '').trim();
+          let fresh = tracks.find(t => t.name === nextTrackName && t.url)
+            || tracks.find(t => norm(t.name) === norm(nextTrackName) && t.url);
+          if (!fresh) fresh = await resolveTrackByName(nextTrackName);
+          if (!fresh?.url) fresh = await resolveTrackByName(nextTrackName.replace(/\.mp3$/i, ''));
           if (fresh) {
-            nextTrack = fresh;
-            dancerTracks[songNum] = fresh;
+            if (canCommitAssignmentRefill(nameResolutionVersion, rotationAssignmentVersionRef.current)) {
+              nextTrack = fresh;
+              dancerTracks[skipAdvance.trackIndex] = fresh;
+              commitRotationSongs({
+                ...rotationSongsRef.current,
+                [rot[idx]]: dancerTracks,
+              });
+            } else {
+              const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+                || !!djSavedManualRef.current[rot[idx]];
+              effectiveManualAssignment = latestManualAssignment;
+              const latestTracks = latestManualAssignment
+                ? rotationSongsRef.current[rot[idx]]
+                : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+              nextTrack = Array.isArray(latestTracks)
+                ? latestTracks[skipAdvance.trackIndex]
+                : null;
+            }
           }
         }
         
         if (!nextTrack || !nextTrack.url) {
-          // Never silently switch to a different song mid-set — that causes display mismatch.
-          // If the pre-assigned track URL is unresolvable, play a brief fallback and keep the rotation intact.
-          console.warn('⚠️ HandleSkip: Track URL unresolvable for index', songNum, '— playing fallback without changing assignment');
-          await playFallbackTrack(false);
+          // Never silently replace a DJ's unresolved/manual pick. Automatic
+          // queues may intentionally fill an empty slot with a fallback.
+          console.warn('⚠️ HandleSkip: Track URL unresolvable for index', skipAdvance.trackIndex, '— playing fallback without changing assignment');
+          if (effectiveManualAssignment) {
+            audioEngineRef.current?.resume();
+            transitionInProgressRef.current = false;
+            return;
+          }
+          const fallbackOk = await playFallbackTrack(false, newSongNum);
+          if (fallbackOk && songNumberAfterPlayback(songNum, newSongNum, true) !== songNum) {
+            currentSongNumberRef.current = newSongNum;
+            setCurrentSongNumber(newSongNum);
+          }
           if (announcementsEnabled) audioEngineRef.current?.unduck();
           transitionInProgressRef.current = false;
           return;
@@ -3794,6 +3935,7 @@ export default function DJBooth() {
           body: JSON.stringify({ rotation_order: rot, current_dancer_index: idx, is_active: true })
         }).catch(() => {});
 
+        let playbackSucceeded = false;
         if (announcementsEnabled) {
           const announcementType = songNum === 0 ? 'intro' : 'round2';
           const announcementPromise = prefetchAnnouncement(announcementType, dancer.name, null, newSongNum);
@@ -3802,22 +3944,44 @@ export default function DJBooth() {
           await playPrefetchedAnnouncement(announcementUrl);
           if (nextTrack?.url) {
             console.log('🎵 HandleSkip: Switching to next track after announcement:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
-            if (!trackOk) {
-              console.warn('⚠️ HandleSkip: playTrack failed, trying fallback');
-              await playFallbackTrack(false);
+            const requestedTrackPlayed = await playTrack(
+              nextTrack.url,
+              false,
+              nextTrack.name,
+              nextTrack.genre,
+              { allowFallback: false, rotationSongNumber: newSongNum },
+            ) === true;
+            playbackSucceeded = requestedTrackPlayed;
+            if (!playbackSucceeded && !effectiveManualAssignment) {
+              playbackSucceeded = await playFallbackTrack(false, newSongNum) === true;
             }
           } else {
-            await playFallbackTrack(false);
+            playbackSucceeded = !effectiveManualAssignment
+              && (await playFallbackTrack(false, newSongNum)) === true;
           }
           audioEngineRef.current?.unduck();
         } else {
           if (nextTrack?.url) {
             console.log('🎵 HandleSkip: Playing next track:', nextTrack.name);
-            await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+            const requestedTrackPlayed = await playTrack(
+              nextTrack.url,
+              true,
+              nextTrack.name,
+              nextTrack.genre,
+              { allowFallback: false, rotationSongNumber: newSongNum },
+            ) === true;
+            playbackSucceeded = requestedTrackPlayed;
+            if (!playbackSucceeded && !effectiveManualAssignment) {
+              playbackSucceeded = await playFallbackTrack(true, newSongNum) === true;
+            }
           } else {
-            await playFallbackTrack(true);
+            playbackSucceeded = !effectiveManualAssignment
+              && (await playFallbackTrack(true, newSongNum)) === true;
           }
+        }
+        if (songNumberAfterPlayback(songNum, newSongNum, playbackSucceeded) !== songNum) {
+          currentSongNumberRef.current = newSongNum;
+          setCurrentSongNumber(newSongNum);
         }
       } else {
         const _finishingFeature = dancer.entertainer_type === 'feature';
@@ -4758,16 +4922,34 @@ export default function DJBooth() {
     
     const dancerHasManualAssignment = manualSetDancersRef.current.has(rot[idx])
       || !!djSavedManualRef.current[rot[idx]];
-    let dancerTracks = dancerHasManualAssignment
+    let effectiveManualAssignment = dancerHasManualAssignment;
+    let dancerTracks = effectiveManualAssignment
       ? songs[rot[idx]]
       : filterAutomaticTracks(songs[rot[idx]]);
     if (!dancerTracks || dancerTracks.length === 0) {
       console.log('🎵 HandleTrackEnd: no pre-selected tracks for', dancer.name, ', auto-selecting via getDancerTracks');
+      const initialAssignmentVersion = rotationAssignmentVersionRef.current;
       try {
-        dancerTracks = await getDancerTracks(dancer);
-        if (dancerTracks && dancerTracks.length > 0) {
+        const selectedTracks = await getDancerTracks(dancer);
+        if (canCommitAssignmentRefill(initialAssignmentVersion, rotationAssignmentVersionRef.current)) {
+          dancerTracks = selectedTracks;
           const updatedSongs = { ...rotationSongsRef.current, [rot[idx]]: dancerTracks };
-          commitRotationSongs(updatedSongs);
+          if (dancerTracks && dancerTracks.length > 0) commitRotationSongs(updatedSongs);
+        } else {
+          const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+            || !!djSavedManualRef.current[rot[idx]];
+          effectiveManualAssignment = latestManualAssignment;
+          const latestTracks = latestManualAssignment
+            ? rotationSongsRef.current[rot[idx]]
+            : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+          dancerTracks = Array.isArray(latestTracks)
+            ? latestTracks.filter(track => getSongName(track))
+            : [];
+          logDiag?.('track_end_initial_pick_stale', {
+            dancer: dancer.name,
+            observedVersion: initialAssignmentVersion,
+            currentVersion: rotationAssignmentVersionRef.current,
+          });
         }
       } catch (err) {
         console.warn('⚠️ HandleTrackEnd: getDancerTracks failed for', dancer.name, ':', err.message);
@@ -4777,6 +4959,62 @@ export default function DJBooth() {
         transitionInProgressRef.current = false;
         await playFallbackTrack(true);
         return;
+      }
+    }
+
+    // A stale/compact assignment must not make natural track-end handling
+    // mistake a missing song for the end of the configured set. Hydrate
+    // name-only entries and top up short queues before choosing the branch.
+    dancerTracks = Array.isArray(dancerTracks)
+      ? dancerTracks.filter(track => getSongName(track))
+      : [];
+    const configuredSetSize = songsPerSetRef.current;
+    if (dancerTracks.length < configuredSetSize) {
+      const existingNames = dancerTracks.map(getSongName).filter(Boolean);
+      const refillVersion = rotationAssignmentVersionRef.current;
+      try {
+        const candidates = await getDancerTracks(
+          dancer,
+          [...new Set([...existingNames, currentTrackRef.current].filter(Boolean))],
+          true,
+          5000,
+        );
+        if (!canCommitAssignmentRefill(refillVersion, rotationAssignmentVersionRef.current)) {
+          const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+            || !!djSavedManualRef.current[rot[idx]];
+          effectiveManualAssignment = latestManualAssignment;
+          const latestTracks = latestManualAssignment
+            ? rotationSongsRef.current[rot[idx]]
+            : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+          dancerTracks = Array.isArray(latestTracks)
+            ? latestTracks.filter(track => getSongName(track))
+            : [];
+          logDiag?.('track_end_queue_refill_stale', {
+            dancer: dancer.name,
+            observedVersion: refillVersion,
+            currentVersion: rotationAssignmentVersionRef.current,
+          });
+        } else {
+          const filledTracks = fillSongListToLimit(
+            dancerTracks,
+            candidates,
+            configuredSetSize,
+          );
+          if (filledTracks.length > dancerTracks.length) {
+            dancerTracks = filledTracks;
+            commitRotationSongs({
+              ...rotationSongsRef.current,
+              [rot[idx]]: filledTracks,
+            });
+            logDiag?.('track_end_queue_topped_up', {
+              dancer: dancer.name,
+              got: filledTracks.length,
+              need: configuredSetSize,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`⚠️ HandleTrackEnd: queue top-up failed for ${dancer.name}:`, err.message);
       }
     }
 
@@ -4791,60 +5029,111 @@ export default function DJBooth() {
       console.log(`🌟 HandleTrackEnd: FEATURE ${dancer.name} finished song ${songNum} — forcing flip to next dancer (single-song set)`);
     }
 
-    // Diag: would-have-played-more but dancerTracks is short. Indicates a stale/short
-    // rotationSongs cache (the bug Change 1 fixes at beginRotation) or server returning
-    // fewer tracks than requested. Logging only — do not auto-recover mid-transition.
-    if (!isFeatureDancer && songNum < songsPerSetRef.current && dancerSongCount < songsPerSetRef.current && songNum >= dancerSongCount) {
+    // If the refill still returned fewer tracks than requested, retain the
+    // diagnostic but keep the configured set boundary authoritative. The
+    // branch below will try to resolve the requested slot rather than flipping
+    // early just because the cache is short.
+    if (!isFeatureDancer && songNum < configuredSetSize && dancerSongCount < configuredSetSize && songNum >= dancerSongCount) {
       logDiag?.('thin_dancer_tracks_advance', {
         dancer: dancer.name,
         has: dancerSongCount,
-        expected: songsPerSetRef.current,
+        expected: configuredSetSize,
         songNum,
       });
     }
 
     try {
-      if (!isFeatureDancer && songNum < songsPerSetRef.current && songNum < dancerSongCount) {
+      if (!isFeatureDancer && songNum < configuredSetSize) {
         let nextTrack = dancerTracks[songNum];
         const newSongNum = songNum + 1;
-        currentSongNumberRef.current = newSongNum;
-        setCurrentSongNumber(newSongNum);
+        let replacementTrack = null;
+        let replacementVersion = null;
         
-        if (nextTrack && !nextTrack.url && nextTrack.name) {
+        const nextTrackName = getSongName(nextTrack);
+        if (nextTrack && !nextTrack.url && nextTrackName) {
           // Resolution ladder for name-only DJ picks. The old exact-match-then-server
           // path silently missed (library `tracks` is a small window of the full
           // catalog, and exact string compare is brittle), fell through, and re-rolled
           // a RANDOM track — the "assigned song 2 played some random song" bug.
-          const wanted = nextTrack.name;
+          const wanted = nextTrackName;
+          const nameResolutionVersion = rotationAssignmentVersionRef.current;
           const norm = (s) => (s || '').toLowerCase().replace(/\.mp3$/i, '').trim();
           let fresh = tracks.find(t => t.name === wanted && t.url)
             || tracks.find(t => norm(t.name) === norm(wanted) && t.url);
           if (!fresh) fresh = await resolveTrackByName(wanted);
           if (!fresh?.url) fresh = await resolveTrackByName(wanted.replace(/\.mp3$/i, ''));
           if (fresh?.url) {
-            nextTrack = fresh;
-            dancerTracks[songNum] = fresh;
+            if (canCommitAssignmentRefill(nameResolutionVersion, rotationAssignmentVersionRef.current)) {
+              nextTrack = fresh;
+              dancerTracks[songNum] = fresh;
+              commitRotationSongs({
+                ...rotationSongsRef.current,
+                [rot[idx]]: dancerTracks,
+              });
+            } else {
+              const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+                || !!djSavedManualRef.current[rot[idx]];
+              effectiveManualAssignment = latestManualAssignment;
+              const latestTracks = latestManualAssignment
+                ? rotationSongsRef.current[rot[idx]]
+                : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+              nextTrack = Array.isArray(latestTracks) ? latestTracks[songNum] : null;
+            }
           }
         }
         
         if (!nextTrack || !nextTrack.url) {
           // DJ-assigned pick could not be resolved — this should be rare and must be
-          // LOUD, because the replacement is a random track the DJ didn't choose.
-          console.warn(`⚠️ HandleTrackEnd: assigned song ${songNum + 1} for ${dancer.name} unresolvable (${nextTrack?.name || 'missing entry'}) — re-rolling replacement`);
-          logDiag?.('assigned_track_unresolved', { dancer: dancer.name, songNum: songNum + 1, wanted: nextTrack?.name || null });
-          // Exclude everything already in her set so the re-roll can't repeat song 1.
-          const played = dancerTracks.map(t => t?.name).filter(Boolean);
-          const freshTracks = await getDancerTracks(dancer, played);
-          if (freshTracks[0]?.url) {
-            nextTrack = freshTracks[0];
-          } else {
-            await playFallbackTrack(true);
-            if (announcementsEnabled) audioEngineRef.current?.unduck();
+          // LOUD. Never replace a manual/name-only DJ pick without preserving the
+          // intended assignment.
+          const unresolvedName = getSongName(nextTrack);
+          console.warn(`⚠️ HandleTrackEnd: assigned song ${songNum + 1} for ${dancer.name} unresolvable (${unresolvedName || 'missing entry'})`);
+          logDiag?.('assigned_track_unresolved', { dancer: dancer.name, songNum: songNum + 1, wanted: unresolvedName || null });
+          if (effectiveManualAssignment) {
+            audioEngineRef.current?.resume();
             transitionInProgressRef.current = false;
             return;
           }
+          // Exclude everything already in her set so the re-roll can't repeat song 1.
+          const played = dancerTracks.map(getSongName).filter(Boolean);
+          replacementVersion = rotationAssignmentVersionRef.current;
+          const freshTracks = await getDancerTracks(dancer, played);
+          if (
+            canCommitAssignmentRefill(replacementVersion, rotationAssignmentVersionRef.current)
+            && freshTracks[0]?.url
+          ) {
+            nextTrack = freshTracks[0];
+            replacementTrack = nextTrack;
+          } else if (!canCommitAssignmentRefill(replacementVersion, rotationAssignmentVersionRef.current)) {
+            const latestManualAssignment = manualSetDancersRef.current.has(rot[idx])
+              || !!djSavedManualRef.current[rot[idx]];
+            effectiveManualAssignment = latestManualAssignment;
+            const latestTracks = latestManualAssignment
+              ? rotationSongsRef.current[rot[idx]]
+              : filterAutomaticTracks(rotationSongsRef.current[rot[idx]]);
+            const latestNextTrack = Array.isArray(latestTracks)
+              ? latestTracks[songNum]
+              : null;
+            if (latestNextTrack?.url) nextTrack = latestNextTrack;
+          } else {
+            nextTrack = null;
+          }
+        }
+
+        if (!nextTrack?.url) {
+          const fallbackOk = !effectiveManualAssignment
+            && (await playFallbackTrack(true, newSongNum)) === true;
+          if (fallbackOk) {
+            currentSongNumberRef.current = newSongNum;
+            setCurrentSongNumber(newSongNum);
+          }
+          if (announcementsEnabled) audioEngineRef.current?.unduck();
+          transitionInProgressRef.current = false;
+          return;
         }
         
+        let playbackSucceeded = false;
+        let replacementTrackPlayed = false;
         if (announcementsEnabled) {
           const announcementPromise = prefetchAnnouncement('round2', dancer.name, null, newSongNum);
           audioEngineRef.current?.duck();
@@ -4853,29 +5142,57 @@ export default function DJBooth() {
           await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
           if (nextTrack?.url) {
             console.log('🎵 HandleTrackEnd: Switching to next track during announcement:', nextTrack.name);
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
-            if (!trackOk) {
-              const ok = await playFallbackTrack(false);
-              if (!ok) audioEngineRef.current?.resume();
+            const requestedTrackPlayed = await playTrack(
+              nextTrack.url,
+              false,
+              nextTrack.name,
+              nextTrack.genre,
+              { allowFallback: false, rotationSongNumber: newSongNum },
+            ) === true;
+            replacementTrackPlayed = requestedTrackPlayed;
+            playbackSucceeded = requestedTrackPlayed;
+            if (!playbackSucceeded && !effectiveManualAssignment) {
+              playbackSucceeded = await playFallbackTrack(false, newSongNum) === true;
             }
           } else {
-            const ok = await playFallbackTrack(false);
-            if (!ok) audioEngineRef.current?.resume();
+            playbackSucceeded = !effectiveManualAssignment
+              && (await playFallbackTrack(false, newSongNum)) === true;
           }
           await announcementDone;
           audioEngineRef.current?.unduck();
         } else {
           if (nextTrack?.url) {
             console.log('🎵 HandleTrackEnd: Playing next track:', nextTrack.name);
-            const result = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-            if (result === false) {
-              const ok = await playFallbackTrack(true);
-              if (!ok) audioEngineRef.current?.resume();
+            const requestedTrackPlayed = await playTrack(
+              nextTrack.url,
+              true,
+              nextTrack.name,
+              nextTrack.genre,
+              { allowFallback: false, rotationSongNumber: newSongNum },
+            ) === true;
+            replacementTrackPlayed = requestedTrackPlayed;
+            playbackSucceeded = requestedTrackPlayed;
+            if (!playbackSucceeded && !effectiveManualAssignment) {
+              playbackSucceeded = await playFallbackTrack(true, newSongNum) === true;
             }
           } else {
-            const ok = await playFallbackTrack(true);
-            if (!ok) audioEngineRef.current?.resume();
+            playbackSucceeded = !effectiveManualAssignment
+              && (await playFallbackTrack(true, newSongNum)) === true;
           }
+        }
+        if (replacementTrack && replacementTrackPlayed && replacementVersion != null
+            && canCommitAssignmentRefill(
+              replacementVersion,
+              rotationAssignmentVersionRef.current,
+            )) {
+          commitRotationSongs({
+            ...rotationSongsRef.current,
+            [rot[idx]]: dancerTracks.map((track, index) => index === songNum ? replacementTrack : track),
+          });
+        }
+        if (songNumberAfterPlayback(songNum, newSongNum, playbackSucceeded) !== songNum) {
+          currentSongNumberRef.current = newSongNum;
+          setCurrentSongNumber(newSongNum);
         }
       } else {
         const _finishingFeature = dancer.entertainer_type === 'feature';
@@ -5940,7 +6257,7 @@ export default function DJBooth() {
                     className="text-white hover:bg-[#1e293b] h-8 px-2 disabled:opacity-30"
                     disabled={skipLocked}
                     title={skipLocked ? 'Announcement in progress — skip re-enables when it finishes' : 'Skip'}
-                    onClick={() => boothApi.sendCommand('skip')}
+                    onClick={() => boothApi.sendCommand('skip', remoteSkipPayload(false))}
                   >
                     <SkipForward className="w-4 h-4" />
                   </Button>
@@ -6040,7 +6357,7 @@ export default function DJBooth() {
                     className="w-7 h-7 text-white hover:bg-[#1e293b] disabled:opacity-30"
                     disabled={skipLocked}
                     title={skipLocked ? 'Announcement in progress — skip re-enables when it finishes' : 'Skip'}
-                    onClick={handleSkip}
+                    onClick={() => handleSkipRef.current?.({ skipBreaks: false })}
                   >
                     <SkipForward className="w-4 h-4" />
                   </Button>
@@ -6755,32 +7072,27 @@ export default function DJBooth() {
                   : swapPromoAtSlot}
                 onSkipCurrentDancer={() => {
                   if (remoteMode) {
-                    boothApi.sendCommand('skip');
+                    boothApi.sendCommand('skip', remoteSkipPayload(true));
                     return;
                   }
                   if (!isRotationActiveRef.current) return;
                   if (rotationRef.current.length <= 1) return;
-                  // Lockout check BEFORE the 999 sentinel: a rejected press must never
-                  // leave a stale sentinel that corrupts the next natural track end.
+                  // All skip guards run inside handleSkip before it mutates
+                  // rotation/playback state.
                   if (skipLockedRef.current) return;
-                  // Force song number past any set size so handleSkip takes the end-of-set
-                  // path — it flips rotation, resets her songs, plays break songs if queued,
-                  // and gives the next dancer a full intro.
-                  setCurrentSongNumber(999);
-                  currentSongNumberRef.current = 999;
-                  handleSkipRef.current?.();
+                  // Explicitly end the current entertainer's set. Do not use a
+                  // song-number sentinel: a rejected/debounced request must not
+                  // poison the next song skip.
+                  handleSkipRef.current?.({ skipBreaks: true });
                 }}
                 onSkipEntertainerNow={() => {
                   if (remoteMode) {
-                    boothApi.sendCommand('skip');
+                    boothApi.sendCommand('skip', remoteSkipPayload(true));
                     return;
                   }
                   // Top-level "Next Entertainer" button — hard skip, no break songs.
                   // Ends current entertainer's set immediately, plays next entertainer's
                   // intro + song 1 with no break music in between.
-                  // NOTE: songNum=999 sentinel is set INSIDE handleSkip after all guards
-                  // pass (debounce/transition/etc.) so a rejected click never leaves a
-                  // stale sentinel that would corrupt the next legitimate skip.
                   if (!isRotationActiveRef.current) return;
                   if (rotationRef.current.length <= 1) return;
                   if (skipLockedRef.current) return;

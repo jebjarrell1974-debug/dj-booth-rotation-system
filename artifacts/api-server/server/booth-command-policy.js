@@ -81,6 +81,11 @@ export function validateBoothCommand(action, payload = {}) {
   if (JSON.stringify(payload).length > 100 * 1024) return invalid('Command payload is too large');
 
   switch (action) {
+    case 'skip':
+      if (payload.skipBreaks != null && typeof payload.skipBreaks !== 'boolean') {
+        return invalid('skipBreaks must be boolean');
+      }
+      break;
     case 'setVolume':
       if (!isFiniteNumber(payload.volume, 0, 1)) return invalid('volume must be a number from 0 to 1');
       break;
