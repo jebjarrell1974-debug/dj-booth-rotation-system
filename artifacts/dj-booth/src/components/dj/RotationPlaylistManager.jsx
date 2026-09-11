@@ -178,7 +178,10 @@ export default function RotationPlaylistManager({
   onAutoplayQueueChange,
   onAutoplayQueueRemove,
   songCooldowns = {},
-  songCooldownsReady = true,
+  // Automatic selection must fail closed until the parent has successfully
+  // hydrated the complete all-history ledger. Manual library picks do not use
+  // this guard.
+  songCooldownsReady = false,
   currentTrack = null,
   dancerVipMap = {},
   pendingVipMap = {},
@@ -1021,6 +1024,12 @@ export default function RotationPlaylistManager({
   const rerollSong = useCallback(async (dancerId, songIndex) => {
     const key = `${dancerId}-${songIndex}`;
     if (rerollingRef.current.has(key)) return;
+    if (!songCooldownsReady) {
+      const message = 'Automatic history is not ready; no automatic re-roll was made';
+      console.warn(`⚠️ RotationPlaylist: ${message}`);
+      toast.error(message);
+      return;
+    }
     rerollingRef.current.add(key);
     setRerollingKeys(prev => new Set([...prev, key]));
 
@@ -1088,7 +1097,15 @@ export default function RotationPlaylistManager({
     } finally {
       finish();
     }
-  }, [djOptions, tracks, serverTracks, dancers, publishManualAssignment]);
+  }, [
+    djOptions,
+    tracks,
+    serverTracks,
+    dancers,
+    publishManualAssignment,
+    songCooldowns,
+    songCooldownsReady,
+  ]);
 
   const handleAddToRotation = (dancerId) => {
     if (!localRotation.includes(dancerId)) {
@@ -1177,22 +1194,56 @@ export default function RotationPlaylistManager({
 
   const lastBreakSwapTimeRef = useRef(0);
   const replaceActiveBreakSong = useCallback((upcomingIdx) => {
+    if (!songCooldownsReady) {
+      const message = 'Automatic history is not ready; no automatic break swap was made';
+      console.warn(`⚠️ RotationPlaylist: ${message}`);
+      toast.error(message);
+      return;
+    }
     const now = Date.now();
     if (now - lastBreakSwapTimeRef.current < 1000) return;
     lastBreakSwapTimeRef.current = now;
     if (!activeBreakInfo || !onUpdateActiveBreakSongs) return;
     const { songs, currentIndex, breakKey } = activeBreakInfo;
     const upcoming = [...songs.slice(currentIndex + 1)];
-    const allBreakNames = new Set(songs);
-    const allAssigned = new Set(Object.values(songAssignmentsRef.current).flat());
-    const pool = (serverTracks.length > 0 ? serverTracks : tracks).filter(t => !allBreakNames.has(t.name) && !allAssigned.has(t.name));
-    if (pool.length === 0) { toast.error('No other songs available'); return; }
+    const allBreakNames = new Set(songs.map(getSongName).filter(Boolean));
+    const allAssigned = new Set(
+      Object.values(songAssignmentsRef.current)
+        .flat()
+        .map(getSongName)
+        .filter(Boolean),
+    );
+    const sourceTracks = serverTracks.length > 0 ? serverTracks : tracks;
+    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const genrePool = filterByGenres(sourceTracks, activeGenres);
+    // This is an automatic replacement, not a manual library picker. Apply
+    // the same all-history and reserved-folder rules as every other automatic
+    // fallback, and exclude every song already present in this break/rotation.
+    const pool = filterUnplayedAutomaticTracks(
+      genrePool,
+      songCooldowns,
+      [...allBreakNames, ...allAssigned],
+    );
+    if (pool.length === 0) {
+      const message = 'Automatic break pool exhausted; no eligible unplayed song remains';
+      console.warn(`⚠️ RotationPlaylist: ${message}`);
+      toast.error(message);
+      return;
+    }
     const pick = pool[Math.floor(Math.random() * pool.length)];
     upcoming[upcomingIdx] = pick.name;
     const newFullSongs = [...songs.slice(0, currentIndex + 1), ...upcoming];
     onUpdateActiveBreakSongs(breakKey, newFullSongs);
     toast.success(`Swapped: ${pick.name.replace(/\.[^.]+$/, '')}`);
-  }, [activeBreakInfo, onUpdateActiveBreakSongs, tracks, serverTracks]);
+  }, [
+    activeBreakInfo,
+    onUpdateActiveBreakSongs,
+    tracks,
+    serverTracks,
+    djOptions,
+    songCooldowns,
+    songCooldownsReady,
+  ]);
 
   const lastSaveTimeRef = useRef(0);
   const lastSkipDancerTimeRef = useRef(0);

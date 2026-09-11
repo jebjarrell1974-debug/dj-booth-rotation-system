@@ -4,6 +4,11 @@ import PressAndHoldDuckButton from '@/components/dj/PressAndHoldDuckButton';
 import { createRemoteDuckLease } from '@/utils/duckLease';
 import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
 import { capSongList, normalizeManualSongList, queueLatestManualAssignment } from '@/utils/rotationAssignments';
+import {
+  acknowledgeRemoteDrafts,
+  createRemoteEditingQueue,
+  mergeRemoteBreakWorkspace,
+} from '@/utils/remoteEditingQueue';
 import { remoteSkipPayload } from '@/utils/skipPlayback';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
@@ -75,6 +80,9 @@ export default function RemoteView({
   const [deactivatePin, setDeactivatePin] = useState('');
   const deactivatePinInputRef = useRef(null);
   const lastServerUpdateRef = useRef(null);
+  const liveBoothStateRef = useRef(liveBoothState);
+  liveBoothStateRef.current = liveBoothState;
+  const isConnectedRef = useRef(false);
   useEffect(() => {
     const interval = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(interval);
@@ -92,6 +100,7 @@ export default function RemoteView({
 
   const stateAgeMs = lastStateReceivedAt ? Math.max(0, clock - lastStateReceivedAt) : Infinity;
   const isConnected = stateAgeMs <= BOOTH_STALE_AFTER_MS;
+  isConnectedRef.current = isConnected;
   const isPlaying = liveBoothState?.isPlaying;
   const isRotationActive = liveBoothState?.isRotationActive;
   const currentDancerName = liveBoothState?.currentDancerName || '';
@@ -117,100 +126,103 @@ export default function RemoteView({
   const skippedCommercials = new Set(liveBoothState?.skippedCommercials || []);
   const skipLocked = !!liveBoothState?.skipLocked;
 
-  const sendRemoteCommand = useCallback(async (action, payload = {}, options = {}) => {
-    if (!isConnected) {
+  const sendRawRemoteCommand = useCallback(async (action, payload = {}, options = {}) => {
+    if (!isConnectedRef.current) {
       setCommandError('The kiosk state is stale. No command was sent.');
       return null;
     }
     setCommandError('');
     try {
-      return await boothApi.sendCommand(action, payload, {
-        expectedRotationVersion: STRUCTURAL_COMMANDS.has(action)
-          ? liveBoothState?.rotationVersion
-          : undefined,
-        ...options,
-      });
+      return await boothApi.sendCommand(action, payload, options);
     } catch (error) {
       setCommandError(error.message || 'The kiosk rejected the command.');
       return null;
     }
-  }, [isConnected, liveBoothState?.rotationVersion]);
-  // Assignment edits can arrive faster than the kiosk command poller. Keep
-  // one ordered drain per dancer: an in-flight edit finishes first, then only
-  // the newest queued value is sent. This prevents an older phone mutation
-  // from arriving after the final edit and winning on the kiosk.
-  const manualAssignmentQueuesRef = useRef(new Map());
-  const publishManualAssignment = useCallback((dancerId, songs) => {
-    const key = String(dancerId);
-    const existing = manualAssignmentQueuesRef.current.get(key);
-    const queue = existing || {
-      pending: null,
-      revision: 0,
-      running: false,
-      promise: null,
-    };
-    queue.pending = normalizeManualSongList(songs);
-    queue.revision += 1;
-    manualAssignmentQueuesRef.current.set(key, queue);
-    if (!queue.running) {
-      queue.running = true;
-      queue.promise = (async () => {
-        while (queue.pending) {
-          const nextSongs = queue.pending;
-          const revision = queue.revision;
-          queue.pending = null;
-          const result = await sendRemoteCommand('updateSongAssignments', {
-            assignments: { [dancerId]: nextSongs },
-            clientRevision: revision,
-          });
-          if (!result) {
-            queue.pending = null;
-            break;
-          }
-        }
-      })().finally(() => {
-        queue.running = false;
-        if (manualAssignmentQueuesRef.current.get(key) === queue) {
-          manualAssignmentQueuesRef.current.delete(key);
-        }
+  }, []);
+  const remoteEditingQueueRef = useRef(null);
+  if (!remoteEditingQueueRef.current) {
+    remoteEditingQueueRef.current = createRemoteEditingQueue({
+      getRotationVersion: () => {
+        const state = liveBoothStateRef.current;
+        return state
+          ? { rotationVersion: state.rotationVersion, stateEpoch: state.stateEpoch }
+          : undefined;
+      },
+      sendCommand: sendRawRemoteCommand,
+    });
+  }
+  const sendRemoteCommand = useCallback((action, payload = {}, options = {}) => {
+    if (STRUCTURAL_COMMANDS.has(action)) {
+      return remoteEditingQueueRef.current.enqueue(action, payload, {
+        ...options,
+        structural: true,
       });
     }
-    return queue.promise;
-  }, [sendRemoteCommand]);
-  const publishBreakQueue = useCallback((nextSongs, breakKey) => {
-    const normalized = {};
-    for (const [key, songs] of Object.entries(nextSongs || {})) {
-      const names = (Array.isArray(songs) ? songs : []).filter(Boolean);
-      if (names.length > 0) normalized[key] = names;
-    }
-    const nextManual = { ...manualInterstitialBreaks };
-    if (breakKey && normalized[breakKey]?.length > 0) nextManual[breakKey] = true;
-    Object.keys(nextManual).forEach(key => {
-      if (!Object.prototype.hasOwnProperty.call(normalized, key)) delete nextManual[key];
+    return sendRawRemoteCommand(action, payload, options);
+  }, [sendRawRemoteCommand]);
+
+  const songEditsRef = useRef(songEdits);
+  songEditsRef.current = songEdits;
+  const songEditRevisionsRef = useRef({});
+  const breakQueueDraftRef = useRef(null);
+  const breakQueueManualRef = useRef(null);
+  const breakQueueRevisionRef = useRef(0);
+  const authoritativeInterstitialSongsRef = useRef(interstitialSongs);
+  const authoritativeManualBreaksRef = useRef(manualInterstitialBreaks);
+  authoritativeInterstitialSongsRef.current = interstitialSongs;
+  authoritativeManualBreaksRef.current = manualInterstitialBreaks;
+
+  const publishManualAssignment = useCallback((dancerId, songs) => {
+    const key = String(dancerId);
+    const normalized = normalizeManualSongList(songs);
+    return remoteEditingQueueRef.current.enqueue('updateSongAssignments', {
+      assignments: { [dancerId]: normalized },
+      clientRevision: (songEditRevisionsRef.current[key] || 0),
+    }, {
+      key: `assignment:${key}`,
+      structural: true,
     });
+  }, []);
+  const publishBreakQueue = useCallback((nextSongs, breakKey) => {
+    const currentSongs = breakQueueDraftRef.current || authoritativeInterstitialSongsRef.current;
+    const currentManual = breakQueueDraftRef.current
+      ? (breakQueueManualRef.current || {})
+      : authoritativeManualBreaksRef.current;
+    const merged = mergeRemoteBreakWorkspace(currentSongs, currentManual, nextSongs, breakKey);
+    const normalized = merged.songs;
+    const nextManual = merged.manualBreaks;
+    const revision = ++breakQueueRevisionRef.current;
+    breakQueueDraftRef.current = normalized;
+    breakQueueManualRef.current = nextManual;
     // Paint the phone/full-remote queue immediately; the kiosk remains the
     // authority and the draft is reconciled as soon as its snapshot arrives.
     setBreakQueueDraft(normalized);
-    return sendRemoteCommand('updateInterstitialSongs', {
+    return remoteEditingQueueRef.current.enqueue('updateInterstitialSongs', {
       interstitialSongs: normalized,
       manualInterstitialBreaks: nextManual,
+    }, {
+      key: 'interstitial-workspace',
+      structural: false,
     }).then(result => {
-      if (!result) setBreakQueueDraft(null);
+      if (!result && breakQueueRevisionRef.current === revision) {
+        breakQueueDraftRef.current = null;
+        breakQueueManualRef.current = null;
+        setBreakQueueDraft(null);
+      }
       return result;
     });
-  }, [manualInterstitialBreaks, sendRemoteCommand]);
+  }, []);
   useEffect(() => {
     if (!breakQueueDraft) return;
-    if (JSON.stringify(interstitialSongs) === JSON.stringify(breakQueueDraft)) {
+    if (
+      JSON.stringify(interstitialSongs) === JSON.stringify(breakQueueDraft) &&
+      JSON.stringify(manualInterstitialBreaks) === JSON.stringify(breakQueueManualRef.current || {})
+    ) {
+      breakQueueDraftRef.current = null;
+      breakQueueManualRef.current = null;
       setBreakQueueDraft(null);
     }
-  }, [interstitialSongs, breakQueueDraft]);
-  const flushManualAssignmentQueues = useCallback(async () => {
-    const pending = [...manualAssignmentQueuesRef.current.values()]
-      .map(queue => queue.promise)
-      .filter(Boolean);
-    await Promise.all(pending);
-  }, []);
+  }, [interstitialSongs, manualInterstitialBreaks, breakQueueDraft]);
   const remoteDuckLeaseRef = useRef(null);
   const remoteDuckSendRef = useRef(null);
   remoteDuckSendRef.current = (action, payload, options) => (
@@ -338,8 +350,8 @@ export default function RemoteView({
   };
 
   const getSongs = (dancerId) => {
-    if (Object.prototype.hasOwnProperty.call(songEdits, dancerId)) {
-      return normalizeManualSongList(songEdits[dancerId]);
+    if (Object.prototype.hasOwnProperty.call(songEditsRef.current, dancerId)) {
+      return normalizeManualSongList(songEditsRef.current[dancerId]);
     }
     if (Object.prototype.hasOwnProperty.call(manualRotationSongs, dancerId)) {
       return normalizeManualSongList(manualRotationSongs[dancerId]);
@@ -350,7 +362,12 @@ export default function RemoteView({
 
   const setSongs = (dancerId, songs) => {
     const normalized = normalizeManualSongList(songs);
-    setSongEdits(prev => queueLatestManualAssignment(prev, dancerId, normalized));
+    const key = String(dancerId);
+    const nextRevision = (songEditRevisionsRef.current[key] || 0) + 1;
+    songEditRevisionsRef.current[key] = nextRevision;
+    const nextEdits = queueLatestManualAssignment(songEditsRef.current, key, normalized);
+    songEditsRef.current = nextEdits;
+    setSongEdits(nextEdits);
     setHasUnsaved(true);
     // Phone edits are live too: apply the current assignment immediately and
     // retain Save Changes for the workspace/rotation controls.
@@ -419,28 +436,53 @@ export default function RemoteView({
   };
 
   const handleSaveAll = async () => {
-    await flushManualAssignmentQueues();
+    // Assignment/break commands may still be in flight. Drain them first, then
+    // read refs: React state captured by this callback can predate the final
+    // command receipt (and a user can edit while the drain is waiting).
+    await remoteEditingQueueRef.current.flush();
+    const latestState = liveBoothStateRef.current || {};
+    const latestSongEdits = { ...(songEditsRef.current || {}) };
+    const latestBreakSongs = breakQueueDraftRef.current || latestState.interstitialSongs || {};
+    const latestManualBreaks = breakQueueDraftRef.current
+      ? (breakQueueManualRef.current || {})
+      : (latestState.manualInterstitialBreaks || {});
+    const savedRevisions = Object.fromEntries(
+      Object.keys(latestSongEdits).map(dancerId => [
+        dancerId,
+        songEditRevisionsRef.current[dancerId] || 0,
+      ]),
+    );
+    const latestRotation = latestState.rotation || [];
+    const latestCurrentDancerIndex = latestState.currentDancerIndex ?? 0;
+    const latestCurrentSongNumber = latestState.currentSongNumber || 0;
+    const latestCurrentTrack = latestState.currentTrack || '';
     const result = await sendRemoteCommand('saveRotationWorkspace', {
-      rotation: rotationList,
+      rotation: latestRotation,
       assignments: Object.fromEntries(
-        Object.entries(songEdits).map(([dancerId, songs]) => [
+        Object.entries(latestSongEdits).map(([dancerId, songs]) => [
           dancerId,
           normalizeManualSongList(songs),
         ]),
       ),
-      interstitialSongs: displayedInterstitialSongs,
-      manualInterstitialBreaks,
-      manualOverrides: Object.keys(songEdits),
+      interstitialSongs: latestBreakSongs,
+      manualInterstitialBreaks: latestManualBreaks,
+      manualOverrides: Object.keys(latestSongEdits),
     }, {
-      nowPlayingGuard: isRotationActive ? {
-        dancerId: rotationList[currentDancerIndex],
-        songNumber: currentSongNumber,
-        track: currentTrack,
+      nowPlayingGuard: latestState.isRotationActive ? {
+        dancerId: latestRotation[latestCurrentDancerIndex],
+        songNumber: latestCurrentSongNumber,
+        track: latestCurrentTrack,
       } : undefined,
     });
     if (result) {
-      setSongEdits({});
-      setHasUnsaved(false);
+      const remaining = acknowledgeRemoteDrafts(
+        songEditsRef.current,
+        savedRevisions,
+        songEditRevisionsRef.current,
+      );
+      songEditsRef.current = remaining;
+      setSongEdits(remaining);
+      setHasUnsaved(Object.keys(remaining).length > 0);
     }
   };
 

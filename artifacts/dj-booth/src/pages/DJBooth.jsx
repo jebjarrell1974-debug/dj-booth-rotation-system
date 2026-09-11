@@ -67,6 +67,7 @@ import {
 } from '@/utils/rotationAssignments';
 import {
   filterAutomaticTracks,
+  fetchAutomaticHistory,
   filterUnplayedAutomaticTracks,
   isAutomaticSelectionExcluded,
 } from '@/utils/automaticTrackSelection';
@@ -89,7 +90,15 @@ import {
   VOICE_DUCK_GAIN,
 } from '@/utils/ducking';
 import { createRemoteDuckLease } from '@/utils/duckLease';
+import {
+  acknowledgeRemoteDrafts,
+  createRemoteEditingQueue,
+} from '@/utils/remoteEditingQueue';
 import { acceptBoothSnapshot } from '@/utils/boothStateSnapshot';
+import {
+  getCommercialTransitionPlan,
+  rebaseBreakCursor,
+} from '@/utils/audioPlayback';
 
 const DEFAULT_SONGS_PER_SET = 2;
 const EMPTY_MANUAL_ASSIGNMENTS = Object.freeze({});
@@ -342,7 +351,8 @@ export default function DJBooth() {
   // write back if it still matches. Prevents stale results from a prior reroll/flip
   // overwriting a newer queue (e.g. DJ taps songsPerSet 3→5→4 in rapid succession).
   const rotationAssignmentVersionRef = useRef(0);
-  const remoteManualEditChainsRef = useRef({});
+  const remoteAssignmentDraftRef = useRef({});
+  const remoteAssignmentRevisionRef = useRef({});
   // Explicit DJ-saved picks survive kiosk relaunch (watchdog restarts chromium mid-night):
   // restore from localStorage, persist via persistDjSaved() on every mutation.
   // Automatic flip-to-bottom repicks belong only in rotationSongsRef. Keeping
@@ -461,6 +471,8 @@ export default function DJBooth() {
   }, [rotationSongs, songsPerSet, remoteMode]);
 
   const rotationRef = useRef([]);
+  const remoteRotationDraftRef = useRef(null);
+  const remoteRotationRevisionRef = useRef(0);
   const dancersRef = useRef([]);
   // Skip lockout: while an announcement is imminent (last SKIP_LOCKOUT_SECONDS of a
   // track with announcements on) or a transition/announcement is in progress, the
@@ -519,10 +531,15 @@ export default function DJBooth() {
   const interstitialIndexRef = useRef(0);
   const [activeBreakInfo, setActiveBreakInfo] = useState(null);
   const interstitialMutationVersionRef = useRef(0);
+  const remoteInterstitialMutationVersionRef = useRef(0);
+  const remoteBreakWorkspaceDraftRef = useRef(null);
+  const remoteBreakWorkspaceRevisionRef = useRef(0);
 
   const commitInterstitialWorkspace = useCallback((nextSongs, {
     manualBreaks = manualInterstitialBreaksRef.current,
     markManual = [],
+    activeBreakEdit = null,
+    activeBreakEdits = null,
   } = {}) => {
     const {
       songs: normalizedSongs,
@@ -535,12 +552,40 @@ export default function DJBooth() {
     const activeKey = playingInterstitialBreakKeyRef.current;
     if (activeKey) {
       const activeSongs = normalizedSongs[activeKey] || [];
+      const cursorEdits = (Array.isArray(activeBreakEdits)
+        ? activeBreakEdits
+        : (activeBreakEdit ? [activeBreakEdit] : [])).filter(edit => (
+          edit
+          && edit.breakKey != null
+          && Number.isInteger(edit.removedIndex)
+        ));
+      for (const edit of cursorEdits) {
+        if (edit?.breakKey === activeKey
+            && Number.isInteger(edit.removedIndex)
+            && Number.isInteger(interstitialIndexRef.current)) {
+          interstitialIndexRef.current = rebaseBreakCursor(
+            interstitialIndexRef.current,
+            edit.removedIndex,
+          );
+        }
+      }
       setActiveBreakInfo(previous => previous
         && previous.breakKey === activeKey
         ? {
           ...previous,
           songs: activeSongs,
-          currentIndex: Math.min(previous.currentIndex ?? 0, Math.max(0, activeSongs.length - 1)),
+          currentIndex: Math.min(
+            Math.max(
+              0,
+              cursorEdits
+                .filter(edit => edit?.breakKey === activeKey)
+                .reduce(
+                  (currentIndex, edit) => rebaseBreakCursor(currentIndex, edit.removedIndex),
+                  previous.currentIndex ?? 0,
+                ),
+            ),
+            Math.max(0, activeSongs.length - 1),
+          ),
         }
         : previous);
     }
@@ -654,48 +699,63 @@ export default function DJBooth() {
   };
 
   const songCooldownRef = useRef(readPersistedSongHistory());
-  const songHistoryLoadStartedRef = useRef(false);
   const songHistoryReadyRef = useRef(false);
   const [playedSongsMap, setPlayedSongsMap] = useState(() => ({ ...songCooldownRef.current }));
   const [songHistoryReady, setSongHistoryReady] = useState(false);
 
   useEffect(() => {
-    if (songHistoryLoadStartedRef.current) return;
-    songHistoryLoadStartedRef.current = true;
+    let cancelled = false;
+    let retryTimer = null;
+    const controller = new AbortController();
+    const retryDelayMs = 5000;
+
+    // Automatic selection must remain disabled until a valid all-history
+    // response arrives. Each scheduled retry reads the token again so a login
+    // refresh can recover without reloading the kiosk.
+    songHistoryReadyRef.current = false;
+    setSongHistoryReady(false);
+
     const loadCooldowns = async () => {
-      // Never prune the local ledger by age. It is also the offline source of
-      // truth for automatic no-repeat selection.
-      const cooldowns = { ...songCooldownRef.current };
-      try {
-        const token = localStorage.getItem('djbooth_token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        // The endpoint is named "cooldowns" for legacy clients; scope=all
-        // imports the complete persisted play-history ledger.
-        const res = await fetch('/api/history/cooldowns?scope=all', { headers });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.cooldowns) {
-            for (const [k, v] of Object.entries(data.cooldowns)) {
-              if (Number.isFinite(Number(v)) && Number(v) > 0 &&
-                  (!cooldowns[k] || Number(v) > Number(cooldowns[k]))) {
-                cooldowns[k] = Number(v);
-              }
-            }
-            console.log(`🎵 Loaded ${Object.keys(data.cooldowns).length} song cooldowns from server`);
+      if (cancelled) return;
+      const token = localStorage.getItem('djbooth_token');
+      const result = await fetchAutomaticHistory({
+        token,
+        retries: 0,
+        signal: controller.signal,
+      });
+      if (cancelled) return;
+      if (result.ready) {
+        // Merge at completion time so plays recorded while the request was in
+        // flight are never replaced by an older server response.
+        const merged = { ...songCooldownRef.current };
+        for (const [trackName, playedAt] of Object.entries(result.cooldowns)) {
+          if (!merged[trackName] || Number(playedAt) > Number(merged[trackName])) {
+            merged[trackName] = Number(playedAt);
           }
         }
-      } catch (err) {
-        console.warn('⚠️ Failed to load server cooldowns:', err.message);
+        songCooldownRef.current = merged;
+        setPlayedSongsMap({ ...merged });
+        try {
+          localStorage.setItem(SONG_HISTORY_STORAGE_KEY, JSON.stringify(merged));
+        } catch {}
+        songHistoryReadyRef.current = true;
+        setSongHistoryReady(true);
+        console.log(`🎵 Loaded ${Object.keys(result.cooldowns).length} song history entries from server`);
+        return;
       }
-      songCooldownRef.current = cooldowns;
-      setPlayedSongsMap({ ...cooldowns });
-      try {
-        localStorage.setItem(SONG_HISTORY_STORAGE_KEY, JSON.stringify(cooldowns));
-      } catch {}
-      songHistoryReadyRef.current = true;
-      setSongHistoryReady(true);
+
+      songHistoryReadyRef.current = false;
+      setSongHistoryReady(false);
+      console.warn('⚠️ Failed to load all-time song history:', result.error);
+      retryTimer = setTimeout(loadCooldowns, retryDelayMs);
     };
+
     loadCooldowns();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      controller.abort();
+    };
   }, []);
 
   const recordSongPlayed = useCallback((trackName, dancerName = null, genre = null) => {
@@ -940,19 +1000,89 @@ export default function DJBooth() {
   }, []);
 
   const [liveBoothState, setLiveBoothState] = useState(null);
+  const liveBoothStateRef = useRef(liveBoothState);
+  liveBoothStateRef.current = liveBoothState;
+  const remoteEditingQueueRef = useRef(null);
+  if (!remoteEditingQueueRef.current) {
+    remoteEditingQueueRef.current = createRemoteEditingQueue({
+      getRotationVersion: () => {
+        const state = liveBoothStateRef.current;
+        return state
+          ? { rotationVersion: state.rotationVersion, stateEpoch: state.stateEpoch }
+          : undefined;
+      },
+      sendCommand: (action, payload, options) => boothApi.sendCommand(action, payload, options),
+    });
+  }
   const sendBoothCommand = useCallback((action, payload = {}, options = {}) => {
     const structural = STRUCTURAL_REMOTE_ACTIONS.has(action);
-    const state = liveBoothState;
-    return boothApi.sendCommand(action, payload, structural ? {
-      expectedRotationVersion: state?.rotationVersion,
+    const serializedBreakWorkspace = action === 'updateInterstitialSongs';
+    const state = liveBoothStateRef.current;
+    const commandOptions = structural ? {
       nowPlayingGuard: options.nowPlayingGuard ?? (state?.isRotationActive ? {
         dancerId: state.rotation?.[state.currentDancerIndex],
         songNumber: state.currentSongNumber,
         track: state.currentTrack,
       } : undefined),
       ...options,
-    } : options);
-  }, [liveBoothState]);
+    } : options;
+    if (remoteMode && (structural || serializedBreakWorkspace)) {
+      return remoteEditingQueueRef.current.enqueue(action, payload, {
+        ...commandOptions,
+        ...(serializedBreakWorkspace ? { key: 'interstitial-workspace' } : {}),
+        structural,
+      });
+    }
+    return boothApi.sendCommand(action, payload, commandOptions);
+  }, [remoteMode]);
+  const publishRemoteInterstitialWorkspace = useCallback((nextSongs, manualBreaks, activeBreakEdit = null) => {
+    const mutationVersion = ++remoteInterstitialMutationVersionRef.current;
+    const workspaceRevision = ++remoteBreakWorkspaceRevisionRef.current;
+    const committed = commitInterstitialWorkspace(nextSongs, {
+      manualBreaks,
+      activeBreakEdit,
+    });
+    remoteBreakWorkspaceDraftRef.current = committed;
+    const payload = {
+      interstitialSongs: committed.songs,
+      manualInterstitialBreaks: committed.manualBreaks,
+      ...(activeBreakEdit ? { activeBreakEdit } : {}),
+    };
+    return Promise.resolve(sendBoothCommand('updateInterstitialSongs', payload)).then(result => {
+      if (!result && remoteInterstitialMutationVersionRef.current === mutationVersion) {
+        const authoritative = liveBoothStateRef.current;
+        if (authoritative && Object.prototype.hasOwnProperty.call(authoritative, 'interstitialSongs')) {
+          commitInterstitialWorkspace(
+            authoritative.interstitialSongs || {},
+            { manualBreaks: authoritative.manualInterstitialBreaks || {} },
+          );
+          if (remoteBreakWorkspaceRevisionRef.current === workspaceRevision) {
+            remoteBreakWorkspaceDraftRef.current = null;
+          }
+        }
+      }
+      if (result && remoteBreakWorkspaceRevisionRef.current === workspaceRevision) {
+        // Keep the draft until an authoritative snapshot matches it. This
+        // protects Save All from a stale poll arriving after the receipt.
+        remoteBreakWorkspaceDraftRef.current = committed;
+      }
+      return result;
+    }, error => {
+      if (remoteInterstitialMutationVersionRef.current === mutationVersion) {
+        const authoritative = liveBoothStateRef.current;
+        if (authoritative && Object.prototype.hasOwnProperty.call(authoritative, 'interstitialSongs')) {
+          commitInterstitialWorkspace(
+            authoritative.interstitialSongs || {},
+            { manualBreaks: authoritative.manualInterstitialBreaks || {} },
+          );
+          if (remoteBreakWorkspaceRevisionRef.current === workspaceRevision) {
+            remoteBreakWorkspaceDraftRef.current = null;
+          }
+        }
+      }
+      throw error;
+    });
+  }, [commitInterstitialWorkspace, sendBoothCommand]);
   const localDuckOwnerRef = useRef(null);
   const acquireLocalDuck = useCallback(() => {
     if (remoteMode || !audioEngineRef.current?.acquireDuck) return;
@@ -1160,6 +1290,12 @@ export default function DJBooth() {
     if (snapshot === lastRemoteInterstitialSnapshotRef.current) return;
     lastRemoteInterstitialSnapshotRef.current = snapshot;
     const nextSongs = liveBoothState.interstitialSongs || {};
+    const draft = remoteBreakWorkspaceDraftRef.current;
+    if (draft
+        && JSON.stringify(draft.songs || {}) === JSON.stringify(nextSongs)
+        && JSON.stringify(draft.manualBreaks || {}) === JSON.stringify(liveBoothState.manualInterstitialBreaks || {})) {
+      remoteBreakWorkspaceDraftRef.current = null;
+    }
     interstitialSongsRef.current = nextSongs;
     manualInterstitialBreaksRef.current = liveBoothState.manualInterstitialBreaks || {};
     setInterstitialSongsState(nextSongs);
@@ -1774,6 +1910,8 @@ export default function DJBooth() {
           if (cmd.payload.interstitialSongs) {
             commitInterstitialWorkspace(cmd.payload.interstitialSongs, {
               manualBreaks: cmd.payload.manualInterstitialBreaks ?? manualInterstitialBreaksRef.current,
+              activeBreakEdits: cmd.payload.activeBreakEdits,
+              activeBreakEdit: cmd.payload.activeBreakEdit || null,
             });
             console.log('🎵 Remote updated break songs');
           }
@@ -3714,6 +3852,7 @@ export default function DJBooth() {
                 ...(promoAutoGain != null ? { auto_gain: promoAutoGain } : {}),
               },
               false,
+              { triggerAtMediaEnd: true },
             );
             if (!trackOk) return false;
             await session.done;
@@ -4557,6 +4696,13 @@ export default function DJBooth() {
         // One-song sets (multi-stage rotation): replace the outro with a short
         // "that was X — moving to the next stage" send-off.
         const _oneSongSkip = effectiveSongsPerSet(rot[idx]) === 1 && !_finishingFeature;
+        const commercialDue = isCommercialDue();
+        const featureArrival = !!getFeatureMeta(nextDancer);
+        const transitionPlan = getCommercialTransitionPlan({
+          commercialDue,
+          announcementsEnabled,
+          featureArrival,
+        });
         const outroPromise = !playOutro
           ? Promise.resolve(null)
           : _finishingFeature
@@ -4692,60 +4838,72 @@ export default function DJBooth() {
         }
         commitRotationSongs(updatedSongs);
 
+        let announcementDone = null;
         if (playOutro) {
           const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
-          await playPrefetchedAnnouncement(outroUrl);
+          if (transitionPlan.overlapOutro) {
+            announcementDone = playPrefetchedAnnouncement(outroUrl);
+            await Promise.race([
+              announcementDone,
+              new Promise(resolve => setTimeout(resolve, SONG_OVERLAP_DELAY_MS)),
+            ]);
+          } else {
+            // A due commercial owns the gap. Finish the outgoing send-off
+            // before the ad, then start the incoming song only after the ad.
+            await playPrefetchedAnnouncement(outroUrl);
+            audioEngineRef.current?.unduck();
+          }
         }
 
-        const _arrivalFeature = getFeatureMeta(nextDancer);
-        if (_arrivalFeature) {
+        if (transitionPlan.commercialBeforeIncoming) {
+          const commercialPlayed = await playCommercialIfDue();
+          if (commercialPlayed) {
+            transitionStartTimeRef.current = Date.now();
+            lastAudioActivityRef.current = Date.now();
+          }
+        }
+        if (featureArrival) {
           console.log('🌟 HandleSkip: next dancer is FEATURE — running feature show');
           nextTrack = await playFeatureArrivalRef.current(nextDancer);
           lastAudioActivityRef.current = Date.now();
           lastTransitionMsRef.current = Date.now() - _skipTransStart;
           logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip', feature: true });
         } else {
-        lastAudioActivityRef.current = Date.now();
-        if (nextTrack && nextTrack.url) {
-          console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
-          logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _skipTransStart });
-          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          if (!trackOk) await playFallbackTrack(true);
-        } else {
-          logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
-          await playFallbackTrack(true);
-        }
-
-        if (announcementsEnabled) {
-          audioEngineRef.current?.unduck();
-        }
-
-        lastAudioActivityRef.current = Date.now();
-        lastTransitionMsRef.current = Date.now() - _skipTransStart;
-        logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip' });
-
-        const commercialPlayed = await playCommercialIfDue();
-        if (commercialPlayed) {
-          transitionStartTimeRef.current = Date.now();
           lastAudioActivityRef.current = Date.now();
           if (nextTrack && nextTrack.url) {
-            const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(true);
+            console.log('🎵 HandleSkip: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
+            logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _skipTransStart });
+            const trackOk = await playTrack(
+              nextTrack.url,
+              !transitionPlan.overlapOutro,
+              nextTrack.name,
+              nextTrack.genre,
+            );
+            if (!trackOk) await playFallbackTrack(!transitionPlan.overlapOutro);
           } else {
-            await playFallbackTrack(true);
+            logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
+            await playFallbackTrack(!transitionPlan.overlapOutro);
           }
-        }
 
-        if (announcementsEnabled) {
-          const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
-          audioEngineRef.current?.duck();
-          const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
-          lastAudioActivityRef.current = Date.now();
-          if (introUrl) {
-            await playPrefetchedAnnouncement(introUrl);
+          if (announcementDone) {
+            await announcementDone;
+            audioEngineRef.current?.unduck();
           }
-          audioEngineRef.current?.unduck();
-        }
+
+          lastAudioActivityRef.current = Date.now();
+          lastTransitionMsRef.current = Date.now() - _skipTransStart;
+          logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'skip' });
+
+          if (announcementsEnabled) {
+            const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
+            audioEngineRef.current?.duck();
+            const [, introUrl] = await Promise.all([waitForDuck(), introPromise]);
+            lastAudioActivityRef.current = Date.now();
+            if (introUrl) {
+              await playPrefetchedAnnouncement(introUrl);
+            }
+            audioEngineRef.current?.unduck();
+          }
         }
 
         const finalRot = rotationRef.current;
@@ -4768,7 +4926,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, isCommercialDue, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, getFeatureMeta]);
   handleSkipRef.current = handleSkip;
 
   // FEATURE SETUP controls (shown on the booth's main screen only while the pre-feature
@@ -4851,6 +5009,18 @@ export default function DJBooth() {
         await playFallbackTrack(true);
         return;
       }
+      const transitionPlan = getCommercialTransitionPlan({
+        commercialDue: isCommercialDue(),
+        announcementsEnabled,
+        featureArrival: true,
+      });
+      if (transitionPlan.commercialBeforeIncoming) {
+        const commercialPlayed = await playCommercialIfDue();
+        if (commercialPlayed) {
+          transitionStartTimeRef.current = Date.now();
+          lastAudioActivityRef.current = Date.now();
+        }
+      }
       console.log('🌟 Start feature now: jumping straight to', featureDancer.name, 'intro');
       // The feature is already at rotation index 0 from the pre-feature break flip.
       await playFeatureArrivalRef.current(featureDancer);
@@ -4863,7 +5033,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playFallbackTrack]);
+  }, [playFallbackTrack, playCommercialIfDue, isCommercialDue, announcementsEnabled]);
 
   // Shared deactivate behavior for BOTH the booth screen and the remote/phone control.
   // Deactivating a song must ALWAYS: block it server-side, pull it out of every pre-picked
@@ -5211,18 +5381,24 @@ export default function DJBooth() {
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
         commitRotationSongs(updatedSongs);
 
-        const _piFeature = getFeatureMeta(nextDancer);
-        if (_piFeature) {
+        const featureArrival = !!getFeatureMeta(nextDancer);
+        const transitionPlan = getCommercialTransitionPlan({
+          commercialDue: isCommercialDue(),
+          announcementsEnabled,
+          featureArrival,
+        });
+        if (transitionPlan.commercialBeforeIncoming) {
+          const commercialPlayed = await playCommercialIfDue();
+          if (commercialPlayed) {
+            transitionStartTimeRef.current = Date.now();
+            lastAudioActivityRef.current = Date.now();
+          }
+        }
+        if (featureArrival) {
           console.log('🌟 Post-interstitial: next dancer is FEATURE — running feature show');
           nextTrack = await playFeatureArrivalRef.current(nextDancer);
           lastAudioActivityRef.current = Date.now();
         } else {
-        const commercialPlayed = await playCommercialIfDue();
-        if (commercialPlayed) {
-          transitionStartTimeRef.current = Date.now();
-          lastAudioActivityRef.current = Date.now();
-        }
-
         lastAudioActivityRef.current = Date.now();
         if (nextTrack?.url) {
           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
@@ -5954,13 +6130,27 @@ export default function DJBooth() {
         }
         commitRotationSongs(updatedSongs);
 
-        const _arrivalFeature = getFeatureMeta(nextDancer);
-        if (_arrivalFeature) {
+        const featureArrival = !!getFeatureMeta(nextDancer);
+        const transitionPlan = getCommercialTransitionPlan({
+          commercialDue: isCommercialDue(),
+          announcementsEnabled,
+          featureArrival,
+        });
+        if (featureArrival) {
           // Feature arrival: let the outro finish first, then run the feature show
-          // (it manages its own intro/bed and ducking). Behavior unchanged.
+          // (it manages its own intro/bed and ducking). A due commercial sits
+          // between the completed outro and the feature intro.
           if (announcementsEnabled) {
             const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
             await playPrefetchedAnnouncement(outroUrl);
+            audioEngineRef.current?.unduck();
+          }
+          if (transitionPlan.commercialBeforeIncoming) {
+            const commercialPlayed = await playCommercialIfDue();
+            if (commercialPlayed) {
+              transitionStartTimeRef.current = Date.now();
+              lastAudioActivityRef.current = Date.now();
+            }
           }
           console.log('🌟 HandleTrackEnd: next dancer is FEATURE — running feature show');
           nextTrack = await playFeatureArrivalRef.current(nextDancer);
@@ -5969,52 +6159,60 @@ export default function DJBooth() {
           logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end', feature: true });
         } else {
         lastAudioActivityRef.current = Date.now();
-        if (announcementsEnabled) {
-          // Start the incoming entertainer's first song UNDER the outro so the music never
-          // drops to silence between sets. Mirrors the within-set + break-song overlap:
-          // begin the outro, then ~SONG_OVERLAP_DELAY_MS later bring in the next song while
-          // she's still talking, then wait out the rest of the outro before unducking.
-          const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
-          const announcementDone = playPrefetchedAnnouncement(outroUrl);
-          await Promise.race([announcementDone, new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS))]);
-          if (nextTrack && nextTrack.url) {
-            console.log('🎵 HandleTrackEnd: Switching to next dancer during outro:', nextDancer.name, 'track:', nextTrack.name);
-            logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
-            const trackOk = await playTrack(nextTrack.url, false, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(false);
-          } else {
-            logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
-            await playFallbackTrack(false);
-          }
-          await announcementDone;
-          audioEngineRef.current?.unduck();
-        } else {
-          if (nextTrack && nextTrack.url) {
-            console.log('🎵 HandleTrackEnd: Switching to next dancer:', nextDancer.name, 'track:', nextTrack.name);
-            logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
-            const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(true);
-          } else {
-            logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
-            await playFallbackTrack(true);
-          }
-        }
+         let announcementDone = null;
+         if (announcementsEnabled) {
+           const [outroUrl] = await Promise.all([outroPromise, waitForDuck()]);
+           if (transitionPlan.overlapOutro) {
+             // Start the incoming entertainer's first song UNDER the outro so
+             // the music never drops to silence between sets.
+             announcementDone = playPrefetchedAnnouncement(outroUrl);
+             await Promise.race([
+               announcementDone,
+               new Promise(r => setTimeout(r, SONG_OVERLAP_DELAY_MS)),
+             ]);
+           } else {
+             // A due commercial owns the gap: finish the outgoing send-off
+             // before the ad, then start the incoming song exactly once.
+             await playPrefetchedAnnouncement(outroUrl);
+             audioEngineRef.current?.unduck();
+           }
+         }
+         if (transitionPlan.commercialBeforeIncoming) {
+           const commercialPlayed = await playCommercialIfDue();
+           if (commercialPlayed) {
+             transitionStartTimeRef.current = Date.now();
+             lastAudioActivityRef.current = Date.now();
+           }
+         }
+         if (nextTrack && nextTrack.url) {
+           console.log(
+             transitionPlan.overlapOutro
+               ? '🎵 HandleTrackEnd: Switching to next dancer during outro:'
+               : '🎵 HandleTrackEnd: Switching to next dancer:',
+             nextDancer.name,
+             'track:',
+             nextTrack.name,
+           );
+           logDiag('track_play', { dancer: nextDancer.name, track: nextTrack.name, gapMs: Date.now() - _teTransStart });
+           const trackOk = await playTrack(
+             nextTrack.url,
+             !transitionPlan.overlapOutro,
+             nextTrack.name,
+             nextTrack.genre,
+           );
+           if (!trackOk) await playFallbackTrack(!transitionPlan.overlapOutro);
+         } else {
+           logDiag('track_play_fallback', { dancer: nextDancer.name, reason: 'no_url' });
+           await playFallbackTrack(!transitionPlan.overlapOutro);
+         }
+         if (announcementDone) {
+           await announcementDone;
+           audioEngineRef.current?.unduck();
+         }
 
         lastAudioActivityRef.current = Date.now();
         lastTransitionMsRef.current = Date.now() - _teTransStart;
         logDiag('transition_complete', { dancer: nextDancer.name, durationMs: lastTransitionMsRef.current, trigger: 'track_end' });
-
-        const commercialPlayed = await playCommercialIfDue();
-        if (commercialPlayed) {
-          transitionStartTimeRef.current = Date.now();
-          lastAudioActivityRef.current = Date.now();
-          if (nextTrack && nextTrack.url) {
-            const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-            if (!trackOk) await playFallbackTrack(true);
-          } else {
-            await playFallbackTrack(true);
-          }
-        }
 
         if (announcementsEnabled) {
           const introPromise = prefetchAnnouncement('intro', nextDancer.name, null, 1, null);
@@ -6048,7 +6246,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, beginRotation]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, isCommercialDue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, beginRotation, getFeatureMeta]);
 
   const handleAnnouncementPlay = useCallback(async (audioUrl, options) => {
     if (audioEngineRef.current) {
@@ -7177,92 +7375,65 @@ export default function DJBooth() {
                 authoritativeManualBreaks={manualInterstitialBreaksRef.current}
                 onInterstitialSongsChange={(nextInterstitials, manualBreaks) => {
                   if (remoteMode) {
-                    commitInterstitialWorkspace(nextInterstitials, { manualBreaks });
-                    return sendBoothCommand('updateInterstitialSongs', {
-                      interstitialSongs: nextInterstitials,
-                      manualInterstitialBreaks: manualBreaks,
-                    }).then(result => {
-                      if (!result) {
-                        commitInterstitialWorkspace(
-                          liveBoothState?.interstitialSongs || {},
-                          { manualBreaks: liveBoothState?.manualInterstitialBreaks || {} },
-                        );
-                      }
-                      return result;
-                    });
+                    return publishRemoteInterstitialWorkspace(nextInterstitials, manualBreaks);
                   }
                   commitInterstitialWorkspace(nextInterstitials, { manualBreaks });
                   return Promise.resolve();
                 }}
                 onRemoveActiveBreakSong={(breakKey, actualIndex) => {
-                  const currentSongs = interstitialSongsRef.current[breakKey] || [];
+                   const breakWorkspace = remoteMode ? remoteBreakWorkspaceDraftRef.current : null;
+                   const currentWorkspaceSongs = breakWorkspace?.songs || interstitialSongsRef.current;
+                   const currentWorkspaceManualBreaks = breakWorkspace?.manualBreaks
+                     || manualInterstitialBreaksRef.current;
+                   const currentSongs = currentWorkspaceSongs[breakKey] || [];
                   const updated = [...currentSongs];
                   if (actualIndex >= 0 && actualIndex < updated.length) {
                     updated.splice(actualIndex, 1);
                   }
-                  const newInterstitials = { ...interstitialSongsRef.current };
+                   const newInterstitials = { ...currentWorkspaceSongs };
                   if (updated.length === 0) {
                     delete newInterstitials[breakKey];
                   } else {
                     newInterstitials[breakKey] = updated;
                   }
                   const manualBreaks = {
-                    ...(manualInterstitialBreaksRef.current || {}),
+                     ...(currentWorkspaceManualBreaks || {}),
                   };
                   if (updated.length > 0) manualBreaks[breakKey] = true;
                   else delete manualBreaks[breakKey];
+                  const activeBreakEdit = {
+                    breakKey,
+                    removedIndex: actualIndex,
+                  };
                   if (remoteMode) {
-                    commitInterstitialWorkspace(newInterstitials, { manualBreaks });
-                    sendBoothCommand('updateInterstitialSongs', {
-                      interstitialSongs: newInterstitials,
-                      manualInterstitialBreaks: manualBreaks,
-                    }).then(result => {
-                      if (!result) {
-                        commitInterstitialWorkspace(
-                          liveBoothState?.interstitialSongs || {},
-                          { manualBreaks: liveBoothState?.manualInterstitialBreaks || {} },
-                        );
-                      }
-                    });
+                    publishRemoteInterstitialWorkspace(newInterstitials, manualBreaks, activeBreakEdit)
+                      .catch(error => console.warn('⚠️ Remote break removal failed:', error.message));
                     return;
                   }
-                  commitInterstitialWorkspace(newInterstitials, { manualBreaks });
-                  if (activeBreakInfo && activeBreakInfo.breakKey === breakKey) {
-                    const newSongs = [...activeBreakInfo.songs];
-                    if (actualIndex >= 0 && actualIndex < newSongs.length) {
-                      newSongs.splice(actualIndex, 1);
-                    }
-                    if (interstitialIndexRef.current > actualIndex) {
-                      interstitialIndexRef.current = Math.max(0, interstitialIndexRef.current - 1);
-                    }
-                    setActiveBreakInfo({ ...activeBreakInfo, songs: newSongs });
-                  }
+                  commitInterstitialWorkspace(newInterstitials, {
+                    manualBreaks,
+                    activeBreakEdit,
+                  });
                 }}
                 onUpdateActiveBreakSongs={(breakKey, newFullSongs) => {
-                  const newInterstitials = { ...interstitialSongsRef.current };
+                   const breakWorkspace = remoteMode ? remoteBreakWorkspaceDraftRef.current : null;
+                   const currentWorkspaceSongs = breakWorkspace?.songs || interstitialSongsRef.current;
+                   const currentWorkspaceManualBreaks = breakWorkspace?.manualBreaks
+                     || manualInterstitialBreaksRef.current;
+                   const newInterstitials = { ...currentWorkspaceSongs };
                   if (newFullSongs.length === 0) {
                     delete newInterstitials[breakKey];
                   } else {
                     newInterstitials[breakKey] = newFullSongs;
                   }
                   const manualBreaks = {
-                    ...(manualInterstitialBreaksRef.current || {}),
+                     ...(currentWorkspaceManualBreaks || {}),
                   };
                   if (newFullSongs.length > 0) manualBreaks[breakKey] = true;
                   else delete manualBreaks[breakKey];
                   if (remoteMode) {
-                    commitInterstitialWorkspace(newInterstitials, { manualBreaks });
-                    sendBoothCommand('updateInterstitialSongs', {
-                      interstitialSongs: newInterstitials,
-                      manualInterstitialBreaks: manualBreaks,
-                    }).then(result => {
-                      if (!result) {
-                        commitInterstitialWorkspace(
-                          liveBoothState?.interstitialSongs || {},
-                          { manualBreaks: liveBoothState?.manualInterstitialBreaks || {} },
-                        );
-                      }
-                    });
+                    publishRemoteInterstitialWorkspace(newInterstitials, manualBreaks)
+                      .catch(error => console.warn('⚠️ Remote active break update failed:', error.message));
                     return;
                   }
                   commitInterstitialWorkspace(newInterstitials, { manualBreaks });
@@ -7290,21 +7461,27 @@ export default function DJBooth() {
                     updatedPlaylist = existingPlaylist;
                   }
 
+                  const normalizedSongs = normalizeManualSongList(displayedSongs);
+                  const remoteDancerId = String(dancerId);
+                  if (remoteMode) {
+                    remoteAssignmentRevisionRef.current[remoteDancerId] =
+                      (remoteAssignmentRevisionRef.current[remoteDancerId] || 0) + 1;
+                    remoteAssignmentDraftRef.current = {
+                      ...remoteAssignmentDraftRef.current,
+                      [remoteDancerId]: normalizedSongs,
+                    };
+                  }
                   if (updatedPlaylist.length !== existingPlaylist.length || !updatedPlaylist.every((s, i) => s === existingPlaylist[i])) {
                     if (remoteMode) await updateDancerMutation.mutateAsync({ id: dancerId, data: { playlist: updatedPlaylist } });
                     else updateDancerMutation.mutate({ id: dancerId, data: { playlist: updatedPlaylist } });
                   }
                   if (remoteMode) {
-                    const remoteDancerId = String(dancerId);
-                    const previous = remoteManualEditChainsRef.current[remoteDancerId] || Promise.resolve();
-                    const queued = previous.catch(() => {}).then(() => sendBoothCommand('updateSongAssignments', {
-                      assignments: { [dancerId]: normalizeManualSongList(displayedSongs) },
-                    }));
-                    remoteManualEditChainsRef.current[remoteDancerId] = queued;
+                    const queued = sendBoothCommand('updateSongAssignments', {
+                      assignments: { [dancerId]: normalizedSongs },
+                    }, {
+                      key: `assignment:${remoteDancerId}`,
+                    });
                     await queued;
-                    if (remoteManualEditChainsRef.current[remoteDancerId] === queued) {
-                      delete remoteManualEditChainsRef.current[remoteDancerId];
-                    }
                     return;
                   }
                   if (isRotationActiveRef.current) {
@@ -7358,20 +7535,66 @@ export default function DJBooth() {
                 }}
                 onSaveAll={async (newRotation, playlists, interstitials = {}, manualOverrides = [], manualBreaks = {}) => {
                   if (remoteMode) {
-                    await sendBoothCommand('saveRotationWorkspace', {
-                      rotation: newRotation,
-                      assignments: playlists,
-                      interstitialSongs: interstitials,
-                      manualInterstitialBreaks: manualBreaks,
-                      manualOverrides,
+                    remoteRotationDraftRef.current = [...(newRotation || [])];
+                    remoteRotationRevisionRef.current += 1;
+                    const savedRotationRevision = remoteRotationRevisionRef.current;
+                    // Assignment and break writes may still be waiting on an
+                    // earlier receipt. Drain first, then compose from refs so
+                    // this callback cannot send the render-time snapshot that
+                    // preceded the final edit.
+                    await remoteEditingQueueRef.current.flush();
+                    const latestState = liveBoothStateRef.current || {};
+                    const latestAssignments = {
+                      ...(playlists || {}),
+                      ...(remoteAssignmentDraftRef.current || {}),
+                    };
+                    const latestRotation = remoteRotationDraftRef.current || rotationRef.current || newRotation;
+                    const latestManualOverrides = [...new Set([
+                      ...(manualOverrides || []).map(id => String(id)),
+                      ...Object.keys(remoteAssignmentDraftRef.current || {}),
+                    ])];
+                    const latestBreakWorkspace = remoteBreakWorkspaceDraftRef.current;
+                    const latestInterstitials = latestBreakWorkspace?.songs
+                      || interstitialSongsRef.current
+                      || interstitials
+                      || {};
+                    const latestManualBreaks = latestBreakWorkspace?.manualBreaks
+                      || manualInterstitialBreaksRef.current
+                      || manualBreaks
+                      || {};
+                    const savedBreakRevision = remoteBreakWorkspaceRevisionRef.current;
+                    const savedRevisions = Object.fromEntries(
+                      Object.keys(remoteAssignmentDraftRef.current || {}).map(dancerId => [
+                        dancerId,
+                        remoteAssignmentRevisionRef.current[dancerId] || 0,
+                      ]),
+                    );
+                    const result = await sendBoothCommand('saveRotationWorkspace', {
+                      rotation: latestRotation,
+                      assignments: latestAssignments,
+                      interstitialSongs: latestInterstitials,
+                      manualInterstitialBreaks: latestManualBreaks,
+                      manualOverrides: latestManualOverrides,
                     }, {
-                      expectedRotationVersion: liveBoothState?.rotationVersion,
-                      nowPlayingGuard: liveBoothState?.isRotationActive ? {
-                        dancerId: liveBoothState.rotation?.[liveBoothState.currentDancerIndex],
-                        songNumber: liveBoothState.currentSongNumber,
-                        track: liveBoothState.currentTrack,
+                      nowPlayingGuard: latestState.isRotationActive ? {
+                        dancerId: latestState.rotation?.[latestState.currentDancerIndex],
+                        songNumber: latestState.currentSongNumber,
+                        track: latestState.currentTrack,
                       } : undefined,
                     });
+                    if (result) {
+                      remoteAssignmentDraftRef.current = acknowledgeRemoteDrafts(
+                        remoteAssignmentDraftRef.current,
+                        savedRevisions,
+                        remoteAssignmentRevisionRef.current,
+                      );
+                      if (remoteRotationRevisionRef.current === savedRotationRevision) {
+                        remoteRotationDraftRef.current = null;
+                      }
+                      if (remoteBreakWorkspaceRevisionRef.current === savedBreakRevision) {
+                        remoteBreakWorkspaceDraftRef.current = null;
+                      }
+                    }
                     return;
                   }
                   const saveVersion = ++rotationAssignmentVersionRef.current;
@@ -7611,6 +7834,8 @@ export default function DJBooth() {
                   rot.splice(skipIdx, 1);
                   rot.push(dancerId);
                   if (remoteMode) {
+                    remoteRotationDraftRef.current = [...rot];
+                    remoteRotationRevisionRef.current += 1;
                     sendBoothCommand('saveRotation', { rotation: rot });
                     return;
                   }
@@ -7652,6 +7877,8 @@ export default function DJBooth() {
                   // Insert moved dancer right after the on-stage dancer
                   rot.splice(newCurrentIdx + 1, 0, dancerId);
                   if (remoteMode) {
+                    remoteRotationDraftRef.current = [...rot];
+                    remoteRotationRevisionRef.current += 1;
                     sendBoothCommand('saveRotation', { rotation: rot });
                     return;
                   }
@@ -7666,9 +7893,9 @@ export default function DJBooth() {
                 }}
                 onDancerDragReorder={(newRotation, oldFirstId, newFirstId) => {
                   if (remoteMode) {
-                    sendBoothCommand('saveRotation', { rotation: newRotation }, {
-                      expectedRotationVersion: liveBoothState?.rotationVersion,
-                    });
+                    remoteRotationDraftRef.current = [...newRotation];
+                    remoteRotationRevisionRef.current += 1;
+                    sendBoothCommand('saveRotation', { rotation: newRotation });
                     return;
                   }
                   if (!isRotationActive) return;

@@ -4,6 +4,8 @@ import {
   VOICE_DUCK_GAIN,
   DUCK_LEASE_MS,
 } from '@/utils/ducking';
+import { getTrackEndTriggerPoint } from '@/utils/audioPlayback';
+import { createAnnouncementLifecycle } from '@/utils/announcementLifecycle';
 
 const MAX_SONG_DURATION = 190;
 const MAX_FEATURE_DURATION = 3600;
@@ -44,6 +46,12 @@ const AudioEngine = forwardRef(({
   const voiceSourceRef = useRef(null);
   const voiceSourceElRef = useRef(null);
   const voiceGainLevel = useRef(1.5);
+  const announcementLifecycleRef = useRef(null);
+  if (!announcementLifecycleRef.current) {
+    announcementLifecycleRef.current = createAnnouncementLifecycle({
+      ownerPrefix: VOICE_DUCK_OWNER,
+    });
+  }
   const autoGainEnabledRef = useRef(true);
   const autoGainCacheRef = useRef(new Map());
 
@@ -242,6 +250,7 @@ const AudioEngine = forwardRef(({
       deckA.src = '';
       deckB.pause();
       deckB.src = '';
+      announcementLifecycleRef.current?.cancelActive('unmount');
       voice.pause();
       voice.src = '';
       if (fadeAnimationRef.current) cancelAnimationFrame(fadeAnimationRef.current);
@@ -482,7 +491,11 @@ const AudioEngine = forwardRef(({
     }
   }, []);
 
-  const playTrack = useCallback(async (fileHandle, crossfade = true) => {
+  const playTrack = useCallback(async (
+    fileHandle,
+    crossfade = true,
+    { triggerAtMediaEnd = false } = {},
+  ) => {
     if (playTrackLockRef.current) {
       console.log('🚫 PlayTrack: BLOCKED — another track is already loading, skipping this call');
       return false;
@@ -736,7 +749,7 @@ const AudioEngine = forwardRef(({
         }
       }
 
-      if (time >= resolvedDuration) {
+      if (!triggerAtMediaEnd && time >= resolvedDuration) {
         if (!safetyFading) startSafetyFade();
         if (!transitionTriggered) {
           transitionTriggered = true;
@@ -746,10 +759,12 @@ const AudioEngine = forwardRef(({
       }
 
       const isShortTrack = resolvedDuration < 60;
-      const effectiveSafetyFade = isShortTrack ? Math.min(2, resolvedDuration * 0.15) : SAFETY_FADE_SECONDS;
-      const safetyFadePoint = resolvedDuration - effectiveSafetyFade;
-      if (time >= safetyFadePoint && !safetyFading) {
-        startSafetyFade();
+      if (!triggerAtMediaEnd) {
+        const effectiveSafetyFade = isShortTrack ? Math.min(2, resolvedDuration * 0.15) : SAFETY_FADE_SECONDS;
+        const safetyFadePoint = resolvedDuration - effectiveSafetyFade;
+        if (time >= safetyFadePoint && !safetyFading) {
+          startSafetyFade();
+        }
       }
 
       if (now - lastTimeUpdateRef.current > 1000) {
@@ -758,9 +773,13 @@ const AudioEngine = forwardRef(({
         onTimeUpdateRef.current?.(time, resolvedDuration);
       }
 
-      const effectiveLeadTime = isShortTrack ? Math.min(3, resolvedDuration * 0.15) : TRANSITION_LEAD_TIME;
-      const triggerPoint = Math.max(resolvedDuration - effectiveLeadTime, resolvedDuration * 0.85);
-      if (time >= triggerPoint && !transitionTriggered) {
+      const triggerPoint = getTrackEndTriggerPoint({
+        duration: resolvedDuration,
+        isShortTrack,
+        triggerAtMediaEnd,
+        transitionLeadSeconds: TRANSITION_LEAD_TIME,
+      });
+      if (!triggerAtMediaEnd && time >= triggerPoint && !transitionTriggered) {
         transitionTriggered = true;
         onTrackEndRef.current?.();
       }
@@ -846,33 +865,107 @@ const AudioEngine = forwardRef(({
     duckOwnersRef.current.release(ownerId, options)
   ), []);
 
-  const playAnnouncement = useCallback(async (audioUrl, { autoDuck = true, onNearEnd = null, waitForEnd = true } = {}) => {
-    return new Promise(async (resolve, reject) => {
-      const voice = voiceElRef.current;
-      if (voice) {
-        voice.pause();
-        voice.currentTime = 0;
-      }
+  const playAnnouncement = useCallback((audioUrl, {
+    autoDuck = true,
+    onNearEnd = null,
+    waitForEnd = true,
+  } = {}) => {
+    // The voice element is shared, but each invocation owns a distinct
+    // generation and duck token. Starting a new announcement must settle the
+    // old promise before replacing its event handlers.
+    let session;
+    const token = announcementLifecycleRef.current.start(reason => session?.cancel(reason));
+    const { generation, ownerId } = token;
+    const voice = voiceElRef.current;
 
-      const isBlobUrl = audioUrl && audioUrl.startsWith('blob:');
-      let resolved = false;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let cleaned = false;
       let nearEndFired = false;
-      const cleanupAndResolve = (error = null) => {
-        if (resolved) return;
-        resolved = true;
-        if (voice) voice.ontimeupdate = null;
-        if (isBlobUrl) URL.revokeObjectURL(audioUrl);
-        if (!nearEndFired && onNearEnd) {
+      let duckAcquired = false;
+      let canPlayHandler = null;
+      const isCurrent = () => (
+        announcementLifecycleRef.current.isCurrent(token)
+      );
+      const settle = (error = null) => {
+        if (settled) return;
+        settled = true;
+        if (error) reject(error);
+        else resolve();
+      };
+      const cleanup = ({ cancelled = false } = {}) => {
+        if (cleaned) return;
+        cleaned = true;
+        if (voice && canPlayHandler) {
+          voice.removeEventListener('canplay', canPlayHandler);
+          canPlayHandler = null;
+        }
+        if (voice) {
+          if (voice.onended === onEnded) voice.onended = null;
+          if (voice.onerror === onError) voice.onerror = null;
+          if (voice.ontimeupdate === onTimeUpdate) voice.ontimeupdate = null;
+        }
+        if (audioUrl?.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
+        if (!cancelled && !nearEndFired && onNearEnd) {
           nearEndFired = true;
           onNearEnd();
         }
-        if (autoDuck) unduck();
-        if (error) reject(error); else resolve();
+        if (duckAcquired) {
+          duckOwnersRef.current.release(ownerId);
+          duckAcquired = false;
+        }
+        announcementLifecycleRef.current.finish(token);
       };
+      const cancel = (reason = 'cancelled') => {
+        if (cleaned) {
+          settle();
+          return;
+        }
+        if (voice && isCurrent()) {
+          voice.onended = null;
+          voice.onerror = null;
+          voice.ontimeupdate = null;
+          voice.pause();
+          try { voice.currentTime = 0; } catch {}
+          // Clearing src prevents a delayed canplay/play continuation from
+          // reviving cancelled audio after a newer announcement starts.
+          voice.removeAttribute('src');
+          try { voice.load(); } catch {}
+        }
+        cleanup({ cancelled: true });
+        settle();
+        console.log(`🎤 Announcement ${generation} ${reason}`);
+      };
+      const onTimeUpdate = () => {
+        if (!isCurrent() || nearEndFired || !onNearEnd) return;
+        if (voice && voice.duration && voice.duration > NEAR_END_SECONDS
+            && voice.currentTime >= voice.duration - NEAR_END_SECONDS) {
+          nearEndFired = true;
+          onNearEnd();
+        }
+      };
+      const onEnded = () => {
+        cleanup();
+        settle();
+      };
+      const onError = (event) => {
+        const message = event?.target?.error?.message || 'Announcement audio playback failed';
+        console.error('❌ Announcement audio error:', message);
+        cleanup();
+        settle(new Error(message));
+      };
+      session = { cancel };
+      announcementLifecycleRef.current.setCancel(token, cancel);
 
       if (!audioUrl) {
         console.warn('⚠️ PlayAnnouncement: No audio URL provided');
-        cleanupAndResolve(new Error('No announcement audio URL was provided'));
+        cleanup();
+        settle(new Error('No announcement audio URL was provided'));
+        return;
+      }
+      if (!voice) {
+        cleanup();
+        settle(new Error('Announcement audio element is unavailable'));
         return;
       }
 
@@ -895,46 +988,57 @@ const AudioEngine = forwardRef(({
         voiceGainRef.current.gain.setValueAtTime(voiceGainLevel.current, audioCtxRef.current.currentTime);
       }
 
-      voice.ontimeupdate = () => {
-        if (nearEndFired || !onNearEnd) return;
-        if (voice && voice.duration && voice.duration > NEAR_END_SECONDS && voice.currentTime >= voice.duration - NEAR_END_SECONDS) {
-          nearEndFired = true;
-          onNearEnd();
-        }
-      };
+      voice.ontimeupdate = onTimeUpdate;
+      voice.onended = onEnded;
+      voice.onerror = onError;
 
-      voice.onended = cleanupAndResolve;
-      voice.onerror = (e) => {
-        console.error('❌ Announcement audio error:', e?.target?.error?.message || 'unknown');
-        cleanupAndResolve(new Error(e?.target?.error?.message || 'Announcement audio playback failed'));
-      };
-
-      await new Promise((readyResolve) => {
+      const ready = new Promise((readyResolve) => {
         if (voice.readyState >= 3) {
           readyResolve();
-        } else {
-          const onCanPlay = () => {
-            voice.removeEventListener('canplay', onCanPlay);
-            readyResolve();
-          };
-          voice.addEventListener('canplay', onCanPlay);
+          return;
         }
+        canPlayHandler = () => {
+          if (voice) voice.removeEventListener('canplay', canPlayHandler);
+          canPlayHandler = null;
+          readyResolve();
+        };
+        voice.addEventListener('canplay', canPlayHandler);
       });
 
-      if (autoDuck) duck();
-
-      try {
-        await voice.play();
-        // Remote command receipts describe successful playback startup, not
-        // the duration of the media. Event handlers remain installed so normal
-        // end/error cleanup and unducking still occur after this resolves.
-        if (!waitForEnd) resolve();
-      } catch (error) {
-        console.error('Failed to play announcement:', error);
-        cleanupAndResolve(error);
-      }
+      ready.then(async () => {
+        if (!isCurrent() || cleaned) {
+          settle();
+          return;
+        }
+        if (autoDuck) {
+          ensureAudioContext();
+          duckOwnersRef.current.acquire(ownerId, {
+            gain: VOICE_DUCK_GAIN,
+            attackMs: DUCK_ATTACK_MS,
+          });
+          duckAcquired = true;
+        }
+        try {
+          await voice.play();
+          if (!isCurrent() || cleaned) {
+            settle();
+            return;
+          }
+          // Remote command receipts describe successful playback startup, not
+          // the duration of the media. Event handlers remain installed so
+          // normal end/error cleanup and unducking still occur later.
+          if (!waitForEnd) settle();
+        } catch (error) {
+          console.error('Failed to play announcement:', error);
+          cleanup();
+          settle(error);
+        }
+      }).catch(error => {
+        cleanup();
+        settle(error);
+      });
     });
-  }, [duck, unduck]);
+  }, [ensureAudioContext]);
 
   const pause = useCallback(() => {
     getActiveDeck().pause();
@@ -1014,10 +1118,13 @@ const AudioEngine = forwardRef(({
   }, []);
 
   const stopVoice = useCallback(() => {
+    announcementLifecycleRef.current?.cancelActive('stopped');
     const voice = voiceElRef.current;
     if (voice) {
       voice.pause();
       voice.currentTime = 0;
+      voice.removeAttribute('src');
+      try { voice.load(); } catch {}
       voice.onended = null;
       voice.onerror = null;
       voice.ontimeupdate = null;
