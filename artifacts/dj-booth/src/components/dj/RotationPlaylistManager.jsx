@@ -12,10 +12,26 @@ import {
   getSongName,
   normalizeSongAssignments,
   normalizeSongList,
+  reconcileAuthoritativeAssignments,
 } from '@/utils/rotationAssignments';
 import { filterAutomaticTracks } from '@/utils/automaticTrackSelection';
 
 const TRACKS_PER_PAGE = 200;
+const EMPTY_ASSIGNMENTS = Object.freeze({});
+
+function stableAssignmentKey(value) {
+  if (Array.isArray(value)) return `[${value.map(stableAssignmentKey).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableAssignmentKey(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sameSongList(left, right) {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  return left.every((song, index) => song === right[index]);
+}
 
 const fisherYatesShuffle = (arr) => {
   const a = [...arr];
@@ -127,7 +143,7 @@ export default function RotationPlaylistManager({
   songsPerSet,
   onSongsPerSetChange,
   activeRotationSongs,
-  authoritativeManualAssignments = {},
+  authoritativeManualAssignments = EMPTY_ASSIGNMENTS,
   savedInterstitials,
   interstitialRemoteVersion,
   activeBreakInfo,
@@ -164,7 +180,8 @@ export default function RotationPlaylistManager({
   onReleaseFromVip,
   placedFeatures = {},
   onPlaceFeature,
-  onCancelFeature
+  onCancelFeature,
+  remoteMode = false
 }) {
   const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
   const [searchQuery, setSearchQuery] = useState('');
@@ -188,6 +205,7 @@ export default function RotationPlaylistManager({
   // DJ's chosen picks. Display-layer only; playback uses the parent's
   // rotationSongs/djSavedSongsRef which are unaffected.
   const [songAssignments, setSongAssignments] = useState(() => {
+    if (remoteMode) return {};
     try {
       const saved = localStorage.getItem('djbooth_planned_assignments');
       if (saved) {
@@ -201,6 +219,7 @@ export default function RotationPlaylistManager({
   });
   const [interstitialSongs, setInterstitialSongs] = useState(() => {
     if (savedInterstitials && Object.keys(savedInterstitials).length > 0) return savedInterstitials;
+    if (remoteMode) return {};
     try {
       const saved = localStorage.getItem('djbooth_interstitial_songs');
       return saved ? JSON.parse(saved) : {};
@@ -211,6 +230,7 @@ export default function RotationPlaylistManager({
   const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
   const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
   const [skippedCommercials, setSkippedCommercials] = useState(() => {
+    if (remoteMode) return new Set();
     try {
       const saved = localStorage.getItem('neonaidj_skipped_commercials');
       return saved ? new Set(JSON.parse(saved)) : new Set();
@@ -262,6 +282,8 @@ export default function RotationPlaylistManager({
   const appliedPlaylistsRef = React.useRef({});
   const lastAuthoritativeRotationRef = React.useRef(rotation);
   const lastAuthoritativeInterstitialsRef = React.useRef(savedInterstitials || {});
+  const activeRotationSongsKey = stableAssignmentKey(activeRotationSongs || {});
+  const authoritativeManualAssignmentsKey = stableAssignmentKey(authoritativeManualAssignments || {});
   const songAssignmentsRef = React.useRef({});
   const assignmentSongsPerSetRef = React.useRef(songsPerSet);
   const assignmentGenerationRef = React.useRef(0);
@@ -269,6 +291,7 @@ export default function RotationPlaylistManager({
   // the displayed picks so a second Save All (after a tab switch) still reports
   // the DJ's overrides, and the active restore block keeps skipping them.
   const djOverridesRef = React.useRef((() => {
+    if (remoteMode) return new Set();
     try {
       const saved = localStorage.getItem('djbooth_planned_assignments');
       if (saved) {
@@ -336,17 +359,19 @@ export default function RotationPlaylistManager({
       return;
     }
     songAssignmentsRef.current = songAssignments;
-    onSongAssignmentsChange?.(songAssignments);
+    if (!remoteMode) onSongAssignmentsChange?.(songAssignments);
     // Persist the displayed picks + DJ-edit markers so a remount (tab switch) or
     // full reload restores them instead of re-rolling. Cleared by the parent on
     // Start Rotation / Clear All (djbooth_planned_assignments).
-    try {
-      localStorage.setItem('djbooth_planned_assignments', JSON.stringify({
-        assignments: songAssignments,
-        overrides: [...djOverridesRef.current],
-      }));
-    } catch {}
-  }, [songAssignments, songsPerSet]);
+    if (!remoteMode) {
+      try {
+        localStorage.setItem('djbooth_planned_assignments', JSON.stringify({
+          assignments: songAssignments,
+          overrides: [...djOverridesRef.current],
+        }));
+      } catch {}
+    }
+  }, [songAssignments, songsPerSet, remoteMode]);
 
   useEffect(() => {
     if (musicSource === 'genres') return;
@@ -364,10 +389,10 @@ export default function RotationPlaylistManager({
   }, [musicSource]);
 
   useEffect(() => {
-    if (Object.keys(interstitialSongs).length > 0) {
+    if (!remoteMode && Object.keys(interstitialSongs).length > 0) {
       try { localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongs)); } catch {}
     }
-  }, [interstitialSongs]);
+  }, [interstitialSongs, remoteMode]);
 
   useEffect(() => {
     if (interstitialRemoteVersion > 0) {
@@ -396,9 +421,18 @@ export default function RotationPlaylistManager({
   }, [localRotation, isRotationActive]);
 
   useEffect(() => {
-    if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
+    const hasRemoteSnapshot = remoteMode && activeRotationSongs != null;
+    if (hasRemoteSnapshot) {
+      setSongAssignments(prev => reconcileAuthoritativeAssignments(
+        prev,
+        activeRotationSongs,
+        songsPerSet,
+        dirtyOverridesRef.current,
+      ));
+    } else if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
       setSongAssignments(prev => {
         const fromActive = { ...prev };
+        let changed = false;
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
           if (djOverridesRef.current.has(dancerId)) return;
           const mapped = normalizeSongList(trackList, songsPerSet);
@@ -409,13 +443,19 @@ export default function RotationPlaylistManager({
           // entries are different: clear them so blank rows cannot survive.
           const existing = prev[dancerId];
           if (existing && existing.length >= songsPerSet && mapped.length > 0 && mapped.length < songsPerSet) return;
-          fromActive[dancerId] = mapped;
+          if (!sameSongList(existing, mapped)) {
+            fromActive[dancerId] = mapped;
+            changed = true;
+          }
         });
-        return fromActive;
+        return changed ? fromActive : prev;
       });
       // Do NOT return early — dancers absent from activeRotationSongs still need auto-assignment below
     }
 
+    // A remote editor is command-only. It may display the kiosk's assignments,
+    // but it must never invent a queue from its own local tracks.
+    if (remoteMode) return;
     if (saveGuardRef.current > Date.now()) return;
 
     const dancersNeedingAssignment = localRotation.filter(dancerId => {
@@ -528,7 +568,7 @@ export default function RotationPlaylistManager({
         });
       }
     })();
-  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongs, djOptions]);
+  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongsKey, djOptions, remoteMode]);
 
   // The kiosk is authoritative about which one-shot DJ overrides are still
   // pending. Once a saved set starts, it disappears from that ledger; remove
@@ -557,10 +597,11 @@ export default function RotationPlaylistManager({
       }
       return changed ? next : prev;
     });
-  }, [authoritativeManualAssignments, activeRotationSongs]);
+  }, [authoritativeManualAssignmentsKey, activeRotationSongsKey]);
 
   const prevMusicModeRef = useRef(djOptions?.musicMode || 'dancer_first');
   useEffect(() => {
+    if (remoteMode) return;
     const currentMode = djOptions?.musicMode || 'dancer_first';
     if (prevMusicModeRef.current === currentMode) return;
     prevMusicModeRef.current = currentMode;
@@ -571,10 +612,11 @@ export default function RotationPlaylistManager({
       nonOverridden.forEach(id => { delete updated[id]; });
       return updated;
     });
-  }, [djOptions?.musicMode]);
+  }, [djOptions?.musicMode, remoteMode]);
 
   const prevSongsPerSetRef = useRef(songsPerSet);
   useEffect(() => {
+    if (remoteMode) return;
     if (prevSongsPerSetRef.current === songsPerSet) return;
     prevSongsPerSetRef.current = songsPerSet;
 
@@ -685,7 +727,7 @@ export default function RotationPlaylistManager({
         });
       }
     })();
-  }, [songsPerSet, tracks, dancers, djOptions]);
+  }, [songsPerSet, tracks, dancers, djOptions, remoteMode]);
 
   const getAuthHeaders = useCallback(() => {
     const token = localStorage.getItem('djbooth_token');

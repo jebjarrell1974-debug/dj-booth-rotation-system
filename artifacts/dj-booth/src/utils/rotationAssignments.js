@@ -57,6 +57,29 @@ export function normalizeSongAssignments(assignments, songsPerSet) {
   );
 }
 
+// Reconcile the display-layer assignment map with a kiosk snapshot without
+// allocating a new object for an unchanged snapshot. Dirty editor entries are
+// intentionally retained until the command is acknowledged.
+export function reconcileAuthoritativeAssignments(current, authoritative, songsPerSet, dirtyIds = []) {
+  const previous = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
+  const next = normalizeSongAssignments(authoritative, songsPerSet);
+  for (const rawId of dirtyIds || []) {
+    const dancerId = String(rawId);
+    if (Object.prototype.hasOwnProperty.call(previous, dancerId)) {
+      next[dancerId] = previous[dancerId];
+    }
+  }
+
+  const ids = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  const unchanged = [...ids].every(dancerId => {
+    const before = previous[dancerId];
+    const after = next[dancerId];
+    return Array.isArray(before) && Array.isArray(after) &&
+      before.length === after.length && before.every((song, index) => song === after[index]);
+  });
+  return unchanged ? current : next;
+}
+
 // Apply only explicit DJ updates to the live queue. An explicit empty list is
 // meaningful (the DJ removed the final song), while dancers omitted from both
 // the update map and override list must remain untouched.

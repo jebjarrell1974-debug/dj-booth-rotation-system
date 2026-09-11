@@ -9,6 +9,7 @@ import {
   applyManualAssignments,
   normalizeSongAssignments,
   normalizeSongsPerSet,
+  reconcileAuthoritativeAssignments,
 } from './rotationAssignments.js';
 
 test('caps stale assignments to the configured set length', () => {
@@ -61,6 +62,30 @@ test('normalizes remote string and legacy file-name track shapes', () => {
   }, 3), {
     scarlett: ['Tove Lo Habits.mp3', 'Hinder Lips Of An Angel.mp3'],
   });
+});
+
+test('unchanged authoritative snapshots preserve the assignment object reference', () => {
+  const current = { rose: ['full8.mp3'] };
+  const next = reconcileAuthoritativeAssignments(
+    current,
+    { rose: [{ name: 'full8.mp3' }] },
+    2,
+  );
+  assert.equal(next, current);
+});
+
+test('an explicit empty authoritative assignment clears stale display picks', () => {
+  const current = { rose: ['full8.mp3'] };
+  assert.deepEqual(reconcileAuthoritativeAssignments(current, {}, 2), {});
+  assert.deepEqual(reconcileAuthoritativeAssignments(current, { rose: [] }, 2), { rose: [] });
+});
+
+test('dirty local assignment edits survive until the authoritative command is acknowledged', () => {
+  const current = { rose: ['remote-edit.mp3'], lane: ['old.mp3'] };
+  assert.deepEqual(
+    reconcileAuthoritativeAssignments(current, { rose: ['kiosk-pick.mp3'], lane: ['new.mp3'] }, 2, ['rose']),
+    { rose: ['remote-edit.mp3'], lane: ['new.mp3'] },
+  );
 });
 
 test('explicit empty updates clear only that dancer and preserve duplicate picks', () => {

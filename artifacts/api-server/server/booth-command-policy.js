@@ -205,12 +205,12 @@ export function validateBoothCommand(action, payload = {}) {
 }
 
 export function nextStateRevisions(previous, incoming) {
-  const structuralChanged = JSON.stringify(previous.rotation ?? []) !== JSON.stringify(incoming.rotation ?? []) ||
-    JSON.stringify(previous.rotationSongs ?? {}) !== JSON.stringify(incoming.rotationSongs ?? {}) ||
-    JSON.stringify(previous.manualRotationSongs ?? {}) !== JSON.stringify(incoming.manualRotationSongs ?? {}) ||
-    JSON.stringify(previous.interstitialSongs ?? {}) !== JSON.stringify(incoming.interstitialSongs ?? {}) ||
-    JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? {}) ||
-    JSON.stringify(previous.placedFeatures ?? {}) !== JSON.stringify(incoming.placedFeatures ?? {});
+  const structuralChanged = JSON.stringify(previous.rotation ?? []) !== JSON.stringify(incoming.rotation ?? previous.rotation ?? []) ||
+    JSON.stringify(previous.rotationSongs ?? {}) !== JSON.stringify(incoming.rotationSongs ?? previous.rotationSongs ?? {}) ||
+    JSON.stringify(previous.manualRotationSongs ?? {}) !== JSON.stringify(incoming.manualRotationSongs ?? previous.manualRotationSongs ?? {}) ||
+    JSON.stringify(previous.interstitialSongs ?? {}) !== JSON.stringify(incoming.interstitialSongs ?? previous.interstitialSongs ?? {}) ||
+    JSON.stringify(previous.dancerVipMap ?? {}) !== JSON.stringify(incoming.dancerVipMap ?? previous.dancerVipMap ?? {}) ||
+    JSON.stringify(previous.placedFeatures ?? {}) !== JSON.stringify(incoming.placedFeatures ?? previous.placedFeatures ?? {});
   return {
     stateVersion: (previous.stateVersion ?? 0) + 1,
     rotationVersion: (previous.rotationVersion ?? 0) + (structuralChanged ? 1 : 0),
@@ -242,48 +242,59 @@ export function boothWorkspaceSnapshot(state = {}) {
 }
 
 export function normalizeBoothState(previous, state, now = Date.now()) {
-  const revisions = nextStateRevisions(previous, state);
-  return {
-    isRotationActive: !!state.isRotationActive,
-    currentDancerIndex: state.currentDancerIndex ?? 0,
-    currentDancerName: state.currentDancerName ?? null,
-    currentTrack: state.currentTrack ?? null,
-    currentSongNumber: state.currentSongNumber ?? 0,
-    songsPerSet: state.songsPerSet ?? 3,
-    isPlaying: !!state.isPlaying,
-    rotation: state.rotation ?? [],
-    announcementsEnabled: state.announcementsEnabled !== false,
-    skipLocked: !!state.skipLocked,
-    rotationSongs: state.rotationSongs ?? {},
-    manualRotationSongs: state.manualRotationSongs ?? {},
-    volume: state.volume ?? 0.8,
-    voiceGain: state.voiceGain ?? 1.5,
-    trackTime: state.trackTime ?? 0,
-    trackDuration: state.trackDuration ?? 0,
-    trackTimeAt: state.trackTimeAt ?? 0,
-    breakSongsPerSet: state.breakSongsPerSet ?? 0,
-    breakSongIndex: state.breakSongIndex ?? null,
-    interstitialSongs: state.interstitialSongs ?? {},
-    commercialFreq: state.commercialFreq ?? 'off',
-    commercialCounter: state.commercialCounter ?? 0,
-    promoQueue: state.promoQueue ?? [],
-    availablePromos: state.availablePromos ?? [],
-    skippedCommercials: state.skippedCommercials ?? [],
-    dancerVipMap: state.dancerVipMap ?? {},
-    placedFeatures: state.placedFeatures ?? {},
-    autoplayQueue: state.autoplayQueue ?? [],
-    autoplayAutoFillEnabled: state.autoplayAutoFillEnabled !== false,
+  const source = state && typeof state === 'object' ? state : {};
+  const prior = previous && typeof previous === 'object' ? previous : {};
+  // A legacy kiosk may omit fields introduced after it was installed. Omitted
+  // data means "not supplied", not "reset to a process default"; explicit
+  // false, null, zero, and [] remain meaningful stop/empty values.
+  const read = (key, fallback) => source[key] !== undefined
+    ? source[key]
+    : (prior[key] !== undefined ? prior[key] : fallback);
+  const normalized = {
+    isRotationActive: !!read('isRotationActive', false),
+    currentDancerIndex: read('currentDancerIndex', 0),
+    currentDancerName: read('currentDancerName', null),
+    currentTrack: read('currentTrack', null),
+    currentSongNumber: read('currentSongNumber', 0),
+    songsPerSet: read('songsPerSet', 3),
+    isPlaying: !!read('isPlaying', false),
+    rotation: read('rotation', []) ?? [],
+    announcementsEnabled: read('announcementsEnabled', true) !== false,
+    skipLocked: !!read('skipLocked', false),
+    rotationSongs: read('rotationSongs', {}) ?? {},
+    manualRotationSongs: read('manualRotationSongs', {}) ?? {},
+    volume: read('volume', 0.8),
+    voiceGain: read('voiceGain', 1.5),
+    trackTime: read('trackTime', 0),
+    trackDuration: read('trackDuration', 0),
+    trackTimeAt: read('trackTimeAt', 0),
+    breakSongsPerSet: read('breakSongsPerSet', 0),
+    breakSongIndex: read('breakSongIndex', null),
+    interstitialSongs: read('interstitialSongs', {}) ?? {},
+    commercialFreq: read('commercialFreq', 'off'),
+    commercialCounter: read('commercialCounter', 0),
+    promoQueue: read('promoQueue', []) ?? [],
+    availablePromos: read('availablePromos', []) ?? [],
+    skippedCommercials: read('skippedCommercials', []) ?? [],
+    dancerVipMap: read('dancerVipMap', {}) ?? {},
+    placedFeatures: read('placedFeatures', {}) ?? {},
+    autoplayQueue: read('autoplayQueue', []) ?? [],
+    autoplayAutoFillEnabled: read('autoplayAutoFillEnabled', true) !== false,
+    // The process-level epoch is seeded on the live server's initial state.
+    // Never trust a client-supplied epoch; a legacy publisher simply carries
+    // forward the server's current one.
+    stateEpoch: typeof prior.stateEpoch === 'string' ? prior.stateEpoch : null,
     updatedAt: now,
-    diagLog: state.diagLog ?? [],
-    prePickHits: state.prePickHits ?? 0,
-    prePickMisses: state.prePickMisses ?? 0,
-    lastTransitionMs: state.lastTransitionMs ?? null,
-    lastWatchdogAt: state.lastWatchdogAt ?? null,
-    lastWatchdogSilentMs: state.lastWatchdogSilentMs ?? null,
-    lastWatchdogDancer: state.lastWatchdogDancer ?? null,
-    lastWatchdogTrack: state.lastWatchdogTrack ?? null,
-    ...revisions,
+    diagLog: read('diagLog', []) ?? [],
+    prePickHits: read('prePickHits', 0),
+    prePickMisses: read('prePickMisses', 0),
+    lastTransitionMs: read('lastTransitionMs', null),
+    lastWatchdogAt: read('lastWatchdogAt', null),
+    lastWatchdogSilentMs: read('lastWatchdogSilentMs', null),
+    lastWatchdogDancer: read('lastWatchdogDancer', null),
+    lastWatchdogTrack: read('lastWatchdogTrack', null),
   };
+  return { ...normalized, ...nextStateRevisions(prior, normalized) };
 }
 
 export class BoothCommandQueue {

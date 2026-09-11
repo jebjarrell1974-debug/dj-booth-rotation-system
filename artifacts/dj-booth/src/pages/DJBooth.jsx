@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { localEntities } from '@/api/localEntities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -81,8 +81,10 @@ import {
   VOICE_DUCK_GAIN,
 } from '@/utils/ducking';
 import { createRemoteDuckLease } from '@/utils/duckLease';
+import { acceptBoothSnapshot } from '@/utils/boothStateSnapshot';
 
 const DEFAULT_SONGS_PER_SET = 2;
+const EMPTY_MANUAL_ASSIGNMENTS = Object.freeze({});
 // Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
 // stop accepting presses in the final N seconds of a track (an announcement is about
 // to fire at track end) and while the transition/announcement itself is running.
@@ -126,6 +128,10 @@ function stableJson(value) {
     return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function setStateIfChanged(setter, next) {
+  setter(previous => stableJson(previous) === stableJson(next) ? previous : next);
 }
 
 function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef) {
@@ -214,6 +220,7 @@ export default function DJBooth() {
 
   // In VIP state — dancers temporarily removed from rotation
   const [dancerVipMap, setDancerVipMap] = useState(() => {
+    if (remoteMode) return {};
     try {
       const raw = localStorage.getItem('neonaidj_vip_map');
       if (raw) {
@@ -225,8 +232,14 @@ export default function DJBooth() {
     return {};
   });
   const dancerVipMapRef = useRef({});
-  const pendingVipRef = useRef((() => { try { const r = localStorage.getItem('neonaidj_pending_vip'); return r ? JSON.parse(r) : {}; } catch { return {}; } })());
-  const [pendingVipState, setPendingVipState] = useState(() => { try { const r = localStorage.getItem('neonaidj_pending_vip'); return r ? JSON.parse(r) : {}; } catch { return {}; } });
+  const pendingVipRef = useRef((() => {
+    if (remoteMode) return {};
+    try { const r = localStorage.getItem('neonaidj_pending_vip'); return r ? JSON.parse(r) : {}; } catch { return {}; }
+  })());
+  const [pendingVipState, setPendingVipState] = useState(() => {
+    if (remoteMode) return {};
+    try { const r = localStorage.getItem('neonaidj_pending_vip'); return r ? JSON.parse(r) : {}; } catch { return {}; }
+  });
   const [currentSongNumber, setCurrentSongNumber] = useState(1);
   const [isRotationActive, setIsRotationActive] = useState(false);
   const isRotationActiveRef = useRef(false);
@@ -237,6 +250,7 @@ export default function DJBooth() {
   // random tracks. When false (DJ-curated mode), the queue plays exactly what the DJ put
   // there and does not get random "assigned folder" songs mixed in.
   const [autoplayQueue, setAutoplayQueue] = useState(() => {
+    if (remoteMode) return [];
     try {
       const saved = localStorage.getItem('djbooth_autoplay_queue');
       const parsed = saved ? JSON.parse(saved) : [];
@@ -255,6 +269,7 @@ export default function DJBooth() {
   const autoplayPlayingRef = useRef(false);
   const autoplayFillVersionRef = useRef(0);
   const [autoplayAutoFillEnabled, setAutoplayAutoFillEnabled] = useState(() => {
+    if (remoteMode) return true;
     const stored = localStorage.getItem('djbooth_autoplay_autofill');
     return stored === null ? true : stored === 'true';
   });
@@ -262,6 +277,7 @@ export default function DJBooth() {
   useEffect(() => { autoplayAutoFillEnabledRef.current = autoplayAutoFillEnabled; }, [autoplayAutoFillEnabled]);
   useEffect(() => { autoplayQueueRef.current = autoplayQueue; }, [autoplayQueue]);
   const [rotationSongs, setRotationSongs] = useState(() => {
+    if (remoteMode) return {};
     try {
       const saved = localStorage.getItem('djbooth_rotation_songs');
       return saved ? JSON.parse(saved) : {};
@@ -282,14 +298,16 @@ export default function DJBooth() {
   // live bug on 002 — Lauren Phillips show played Black Eyed Peas). The rotation
   // itself survives via server stage state, so the placement map must survive too.
   // Ref is seeded from the same restored value (state/ref pairs on reload rule).
-  const restoredPlacedFeatures = (() => {
+  const restoredPlacedFeatures = remoteMode ? {} : (() => {
     try { return JSON.parse(localStorage.getItem('djbooth_placed_features')) || {}; } catch { return {}; }
   })();
   const placedFeaturesRef = useRef(restoredPlacedFeatures);
   const [placedFeatures, setPlacedFeatures] = useState(restoredPlacedFeatures);
   useEffect(() => {
-    try { localStorage.setItem('djbooth_placed_features', JSON.stringify(placedFeatures)); } catch {}
-  }, [placedFeatures]);
+    if (!remoteMode) {
+      try { localStorage.setItem('djbooth_placed_features', JSON.stringify(placedFeatures)); } catch {}
+    }
+  }, [placedFeatures, remoteMode]);
   // Monotonic version token guarding async rotationSongs writes (Rule 1 flip-to-bottom
   // re-pick + Rule 5 instant re-roll). Bumped at the START of any operation that wipes
   // or replaces queue state; async callbacks capture the version at dispatch and only
@@ -366,10 +384,12 @@ export default function DJBooth() {
         return;
       }
     }
-    try {
-      localStorage.setItem('djbooth_rotation_songs', JSON.stringify(rotationSongs));
-    } catch {}
-  }, [rotationSongs, songsPerSet]);
+    if (!remoteMode) {
+      try {
+        localStorage.setItem('djbooth_rotation_songs', JSON.stringify(rotationSongs));
+      } catch {}
+    }
+  }, [rotationSongs, songsPerSet, remoteMode]);
 
   const rotationRef = useRef([]);
   const dancersRef = useRef([]);
@@ -920,7 +940,9 @@ export default function DJBooth() {
     const pollState = () => {
       if (!active) return;
       boothApi.getState().then(state => {
-        if (active && state && state.updatedAt) setLiveBoothState(state);
+        if (active && state) {
+          setLiveBoothState(previous => acceptBoothSnapshot(previous, state));
+        }
       }).catch(() => {});
     };
 
@@ -929,7 +951,7 @@ export default function DJBooth() {
     const es = connectBoothSSE((data) => {
       if (!active) return;
       if (data.type === 'boothState' && data.state) {
-        setLiveBoothState(data.state);
+        setLiveBoothState(previous => acceptBoothSnapshot(previous, data.state));
       }
       if (data.type === 'djOptions') {
         setDjOptions(data);
@@ -955,33 +977,44 @@ export default function DJBooth() {
   // in-progress editor state, and none of these values grant audio authority.
   useEffect(() => {
     if (!remoteMode || !liveBoothState?.updatedAt) return;
-    setIsRotationActive(!!liveBoothState.isRotationActive);
-    isRotationActiveRef.current = !!liveBoothState.isRotationActive;
-    setCurrentDancerIndex(liveBoothState.currentDancerIndex ?? 0);
-    currentDancerIndexRef.current = liveBoothState.currentDancerIndex ?? 0;
-    setCurrentSongNumber(liveBoothState.currentSongNumber ?? 0);
-    currentSongNumberRef.current = liveBoothState.currentSongNumber ?? 0;
-    setCurrentTrack(liveBoothState.currentTrack ?? null);
-    currentTrackRef.current = liveBoothState.currentTrack ?? null;
-    setIsPlaying(!!liveBoothState.isPlaying);
-    isPlayingRef.current = !!liveBoothState.isPlaying;
-    setVolume(liveBoothState.volume ?? 0.8);
-    setVoiceGain(liveBoothState.voiceGain ?? 0.8);
-    setAnnouncementsEnabled(liveBoothState.announcementsEnabled !== false);
-    setBreakSongsPerSet(liveBoothState.breakSongsPerSet ?? 0);
-    breakSongsPerSetRef.current = liveBoothState.breakSongsPerSet ?? 0;
-    setDancerVipMap(liveBoothState.dancerVipMap || {});
-    dancerVipMapRef.current = liveBoothState.dancerVipMap || {};
+    const nextIsRotationActive = !!liveBoothState.isRotationActive;
+    const nextCurrentDancerIndex = liveBoothState.currentDancerIndex ?? 0;
+    const nextCurrentSongNumber = liveBoothState.currentSongNumber ?? 0;
+    const nextCurrentTrack = liveBoothState.currentTrack ?? null;
+    const nextIsPlaying = !!liveBoothState.isPlaying;
+    const nextVolume = liveBoothState.volume ?? 0.8;
+    const nextVoiceGain = liveBoothState.voiceGain ?? 0.8;
+    const nextAnnouncementsEnabled = liveBoothState.announcementsEnabled !== false;
+    const nextBreakSongsPerSet = liveBoothState.breakSongsPerSet ?? 0;
+    const nextDancerVipMap = liveBoothState.dancerVipMap || {};
+    setStateIfChanged(setIsRotationActive, nextIsRotationActive);
+    isRotationActiveRef.current = nextIsRotationActive;
+    setStateIfChanged(setCurrentDancerIndex, nextCurrentDancerIndex);
+    currentDancerIndexRef.current = nextCurrentDancerIndex;
+    setStateIfChanged(setCurrentSongNumber, nextCurrentSongNumber);
+    currentSongNumberRef.current = nextCurrentSongNumber;
+    setStateIfChanged(setCurrentTrack, nextCurrentTrack);
+    currentTrackRef.current = nextCurrentTrack;
+    setStateIfChanged(setIsPlaying, nextIsPlaying);
+    isPlayingRef.current = nextIsPlaying;
+    setStateIfChanged(setVolume, nextVolume);
+    setStateIfChanged(setVoiceGain, nextVoiceGain);
+    setStateIfChanged(setAnnouncementsEnabled, nextAnnouncementsEnabled);
+    setStateIfChanged(setBreakSongsPerSet, nextBreakSongsPerSet);
+    breakSongsPerSetRef.current = nextBreakSongsPerSet;
+    setStateIfChanged(setDancerVipMap, nextDancerVipMap);
+    dancerVipMapRef.current = nextDancerVipMap;
     const nextAutoplayQueue = liveBoothState.autoplayQueue || [];
-    setAutoplayQueue(nextAutoplayQueue);
+    setStateIfChanged(setAutoplayQueue, nextAutoplayQueue);
     autoplayQueueRef.current = nextAutoplayQueue;
-    setAutoplayAutoFillEnabled(liveBoothState.autoplayAutoFillEnabled !== false);
-    autoplayAutoFillEnabledRef.current = liveBoothState.autoplayAutoFillEnabled !== false;
+    const nextAutoplayAutoFillEnabled = liveBoothState.autoplayAutoFillEnabled !== false;
+    setStateIfChanged(setAutoplayAutoFillEnabled, nextAutoplayAutoFillEnabled);
+    autoplayAutoFillEnabledRef.current = nextAutoplayAutoFillEnabled;
 
     if (hydratedRotationVersionRef.current !== liveBoothState.rotationVersion) {
       hydratedRotationVersionRef.current = liveBoothState.rotationVersion;
       const nextRotation = liveBoothState.rotation || [];
-      setRotation(nextRotation);
+      setStateIfChanged(setRotation, nextRotation);
       rotationRef.current = nextRotation;
       commitRotationSongs(liveBoothState.rotationSongs || {});
       const interstitials = liveBoothState.interstitialSongs || {};
@@ -2788,6 +2821,7 @@ export default function DJBooth() {
 
   const restoredSongsRef = useRef(false);
   useEffect(() => {
+    if (remoteMode) return;
     if (restoredSongsRef.current) return;
     if (!isRotationActive || rotation.length === 0 || tracks.length === 0 || dancers.length === 0) return;
     if (Object.keys(rotationSongsRef.current).length > 0) return;
@@ -2836,7 +2870,7 @@ export default function DJBooth() {
       commitRotationSongs(selectedSongs);
       console.log('🔄 Restored rotation song assignments after restart');
     })();
-  }, [isRotationActive, rotation, tracks, dancers, getDancerTracks]);
+  }, [isRotationActive, rotation, tracks, dancers, getDancerTracks, remoteMode]);
 
   const playAnnouncement = useCallback(async (type, currentDancerName, nextDancerName = null, roundNumber = 1, audioOptions = {}) => {
     if (!announcementsEnabled) {
@@ -6237,6 +6271,11 @@ export default function DJBooth() {
     return () => clearTimeout(timer);
   }, [rotation, dancers, currentDancerIndex, remoteMode]);
 
+  const authoritativeManualAssignments = useMemo(() => {
+    if (remoteMode) return liveBoothState?.manualRotationSongs || EMPTY_MANUAL_ASSIGNMENTS;
+    return filterManualAssignments(djSavedSongsRef.current, djSavedManualRef.current);
+  }, [remoteMode, liveBoothState?.manualRotationSongs, rotationSongs, plannedSongAssignments]);
+
   if (phoneRemoteMode) {
     return (
       <RemoteView
@@ -6821,10 +6860,11 @@ export default function DJBooth() {
                   : cancelFeaturePlacement}
                 djOptions={djOptions}
                 songCooldowns={playedSongsMap}
-                activeRotationSongs={isRotationActive ? rotationSongs : null}
-                authoritativeManualAssignments={remoteMode
-                  ? (liveBoothState?.manualRotationSongs || {})
-                  : filterManualAssignments(djSavedSongsRef.current, djSavedManualRef.current)}
+                activeRotationSongs={remoteMode
+                  ? (liveBoothState ? (liveBoothState.rotationSongs || {}) : null)
+                  : (isRotationActive ? rotationSongs : null)}
+                authoritativeManualAssignments={authoritativeManualAssignments}
+                remoteMode={remoteMode}
                 savedInterstitials={interstitialSongsState}
                 interstitialRemoteVersion={interstitialRemoteVersion}
                 activeBreakInfo={activeBreakInfo}

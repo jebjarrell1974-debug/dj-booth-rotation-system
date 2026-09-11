@@ -182,7 +182,15 @@ export const zoneProApi = {
 
 export const boothApi = {
   getState: () => apiFetch('/booth/state'),
-  postState: (state) => apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) }),
+  postState: (state) => {
+    // State is a publication from the physical kiosk, never a remote editor
+    // write. Keep this guard at the transport boundary as well as in the
+    // publisher effect so a legacy/accidental caller cannot reset booth state.
+    if (isRemoteMode()) {
+      return Promise.reject(new Error('Only the physical kiosk may publish booth state'));
+    }
+    return apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) });
+  },
   getCommand: (commandId) => apiFetch(`/booth/command/${commandId}`),
   sendCommand: async (action, payload = {}, options = {}) => {
     const requestId = options.requestId || (

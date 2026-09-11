@@ -97,6 +97,10 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 
 const DANCER_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+// State revisions restart when this process restarts. The epoch lets remotes
+// distinguish a new kiosk publication from a delayed response belonging to
+// the previous server instance.
+const BOOTH_STATE_EPOCH = `${Date.now()}-${process.pid}`;
 
 let liveBoothState = {
   isRotationActive: false,
@@ -134,6 +138,7 @@ let liveBoothState = {
   lastWatchdogSilentMs: null,
   lastWatchdogDancer: null,
   lastWatchdogTrack: null,
+  stateEpoch: BOOTH_STATE_EPOCH,
   stateVersion: 0,
   rotationVersion: 0,
 };

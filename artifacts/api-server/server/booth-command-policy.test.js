@@ -91,6 +91,51 @@ test('zero-valued booth state survives normalization', () => {
   assert.equal(state.updatedAt, 1234);
 });
 
+test('legacy omitted fields preserve the confirmed kiosk snapshot while explicit empty stops apply', () => {
+  const previous = {
+    stateEpoch: '1000-kiosk-a',
+    stateVersion: 4,
+    rotationVersion: 2,
+    isRotationActive: true,
+    isPlaying: true,
+    rotation: [8],
+    rotationSongs: { 8: ['full8'] },
+    manualRotationSongs: { 8: ['full8'] },
+    autoplayQueue: [{ name: 'full8' }],
+    volume: 0.45,
+    voiceGain: 0.5,
+  };
+  const legacy = normalizeBoothState(previous, {
+    currentTrack: 'full8',
+    stateEpoch: 'forged-client-epoch',
+  }, 2000);
+  assert.equal(legacy.stateEpoch, previous.stateEpoch);
+  assert.deepEqual(legacy.rotation, [8]);
+  assert.deepEqual(legacy.rotationSongs, { 8: ['full8'] });
+  assert.deepEqual(legacy.autoplayQueue, [{ name: 'full8' }]);
+  assert.equal(legacy.volume, 0.45);
+  assert.equal(legacy.voiceGain, 0.5);
+
+  const stopped = normalizeBoothState(legacy, {
+    isRotationActive: false,
+    isPlaying: false,
+    rotation: [],
+    rotationSongs: {},
+    manualRotationSongs: {},
+    autoplayQueue: [],
+    currentTrack: null,
+  }, 3000);
+  assert.equal(stopped.isRotationActive, false);
+  assert.equal(stopped.isPlaying, false);
+  assert.deepEqual(stopped.rotation, []);
+  assert.deepEqual(stopped.rotationSongs, {});
+  assert.deepEqual(stopped.manualRotationSongs, {});
+  assert.deepEqual(stopped.autoplayQueue, []);
+  assert.equal(stopped.currentTrack, null);
+  assert.equal(stopped.stateVersion, legacy.stateVersion + 1);
+  assert.equal(stopped.rotationVersion, legacy.rotationVersion + 1);
+});
+
 test('duck lease commands accept scoped lease IDs and reject malformed leases', () => {
   assert.equal(validateBoothCommand('acquireDuck', { leaseId: 'session-a', leaseMs: 3000 }).ok, true);
   assert.equal(validateBoothCommand('renewDuck', { leaseId: 'session-a' }).ok, true);
