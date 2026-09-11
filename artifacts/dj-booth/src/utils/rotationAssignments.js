@@ -62,6 +62,54 @@ export function capSongAssignments(assignments, songsPerSet) {
   return changed ? capped : assignments;
 }
 
+function sameSongNameList(left, right) {
+  return Array.isArray(left) && Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((song, index) => song === right[index]);
+}
+
+// Normalize the assignment map used by the rotation editor without allocating
+// a new object when the displayed values are already stable. This is important
+// for the editor's layout effect: returning a fresh object for an unchanged
+// snapshot causes React to render forever while trying to "normalize" it.
+// Manual ids intentionally bypass the automatic set-length cap, but still
+// receive the same name normalization as remote/manual transport payloads.
+export function normalizeDisplayedAssignments(assignments, songsPerSet, manualIds = []) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+
+  const manualSet = new Set(Array.from(manualIds || [], id => String(id)));
+  let next = assignments;
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    const normalized = manualSet.has(String(dancerId))
+      ? normalizeManualSongList(songs)
+      : capSongList(songs, songsPerSet);
+    if (normalized === songs || sameSongNameList(songs, normalized)) continue;
+    if (next === assignments) next = { ...assignments };
+    next[dancerId] = normalized;
+  }
+
+  return next;
+}
+
+// Cap automatic assignments while leaving explicit DJ-set entries untouched.
+// Like the display normalizer above, return the original map when no value
+// changed so callers can safely compare by reference before setting state.
+export function capSongAssignmentsPreservingManual(assignments, songsPerSet, manualIds = []) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+
+  const manualSet = new Set(Array.from(manualIds || [], id => String(id)));
+  let next = assignments;
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    const normalized = manualSet.has(String(dancerId))
+      ? (Array.isArray(songs) ? songs : [])
+      : capSongList(songs, songsPerSet);
+    if (normalized === songs) continue;
+    if (next === assignments) next = { ...assignments };
+    next[dancerId] = normalized;
+  }
+  return next;
+}
+
 // Workspace state can contain either the browser's track objects or the
 // compact names sent by a remote editor. Older scanner payloads used
 // file_name/filename instead of name, so never let that shape reach a React

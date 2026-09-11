@@ -6,11 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  capSongAssignments,
   capSongList,
   currentRotationDancerId,
   fillSongListToLimit,
   getSongName,
+  normalizeDisplayedAssignments as normalizeDisplayedAssignmentMap,
   normalizeManualSongList,
   normalizeSongAssignments,
   normalizeSongList,
@@ -370,20 +370,13 @@ export default function RotationPlaylistManager({
     });
   }, [onInterstitialSongsChange]);
   const normalizeDisplayedAssignments = useCallback((assignments) => {
-    const capped = capSongAssignments(assignments, songsPerSet);
     const manualIds = new Set([
       ...djOverridesRef.current,
       ...dirtyOverridesRef.current,
       ...Object.keys(authoritativeManualAssignments || {}),
       ...Object.keys(authoritativeManualSetLengths || {}),
     ]);
-    const normalized = { ...capped };
-    for (const id of manualIds) {
-      if (Object.prototype.hasOwnProperty.call(assignments || {}, id)) {
-        normalized[id] = normalizeManualSongList(assignments[id]);
-      }
-    }
-    return normalized;
+    return normalizeDisplayedAssignmentMap(assignments, songsPerSet, manualIds);
   }, [songsPerSet, authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey]);
   const prevCurrentDancerIdRef = React.useRef(null);
   const saveGuardRef = React.useRef(0);

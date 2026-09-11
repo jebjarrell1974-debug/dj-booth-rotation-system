@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   capSongAssignments,
+  capSongAssignmentsPreservingManual,
   capSongList,
   currentRotationDancerId,
   filterManualAssignments,
@@ -9,6 +10,7 @@ import {
   getSongName,
   applyManualAssignments,
   normalizeSongAssignments,
+  normalizeDisplayedAssignments,
   normalizeSongsPerSet,
   queueLatestManualAssignment,
   reconcileAuthoritativeAssignments,
@@ -39,6 +41,51 @@ test('preserves references when assignments already fit', () => {
   const assignments = { cash: ['one.mp3', 'two.mp3'] };
   assert.equal(capSongAssignments(assignments, 2), assignments);
   assert.equal(capSongList(assignments.cash, 2), assignments.cash);
+});
+
+test('display normalization converges without replacing an unchanged assignment map', () => {
+  const assignments = { cash: ['one.mp3', 'two.mp3'] };
+  const first = normalizeDisplayedAssignments(assignments, 2);
+  const second = normalizeDisplayedAssignments(first, 2);
+  assert.equal(first, assignments);
+  assert.equal(second, first);
+});
+
+test('display normalization caps once and reuses the converged map', () => {
+  const assignments = { cash: ['one.mp3', 'two.mp3', 'three.mp3'] };
+  const first = normalizeDisplayedAssignments(assignments, 2);
+  const second = normalizeDisplayedAssignments(first, 2);
+  assert.deepEqual(first, { cash: ['one.mp3', 'two.mp3'] });
+  assert.equal(second, first);
+});
+
+test('display normalization preserves manual set length and stabilizes after conversion', () => {
+  const assignments = {
+    cash: [{ name: 'one.mp3' }, { name: 'two.mp3' }, { name: 'three.mp3' }],
+  };
+  const first = normalizeDisplayedAssignments(assignments, 2, ['cash']);
+  const second = normalizeDisplayedAssignments(first, 2, ['cash']);
+  assert.deepEqual(first, { cash: ['one.mp3', 'two.mp3', 'three.mp3'] });
+  assert.equal(second, first);
+});
+
+test('manual-aware assignment capping does not replace an already stable map', () => {
+  const assignments = {
+    automatic: ['one.mp3', 'two.mp3'],
+    manual: [{ name: 'one.mp3' }, { name: 'two.mp3' }, { name: 'three.mp3' }],
+  };
+  const stable = capSongAssignmentsPreservingManual(assignments, 2, ['manual']);
+  assert.equal(stable, assignments);
+  assert.equal(stable.manual, assignments.manual);
+
+  const cappedInput = {
+    ...assignments,
+    automatic: [...assignments.automatic, 'three.mp3'],
+  };
+  const capped = capSongAssignmentsPreservingManual(cappedInput, 2, ['manual']);
+  assert.notEqual(capped, cappedInput);
+  assert.equal(capped.manual, cappedInput.manual);
+  assert.deepEqual(capped.automatic, ['one.mp3', 'two.mp3']);
 });
 
 test('filters automatic assignments out of the DJ override ledger', () => {
@@ -220,4 +267,11 @@ test('a rapid edit sequence resolves to the latest manual assignment', () => {
   queued = queueLatestManualAssignment(queued, 'dancer', ['one.mp3', 'two.mp3']);
   queued = queueLatestManualAssignment(queued, 'dancer', ['final.mp3']);
   assert.deepEqual(queued, { dancer: ['final.mp3'] });
+});
+
+test('editor normalization accepts the live Set of manual ids and converges', () => {
+  const assignments = { dancer: Array.from({ length: 20 }, (_, i) => `song-${i}`) };
+  const ids = new Set(['dancer']);
+  assert.equal(normalizeDisplayedAssignments(assignments, 1, ids), assignments);
+  assert.equal(normalizeDisplayedAssignments({}, 1, new Set()).constructor, Object);
 });

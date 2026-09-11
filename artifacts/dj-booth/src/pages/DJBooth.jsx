@@ -56,6 +56,7 @@ import FeatureEntertainerPanel from '@/components/dj/FeatureEntertainerPanel';
 import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
 import {
   applyManualAssignments,
+  capSongAssignmentsPreservingManual,
   capSongList,
   filterManualAssignments,
   fillSongListToLimit,
@@ -400,14 +401,8 @@ export default function DJBooth() {
     );
   };
   const preserveManualAssignments = (assignments, limit = songsPerSetRef.current) => {
-    if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
-    const next = {};
-    for (const [dancerId, songs] of Object.entries(assignments)) {
-      next[dancerId] = isManualSet(dancerId)
-        ? (Array.isArray(songs) ? songs : [])
-        : capSongList(songs, limit);
-    }
-    return next;
+    const manualIds = Object.keys(assignments || {}).filter(dancerId => isManualSet(dancerId));
+    return capSongAssignmentsPreservingManual(assignments, limit, manualIds);
   };
   const persistDjSaved = () => {
     djSavedSongsRef.current = preserveManualAssignments(
