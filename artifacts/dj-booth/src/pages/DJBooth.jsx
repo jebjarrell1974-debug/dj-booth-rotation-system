@@ -68,9 +68,16 @@ import {
 import {
   filterAutomaticTracks,
   fetchAutomaticHistory,
+  getRecentSongHistory,
   filterUnplayedAutomaticTracks,
+  isRecentlyPlayed,
   isAutomaticSelectionExcluded,
 } from '@/utils/automaticTrackSelection';
+import {
+  getColdAutoplayStartupDecision,
+  getIdleAutoplayStartMode,
+  IDLE_AUTOPLAY_START_MODES,
+} from '@/utils/idleAutoplayRecovery';
 import {
   clearInterstitialBreak,
   commitInterstitialWorkspace as normalizeInterstitialWorkspace,
@@ -103,6 +110,7 @@ import {
 const DEFAULT_SONGS_PER_SET = 2;
 const EMPTY_MANUAL_ASSIGNMENTS = Object.freeze({});
 const SONG_HISTORY_STORAGE_KEY = 'djbooth_song_cooldowns';
+const INITIAL_TRACK_RETRY_MS = 5000;
 // Skip lockout window: with announcements ON, the Next Entertainer / skip buttons
 // stop accepting presses in the final N seconds of a track (an announcement is about
 // to fire at track end) and while the transition/announcement itself is running.
@@ -118,10 +126,9 @@ function auditEvent(action, details) {
   }).catch(() => {});
 }
 
-// This used to be treated as a four-hour cooldown cache. Automatic selection
-// is now a one-shot ledger: retain every locally observed play so an offline
-// fallback never starts recycling tracks after the cooldown expires. The
-// server remains authoritative when online and supplies the same ledger.
+// Retain every locally observed play as a durable ledger. Automatic selection
+// derives the active six-hour cooldown view from it, while the server remains
+// authoritative when online.
 function readPersistedSongHistory() {
   try {
     const parsed = JSON.parse(localStorage.getItem(SONG_HISTORY_STORAGE_KEY) || '{}');
@@ -310,7 +317,7 @@ export default function DJBooth() {
     const stored = localStorage.getItem('djbooth_autoplay_autofill');
     return stored === null ? true : stored === 'true';
   });
-  const autoplayAutoFillEnabledRef = useRef(true);
+  const autoplayAutoFillEnabledRef = useRef(autoplayAutoFillEnabled);
   useEffect(() => { autoplayAutoFillEnabledRef.current = autoplayAutoFillEnabled; }, [autoplayAutoFillEnabled]);
   useEffect(() => { autoplayQueueRef.current = autoplayQueue; }, [autoplayQueue]);
   const [rotationSongs, setRotationSongs] = useState(() => {
@@ -700,7 +707,9 @@ export default function DJBooth() {
 
   const songCooldownRef = useRef(readPersistedSongHistory());
   const songHistoryReadyRef = useRef(false);
-  const [playedSongsMap, setPlayedSongsMap] = useState(() => ({ ...songCooldownRef.current }));
+  const [playedSongsMap, setPlayedSongsMap] = useState(() => (
+    getRecentSongHistory(songCooldownRef.current)
+  ));
   const [songHistoryReady, setSongHistoryReady] = useState(false);
 
   useEffect(() => {
@@ -709,9 +718,10 @@ export default function DJBooth() {
     const controller = new AbortController();
     const retryDelayMs = 5000;
 
-    // Automatic selection must remain disabled until a valid all-history
-    // response arrives. Each scheduled retry reads the token again so a login
-    // refresh can recover without reloading the kiosk.
+    // Automatic selection must remain disabled until a valid six-hour
+    // cooldown response arrives. The local ledger remains all-time; each
+    // scheduled retry reads the token again so a login refresh can recover
+    // without reloading the kiosk.
     songHistoryReadyRef.current = false;
     setSongHistoryReady(false);
 
@@ -734,7 +744,9 @@ export default function DJBooth() {
           }
         }
         songCooldownRef.current = merged;
-        setPlayedSongsMap({ ...merged });
+        // Keep the complete map in songCooldownRef for durable history, but only
+        // expose the active six-hour cooldown window to the UI/remotes.
+        setPlayedSongsMap(getRecentSongHistory(merged));
         try {
           localStorage.setItem(SONG_HISTORY_STORAGE_KEY, JSON.stringify(merged));
         } catch {}
@@ -746,7 +758,7 @@ export default function DJBooth() {
 
       songHistoryReadyRef.current = false;
       setSongHistoryReady(false);
-      console.warn('⚠️ Failed to load all-time song history:', result.error);
+      console.warn('⚠️ Failed to load six-hour song cooldowns:', result.error);
       retryTimer = setTimeout(loadCooldowns, retryDelayMs);
     };
 
@@ -758,12 +770,23 @@ export default function DJBooth() {
     };
   }, []);
 
+  // The durable ledger intentionally never shrinks, but the map passed to
+  // rotation/remotes is a live six-hour view. Refresh it while the booth is
+  // idle so entries disappear from the UI when their cooldown expires.
+  useEffect(() => {
+    const refreshCooldownView = () => {
+      setPlayedSongsMap(getRecentSongHistory(songCooldownRef.current));
+    };
+    const interval = setInterval(refreshCooldownView, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const recordSongPlayed = useCallback((trackName, dancerName = null, genre = null) => {
     if (!trackName || !songCooldownRef.current) return;
     if (playingCommercialRef.current) return;
     const playedAt = Date.now();
     songCooldownRef.current[trackName] = playedAt;
-    setPlayedSongsMap(prev => ({ ...prev, [trackName]: playedAt }));
+    setPlayedSongsMap(getRecentSongHistory(songCooldownRef.current, playedAt));
     try {
       localStorage.setItem(SONG_HISTORY_STORAGE_KEY, JSON.stringify(songCooldownRef.current));
     } catch {}
@@ -788,7 +811,10 @@ export default function DJBooth() {
   const filterCooldown = useCallback((trackList) => {
     if (!trackList || trackList.length === 0) return trackList;
     if (!songCooldownRef.current) return trackList;
-    const available = filterUnplayedAutomaticTracks(trackList, songCooldownRef.current);
+    const available = filterUnplayedAutomaticTracks(
+      trackList,
+      getRecentSongHistory(songCooldownRef.current),
+    );
     if (available.length === 0) {
       console.warn('⚠️ Automatic selection exhausted: no unplayed local tracks remain');
     }
@@ -1569,11 +1595,9 @@ export default function DJBooth() {
         const token = localStorage.getItem('djbooth_token');
         const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
         const activeGenres = djOptionsRef.current?.activeGenres?.length > 0 ? djOptionsRef.current.activeGenres : [];
-        const cooldowns = songCooldownRef.current || {};
-        const cooldownNames = Object.keys(cooldowns);
         const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
         const existingBreakNames = Object.values(current).flat();
-        const excludeNames = [...new Set([...cooldownNames, ...assignedNames, ...existingBreakNames])];
+        const excludeNames = [...new Set([...assignedNames, ...existingBreakNames])];
         const res = await fetch('/api/music/select', {
           method: 'POST', headers,
            body: JSON.stringify({ count: totalNeeded, excludeNames, genres: activeGenres, dancerPlaylist: [], automatic: true }),
@@ -1581,7 +1605,10 @@ export default function DJBooth() {
         });
         if (res.ok) {
           const data = await res.json();
-           const pool = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+           const pool = filterUnplayedAutomaticTracks(
+             data.tracks || [],
+             getRecentSongHistory(songCooldownRef.current),
+           )
              .map(t => t.name)
              .sort(() => Math.random() - 0.5);
            if (pool.length === 0) {
@@ -2574,16 +2601,20 @@ export default function DJBooth() {
       const token = localStorage.getItem('djbooth_token');
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
-      const cooldowns = songCooldownRef.current || {};
-      const recentNames = Object.keys(cooldowns);
-      const excludeParam = recentNames.length > 0 ? `&exclude=${encodeURIComponent(recentNames.join(','))}` : '';
+      const currentNames = currentTrackRef.current ? [currentTrackRef.current] : [];
+      const excludeParam = currentNames.length > 0
+        ? `&exclude=${encodeURIComponent(currentNames.join(','))}`
+        : '';
       const res = await fetch(`/api/music/random?count=5&automatic=true${genresParam}${excludeParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(5000)
       });
       if (res.ok) {
         const data = await res.json();
-        const serverTracks = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+         const serverTracks = filterUnplayedAutomaticTracks(
+           data.tracks || [],
+           getRecentSongHistory(songCooldownRef.current),
+         )
           .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
         for (let i = 0; i < serverTracks.length; i++) {
           if (hitSuspension) await waitForVisible();
@@ -2617,7 +2648,7 @@ export default function DJBooth() {
       console.warn('⚠️ PlayFallback: no eligible unplayed automatic tracks remain');
       return false;
     }
-    const cooldowns = songCooldownRef.current || {};
+    const cooldowns = getRecentSongHistory(songCooldownRef.current);
     const shuffled = fisherYatesShuffle(pool);
     shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
     const maxAttempts = Math.min(5, shuffled.length);
@@ -2661,10 +2692,9 @@ export default function DJBooth() {
       const token = localStorage.getItem('djbooth_token');
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
-      const cooldowns = songCooldownRef.current || {};
-      const recentNames = Object.keys(cooldowns);
       const queueNames = currentQueue.map(t => t.name);
-      const allExclude = [...new Set([...recentNames, ...queueNames])];
+      const currentNames = currentTrackRef.current ? [currentTrackRef.current] : [];
+      const allExclude = [...new Set([...queueNames, ...currentNames])];
       const excludeParam = allExclude.length > 0 ? `&exclude=${encodeURIComponent(allExclude.join(','))}` : '';
       const res = await fetch(`/api/music/random?count=${needed}&automatic=true${genresParam}${excludeParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -2675,7 +2705,10 @@ export default function DJBooth() {
         const data = await res.json();
         const latestQueue = autoplayQueueRef.current;
         const latestNames = new Set(latestQueue.map(t => t.name));
-        const newTracks = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+         const newTracks = filterUnplayedAutomaticTracks(
+           data.tracks || [],
+           getRecentSongHistory(songCooldownRef.current),
+         )
           .filter(t => !latestNames.has(t.name))
           .map(t => ({ ...t, url: `/api/music/stream/${t.id}`, autoFilled: true }));
         const filled = [...latestQueue, ...newTracks].slice(0, AUTOPLAY_QUEUE_SIZE);
@@ -2702,39 +2735,87 @@ export default function DJBooth() {
   }, []);
   updateAutoplayQueueRef.current = updateAutoplayQueue;
 
-  const playFromAutoplayQueue = useCallback(async (crossfade = true) => {
+  const playFromAutoplayQueue = useCallback(async (crossfade = true, { idleOnly = false } = {}) => {
+    const waitForQueueFill = async () => {
+      let waitedMs = 0;
+      while (autoplayFillInFlightRef.current && waitedMs < 5500) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        waitedMs += 100;
+      }
+      return !autoplayFillInFlightRef.current;
+    };
+    const getStartMode = () => getIdleAutoplayStartMode({
+      hasQueue: autoplayQueueRef.current.length > 0,
+      autoFillEnabled: autoplayAutoFillEnabledRef.current,
+      historyReady: songHistoryReadyRef.current,
+      rotationActive: isRotationActiveRef.current && rotationRef.current.length > 0,
+      paused: playbackExpectedRef.current && !isPlayingRef.current,
+    });
+    const playFallback = async () => {
+      const success = await playFallbackTrack(crossfade);
+      if (success === true) {
+        playbackExpectedRef.current = true;
+        isPlayingRef.current = true;
+      }
+      return success;
+    };
+    const canStart = () => !idleOnly
+      || getStartMode() !== IDLE_AUTOPLAY_START_MODES.BLOCKED;
+    if (!canStart()) return false;
     if (autoplayPlayingRef.current) return false;
     autoplayPlayingRef.current = true;
     try {
       let queue = autoplayQueueRef.current;
       if (queue.length === 0) {
-        const filled = await fillAutoplayQueue([]);
+        if (idleOnly && (!autoplayAutoFillEnabledRef.current || !songHistoryReadyRef.current)) return false;
+        if (!(await waitForQueueFill())) return false;
+        await fillAutoplayQueue([]);
+        if (!canStart()) return false;
         queue = autoplayQueueRef.current;
-        if (queue.length === 0) return playFallbackTrack(crossfade);
+        if (queue.length === 0) {
+          if (idleOnly && getStartMode() !== IDLE_AUTOPLAY_START_MODES.AUTOFILL) return false;
+          return playFallback();
+        }
       }
       const safeQueue = queue.filter(track => !(track?.autoFilled && isAutomaticSelectionExcluded(track)));
       if (safeQueue.length !== queue.length) {
         queue = safeQueue;
         updateAutoplayQueue(queue);
         if (queue.length === 0) {
-          const filled = await fillAutoplayQueue([]);
+          if (idleOnly && (!autoplayAutoFillEnabledRef.current || !songHistoryReadyRef.current)) return false;
+          if (!(await waitForQueueFill())) return false;
+          await fillAutoplayQueue([]);
+          if (!canStart()) return false;
           queue = autoplayQueueRef.current;
-          if (queue.length === 0) return playFallbackTrack(crossfade);
+          if (queue.length === 0) {
+            if (idleOnly && getStartMode() !== IDLE_AUTOPLAY_START_MODES.AUTOFILL) return false;
+            return playFallback();
+          }
         }
       }
+      if (!canStart()) return false;
       const track = queue[0];
       const remaining = queue.slice(1);
       updateAutoplayQueue(remaining);
       fillAutoplayQueue(remaining);
       console.log(`🎵 AutoplayQueue: Playing "${track.name}", ${remaining.length} remaining`);
-      recordSongPlayed(track.name);
-      setIsPlaying(true);
       const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, crossfade);
-      if (success === false) {
+      if (success !== true) {
         console.warn('⚠️ AutoplayQueue: Track failed, trying fallback');
-        return playFallbackTrack(crossfade);
+        if (
+          idleOnly
+          && (
+            !autoplayAutoFillEnabledRef.current
+            || getStartMode() === IDLE_AUTOPLAY_START_MODES.BLOCKED
+          )
+        ) return false;
+        return playFallback();
       }
-      return success;
+      recordSongPlayed(track.name);
+      playbackExpectedRef.current = true;
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+      return true;
     } finally {
       autoplayPlayingRef.current = false;
     }
@@ -2779,12 +2860,10 @@ export default function DJBooth() {
       }
     }
     const name = trackName || decodeURIComponent(trackUrl.split('/').pop().split('?')[0]) || null;
-    if (name) recordSongPlayed(name, null, trackGenre);
     if (isFeatureTrack(name, trackGenre)) {
       console.log('🌟 PlayTrack: FEATURE track detected — playing full duration:', name);
       audioEngineRef.current.setMaxDuration(3600);
     }
-    playbackExpectedRef.current = true;
     lastAudioActivityRef.current = Date.now();
     console.log('🎵 PlayTrack: Playing track URL, crossfade=' + crossfade);
     // Commercial boost: Promos-genre tracks route through the music bus and end up
@@ -2818,12 +2897,16 @@ export default function DJBooth() {
       if (!allowFallback) return false;
       console.warn('⚠️ PlayTrack: Engine returned failure, trying fallback');
       const fallbackOk = await playFallbackTrack(crossfade, rotationSongNumber);
+      if (fallbackOk) playbackExpectedRef.current = true;
       if (!fallbackOk) {
         console.error('🚨 PlayTrack: All recovery failed — resuming whatever is on active deck');
         audioEngineRef.current?.resume();
       }
       return fallbackOk;
     }
+    playbackExpectedRef.current = true;
+    isPlayingRef.current = true;
+    if (name) recordSongPlayed(name, null, trackGenre);
     setIsPlaying(true);
     return true;
   }, [recordSongPlayed, playFallbackTrack, isFeatureTrack, tracks]);
@@ -2844,26 +2927,71 @@ export default function DJBooth() {
   playTrackRef.current = playTrack;
 
   const tracksLoadedRef = useRef(false);
+  const initialTrackLoadInFlightRef = useRef(false);
   const initialLoadGraceRef = useRef(true);
   useEffect(() => {
     if (remoteMode || tracksLoadedRef.current || !songHistoryReady) return;
-    tracksLoadedRef.current = true;
-    lastAudioActivityRef.current = Date.now();
-    (async () => {
-      const loaded = await refreshTracks();
-      if (loaded && loaded.length > 0 && !isPlaying) {
-        const pool = filterAutomaticTracks(filterCooldown(loaded));
-        const randomTrack = pool[Math.floor(Math.random() * pool.length)];
-        if (randomTrack?.url) {
-          lastAudioActivityRef.current = Date.now();
-          await playTrack(randomTrack.url, false, randomTrack.name, randomTrack.genre);
-          lastAudioActivityRef.current = Date.now();
-        } else {
-          console.warn('⚠️ Initial automatic playback skipped: no eligible unplayed tracks remain');
-        }
+    let cancelled = false;
+    let retryTimer = null;
+    let graceTimer = null;
+
+    const loadInitialTracks = async () => {
+      if (cancelled || tracksLoadedRef.current || initialTrackLoadInFlightRef.current) return;
+      initialTrackLoadInFlightRef.current = true;
+      let loaded = null;
+      try {
+        loaded = await refreshTracks();
+      } catch (error) {
+        console.warn('⚠️ Initial track load failed; retrying:', error?.message || error);
       }
-      setTimeout(() => { initialLoadGraceRef.current = false; }, 15000);
-    })();
+      initialTrackLoadInFlightRef.current = false;
+      if (cancelled) return;
+      if (!Array.isArray(loaded) || loaded.length === 0) {
+        // Do not latch tracksLoaded on a failed/empty response. A bounded-delay
+        // retry lets a startup race or transient API failure recover without a
+        // request storm or requiring a kiosk reload.
+        retryTimer = setTimeout(loadInitialTracks, INITIAL_TRACK_RETRY_MS);
+        return;
+      }
+
+      const startMode = isPlayingRef.current
+        ? IDLE_AUTOPLAY_START_MODES.BLOCKED
+        : getIdleAutoplayStartMode({
+          hasQueue: autoplayQueueRef.current.length > 0,
+          autoFillEnabled: autoplayAutoFillEnabledRef.current,
+          historyReady: songHistoryReadyRef.current,
+          rotationActive: isRotationActiveRef.current && rotationRef.current.length > 0,
+          paused: playbackExpectedRef.current && !isPlayingRef.current,
+        });
+      const playbackSucceeded = startMode === IDLE_AUTOPLAY_START_MODES.BLOCKED
+        ? false
+        : await playFromAutoplayQueue(false, { idleOnly: true }) === true;
+      const startupDecision = getColdAutoplayStartupDecision({
+        hasTracks: loaded.length > 0,
+        startMode,
+        playbackSucceeded,
+      });
+      if (startupDecision === 'retry') {
+        console.warn('⚠️ Initial automatic playback did not start; retrying through autoplay queue');
+        retryTimer = setTimeout(loadInitialTracks, INITIAL_TRACK_RETRY_MS);
+        return;
+      }
+
+      // A nonempty track response is considered loaded only after shared idle
+      // playback succeeds. Explicit pause/manual-off/active-rotation states
+      // intentionally hold here without inventing a random starter.
+      tracksLoadedRef.current = true;
+      lastAudioActivityRef.current = Date.now();
+      graceTimer = setTimeout(() => { initialLoadGraceRef.current = false; }, 15000);
+    };
+
+    loadInitialTracks();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (graceTimer) clearTimeout(graceTimer);
+      initialTrackLoadInFlightRef.current = false;
+    };
   }, [remoteMode, songHistoryReady]);
 
   useEffect(() => {
@@ -2878,7 +3006,7 @@ export default function DJBooth() {
 
   const getRandomTracks = useCallback((count) => {
     const pool = filterAutomaticTracks(filterCooldown(tracks));
-    const cooldowns = songCooldownRef.current || {};
+    const cooldowns = getRecentSongHistory(songCooldownRef.current);
     const shuffled = fisherYatesShuffle(pool);
     shuffled.sort((a, b) => {
       const aTime = cooldowns[a.name] || 0;
@@ -2970,10 +3098,6 @@ export default function DJBooth() {
       const need = count - current.length;
       const currentNames = new Set(current.map(t => t?.name).filter(Boolean));
       const allExcl = new Set([...excludeNames, ...currentNames]);
-      const cdMap = songCooldownRef.current || {};
-      Object.entries(cdMap).forEach(([n, ts]) => {
-        if (ts) allExcl.add(n);
-      });
       try {
         const tk = localStorage.getItem('djbooth_token');
         const r = await fetch('/api/music/select', {
@@ -2984,7 +3108,10 @@ export default function DJBooth() {
         });
         if (r.ok) {
           const d = await r.json();
-          const extras = filterUnplayedAutomaticTracks(d.tracks || [], songCooldownRef.current);
+           const extras = filterUnplayedAutomaticTracks(
+             d.tracks || [],
+             getRecentSongHistory(songCooldownRef.current),
+           );
           if (extras.length > 0) {
             console.log(`🎵 getDancerTracks: ${dancer?.name || 'unknown'} — topping up ${extras.length} from break-song pool (had ${current.length}/${count})`);
             logDiag?.('cooldown_fallback_breakpool', { dancer: dancer?.name, had: current.length, need, got: extras.length });
@@ -3018,7 +3145,10 @@ export default function DJBooth() {
 
       if (res.ok) {
         const data = await res.json();
-        const result = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current);
+         const result = filterUnplayedAutomaticTracks(
+           data.tracks || [],
+           getRecentSongHistory(songCooldownRef.current),
+         );
          if (result.length < count) {
            console.warn(`⚠️ getDancerTracks: automatic selection exhausted for ${dancer?.name || 'unknown'} (${result.length}/${count})`);
          }
@@ -3038,7 +3168,7 @@ export default function DJBooth() {
       return [];
     }
     const excludeSet = new Set(excludeNames);
-    const cooldowns = songCooldownRef.current || {};
+    const cooldowns = getRecentSongHistory(songCooldownRef.current);
 
     if (rawPlaylist.length > 0) {
       const allPlaylistTracks = rawPlaylist
@@ -3047,7 +3177,7 @@ export default function DJBooth() {
         .filter(t => !isAutomaticSelectionExcluded(t))
         .filter(t => !excludeSet.has(t.name));
       const freshTracks = allPlaylistTracks.filter(t =>
-        !Object.prototype.hasOwnProperty.call(cooldowns, t.name),
+        !isRecentlyPlayed(t.name, cooldowns),
       );
 
       // Rule 7: fill only from unplayed playlist/break-pool tracks. An
@@ -4137,23 +4267,17 @@ export default function DJBooth() {
       }
       lastAudioActivityRef.current = Date.now();
       try {
-        if (autoplayQueueRef.current.length > 0) {
-          console.log('⏭️ HandleSkip (no rotation): Playing from autoplay queue');
-          const ok = await playFromAutoplayQueue(true);
-          if (ok === false) {
-            const fallbackOk = await playFallbackTrack(true);
-            if (!fallbackOk) audioEngineRef.current?.resume();
-          }
-        } else {
-          const ok = await playFallbackTrack(true);
-          if (!ok) {
-            console.error('🚨 HandleSkip (no rotation): All recovery failed — resuming active deck');
-            audioEngineRef.current?.resume();
-          }
+        console.log('⏭️ HandleSkip (no rotation): Playing from shared autoplay starter');
+        const ok = await playFromAutoplayQueue(true, { idleOnly: true });
+        if (!ok && isPlayingRef.current) {
+          console.error('🚨 HandleSkip (no rotation): Idle starter declined/failed — resuming active deck');
+          audioEngineRef.current?.resume();
         }
       } catch (err) {
         console.error('🚨 HandleSkip (no rotation): Unexpected error:', err);
-        try { audioEngineRef.current?.resume(); } catch(e) {}
+        if (isPlayingRef.current) {
+          try { audioEngineRef.current?.resume(); } catch(e) {}
+        }
       }
       return;
     }
@@ -4473,10 +4597,8 @@ export default function DJBooth() {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-            const cooldowns = songCooldownRef.current || {};
-            const cooldownNames = Object.keys(cooldowns);
             const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
-            const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
+            const excludeNames = [...new Set(assignedNames)];
             const _dsSkip = djOptionsRef.current?.dayShift;
             const _dsSkipOn = isDayShiftActive(_dsSkip);
             const _dsSkipGenres = _dsSkip?.genres || [];
@@ -4497,7 +4619,10 @@ export default function DJBooth() {
             });
             if (res.ok) {
               const data = await res.json();
-              breakSongs = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+               breakSongs = filterUnplayedAutomaticTracks(
+                 data.tracks || [],
+                 getRecentSongHistory(songCooldownRef.current),
+               )
                 .map(t => t.name);
               if (breakSongs.length === 0) {
                 console.warn('⚠️ HandleSkip: automatic break pool exhausted; continuing without a recycled break');
@@ -4747,8 +4872,7 @@ export default function DJBooth() {
           : djSavedNextValid || djSavedManualRef.current[nextDancerId]
           ? (djSavedNextValid ? djSavedNext : scratchSongs[nextDancerId])
           : filterAutomaticTracks(scratchSongs[nextDancerId]);
-        // Filter stale pre-picks: automatic history is permanent, so never
-        // recycle a track that has already played.
+        // Filter stale pre-picks against the active automatic cooldown window.
         // (DJ-saved tracks bypass this filter — handled above)
         const validPrePicks = nextDancerManualIsEmpty
           ? []
@@ -4759,7 +4883,10 @@ export default function DJBooth() {
             : (existingTracks
             ? existingTracks.filter(t => {
                 if (!t?.url) return false;
-                 return !Object.prototype.hasOwnProperty.call(songCooldownRef.current || {}, t.name);
+                 return !isRecentlyPlayed(
+                   t.name,
+                   getRecentSongHistory(songCooldownRef.current),
+                 );
               })
             : null));
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
@@ -4939,11 +5066,9 @@ export default function DJBooth() {
     if (!breakKey) return;
     try {
       const token = localStorage.getItem('djbooth_token');
-      const cooldowns = songCooldownRef.current || {};
-      const cooldownNames = Object.keys(cooldowns);
       const assignedNames = Object.values(rotationSongsRef.current || {}).flat().filter(t => t?.name).map(t => t.name);
       const allBreakNames = Object.values(interstitialSongsRef.current || {}).flat();
-      const excludeAll = [...new Set([...cooldownNames, ...assignedNames, ...allBreakNames])];
+       const excludeAll = [...new Set([...assignedNames, ...allBreakNames])];
       const _ds = djOptionsRef.current?.dayShift;
       const _dsOn = isDayShiftActive(_ds);
       const _dsGenres = _ds?.genres || [];
@@ -4958,7 +5083,10 @@ export default function DJBooth() {
       });
       if (!res.ok) throw new Error(`select failed (${res.status})`);
        const data = await res.json();
-       const name = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)[0]?.name;
+       const name = filterUnplayedAutomaticTracks(
+         data.tracks || [],
+         getRecentSongHistory(songCooldownRef.current),
+       )[0]?.name;
        if (!name) {
          console.warn('⚠️ Feature setup: automatic pool exhausted; no unplayed song available');
          toast('No song available to add');
@@ -5217,23 +5345,17 @@ export default function DJBooth() {
       }
       lastAudioActivityRef.current = Date.now();
       try {
-        if (autoplayQueueRef.current.length > 0) {
-          console.log('🎵 HandleTrackEnd (no rotation): Playing from autoplay queue');
-          const ok = await playFromAutoplayQueue(true);
-          if (ok === false) {
-            const fallbackOk = await playFallbackTrack(true);
-            if (!fallbackOk) audioEngineRef.current?.resume();
-          }
-        } else {
-          const ok = await playFallbackTrack(true);
-          if (!ok) {
-            console.error('🚨 HandleTrackEnd (no rotation): All recovery failed — resuming active deck');
-            audioEngineRef.current?.resume();
-          }
+        console.log('🎵 HandleTrackEnd (no rotation): Playing from shared autoplay starter');
+        const ok = await playFromAutoplayQueue(true, { idleOnly: true });
+        if (!ok && isPlayingRef.current) {
+          console.error('🚨 HandleTrackEnd (no rotation): Idle starter declined/failed — resuming active deck');
+          audioEngineRef.current?.resume();
         }
       } catch (err) {
         console.error('🚨 HandleTrackEnd (no rotation): Unexpected error:', err);
-        try { audioEngineRef.current?.resume(); } catch(e) {}
+        if (isPlayingRef.current) {
+          try { audioEngineRef.current?.resume(); } catch(e) {}
+        }
       }
       return;
     }
@@ -5328,7 +5450,7 @@ export default function DJBooth() {
           logDiag('dj_saved_next_used', { dancer: nextDancer.name, tracks: _piDjSaved.map(t => t.name), trigger: 'post_interstitial' });
         }
         const existingTracks = rotationSongsRef.current[_piDancerId];
-        const _postCd = songCooldownRef.current || {};
+        const _postCd = getRecentSongHistory(songCooldownRef.current);
         // DJ-saved picks bypass the cooldown/length re-validation entirely — the DJ's
         // explicit choice always wins over auto filters (Jul 25 override law).
          const _piManual = isManualSet(_piDancerId);
@@ -5345,10 +5467,10 @@ export default function DJBooth() {
           : filterAutomaticTracks(existingTracks);
          const _postValid = _piManualIsEmpty || (_safeExistingTracks && (_piManual
           ? _safeExistingTracks.length >= 1
-          : (_safeExistingTracks.length >= songsPerSetRef.current &&
-               _safeExistingTracks.every(t =>
-                 !Object.prototype.hasOwnProperty.call(_postCd, t.name),
-               ))));
+               : (_safeExistingTracks.length >= songsPerSetRef.current &&
+                   _safeExistingTracks.every(t =>
+                  !isRecentlyPlayed(t.name, _postCd),
+                ))));
          let freshTracks = _piDjSavedValid
            ? _piDjSaved
            : _piManualIsEmpty
@@ -5758,10 +5880,8 @@ export default function DJBooth() {
           try {
             const token = localStorage.getItem('djbooth_token');
             const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-            const cooldowns = songCooldownRef.current || {};
-            const cooldownNames = Object.keys(cooldowns);
             const assignedNames = Object.values(rotationSongsRef.current).flat().map(t => t.name);
-            const excludeNames = [...new Set([...cooldownNames, ...assignedNames])];
+             const excludeNames = [...new Set(assignedNames)];
             const _dsTE = djOptionsRef.current?.dayShift;
             const _dsTEOn = isDayShiftActive(_dsTE);
             const _dsTEGenres = _dsTE?.genres || [];
@@ -5782,7 +5902,10 @@ export default function DJBooth() {
             });
             if (res.ok) {
               const data = await res.json();
-              breakSongs = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+              breakSongs = filterUnplayedAutomaticTracks(
+                data.tracks || [],
+                getRecentSongHistory(songCooldownRef.current),
+              )
                 .map(t => t.name);
               if (breakSongs.length === 0) {
                 console.warn('⚠️ HandleTrackEnd: automatic break pool exhausted; continuing without a recycled break');
@@ -6039,8 +6162,7 @@ export default function DJBooth() {
           : djSavedNextValid || djSavedManualRef.current[nextDancerId]
           ? (djSavedNextValid ? djSavedNext : scratchSongs[nextDancerId])
           : filterAutomaticTracks(scratchSongs[nextDancerId]);
-        // Filter stale pre-picks: automatic history is permanent, so never
-        // recycle a track that has already played.
+        // Filter stale pre-picks against the active automatic cooldown window.
         // (DJ-saved tracks bypass this filter — handled above)
         const validPrePicks = nextDancerManualIsEmpty
           ? []
@@ -6051,7 +6173,10 @@ export default function DJBooth() {
             : (existingTracks
             ? existingTracks.filter(t => {
                 if (!t?.url) return false;
-                 return !Object.prototype.hasOwnProperty.call(songCooldownRef.current || {}, t.name);
+                 return !isRecentlyPlayed(
+                   t.name,
+                   getRecentSongHistory(songCooldownRef.current),
+                 );
               })
             : null));
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
@@ -6293,18 +6418,30 @@ export default function DJBooth() {
 
     const watchdogCheck = async () => {
       if (!playbackExpectedRef.current) return;
+      // A deliberate pause (including a remote pause state) is not dead air.
+      // The next explicit play/rotation command will own the restart.
+      if (!isPlayingRef.current) return;
       // Don't fire dead-air alerts when no dancers are on rotation. The
       // playbackExpectedRef latch is one-way (set true on first track, never
       // reset), so without this guard the watchdog reports stale dancer/track
       // info during the empty-rotation autoplay window. See replit.md
       // "Dead-air false-positive investigation" (May 3 2026).
-      // When no dancers are on rotation, only proceed if there's a DJ-curated
-      // autoplay queue to (re)start — that's the authoritative idle source. With
-      // an empty queue there's nothing to play, so suppress (and avoid false
-      // dead-air alerts). Telemetry/alerts for the no-rotation case are gated
-      // separately below so recovery runs quietly.
-      if ((!isRotationActiveRef.current || rotationRef.current.length === 0) && autoplayQueueRef.current.length === 0) return;
-      if (watchdogRecoveringRef.current) return;
+      // With no dancers, AutoFill + a ready six-hour history permit one bounded
+      // quiet refill/restart even when the queue is empty. Manual-off mode,
+      // paused/uninitialized history, and live rotation must not be started by
+      // this idle-only recovery path.
+      const idleNoRotation = !isRotationActiveRef.current || rotationRef.current.length === 0;
+      const idleStartMode = getIdleAutoplayStartMode({
+        hasQueue: autoplayQueueRef.current.length > 0,
+        autoFillEnabled: autoplayAutoFillEnabledRef.current,
+        historyReady: songHistoryReadyRef.current,
+        rotationActive: !idleNoRotation,
+        paused: false,
+      });
+      if (idleNoRotation && idleStartMode === IDLE_AUTOPLAY_START_MODES.BLOCKED) return;
+      // Do not race a transition, another watchdog recovery, or an autoplay
+      // starter already loading a queue track.
+      if (watchdogRecoveringRef.current || transitionInProgressRef.current || autoplayPlayingRef.current) return;
       if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
       if (initialLoadGraceRef.current) return;
@@ -6415,10 +6552,14 @@ export default function DJBooth() {
         // Reuses playFromAutoplayQueue (same logic Skip / track-end use) so the queue
         // shifts, refills, and records identically. Gated on !isRotationActive so a
         // live show is completely unaffected.
-        if (!recovered && (!isRotationActiveRef.current || rotationRef.current.length === 0) && autoplayQueueRef.current.length > 0) {
+        if (
+          !recovered
+          && (!isRotationActiveRef.current || rotationRef.current.length === 0)
+          && idleStartMode !== IDLE_AUTOPLAY_START_MODES.BLOCKED
+        ) {
           try {
-            const ok = await playFromAutoplayQueue(false);
-            if (ok !== false) {
+            const ok = await playFromAutoplayQueue(false, { idleOnly: true });
+            if (ok === true) {
               console.log('🐕 WATCHDOG: Autoplay-queue recovery succeeded');
               lastAudioActivityRef.current = Date.now();
               recovered = true;
@@ -6430,7 +6571,7 @@ export default function DJBooth() {
 
         // First: try songs from the current dancer's playlist
         if (wdDancerId && !recovered && !watchdogManualIsEmpty) {
-          const cooldowns = songCooldownRef.current || {};
+             const cooldowns = getRecentSongHistory(songCooldownRef.current);
           const watchdogAssignment = rotationSongsRef.current[wdDancerId] || [];
           const watchdogPlaylist = isManualSet(wdDancerId)
             ? watchdogAssignment
@@ -6439,13 +6580,13 @@ export default function DJBooth() {
             if (!t || !t.url) return false;
              return isManualSet(wdDancerId)
                || (songHistoryReadyRef.current
-                 && !Object.prototype.hasOwnProperty.call(cooldowns, t.name));
+                  && !isRecentlyPlayed(t.name, cooldowns));
           });
           const sorted = [...playlist].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
           for (const track of sorted.slice(0, 8)) {
             try {
               const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-              if (success !== false) {
+               if (success === true) {
                 console.log('🐕 WATCHDOG: Dancer playlist recovery succeeded with "' + track.name + '"');
                 lastAudioActivityRef.current = Date.now();
                 setIsPlaying(true);
@@ -6461,25 +6602,34 @@ export default function DJBooth() {
         }
 
         // Second: try server random tracks
-        if (!recovered && !watchdogManualIsEmpty && songHistoryReadyRef.current) {
+        if (
+          !recovered
+          && !watchdogManualIsEmpty
+          && songHistoryReadyRef.current
+          && (!noRotationRecovery || autoplayAutoFillEnabledRef.current)
+        ) {
           try {
             const token = localStorage.getItem('djbooth_token');
-            const wdCooldowns = songCooldownRef.current || {};
-            const wdRecent = Object.keys(wdCooldowns);
-            const wdExclude = wdRecent.length > 0 ? `&exclude=${encodeURIComponent(wdRecent.join(','))}` : '';
+            const wdCurrent = currentTrackRef.current ? [currentTrackRef.current] : [];
+            const wdExclude = wdCurrent.length > 0
+              ? `&exclude=${encodeURIComponent(wdCurrent.join(','))}`
+              : '';
             const res = await fetch(`/api/music/random?count=5&automatic=true${wdExclude}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
               signal: AbortSignal.timeout(5000)
             });
             if (res.ok) {
               const data = await res.json();
-              const serverTracks = filterUnplayedAutomaticTracks(data.tracks || [], songCooldownRef.current)
+               const serverTracks = filterUnplayedAutomaticTracks(
+                 data.tracks || [],
+                 getRecentSongHistory(songCooldownRef.current),
+               )
                 .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
               for (let i = 0; i < serverTracks.length; i++) {
                 try {
                   const track = serverTracks[i];
                   const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-                  if (success !== false) {
+                   if (success === true) {
                     console.log('🐕 WATCHDOG: Server recovery succeeded with "' + track.name + '"');
                     lastAudioActivityRef.current = Date.now();
                     setIsPlaying(true);
@@ -6499,11 +6649,15 @@ export default function DJBooth() {
         }
 
         // Third: local pool fallback
-        if (!recovered && !watchdogManualIsEmpty) {
-          const cooldowns = songCooldownRef.current || {};
+        if (
+          !recovered
+          && !watchdogManualIsEmpty
+          && (!noRotationRecovery || autoplayAutoFillEnabledRef.current)
+        ) {
+          const cooldowns = getRecentSongHistory(songCooldownRef.current);
           const validTracks = filterAutomaticTracks(tracks).filter(t => {
             if (!t || !t.url) return false;
-            return !Object.prototype.hasOwnProperty.call(cooldowns, t.name);
+             return !isRecentlyPlayed(t.name, cooldowns);
           });
           const shuffled = fisherYatesShuffle(validTracks);
           shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
@@ -6511,7 +6665,7 @@ export default function DJBooth() {
             try {
               const track = shuffled[i];
               const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-              if (success !== false) {
+               if (success === true) {
                 console.log('🐕 WATCHDOG: Local recovery succeeded with "' + track.name + '"');
                 lastAudioActivityRef.current = Date.now();
                 setIsPlaying(true);

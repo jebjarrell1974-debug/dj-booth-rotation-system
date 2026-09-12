@@ -2323,7 +2323,7 @@ app.get('/api/history/cooldowns', authenticate, requireDJ, (req, res) => {
     const allHistory = scope === 'all'
       || String(req.query.all || '').toLowerCase() === 'true'
       || String(req.query.all || '') === '1';
-    const hours = parseInt(req.query.hours) || 4;
+    const hours = parseInt(req.query.hours) || 6;
     const rows = allHistory ? getAllPlayHistory() : getRecentCooldowns(hours);
     const cooldowns = {};
     for (const row of rows) {

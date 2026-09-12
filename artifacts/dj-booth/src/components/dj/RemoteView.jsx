@@ -9,6 +9,10 @@ import {
   createRemoteEditingQueue,
   mergeRemoteBreakWorkspace,
 } from '@/utils/remoteEditingQueue';
+import {
+  filterUnplayedAutomaticTracks,
+  isRecentlyPlayed,
+} from '@/utils/automaticTrackSelection';
 import { remoteSkipPayload } from '@/utils/skipPlayback';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
@@ -42,10 +46,6 @@ export default function RemoteView({
   onLogout,
   songCooldowns = {},
 }) {
-  const isOnCooldown = (name) => {
-    return Object.prototype.hasOwnProperty.call(songCooldowns, name);
-  };
-
   const [tab, setTab] = useState('rotation');
   const [songEdits, setSongEdits] = useState({});
   const [hasUnsaved, setHasUnsaved] = useState(false);
@@ -98,6 +98,7 @@ export default function RemoteView({
     }
   }, [liveBoothState?.commercialFreq, pendingCommercialFreq]);
 
+  const isOnCooldown = (name) => isRecentlyPlayed(name, songCooldowns, clock);
   const stateAgeMs = lastStateReceivedAt ? Math.max(0, clock - lastStateReceivedAt) : Infinity;
   const isConnected = stateAgeMs <= BOOTH_STALE_AFTER_MS;
   isConnectedRef.current = isConnected;
@@ -416,9 +417,7 @@ export default function RemoteView({
       });
       if (res.ok) {
         const data = await res.json();
-        const newTrack = (data.tracks || []).find(track =>
-          !Object.prototype.hasOwnProperty.call(songCooldowns, track?.name),
-        );
+        const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
         if (newTrack) {
           const current = [...getSongs(dancerId)];
           current[songIdx] = newTrack.name;

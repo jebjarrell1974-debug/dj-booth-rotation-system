@@ -856,13 +856,14 @@ export function deleteMusicTrackByPath(path) {
   }
 }
 
-// Automatic rotation is a global no-repeat queue: a track played for one
-// dancer or during a break is unavailable to every later automatic pick.
-// Keep this query deliberately unbounded.  The four-hour cooldown used by the
-// UI is still available through getRecentCooldowns, but it must not be used to
-// recycle tracks in a live automatic selection.
-function getAllPlayedTrackNames() {
-  return getAllPlayHistory().map(row => row.track_name);
+// Automatic rotation has a global six-hour cooldown: a track played for one
+// dancer or during a break is unavailable to every later automatic pick during
+// that window.  Older plays remain in the ledger for history, but do not block
+// a new automatic selection.
+export const AUTOMATIC_COOLDOWN_HOURS = 6;
+
+function getAutomaticCooldownTrackNames() {
+  return getRecentCooldowns(AUTOMATIC_COOLDOWN_HOURS).map(row => row.track_name);
 }
 
 // Complete persisted play map for live clients. Unlike getRecentCooldowns,
@@ -887,9 +888,9 @@ export function getRecentCooldowns(hours = 6) {
 
 export function getRandomTracks(count = 3, excludeNames = [], genres = [], automatic = false) {
   // Manual/library requests intentionally do not consult play history.  A DJ
-  // may explicitly choose a repeat.  Automatic requests use the complete
-  // persisted history, not a time-windowed cooldown.
-  const playedNames = automatic ? getAllPlayedTrackNames() : [];
+  // may explicitly choose a repeat.  Automatic requests only exclude tracks
+  // played during the six-hour cooldown window.
+  const playedNames = automatic ? getAutomaticCooldownTrackNames() : [];
   const allExcluded = [...new Set([...excludeNames, ...playedNames])];
 
   const conditions = ['t.blocked = 0'];
@@ -977,20 +978,19 @@ export function selectTracksForSet({
   if (dancerPlaylist.length > 0) {
     console.log(`🎵 selectTracksForSet: playlist mode — ${dancerPlaylist.length} songs in playlist, need ${count}`);
     const excludeSet = new Set(excludeNames);
-    // Explicit manual picks may repeat. Automatic picks consult the complete
-    // persisted history, including plays older than the former four-hour
-    // cooldown.
-    const playedTrackSet = new Set(
+    // Explicit manual picks may repeat. Automatic picks only consult the
+    // global six-hour cooldown, so an older playlist play is eligible again.
+    const cooldownTrackSet = new Set(
       automatic
-        ? getAllPlayedTrackNames().map(trackName => String(trackName).toLowerCase())
+        ? getAutomaticCooldownTrackNames().map(trackName => String(trackName).toLowerCase())
         : []
     );
 
-    // Fetch all playlist tracks from DB, split into never-played vs played.
-    // Played tracks are retained only to report exhaustion; they are never
-    // used as automatic fillers.
-    const freshTracks = [];
-    const playedTracks = [];
+    // Fetch all playlist tracks from DB, split into cooldown-blocked vs
+    // eligible. Cooldown-blocked tracks are retained only to report
+    // exhaustion; they are never used as automatic fillers.
+    const eligibleTracks = [];
+    const cooldownTracks = [];
     const notFoundInDB = [];
     for (const trackName of dancerPlaylist) {
       if (excludeSet.has(trackName)) continue;
@@ -1008,10 +1008,10 @@ export function selectTracksForSet({
         ...DJ_ONLY_GENRES,
       );
       if (!track) { notFoundInDB.push(trackName); continue; }
-      if (playedTrackSet.has(String(track.name).toLowerCase())) {
-        playedTracks.push(track);
+      if (cooldownTrackSet.has(String(track.name).toLowerCase())) {
+        cooldownTracks.push(track);
       } else {
-        freshTracks.push(track);
+        eligibleTracks.push(track);
       }
     }
 
@@ -1033,20 +1033,20 @@ export function selectTracksForSet({
          );
         if (!fuzzyTrack) { stillNotFound.push(trackName); continue; }
         console.log(`✅ selectTracksForSet: fuzzy matched "${trackName}" → "${fuzzyTrack.name}"`);
-        if (playedTrackSet.has(String(fuzzyTrack.name).toLowerCase())) {
-          playedTracks.push(fuzzyTrack);
+        if (cooldownTrackSet.has(String(fuzzyTrack.name).toLowerCase())) {
+          cooldownTracks.push(fuzzyTrack);
         } else {
-          freshTracks.push(fuzzyTrack);
+          eligibleTracks.push(fuzzyTrack);
         }
       }
       if (stillNotFound.length > 0) {
         console.warn(`⚠️ selectTracksForSet: ${stillNotFound.length} song(s) not found even with fuzzy match: ${stillNotFound.slice(0, 5).join(' | ')}`);
       }
     }
-    console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh, ${playedTracks.length} already played`);
+    console.log(`🎵 selectTracksForSet: ${eligibleTracks.length} eligible, ${cooldownTracks.length} in cooldown`);
 
     // No playlist tracks exist in the DB at all — only legitimate reason to use random library
-    if (freshTracks.length === 0 && playedTracks.length === 0) {
+    if (eligibleTracks.length === 0 && cooldownTracks.length === 0) {
       // strictPlaylist (remote reroll): NEVER fall back off-playlist. Return [] so the caller
       // keeps the current song instead of swapping in a random library track.
       if (strictPlaylist) {
@@ -1057,47 +1057,47 @@ export function selectTracksForSet({
       return getRandomTracks(count, [...excludeSet], genres, automatic);
     }
 
-    // All automatic playlist tracks have been exhausted. Use an unplayed
+    // All automatic playlist tracks are in cooldown. Use an eligible
     // assigned-genre folder track when one exists; otherwise return [] rather
-    // than recycling any played playlist entry. Manual callers pass through
-    // above because their playlist entries are all considered fresh.
-    if (freshTracks.length === 0) {
+    // than recycling any in-window playlist entry. Manual callers pass through
+    // above because their playlist entries are all considered eligible.
+    if (eligibleTracks.length === 0) {
       if (automatic && Array.isArray(genres) && genres.length > 0) {
         const excludeForFallback = [...new Set([...excludeNames, ...dancerPlaylist])];
         const folderTracks = getRandomTracks(count, excludeForFallback, genres, automatic);
-        console.log(`🎵 selectTracksForSet: all playlist tracks already played — assigned-genre fallback returned ${folderTracks.length}: [${folderTracks.map(t => t.name).join(' | ')}]`);
+        console.log(`🎵 selectTracksForSet: all playlist tracks in cooldown — assigned-genre fallback returned ${folderTracks.length}: [${folderTracks.map(t => t.name).join(' | ')}]`);
         return folderTracks;
       }
-      console.warn(`⚠️ selectTracksForSet: all playlist tracks already played and no unplayed fallback is available — returning []`);
+      console.warn(`⚠️ selectTracksForSet: all playlist tracks in cooldown and no eligible fallback is available — returning []`);
       return [];
     }
 
-    // Shuffle fresh tracks for variety
-    for (let i = freshTracks.length - 1; i > 0; i--) {
+    // Shuffle eligible tracks for variety
+    for (let i = eligibleTracks.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [freshTracks[i], freshTracks[j]] = [freshTracks[j], freshTracks[i]];
+      [eligibleTracks[i], eligibleTracks[j]] = [eligibleTracks[j], eligibleTracks[i]];
     }
 
-    // Fewer fresh playlist songs than requested: automatic mode may fill from
-    // the assigned genre pool, but never from played playlist tracks. Manual
+    // Fewer eligible playlist songs than requested: automatic mode may fill
+    // from the assigned genre pool, but never from cooldown playlist tracks. Manual
     // mode simply returns the explicit playlist choices.
-    if (freshTracks.length < count) {
+    if (eligibleTracks.length < count) {
       if (automatic && Array.isArray(genres) && genres.length > 0) {
-        const needed = count - freshTracks.length;
+        const needed = count - eligibleTracks.length;
         const excludeForFallback = [
-          ...new Set([...excludeNames, ...dancerPlaylist, ...freshTracks.map(track => track.name)]),
+          ...new Set([...excludeNames, ...dancerPlaylist, ...eligibleTracks.map(track => track.name)]),
         ];
         const folderTracks = getRandomTracks(needed, excludeForFallback, genres, true);
-        const result = [...freshTracks, ...folderTracks];
-        console.log(`🎵 selectTracksForSet: ${freshTracks.length} fresh playlist + ${folderTracks.length} unplayed genre fill → [${result.map(t => t.name).join(' | ')}]`);
+        const result = [...eligibleTracks, ...folderTracks];
+        console.log(`🎵 selectTracksForSet: ${eligibleTracks.length} eligible playlist + ${folderTracks.length} eligible genre fill → [${result.map(t => t.name).join(' | ')}]`);
         return result;
       }
-      const result = freshTracks.slice(0, count);
-      console.log(`🎵 selectTracksForSet: ${result.length} unplayed playlist tracks available → [${result.map(t => t.name).join(' | ')}]`);
+      const result = eligibleTracks.slice(0, count);
+      console.log(`🎵 selectTracksForSet: ${result.length} eligible playlist tracks available → [${result.map(t => t.name).join(' | ')}]`);
       return result;
     }
 
-    const result = freshTracks.slice(0, count);
+    const result = eligibleTracks.slice(0, count);
     console.log(`🎵 selectTracksForSet: returning [${result.map(t => t.name).join(' | ')}]`);
     return result;
   }

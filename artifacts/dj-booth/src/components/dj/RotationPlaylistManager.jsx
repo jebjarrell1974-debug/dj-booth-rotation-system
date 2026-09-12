@@ -16,7 +16,11 @@ import {
   normalizeSongList,
   reconcileAuthoritativeAssignments,
 } from '@/utils/rotationAssignments';
-import { filterAutomaticTracks, filterUnplayedAutomaticTracks } from '@/utils/automaticTrackSelection';
+import {
+  filterAutomaticTracks,
+  filterUnplayedAutomaticTracks,
+  isRecentlyPlayed,
+} from '@/utils/automaticTrackSelection';
 
 const TRACKS_PER_PAGE = 200;
 const EMPTY_ASSIGNMENTS = Object.freeze({});
@@ -179,8 +183,9 @@ export default function RotationPlaylistManager({
   onAutoplayQueueRemove,
   songCooldowns = {},
   // Automatic selection must fail closed until the parent has successfully
-  // hydrated the complete all-history ledger. Manual library picks do not use
-  // this guard.
+  // hydrated history. The supplied ledger may contain older entries; the
+  // selection helper applies the six-hour eligibility window. Manual library
+  // picks do not use this guard.
   songCooldownsReady = false,
   currentTrack = null,
   dancerVipMap = {},
@@ -196,6 +201,18 @@ export default function RotationPlaylistManager({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeGenre, setActiveGenre] = useState(null);
   const [musicSource, setMusicSource] = useState('genres');
+  // Cooldown timestamps remain in the complete ledger supplied by the parent.
+  // Tick the display so a yellow "Recently Played" marker disappears as soon
+  // as its six-hour eligibility window expires, without pruning that ledger.
+  const [cooldownNow, setCooldownNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setCooldownNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  const isOnCooldown = useCallback(
+    name => isRecentlyPlayed(name, songCooldowns, cooldownNow),
+    [songCooldowns, cooldownNow],
+  );
 
   const activeDancers = useMemo(() =>
     (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name)),
@@ -623,8 +640,8 @@ export default function RotationPlaylistManager({
         if (!isFoldersOnly && fallbackPlaylist.length > 0) {
           // PLAYLIST RULE: when dancer has a playlist, use ONLY her unplayed
           // playlist songs. An exhausted playlist is a real no-eligible result;
-          // never recycle a track from the permanent automatic history in an
-          // offline fallback.
+          // never recycle a track that is still inside the six-hour automatic
+          // cooldown in an offline fallback.
           const playlistSet = new Set(fallbackPlaylist);
            const playlistTracks = filterAutomaticTracks(tracks)
              .filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
@@ -1390,7 +1407,7 @@ export default function RotationPlaylistManager({
                   playlistSongs.map((songName, idx) => (
                     <Draggable key={`playlist-${idx}-${songName}`} draggableId={`playlist-${idx}-${songName}`} index={idx}>
                       {(provided, snapshot) => {
-                        const onCool = Object.prototype.hasOwnProperty.call(songCooldowns, songName);
+                        const onCool = isOnCooldown(songName);
                         return (
                     <div
                       ref={provided.innerRef}
@@ -1441,11 +1458,11 @@ export default function RotationPlaylistManager({
                           } cursor-grab active:cursor-grabbing cursor-pointer`}
                           onClick={() => handleLibraryTrackClick(track.name)}
                         >
-                          {(() => { const onCool = Object.prototype.hasOwnProperty.call(songCooldowns, track.name); return (
+                          {(() => { const onCool = isOnCooldown(track.name); return (
                           <Music2 className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-gray-500'}`} />
                           ); })()}
                           <div className="flex-1 min-w-0">
-                            {(() => { const onCool = Object.prototype.hasOwnProperty.call(songCooldowns, track.name); return (
+                            {(() => { const onCool = isOnCooldown(track.name); return (
                             <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{track.name}</span>
                             ); })()}
                             {!activeGenre && (track.genre || (track.path && track.path.includes('/'))) && (
@@ -1901,9 +1918,9 @@ export default function RotationPlaylistManager({
                                                 ) : canReroll ? (
                                                   <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
                                                 ) : (
-                                                   <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && normalizedSongName && Object.prototype.hasOwnProperty.call(songCooldowns, normalizedSongName)) ? 'text-orange-400' : 'text-gray-500'}`} />
+                                                    <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && normalizedSongName && isOnCooldown(normalizedSongName)) ? 'text-orange-400' : 'text-gray-500'}`} />
                                                 )}
-                                                 <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && normalizedSongName && Object.prototype.hasOwnProperty.call(songCooldowns, normalizedSongName)) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{displaySongName}</span>
+                                                  <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && normalizedSongName && isOnCooldown(normalizedSongName)) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{displaySongName}</span>
                                                 <button
                                                   onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
                                                   className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
