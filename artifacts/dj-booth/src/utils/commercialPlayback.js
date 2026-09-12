@@ -2,6 +2,10 @@
 // Keeping this lifecycle separate from AudioEngine lets the caller cancel
 // delayed voiceover work without adding commercial-specific behavior to the
 // shared music engine.
+import { OWNED_BED_FADE_MS } from './ownedDeckFade.js';
+
+export { OWNED_BED_FADE_MS };
+
 export function createCommercialSession({ mode = 'new' } = {}) {
   let finished = false;
   let voiceStarted = false;
@@ -55,5 +59,33 @@ export function createCommercialSession({ mode = 'new' } = {}) {
       resolveDone();
       return true;
     },
+  };
+}
+
+// Voice completion is intentionally not the same as session completion for a
+// legacy bed-plus-voice commercial. The owned bed gets one bounded fade first,
+// then the caller can clean up and admit the next intro.
+export function createCommercialBedCompletion({
+  session,
+  fadeOwnedDeck,
+  getDeckHandle,
+} = {}) {
+  let completion = null;
+
+  return () => {
+    if (completion) return completion;
+    if (!session || session.finished) return Promise.resolve(false);
+
+    const handle = getDeckHandle?.();
+    const fadeResult = typeof fadeOwnedDeck === 'function' && handle
+      ? fadeOwnedDeck(handle, { durationMs: OWNED_BED_FADE_MS })
+      : null;
+
+    completion = Promise.resolve(fadeResult).then(() => {
+      if (session.finished) return false;
+      session.completeVoice();
+      return true;
+    });
+    return completion;
   };
 }

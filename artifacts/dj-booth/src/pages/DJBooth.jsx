@@ -83,7 +83,10 @@ import {
   commitInterstitialWorkspace as normalizeInterstitialWorkspace,
   retainInterstitialQueuesForAutomaticCount,
 } from '@/utils/interstitialWorkspace';
-import { createCommercialSession } from '@/utils/commercialPlayback';
+import {
+  createCommercialBedCompletion,
+  createCommercialSession,
+} from '@/utils/commercialPlayback';
 import {
   canCommitAssignmentRefill,
   planSkipAdvance,
@@ -3910,15 +3913,35 @@ export default function DJBooth() {
       const createOwnedCommercialSession = (mode) => {
         let ownsDeck = false;
         let ownsVoice = false;
+        let ownedDeckHandle = null;
+        let ownedVoiceHandle = null;
         const session = createCommercialSession({ mode });
         session.registerOwnedStop(() => {
-          if (ownsVoice) audioEngineRef.current?.stopVoice();
-          if (ownsDeck) audioEngineRef.current?.pauseAll();
+          if (ownsVoice) {
+            if (mode === 'old') {
+              if (ownedVoiceHandle) {
+                audioEngineRef.current?.stopOwnedVoice?.(ownedVoiceHandle);
+              }
+            } else {
+              audioEngineRef.current?.stopVoice();
+            }
+          }
+          if (ownsDeck) {
+            if (mode === 'old') {
+              if (ownedDeckHandle) {
+                audioEngineRef.current?.stopOwnedDeck?.(ownedDeckHandle);
+              }
+            } else {
+              audioEngineRef.current?.pauseAll();
+            }
+          }
         });
         return {
           session,
           claimDeck: () => { ownsDeck = true; },
           claimVoice: () => { ownsVoice = true; },
+          captureDeck: handle => { ownedDeckHandle = handle; },
+          captureVoice: handle => { ownedVoiceHandle = handle; },
         };
       };
       const token = localStorage.getItem('djbooth_token');
@@ -4045,7 +4068,7 @@ export default function DJBooth() {
 
       if (!bedTrack) {
         console.warn('⚠️ No Promo Beds tracks found — playing voiceover only');
-        const { session, claimVoice } = createOwnedCommercialSession('old');
+        const { session, claimVoice, captureVoice } = createOwnedCommercialSession('old');
         ownedSession = session;
         commercialSessionRef.current = session;
         playingCommercialRef.current = true;
@@ -4067,7 +4090,10 @@ export default function DJBooth() {
           session.markVoiceStarted();
           claimVoice();
           const voiceResult = await Promise.race([
-            Promise.resolve(audioEngineRef.current.playAnnouncement(voiceoverUrl, { autoDuck: true }))
+            Promise.resolve(audioEngineRef.current.playAnnouncement(voiceoverUrl, {
+              autoDuck: true,
+              onStarted: captureVoice,
+            }))
               .then(() => 'voice'),
             session.done.then(() => 'cancelled'),
           ]);
@@ -4081,7 +4107,8 @@ export default function DJBooth() {
       }
 
       console.log(`📺 Commercial: "${promoName}" over bed "${bedTrack.name}"`);
-      const { session, claimDeck, claimVoice } = createOwnedCommercialSession('old');
+      const { session, claimDeck, claimVoice, captureDeck, captureVoice } = createOwnedCommercialSession('old');
+      let bedHandle = null;
       ownedSession = session;
       commercialSessionRef.current = session;
       playingCommercialRef.current = true;
@@ -4118,6 +4145,15 @@ export default function DJBooth() {
         const trackOk = await audioEngineRef.current.playTrack(
           { url: bedUrl, name: `📺 ${promoName}` },
           false,
+          {
+            // Legacy beds must not arm AudioEngine's normal safety-fade RAF:
+            // voice completion owns the only fade for this deck.
+            triggerAtMediaEnd: true,
+            onTrackReady: handle => {
+              bedHandle = handle;
+              captureDeck(handle);
+            },
+          },
         );
         if (!trackOk) {
           console.warn('⚠️ Commercial bed track failed');
@@ -4130,11 +4166,23 @@ export default function DJBooth() {
           session.markVoiceStarted();
           claimVoice();
           const voiceResult = await Promise.race([
-            Promise.resolve(audioEngineRef.current.playAnnouncement(voiceoverUrl, { autoDuck: true }))
+            Promise.resolve(audioEngineRef.current.playAnnouncement(voiceoverUrl, {
+              autoDuck: true,
+              onStarted: captureVoice,
+            }))
               .then(() => 'voice'),
             session.done.then(() => 'cancelled'),
           ]);
-          if (voiceResult === 'voice') session.completeVoice();
+          if (voiceResult === 'voice') {
+            const completeVoice = createCommercialBedCompletion({
+              session,
+              getDeckHandle: () => bedHandle,
+              fadeOwnedDeck: (handle, options) => (
+                audioEngineRef.current?.fadeOwnedDeck?.(handle, options)
+              ),
+            });
+            await completeVoice();
+          }
         }
       } finally {
         clearInterval(keepAlive);

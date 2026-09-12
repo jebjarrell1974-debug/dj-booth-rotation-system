@@ -6,6 +6,7 @@ import {
 } from '@/utils/ducking';
 import { getTrackEndTriggerPoint } from '@/utils/audioPlayback';
 import { createAnnouncementLifecycle } from '@/utils/announcementLifecycle';
+import { createOwnedDeckFadeController } from '@/utils/ownedDeckFade';
 
 const MAX_SONG_DURATION = 190;
 const MAX_FEATURE_DURATION = 3600;
@@ -92,12 +93,28 @@ const AudioEngine = forwardRef(({
 
   const fadeAnimationRef = useRef(null);
   const safetyFadeRef = useRef(null);
+  const safetyFadeHandleRef = useRef(null);
   const lastTimeUpdateRef = useRef(0);
 
   const deckAUrl = useRef(null);
   const deckBUrl = useRef(null);
+  const deckGenerationRef = useRef({ A: 0, B: 0 });
+  const ownedDeckFadeControllerRef = useRef(null);
 
   const maxDurationOverrideRef = useRef(null);
+
+  if (!ownedDeckFadeControllerRef.current) {
+    ownedDeckFadeControllerRef.current = createOwnedDeckFadeController({
+      getDeck: deck => deck === 'A' ? deckARef.current : deckBRef.current,
+      getGain: deck => deck === 'A' ? deckAGainRef.current : deckBGainRef.current,
+      isCurrent: handle => (
+        !!handle
+        && deckGenerationRef.current[handle.deck] === handle.generation
+        && !!(handle.deck === 'A' ? deckARef.current : deckBRef.current)?.src
+      ),
+      audioTime: () => audioCtxRef.current?.currentTime || 0,
+    });
+  }
 
   const onTrackEndRef = useRef(onTrackEnd);
   const onTimeUpdateRef = useRef(onTimeUpdate);
@@ -246,6 +263,7 @@ const AudioEngine = forwardRef(({
 
     return () => {
       clearInterval(dualDeckMonitor);
+      ownedDeckFadeControllerRef.current?.cancel('unmount');
       deckA.pause();
       deckA.src = '';
       deckB.pause();
@@ -255,6 +273,8 @@ const AudioEngine = forwardRef(({
       voice.src = '';
       if (fadeAnimationRef.current) cancelAnimationFrame(fadeAnimationRef.current);
       if (safetyFadeRef.current) cancelAnimationFrame(safetyFadeRef.current);
+      safetyFadeRef.current = null;
+      safetyFadeHandleRef.current = null;
       if (deckASourceRef.current) { try { deckASourceRef.current.disconnect(); } catch {} }
       if (deckBSourceRef.current) { try { deckBSourceRef.current.disconnect(); } catch {} }
       if (voiceSourceRef.current) { try { voiceSourceRef.current.disconnect(); } catch {} }
@@ -275,6 +295,20 @@ const AudioEngine = forwardRef(({
   const equalPowerOut = (progress) => Math.cos(progress * Math.PI * 0.5);
   const clampVol = (v) => Math.max(0, Math.min(1, v));
 
+  const captureDeck = useCallback((deck = activeDeck.current) => ({
+    deck,
+    generation: deckGenerationRef.current[deck] || 0,
+  }), []);
+
+  const fadeOwnedDeck = useCallback((handle, options = {}) => (
+    ownedDeckFadeControllerRef.current?.fade(handle, options)
+      || Promise.resolve({ status: 'stale' })
+  ), []);
+
+  const cancelOwnedDeckFade = useCallback((reason = 'cancelled') => {
+    ownedDeckFadeControllerRef.current?.cancel(reason);
+  }, []);
+
   const cleanupDeck = useCallback((deckEl) => {
     const urlRef = deckEl === deckARef.current ? deckAUrl : deckBUrl;
     if (urlRef.current) {
@@ -284,6 +318,38 @@ const AudioEngine = forwardRef(({
       urlRef.current = null;
     }
   }, []);
+
+  const isCurrentDeckHandle = useCallback((handle) => {
+    if (!handle || (handle.deck !== 'A' && handle.deck !== 'B')) return false;
+    const deck = handle.deck === 'A' ? deckARef.current : deckBRef.current;
+    return deckGenerationRef.current[handle.deck] === handle.generation
+      && !!deck?.src;
+  }, []);
+
+  const stopOwnedDeck = useCallback((handle) => {
+    if (!isCurrentDeckHandle(handle)) return false;
+
+    if (safetyFadeHandleRef.current?.deck === handle.deck
+        && safetyFadeHandleRef.current?.generation === handle.generation) {
+      if (safetyFadeRef.current) cancelAnimationFrame(safetyFadeRef.current);
+      safetyFadeRef.current = null;
+      safetyFadeHandleRef.current = null;
+    }
+
+    const deck = handle.deck === 'A' ? deckARef.current : deckBRef.current;
+    if (!ownedDeckFadeControllerRef.current?.stopOwnedDeck(handle)) return false;
+    deck.src = '';
+    cleanupDeck(deck);
+
+    if (activeDeck.current === handle.deck) {
+      const replacement = handle.deck === 'A' ? deckBRef.current : deckARef.current;
+      if (!replacement || replacement.paused || !replacement.src) {
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+      }
+    }
+    return true;
+  }, [cleanupDeck, isCurrentDeckHandle]);
 
   const detectBPMFromBuffer = useCallback((audioBuffer) => {
     try {
@@ -494,7 +560,7 @@ const AudioEngine = forwardRef(({
   const playTrack = useCallback(async (
     fileHandle,
     crossfade = true,
-    { triggerAtMediaEnd = false } = {},
+    { triggerAtMediaEnd = false, onTrackReady = null } = {},
   ) => {
     if (playTrackLockRef.current) {
       console.log('🚫 PlayTrack: BLOCKED — another track is already loading, skipping this call');
@@ -505,6 +571,7 @@ const AudioEngine = forwardRef(({
     playTrackLockRef.current = new Promise(r => { releaseLock = r; });
 
     try {
+    cancelOwnedDeckFade('new-track');
 
     const deckA = deckARef.current;
     const deckB = deckBRef.current;
@@ -549,12 +616,17 @@ const AudioEngine = forwardRef(({
       cancelAnimationFrame(safetyFadeRef.current);
       safetyFadeRef.current = null;
     }
+    safetyFadeHandleRef.current = null;
 
     const inactiveDeck = getInactiveDeck();
     const activeDeckEl = getActiveDeck();
     const inactiveGain = getInactiveDeckGain();
     const activeGain = getActiveDeckGain();
     const inactiveSourceRef = getInactiveSourceRef();
+    const inactiveDeckName = inactiveDeck === deckARef.current ? 'A' : 'B';
+    const deckGeneration = (deckGenerationRef.current[inactiveDeckName] || 0) + 1;
+    deckGenerationRef.current[inactiveDeckName] = deckGeneration;
+    const trackHandle = { deck: inactiveDeckName, generation: deckGeneration };
 
     inactiveDeck.onended = null;
     inactiveDeck.ontimeupdate = null;
@@ -701,6 +773,9 @@ const AudioEngine = forwardRef(({
 
     isPlayingRef.current = true;
     setIsPlaying(true);
+    try { onTrackReady?.(trackHandle); } catch (error) {
+      console.warn('⚠️ PlayTrack: onTrackReady callback failed:', error?.message || error);
+    }
 
     console.log(`🔍 PlayTrack: DECK STATE after play — active=${activeDeck.current}, A.paused=${deckARef.current?.paused}, B.paused=${deckBRef.current?.paused}`);
 
@@ -712,6 +787,7 @@ const AudioEngine = forwardRef(({
     const startSafetyFade = () => {
       if (safetyFading || crossfadeInProgressRef.current) return;
       safetyFading = true;
+      safetyFadeHandleRef.current = trackHandle;
       const fadeStartVolume = newDeckGain.gain.value;
       const fadeStart = performance.now();
       const shortTrack = resolvedDuration < 60;
@@ -719,6 +795,13 @@ const AudioEngine = forwardRef(({
       const fadeDur = fadeSecs * 1000;
 
       const animateOut = (now) => {
+        if (!isCurrentDeckHandle(trackHandle)) {
+          if (safetyFadeHandleRef.current === trackHandle) {
+            safetyFadeRef.current = null;
+            safetyFadeHandleRef.current = null;
+          }
+          return;
+        }
         const elapsed = now - fadeStart;
         const progress = Math.min(elapsed / fadeDur, 1);
         newDeckGain.gain.setValueAtTime(clampVol(equalPowerOut(progress) * fadeStartVolume), ctx.currentTime);
@@ -727,6 +810,9 @@ const AudioEngine = forwardRef(({
           safetyFadeRef.current = requestAnimationFrame(animateOut);
         } else {
           safetyFadeRef.current = null;
+          if (safetyFadeHandleRef.current === trackHandle) {
+            safetyFadeHandleRef.current = null;
+          }
           newDeck.pause();
         }
       };
@@ -804,7 +890,7 @@ const AudioEngine = forwardRef(({
       playTrackLockRef.current = null;
       return false;
     }
-  }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource, analyzeTrackLoudness]);
+  }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource, analyzeTrackLoudness, cancelOwnedDeckFade, isCurrentDeckHandle]);
 
   const applyDuckGain = useCallback((change = {}) => {
     const ctx = ensureAudioContext();
@@ -869,6 +955,7 @@ const AudioEngine = forwardRef(({
     autoDuck = true,
     onNearEnd = null,
     waitForEnd = true,
+    onStarted = null,
   } = {}) => {
     // The voice element is shared, but each invocation owns a distinct
     // generation and duck token. Starting a new announcement must settle the
@@ -877,6 +964,9 @@ const AudioEngine = forwardRef(({
     const token = announcementLifecycleRef.current.start(reason => session?.cancel(reason));
     const { generation, ownerId } = token;
     const voice = voiceElRef.current;
+    try { onStarted?.(token); } catch (error) {
+      console.warn('⚠️ PlayAnnouncement: onStarted callback failed:', error?.message || error);
+    }
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -1041,12 +1131,14 @@ const AudioEngine = forwardRef(({
   }, [ensureAudioContext]);
 
   const pause = useCallback(() => {
+    cancelOwnedDeckFade('pause');
     getActiveDeck().pause();
     isPlayingRef.current = false;
     setIsPlaying(false);
-  }, []);
+  }, [cancelOwnedDeckFade]);
 
   const pauseAll = useCallback(() => {
+    cancelOwnedDeckFade('pause-all');
     if (fadeAnimationRef.current) {
       cancelAnimationFrame(fadeAnimationRef.current);
       fadeAnimationRef.current = null;
@@ -1055,6 +1147,7 @@ const AudioEngine = forwardRef(({
       cancelAnimationFrame(safetyFadeRef.current);
       safetyFadeRef.current = null;
     }
+    safetyFadeHandleRef.current = null;
     crossfadeInProgressRef.current = false;
     if (deckARef.current) {
       deckARef.current.pause();
@@ -1068,7 +1161,7 @@ const AudioEngine = forwardRef(({
     }
     isPlayingRef.current = false;
     setIsPlaying(false);
-  }, []);
+  }, [cancelOwnedDeckFade]);
 
   const resume = useCallback(() => {
     ensureAudioContext();
@@ -1132,6 +1225,12 @@ const AudioEngine = forwardRef(({
     unduck();
   }, [unduck]);
 
+  const stopOwnedVoice = useCallback((handle) => {
+    if (!handle || !announcementLifecycleRef.current?.isCurrent(handle)) return false;
+    announcementLifecycleRef.current.cancelActive('stopped');
+    return true;
+  }, []);
+
   const setVoiceEq = useCallback((band, value) => {
     const v = Math.max(-12, Math.min(12, value));
     const ref_map = { bass: voiceEqBassRef, mid: voiceEqMidRef, treble: voiceEqTrebleRef };
@@ -1147,6 +1246,9 @@ const AudioEngine = forwardRef(({
 
   useImperativeHandle(ref, () => ({
     playTrack,
+    captureDeck,
+    fadeOwnedDeck,
+    stopOwnedDeck,
     pause,
     pauseAll,
     resume,
@@ -1157,6 +1259,7 @@ const AudioEngine = forwardRef(({
     releaseDuck,
     playAnnouncement,
     stopVoice,
+    stopOwnedVoice,
     setVolume,
     setVoiceGain,
     seek,

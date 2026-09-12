@@ -18,6 +18,19 @@ test('premixed media waits for actual end instead of the normal lead window', ()
   );
 });
 
+test('legacy bed media-end mode does not arm the safety transition window', () => {
+  const duration = 24;
+  const mediaEndPoint = getTrackEndTriggerPoint({
+    duration,
+    triggerAtMediaEnd: true,
+  });
+  assert.equal(mediaEndPoint, duration);
+  assert.notEqual(
+    mediaEndPoint,
+    getTrackEndTriggerPoint({ duration }),
+  );
+});
+
 test('short tracks retain their bounded transition lead', () => {
   assert.equal(
     getTrackEndTriggerPoint({ duration: 20, isShortTrack: true }),
