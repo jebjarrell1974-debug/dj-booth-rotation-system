@@ -194,3 +194,104 @@ test('R4. a malformed receipt body is not an answer either', async () => {
   assert.equal(submitError.resultUnknown, true);
   assertIdentityKept(submitError);
 });
+
+// ---- reproduced by Replit: presence of a field is not a response ----
+
+test('S1. a submission of {commandId} alone establishes nothing: UNKNOWN with identity', async () => {
+  let submits = 0;
+  const error = await rejects(runBoothCommand({
+    submit: async () => { submits += 1; return { commandId: 17 }; },
+    getReceipt: async () => assert.fail('nothing was established, so there is nothing to poll'),
+    identity: IDENTITY, ...harness(),
+  }));
+  assert.equal(error.resultUnknown, true, 'it did not say queued, and it did not say refused');
+  assertIdentityKept(error);
+  assert.equal(submits, 1, 'never replayed');
+});
+
+test('S2. a receipt of {command:{id}} alone is not an answer: keep polling, then UNKNOWN', async () => {
+  let polls = 0;
+  const error = await rejects(runBoothCommand({
+    submit: async () => ({ queued: true, commandId: 17 }),
+    getReceipt: async () => { polls += 1; return { command: { id: 17 } }; },
+    identity: IDENTITY, timeoutMs: 600, ...harness(),
+  }));
+  assert.equal(error.resultUnknown, true, 'a receipt with neither flag must not decide anything');
+  assert.equal(error.requestId, 'req-7');
+  assert.equal(error.commandId, 17, 'the command id known from the submission is kept');
+  assert.ok(polls > 1, 'it kept polling read-only rather than declaring failure');
+});
+
+test('S3. {ok:"false"} is a STRING and must not read as success', async () => {
+  let polls = 0;
+  const error = await rejects(runBoothCommand({
+    submit: async () => ({ queued: true, commandId: 18 }),
+    getReceipt: async () => { polls += 1; return { ok: 'false', queued: false }; },
+    identity: IDENTITY, timeoutMs: 600, ...harness(),
+  }));
+  assert.equal(error.resultUnknown, true, 'a string-valued boolean establishes neither outcome');
+  assert.equal(error.commandId, 18);
+  assert.ok(polls > 1);
+
+  // The truthy-string trap in the other direction must not read as failure either.
+  const other = await rejects(runBoothCommand({
+    submit: async () => ({ queued: true, commandId: 19 }),
+    getReceipt: async () => ({ ok: 'true', queued: false }),
+    identity: IDENTITY, timeoutMs: 600, ...harness(),
+  }));
+  assert.equal(other.resultUnknown, true);
+  assert.notEqual(other.rejectedByServer, true);
+});
+
+test('valid shapes still behave exactly as the API contract says', async () => {
+  // queued submission -> polled to a settled receipt
+  const applied = await runBoothCommand({
+    submit: async () => ({ ok: false, queued: true, commandId: 21, command: { id: 21, status: 'pending' } }),
+    getReceipt: async () => ({ ok: true, queued: false, command: { id: 21, status: 'applied' }, serverEpoch: 'e' }),
+    identity: IDENTITY, ...harness(),
+  });
+  assert.equal(applied.ok, true);
+
+  // a duplicate that was already applied comes back terminal on the submission itself
+  const duplicate = await runBoothCommand({
+    submit: async () => ({ ok: true, queued: false, commandId: 22, command: { id: 22, status: 'applied' }, duplicate: true }),
+    getReceipt: async () => assert.fail('already settled'),
+    identity: IDENTITY, ...harness(),
+  });
+  assert.equal(duplicate.duplicate, true);
+
+  // an immediate refusal stays a confirmed failure
+  const refused = await rejects(runBoothCommand({
+    submit: async () => ({ ok: false, queued: false, command: { error: 'Unknown or disallowed command action' } }),
+    getReceipt: async () => assert.fail('no'),
+    identity: IDENTITY, ...harness(),
+  }));
+  assert.equal(refused.rejectedByServer, true);
+  assert.notEqual(refused.resultUnknown, true);
+
+  // a still-queued receipt is polled again, then settles as failed
+  let polls = 0;
+  const failed = await rejects(runBoothCommand({
+    submit: async () => ({ ok: false, queued: true, commandId: 23 }),
+    getReceipt: async () => {
+      polls += 1;
+      return polls < 3
+        ? { ok: false, queued: true, command: { id: 23, status: 'pending' } }
+        : { ok: false, queued: false, command: { id: 23, status: 'failed', error: 'Invalid DJ PIN' } };
+    },
+    identity: IDENTITY, ...harness(),
+  }));
+  assert.equal(failed.message, 'Invalid DJ PIN');
+  assert.equal(failed.rejectedByServer, true);
+  assert.equal(polls, 3);
+});
+
+test('a queued submission with no command id cannot be tracked, so it is UNKNOWN', async () => {
+  const error = await rejects(runBoothCommand({
+    submit: async () => ({ queued: true }),
+    getReceipt: async () => assert.fail('there is no id to poll'),
+    identity: IDENTITY, ...harness(),
+  }));
+  assert.equal(error.resultUnknown, true);
+  assertIdentityKept(error);
+});

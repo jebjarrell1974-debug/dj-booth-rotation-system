@@ -113,10 +113,34 @@ export function classifyCommandError(error, identity = {}, { stage = 'submit' } 
 }
 
 /**
- * Is this response shaped like an answer we can act on? An unrecognisable body is an
- * ambiguous answer, not a failure.
+ * What does this response body actually establish?
+ *
+ * Checking that a recognised property is PRESENT is not enough - presence is not shape. Three
+ * bodies that slipped through a presence check, each of which must not decide anything:
+ *
+ *   {commandId: 17}                 no `queued`, no `ok` - it says nothing at all
+ *   {command: {id: 17}}             a receipt with neither flag
+ *   {ok: "false", queued: false}    a STRING, which is truthy, so it read as success
+ *
+ * The real contract, from the booth command API:
+ *
+ *   queued response    `queued === true`, and on a submission an integer `commandId`,
+ *                      because without one the command cannot be tracked;
+ *   terminal response  `queued === false` AND a boolean `ok` - true applied, false failed.
+ *
+ * Anything else is MALFORMED: an ambiguous answer that establishes neither success nor
+ * failure, to be treated exactly like no answer at all.
  */
-export function isUsableCommandResponse(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
-  return 'queued' in body || 'ok' in body || 'commandId' in body || 'command' in body;
+export function classifyCommandResponse(body, { stage = 'submit' } = {}) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'malformed';
+  if (typeof body.queued !== 'boolean') return 'malformed';
+  if (body.queued) {
+    // A queued submission must say WHICH command was queued, or it cannot be followed up.
+    if (stage === 'submit' && !Number.isInteger(body.commandId)) return 'malformed';
+    return 'queued';
+  }
+  // Terminal: only a real boolean establishes success or failure. "false", 0, null, absent -
+  // none of them are the API saying anything.
+  if (typeof body.ok !== 'boolean') return 'malformed';
+  return body.ok ? 'applied' : 'failed';
 }

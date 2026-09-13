@@ -5,7 +5,7 @@ import {
   isAmbiguousAnswer,
   isExplicitCommandRefusal,
   isTransportFailure,
-  isUsableCommandResponse,
+  classifyCommandResponse,
   markUnknownOutcome,
 } from './commandOutcome.js';
 import { RequestTimeoutError } from './requestDeadline.js';
@@ -94,11 +94,32 @@ test('anything unrecognised stays unknown rather than being called a failure', (
   assert.equal(odd.resultUnknown, true);
 });
 
-test('a body that is not shaped like a command response is not an answer', () => {
-  assert.equal(isUsableCommandResponse({ queued: true, commandId: 1 }), true);
-  assert.equal(isUsableCommandResponse({ ok: true }), true);
-  assert.equal(isUsableCommandResponse({ command: { id: 1 } }), true);
-  for (const body of [null, undefined, 'OK', 42, [], {}, { error: 'gateway timeout' }]) {
-    assert.equal(isUsableCommandResponse(body), false, JSON.stringify(body));
+test('a response establishes something only if it has the real shape', () => {
+  // Valid shapes, from the booth command API.
+  assert.equal(classifyCommandResponse({ queued: true, commandId: 17 }, { stage: 'submit' }), 'queued');
+  assert.equal(classifyCommandResponse({ queued: false, ok: true, commandId: 5, duplicate: true }), 'applied');
+  assert.equal(classifyCommandResponse({ queued: false, ok: false, command: { error: 'nope' } }), 'failed');
+  assert.equal(classifyCommandResponse({ queued: true, command: { id: 9 } }, { stage: 'receipt' }), 'queued');
+  assert.equal(classifyCommandResponse({ queued: false, ok: true, command: { id: 9 } }, { stage: 'receipt' }), 'applied');
+  assert.equal(classifyCommandResponse({ queued: false, ok: false, command: { id: 9, error: 'Invalid DJ PIN' } }, { stage: 'receipt' }), 'failed');
+
+  // Presence is not shape. None of these establish anything.
+  const malformed = [
+    { commandId: 17 },                       // no queued, no ok
+    { command: { id: 17 } },                 // a receipt with neither flag
+    { ok: 'false', queued: false },          // a STRING is not a boolean
+    { ok: 'true', queued: false },
+    { queued: 'true', commandId: 3 },
+    { queued: true },                        // queued on a submission with nothing to track
+    { queued: true, commandId: '3' },
+    { queued: false },                       // terminal with no verdict
+    { queued: false, ok: null },
+    { queued: false, ok: 1 },
+    {}, null, undefined, 'OK', 42, [], { error: 'gateway timeout' },
+  ];
+  for (const body of malformed) {
+    assert.equal(classifyCommandResponse(body, { stage: 'submit' }), 'malformed', JSON.stringify(body));
   }
+  // A queued RECEIPT needs no commandId - the caller already knows it.
+  assert.equal(classifyCommandResponse({ queued: true }, { stage: 'receipt' }), 'queued');
 });

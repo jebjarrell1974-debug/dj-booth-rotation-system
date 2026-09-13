@@ -1,6 +1,6 @@
 import {
   classifyCommandError,
-  isUsableCommandResponse,
+  classifyCommandResponse,
   markUnknownOutcome,
 } from './commandOutcome.js';
 
@@ -40,23 +40,22 @@ export async function runBoothCommand({
     throw error;
   }
 
-  if (!isUsableCommandResponse(submitted)) {
-    // The server answered with something this client cannot read. It may well have queued
-    // the command first - that is not a refusal.
+  const submittedShape = classifyCommandResponse(submitted, { stage: 'submit' });
+  if (submittedShape === 'malformed') {
+    // The answer establishes nothing - not that it was queued, not that it was refused. The
+    // command may well have been queued before the response was mangled.
     const error = new Error('The booth server sent a response this client could not read');
+    error.details = submitted;
     markUnknownOutcome(error, identity);
     throw error;
   }
-
-  if (!submitted.queued) {
-    if (!submitted.ok) {
-      const error = new Error(submitted.command?.error || 'The kiosk did not apply the command');
-      error.details = submitted;
-      error.rejectedByServer = true;
-      throw error;
-    }
-    return submitted;
+  if (submittedShape === 'failed') {
+    const error = new Error(submitted.command?.error || 'The kiosk did not apply the command');
+    error.details = submitted;
+    error.rejectedByServer = true;
+    throw error;
   }
+  if (submittedShape === 'applied') return submitted;
 
   const commandId = submitted.commandId;
   const deadline = now() + timeoutMs;
@@ -78,10 +77,11 @@ export async function runBoothCommand({
       classifyCommandError(error, { ...identity, commandId }, { stage: 'receipt' });
       continue;
     }
-    // A receipt we cannot read is also not an answer.
-    if (!isUsableCommandResponse(receipt)) continue;
-    if (receipt.queued) continue;
-    if (!receipt.ok) {
+    // A receipt that is still queued, or that establishes nothing, is not an answer - keep
+    // polling. Only a properly shaped terminal receipt ends this loop.
+    const receiptShape = classifyCommandResponse(receipt, { stage: 'receipt' });
+    if (receiptShape === 'malformed' || receiptShape === 'queued') continue;
+    if (receiptShape === 'failed') {
       // A settled receipt IS the answer: the kiosk or the server judged this command.
       const error = new Error(receipt.command?.error || 'The kiosk rejected the command');
       error.details = receipt;
