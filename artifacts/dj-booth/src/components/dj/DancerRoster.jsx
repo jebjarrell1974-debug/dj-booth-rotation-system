@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { UserPlus, Edit2, Trash2, Music, User, ListMusic, Plus, Minus, RotateCcw, Delete } from 'lucide-react';
+import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
 
 const clearDancerFromIndexedDB = async (dancerName) => {
   try {
@@ -474,14 +475,16 @@ export default function DancerRoster({
                 return (
                 <div className="w-full mb-2">
                   <p className="text-[10px] text-yellow-400 text-center mb-1">{isActiveVip ? 'Add VIP time:' : 'VIP timeout:'}</p>
-                  <div className="grid grid-cols-3 gap-1 mb-1">
-                    {[15, 30, 60].map(mins => (
+                  {/* Same shared increments as the rotation modal and the phone remote.
+                      Each press ADDS to the running total below; Send/Extend confirms. */}
+                  <div className="grid grid-cols-4 gap-1 mb-1">
+                    {VIP_INCREMENT_OPTIONS.map(opt => (
                       <button
-                        key={mins}
+                        key={opt.minutes}
                         className="text-[10px] py-1 rounded bg-yellow-900/40 hover:bg-yellow-700/60 text-yellow-300 border border-yellow-700/50 transition-colors"
-                        onClick={(e) => { e.stopPropagation(); setVipAddMs(v => v + mins * 60 * 1000); }}
+                        onClick={(e) => { e.stopPropagation(); setVipAddMs(v => v + opt.ms); }}
                       >
-                        +{mins < 60 ? `${mins}m` : '1h'}
+                        {opt.label}
                       </button>
                     ))}
                   </div>

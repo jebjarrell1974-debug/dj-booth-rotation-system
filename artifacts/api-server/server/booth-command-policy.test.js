@@ -281,3 +281,25 @@ test('publication-pending processing work cannot be pruned or deduplicated into 
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.command.id, first.id);
 });
+test('duck hold identity is validated but optional', () => {
+  const ok = (payload) => validateBoothCommand('acquireDuck', payload).ok;
+  assert.equal(ok({ leaseId: 'lease-1' }), true, 'an older remote sends no hold identity');
+  assert.equal(ok({ leaseId: 'lease-1', clientId: 'client-a', holdSeq: 1 }), true);
+  assert.equal(ok({ leaseId: 'lease-1', clientId: 'client-a', holdSeq: 0 }), false);
+  assert.equal(ok({ leaseId: 'lease-1', clientId: 'client-a', holdSeq: 1.5 }), false);
+  assert.equal(ok({ leaseId: 'lease-1', clientId: 'client-a', holdSeq: '2' }), false);
+  assert.equal(ok({ leaseId: 'lease-1', clientId: 'x'.repeat(129), holdSeq: 1 }), false);
+  assert.equal(ok({ leaseId: 'lease-1', clientId: 42, holdSeq: 1 }), false);
+  assert.equal(validateBoothCommand('releaseDuck', { leaseId: 'lease-1', clientId: 'c', holdSeq: 7 }).ok, true);
+  assert.equal(validateBoothCommand('renewDuck', { leaseId: 'lease-1', clientId: 'c', holdSeq: 7 }).ok, true);
+});
+
+test('a duck command is queued with a short TTL so it cannot be applied much later', () => {
+  // The kiosk-side guard exists because this TTL bounds execution from ARRIVAL only.
+  const queue = new BoothCommandQueue();
+  const queued = queue.enqueue('acquireDuck', { leaseId: 'lease-1' }, { actor: 'dj-1', requestId: 'r1', ttlMs: 2_500 }, 1_000);
+  assert.equal(queued.command.expiresAt, 3_500);
+  assert.equal(queue.pendingSince(0, 3_499).length, 1);
+  assert.equal(queue.pendingSince(0, 3_501).length, 0, 'it is never handed to the kiosk after the TTL');
+  assert.equal(queue.getById(queued.command.id, 3_501).status, 'expired');
+});

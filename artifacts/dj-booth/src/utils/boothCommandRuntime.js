@@ -84,3 +84,79 @@ export async function runClaimedCommand({
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Save All ("saveRotationWorkspace") workspace guard.
+//
+// Save All publishes the operator's whole arrangement, so it must not overwrite a
+// NEWER operator edit made between enqueue and execution - while still ignoring the
+// automatic picks the kiosk rewrites on its own.
+//
+// The snapshot it is checked against is stamped by the SERVER at enqueue time. If
+// that snapshot is missing a safeguard field, the comparison MUST NOT quietly shrink
+// to whatever the snapshot happens to contain: dropping `manualRotationSongs` would
+// let a stale save overwrite a newer manual song edit, which is precisely what this
+// guard exists to prevent. An incomplete snapshot is therefore REFUSED, and the
+// operator is told to refresh and save again.
+export const REQUIRED_SAVE_ALL_SNAPSHOT_FIELDS = [
+  'rotation',
+  'manualRotationSongs',
+  'manualRotationSetLengths',
+  'manualInterstitialBreaks',
+];
+
+const MANUAL_SAVE_GUARD_FIELDS = [
+  'rotation', 'dancerVipMap', 'placedFeatures',
+  'manualInterstitialBreaks', 'manualRotationSetLengths', 'manualRotationSongs',
+];
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+// Everything the OPERATOR owns. `manualInterstitialBreaks` is only a map of boolean
+// ownership markers, so editing a break that was ALREADY manual changes no marker at
+// all - the contents have to be compared separately.
+export function manualWorkspaceProjection(workspace) {
+  const source = workspace && typeof workspace === 'object' ? workspace : {};
+  const out = {};
+  for (const field of MANUAL_SAVE_GUARD_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) out[field] = source[field];
+  }
+  const owned = source.manualInterstitialBreaks || {};
+  const contents = {};
+  for (const [breakKey, isManual] of Object.entries(owned)) {
+    // `|| []` keeps an emptied manual break distinct from an absent one.
+    if (isManual === true) contents[breakKey] = (source.interstitialSongs || {})[breakKey] || [];
+  }
+  out.manualBreakContents = contents;
+  return out;
+}
+
+export function missingSaveAllSnapshotFields(workspace) {
+  if (!workspace || typeof workspace !== 'object') return [...REQUIRED_SAVE_ALL_SNAPSHOT_FIELDS];
+  return REQUIRED_SAVE_ALL_SNAPSHOT_FIELDS.filter(
+    field => !Object.prototype.hasOwnProperty.call(workspace, field),
+  );
+}
+
+export class IncompleteWorkspaceSnapshotError extends Error {
+  constructor(missing) {
+    super(`This save was prepared against an incomplete kiosk snapshot (missing: ${missing.join(', ')}). Refresh the remote and save again.`);
+    this.name = 'IncompleteWorkspaceSnapshotError';
+    this.missingFields = missing;
+  }
+}
+
+export function assertSaveAllWorkspaceUnchanged(expectedWorkspace, liveWorkspace) {
+  const missing = missingSaveAllSnapshotFields(expectedWorkspace);
+  if (missing.length > 0) throw new IncompleteWorkspaceSnapshotError(missing);
+  if (stableStringify(manualWorkspaceProjection(expectedWorkspace))
+      !== stableStringify(manualWorkspaceProjection(liveWorkspace))) {
+    throw new Error('The kiosk workspace changed before this command could be applied');
+  }
+}

@@ -5,6 +5,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
+import { rotationStartState } from '@/utils/rotationStartState';
 import {
   capSongList,
   currentRotationDancerId,
@@ -145,6 +147,8 @@ export default function RotationPlaylistManager({
   onStartRotation,
   isRotationActive,
   rotationPending,
+  // Local "sent, not yet acknowledged" flag. Set on press, cleared by authoritative state.
+  rotationStarting = false,
   onCancelPendingRotation,
   songsPerSet,
   onSongsPerSetChange,
@@ -172,6 +176,11 @@ export default function RotationPlaylistManager({
   availablePromos = [],
   promoQueue = [],
   onSwapPromo,
+  // Remote only. When set, skipping a commercial is a COMMAND to the kiosk instead of
+  // a write to this browser's own storage, and the skipped list is the kiosk's
+  // authoritative one rather than a local guess.
+  onSkipCommercial,
+  remoteSkippedCommercials,
   currentSongNumber,
   breakSongsPerSet,
   onBreakSongsPerSetChange,
@@ -271,6 +280,11 @@ export default function RotationPlaylistManager({
       return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch { return new Set(); }
   });
+  // On a remote this browser's localStorage is meaningless - the kiosk owns the list
+  // and publishes it in booth state. Track that instead, exactly as RemoteView does.
+  const effectiveSkippedCommercials = (remoteMode && Array.isArray(remoteSkippedCommercials))
+    ? new Set(remoteSkippedCommercials)
+    : skippedCommercials;
   useEffect(() => {
     const handleRemoteCommercialFreq = (event) => {
       setCommercialFreq(String(event.detail || localStorage.getItem('neonaidj_commercial_freq') || 'off'));
@@ -1561,24 +1575,42 @@ export default function RotationPlaylistManager({
                   <Save className="w-4 h-4 mr-2" />
                   Save All
                 </Button>
-                {rotationDancers.length > 0 && !isRotationActive && !rotationPending && (
-                  <Button
-                    onClick={onStartRotation}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    Start
-                  </Button>
-                )}
-                {rotationPending && (
-                  <Button
-                    onClick={onCancelPendingRotation}
-                    className="bg-yellow-600 hover:bg-yellow-700 text-white animate-pulse"
-                  >
-                    <Clock className="w-4 h-4 mr-2" />
-                    Queued...
-                  </Button>
-                )}
+                {(() => {
+                  // One shared derivation of what this control should say. It never
+                  // reports the rotation as active just because the button was pressed,
+                  // and when the kiosk is waiting for the current song to finish it says
+                  // so instead of looking like nothing happened.
+                  const startState = rotationStartState({ isRotationActive, rotationPending, starting: rotationStarting });
+                  if (rotationDancers.length > 0 && startState.kind === 'idle') {
+                    return (
+                      <Button onClick={onStartRotation} className="bg-green-600 hover:bg-green-700 text-white">
+                        <Play className="w-4 h-4 mr-2" />
+                        Start
+                      </Button>
+                    );
+                  }
+                  if (startState.kind === 'starting') {
+                    return (
+                      <Button disabled title={startState.hint} className="bg-green-700/60 text-white cursor-wait">
+                        <Clock className="w-4 h-4 mr-2 animate-pulse" />
+                        Starting…
+                      </Button>
+                    );
+                  }
+                  if (startState.kind === 'queued') {
+                    return (
+                      <Button
+                        onClick={onCancelPendingRotation}
+                        title={startState.hint}
+                        className="bg-yellow-600 hover:bg-yellow-700 text-white animate-pulse"
+                      >
+                        <Clock className="w-4 h-4 mr-2" />
+                        Starting after this song
+                      </Button>
+                    );
+                  }
+                  return null;
+                })()}
                 {isRotationActive && rotationDancers.length > 1 && (
                   <Button
                     disabled={skipLocked}
@@ -2053,7 +2085,7 @@ export default function RotationPlaylistManager({
                         if (futureCount % freqNum !== 0) return null;
 
                         const commercialId = `commercial-after-${index}`;
-                        if (skippedCommercials.has(commercialId)) return null;
+                        if (effectiveSkippedCommercials.has(commercialId)) return null;
 
                         let promoSlotIndex = 0;
                         for (let i = 0; i < index; i++) {
@@ -2065,7 +2097,7 @@ export default function RotationPlaylistManager({
                             prevSteps = i + 1;
                           }
                           const prevFuture = commercialCounter + prevSteps;
-                          if (prevFuture % freqNum === 0 && !skippedCommercials.has(`commercial-after-${i}`)) {
+                          if (prevFuture % freqNum === 0 && !effectiveSkippedCommercials.has(`commercial-after-${i}`)) {
                             promoSlotIndex++;
                           }
                         }
@@ -2099,6 +2131,12 @@ export default function RotationPlaylistManager({
                             )}
                             <button
                               onClick={() => {
+                                // A remote must not "skip" a commercial by editing its own
+                                // browser storage - the kiosk is what plays it.
+                                if (remoteMode) {
+                                  onSkipCommercial?.(commercialId);
+                                  return;
+                                }
                                 setSkippedCommercials(prev => {
                                   const next = new Set([...prev, commercialId]);
                                   try { localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify([...next])); } catch {}
@@ -2314,14 +2352,17 @@ export default function RotationPlaylistManager({
                     ? 'VIP pending \u2014 she enters after this set. Add more time below.'
                     : 'She\u2019ll finish her current set, then enter VIP. How long?'}
               </p>
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                {[15, 30, 60].map(mins => (
+              {/* Increments come from the shared list so the desktop remote, the phone
+                  remote and the kiosk always offer the same choices. Each press ADDS to
+                  the running total below - this is not a one-tap fixed duration. */}
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                {VIP_INCREMENT_OPTIONS.map(opt => (
                   <button
-                    key={mins}
+                    key={opt.minutes}
                     className="bg-[#151528] border border-[#1e293b] hover:border-yellow-500/50 hover:bg-yellow-900/20 rounded-xl py-3 text-white font-semibold text-sm transition-all"
-                    onClick={() => setVipAddMs(v => v + mins * 60 * 1000)}
+                    onClick={() => setVipAddMs(v => v + opt.ms)}
                   >
-                    +{mins < 60 ? `${mins}m` : '1h'}
+                    {opt.label}
                   </button>
                 ))}
               </div>

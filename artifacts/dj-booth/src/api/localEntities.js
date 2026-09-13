@@ -287,6 +287,9 @@ export const localIntegrations = {
           return String(content ?? '');
         } catch (error) {
           console.error('OpenAI API error:', error.message);
+          // Caller falls back to canned/generic material — make it LOUD.
+          const { reportScriptFallback } = await import('@/utils/scriptFallbackAlert');
+          reportScriptFallback('api_error', error.message);
           // A rejected key (401/invalid) must behave like NO key: fall through
           // to the canned scripts below instead of throwing. Only transient
           // errors (timeouts, network) still throw so callers can prefer their
@@ -297,7 +300,14 @@ export const localIntegrations = {
           }
         }
       }
-      
+
+      if (!config.openaiApiKey) {
+        // No OpenAI key → canned script pool. This ran silently for weeks in
+        // June 2026; report it so the fleet monitor sends a Telegram alert.
+        const { reportScriptFallback } = await import('@/utils/scriptFallbackAlert');
+        reportScriptFallback('no_key', 'OpenAI key missing — canned script used');
+      }
+
       return prompt.includes('STAGE-MOVE SEND-OFF')
         ? 'That was amazing, everybody! She is moving on to the next stage right now.'
         : prompt.includes('STAGE INTRODUCTION') 

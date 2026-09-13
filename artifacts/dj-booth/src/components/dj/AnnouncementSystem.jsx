@@ -14,6 +14,16 @@ import {
 } from '@/utils/regularRotationScripts';
 import { trackOpenAICall, trackElevenLabsCall, estimateTokens } from '@/utils/apiCostTracker';
 import { reportScriptFallback } from '@/utils/scriptFallbackAlert';
+import {
+  buildElevenLabsHttpError,
+  isElevenLabsAuthFailure,
+  isElevenLabsKeyRejected,
+  markElevenLabsKeyRejected,
+  elevenLabsKeyProbeAllowed,
+  noteElevenLabsKeyProbe,
+  clearElevenLabsKeyRejection,
+  planElevenLabsRetry,
+} from '@/utils/elevenLabsKeyState';
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('djbooth_token');
@@ -151,6 +161,11 @@ const withRetry = async (fn, maxAttempts = 3, baseDelayMs = 3000) => {
 // ducked-music delay) on every single announcement.
 let openaiKeyLooksInvalid = false;
 
+// ElevenLabs credential state and error classification now live in
+// '@/utils/elevenLabsKeyState' so they can be unit-tested: the difference between a
+// rejected key, a 403 permission problem, a 429, a timeout and a cancellation is not
+// something to get wrong, and it cannot be proven from inside a JSX component.
+
 const CURRENT_VOICE_VERSION = 'V17';
 
 const hashPhonetic = (str) => {
@@ -229,6 +244,8 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
   const [preCacheError, setPreCacheError] = useState(null);
   const preCacheStartTimeRef = useRef(0);
   const variationCounterRef = useRef({});
+  // How long a failed announcement stays skipped before one more attempt is allowed.
+  const FAILED_GENERATION_RETRY_MS = 120000;
   const failedGenerationsRef = useRef(new Set());
   const failedGenerationTimesRef = useRef({});
   const lastPlayedTypeVariantRef = useRef({ intro: 0, outro: 0, round2: 0 });
@@ -503,6 +520,24 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       if (!apiKey) throw new Error('ElevenLabs API key not configured - check settings');
     }
 
+    // Checked OUTSIDE the missing-key branch above - that branch only runs when
+    // there is no key at all, so a check placed inside it could never fire for the
+    // case that matters: a key that IS present and HAS been rejected. If the
+    // operator pastes a different key, its fingerprint is not in the set and it
+    // gets a normal attempt. No fetch, no 30 s timeout, no ducked-music stall:
+    // the caller falls back to cached/canned audio immediately.
+    if (isElevenLabsKeyRejected(apiKey)) {
+      // Blocked - unless the cool-off has elapsed, in which case this key gets ONE
+      // attempt. Without that, a key rejected once (a provider blip, a brief outage)
+      // stayed blocked until somebody reloaded the kiosk, and an entertainer with no
+      // cached audio was silent for the rest of the night.
+      if (!elevenLabsKeyProbeAllowed(apiKey)) {
+        throw new Error('ElevenLabs API key was rejected earlier this session - using cached audio');
+      }
+      noteElevenLabsKeyProbe(apiKey);
+      console.warn('🔑 Re-probing the previously rejected ElevenLabs key (cool-off elapsed)');
+    }
+
     const voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
     const voiceSettings = VOICE_SETTINGS[LOCKED_LEVEL];
 
@@ -566,20 +601,14 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
 
         if (!response.ok) {
           const status = response.status;
-          let detail = '';
-          try {
-            const errBody = await response.json();
-            detail = errBody?.detail?.message || errBody?.detail || JSON.stringify(errBody);
-          } catch (e) {}
-          if (status === 401) {
-            throw new Error(`Invalid ElevenLabs API key - check settings. ${detail}`);
-          } else if (status === 429) {
-            throw new Error('Rate limit exceeded. Wait a moment and try again.');
-          }
-          throw new Error(`ElevenLabs error (${status}): ${detail || 'Unknown error'}`);
+          let parsedErrorBody = null;
+          try { parsedErrorBody = await response.json(); } catch (e) {}
+          throw buildElevenLabsHttpError(status, parsedErrorBody);
         }
 
         trackElevenLabsCall({ text: ttsText, model: 'eleven_v3', context: 'announcement-tts' });
+        // It worked: this key is good again, whatever happened to it earlier.
+        clearElevenLabsKeyRejection(keyToUse);
         return await response.blob();
       } catch (err) {
         clearTimeout(timeout);
@@ -594,14 +623,43 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
       // "must start with 'sk_'" 400, or 401 invalid), drop the corrupted local
       // copy, re-pull the server's good key (env / DB / last-known-good /
       // remote-pasted), and retry ONCE with it — no booth restart needed.
-      const msg = err?.message || '';
-      const isKeyError = /must start with 'sk_'|invalid elevenlabs api key/i.test(msg);
-      if (isKeyError) {
+      // Structured classification. A timeout, an abort, a network drop or a 429
+      // reaches here too and must NOT be treated as a bad credential.
+      if (isElevenLabsAuthFailure(err)) {
+        // Record THIS key's confirmed rejection first. Recovery may fail, throw, or
+        // hand back the very same key; if the marking waited until after it, a
+        // rejected key could stay unmarked and keep costing a live 30 s attempt on
+        // every later announcement - the exact fault this breaker exists to stop.
+        // Read the ledger BEFORE marking: marking starts the cool-off, and the first
+        // rejection of a key is exactly what earns it one immediate re-pull-and-retry.
+        const alreadyRejectedBefore = isElevenLabsKeyRejected(apiKey);
+        markElevenLabsKeyRejected(apiKey);
+        console.warn('🔇 ElevenLabs key rejected - blocking that key, using cached audio');
+
         const recovered = await recoverElevenLabsKey();
         const freshKey = getApiConfig().elevenLabsApiKey;
-        if (recovered && freshKey && freshKey !== apiKey) {
-          console.warn('🔑 Retrying TTS with recovered ElevenLabs key');
-          return await doTTS(freshKey);
+        // `freshKey !== apiKey` used to be required here. When the server's copy is the
+        // correct key - the normal case after a TRANSIENT 401 - recovery hands back the
+        // same string, that test failed, and the booth went silent for the session.
+        // What matters is whether this key may be attempted now, not whether the
+        // characters changed.
+        // One decision, made in a pure function so its boundedness can be asserted.
+        const plan = planElevenLabsRetry({ apiKey, freshKey, recovered, alreadyRejectedBefore });
+        if (plan.retry) {
+          console.warn(`🔑 Retrying TTS with the ${plan.reason === 'replacement-key' ? 'recovered' : 're-pulled'} ElevenLabs key`);
+          try {
+            return await doTTS(plan.key);
+          } catch (retryErr) {
+            // Only a CONFIRMED credential failure may block a key. A timeout, an abort,
+            // a network drop or a 429 leaves the ledger untouched.
+            if (isElevenLabsAuthFailure(retryErr)) {
+              markElevenLabsKeyRejected(plan.key);
+              console.warn('🔇 Retried ElevenLabs key also rejected - blocking that key');
+            }
+            // No second retry: the rejection above makes `alreadyRejectedBefore` true for
+            // the next attempt, so repeated failures cannot loop.
+            throw retryErr;
+          }
         }
       }
       throw err;
@@ -861,13 +919,15 @@ const AnnouncementSystem = React.forwardRef((props, ref) => {
     }
 
     const failKey = `${type}-${dancerName}${nextDancerName ? `-${nextDancerName}` : ''}`;
-    // Stage transitions have NO generic pre-recorded fallback, so a session-permanent
-    // failure skip means SILENT send-offs for that girl all night after one transient
-    // TTS hiccup. Let them retry after a 2-minute cooldown instead.
-    if (type === ANNOUNCEMENT_TYPES.STAGE_TRANSITION &&
-        failedGenerationsRef.current.has(failKey) &&
-        Date.now() - (failedGenerationTimesRef.current[failKey] || 0) > 120000) {
-      console.log(`🔁 Retrying stage_transition generation for ${dancerName} (cooldown elapsed)`);
+    // A session-permanent failure skip means SILENT announcements for that girl all
+    // night after one transient TTS hiccup. That reasoning was written for stage
+    // transitions, which have no generic fallback - but an entertainer with no cached
+    // audio of her own is in exactly the same position for intro / round2 / outro, and
+    // the 004 lab reproduced it: one transient 401 silenced every announcement for a
+    // new entertainer for the rest of the session. Every type now gets the cooldown.
+    if (failedGenerationsRef.current.has(failKey) &&
+        Date.now() - (failedGenerationTimesRef.current[failKey] || 0) > FAILED_GENERATION_RETRY_MS) {
+      console.log(`🔁 Retrying ${type} generation for ${dancerName} (cooldown elapsed)`);
       failedGenerationsRef.current.delete(failKey);
     }
     if (failedGenerationsRef.current.has(failKey)) {

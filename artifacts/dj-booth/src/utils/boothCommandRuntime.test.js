@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  REQUIRED_SAVE_ALL_SNAPSHOT_FIELDS,
+  assertSaveAllWorkspaceUnchanged,
+  missingSaveAllSnapshotFields,
+} from './boothCommandRuntime.js';
+import {
   acquireStructuralCommitLock,
   commandIsExpired,
   mergeWorkspaceAssignments,
@@ -145,4 +150,102 @@ test('structural commit never acquires after expiring behind a transition', asyn
     /expired/,
   );
   assert.equal(acquired, false);
+});
+
+// --------------------------------------------------------------------------
+// Save All workspace guard - regression cover for the fail-open bug.
+// A snapshot missing `manualRotationSongs` previously had that safeguard DELETED
+// from the comparison, which let a stale Save All overwrite a newer manual edit.
+// --------------------------------------------------------------------------
+const liveWithManualSongs = {
+  rotation: ['a', 'b'],
+  rotationSongs: { a: ['auto-1.mp3'], b: ['auto-2.mp3'] },
+  manualRotationSongs: { a: ['NEWER-manual.mp3'] },
+  manualRotationSetLengths: { a: 1 },
+  manualInterstitialBreaks: {},
+  interstitialSongs: {},
+  dancerVipMap: {},
+  placedFeatures: {},
+};
+
+test('a stamped snapshot missing manualRotationSongs cannot overwrite a newer manual edit', () => {
+  // Exactly the fail-open case: everything the old snapshot DOES carry matches the
+  // live workspace, and only the missing field would have revealed the newer edit.
+  const staleSnapshotWithoutManualSongs = {
+    rotation: ['a', 'b'],
+    rotationSongs: { a: ['auto-1.mp3'], b: ['auto-2.mp3'] },
+    manualRotationSetLengths: { a: 1 },
+    manualInterstitialBreaks: {},
+    interstitialSongs: {},
+    dancerVipMap: {},
+    placedFeatures: {},
+  };
+  assert.deepEqual(missingSaveAllSnapshotFields(staleSnapshotWithoutManualSongs), ['manualRotationSongs']);
+  assert.throws(
+    () => assertSaveAllWorkspaceUnchanged(staleSnapshotWithoutManualSongs, liveWithManualSongs),
+    /incomplete kiosk snapshot/,
+    'an incomplete snapshot must be refused, never silently reduced',
+  );
+  // and it must name the remedy
+  assert.throws(() => assertSaveAllWorkspaceUnchanged(staleSnapshotWithoutManualSongs, liveWithManualSongs),
+    /Refresh the remote and save again/);
+});
+
+test('an incomplete snapshot is refused even when nothing else differs', () => {
+  const sameButIncomplete = { ...liveWithManualSongs };
+  delete sameButIncomplete.manualRotationSongs;
+  assert.throws(
+    () => assertSaveAllWorkspaceUnchanged(sameButIncomplete, liveWithManualSongs),
+    /incomplete kiosk snapshot/,
+  );
+});
+
+test('a missing snapshot entirely is refused, listing every required field', () => {
+  assert.deepEqual(missingSaveAllSnapshotFields(undefined), REQUIRED_SAVE_ALL_SNAPSHOT_FIELDS);
+  assert.throws(() => assertSaveAllWorkspaceUnchanged(undefined, liveWithManualSongs), /incomplete kiosk snapshot/);
+});
+
+test('a complete snapshot with newer manual song contents is rejected as changed', () => {
+  const stale = { ...liveWithManualSongs, manualRotationSongs: { a: ['older-manual.mp3'] } };
+  assert.throws(
+    () => assertSaveAllWorkspaceUnchanged(stale, liveWithManualSongs),
+    /kiosk workspace changed/,
+  );
+});
+
+test('an explicit empty manual list is a real edit, not an absent value', () => {
+  const cleared = { ...liveWithManualSongs, manualRotationSongs: { a: [] } };
+  assert.throws(() => assertSaveAllWorkspaceUnchanged(cleared, liveWithManualSongs), /kiosk workspace changed/);
+});
+
+test('an explicit manual set length of 0 is a real edit', () => {
+  const zeroed = { ...liveWithManualSongs, manualRotationSetLengths: { a: 0 } };
+  assert.throws(() => assertSaveAllWorkspaceUnchanged(zeroed, liveWithManualSongs), /kiosk workspace changed/);
+});
+
+test('contents of an ALREADY-manual break are compared, not just the ownership marker', () => {
+  const live = {
+    ...liveWithManualSongs,
+    manualInterstitialBreaks: { 'after-a': true },
+    interstitialSongs: { 'after-a': ['NEWER-break.mp3'] },
+  };
+  const stale = {
+    ...live,
+    interstitialSongs: { 'after-a': ['older-break.mp3'] },   // marker identical
+  };
+  assert.deepEqual(stale.manualInterstitialBreaks, live.manualInterstitialBreaks);
+  assert.throws(() => assertSaveAllWorkspaceUnchanged(stale, live), /kiosk workspace changed/);
+});
+
+test('unrelated AUTOMATIC song churn does not reject Save All', () => {
+  const churned = {
+    ...liveWithManualSongs,
+    rotationSongs: { a: ['auto-CHANGED.mp3'], b: ['auto-ALSO-CHANGED.mp3'] },
+    interstitialSongs: { 'auto-break': ['auto-filler.mp3'] },
+  };
+  assert.doesNotThrow(() => assertSaveAllWorkspaceUnchanged(churned, liveWithManualSongs));
+});
+
+test('an identical complete snapshot passes', () => {
+  assert.doesNotThrow(() => assertSaveAllWorkspaceUnchanged({ ...liveWithManualSongs }, liveWithManualSongs));
 });

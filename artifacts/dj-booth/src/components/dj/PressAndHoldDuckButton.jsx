@@ -15,6 +15,9 @@ export default function PressAndHoldDuckButton({
   label = 'Auto Duck',
   title = 'Hold to duck music',
   className = '',
+  // The phone needs a thumb-sized target; the desktop/kiosk keep the compact one.
+  sizeClassName = 'min-w-[82px] h-11 px-2 gap-1',
+  children = null,
 }) {
   const [held, setHeld] = useState(false);
   const heldRef = useRef(false);
@@ -119,14 +122,18 @@ export default function PressAndHoldDuckButton({
       onKeyUp={onKeyUp}
       onBlur={() => finish('button-blur')}
       onClick={event => event.preventDefault()}
-      className={`min-w-[82px] h-11 px-2 gap-1 rounded-md border flex items-center justify-center transition-colors touch-none select-none ${
+      className={`${sizeClassName} rounded-md border flex items-center justify-center transition-colors touch-none select-none ${
         held
           ? 'bg-[#00d4ff] border-[#00d4ff] text-black shadow-[0_0_12px_rgba(0,212,255,0.55)]'
           : 'bg-[#151528] border-[#2e2e5a] text-[#00d4ff] hover:bg-[#2e2e5a]'
       } disabled:opacity-30 ${className}`}
     >
-      <VolumeX className="w-3.5 h-3.5" aria-hidden="true" />
-      <span className="text-[10px] font-bold tracking-wide leading-none">AUTO DUCK</span>
+      {children || (
+        <>
+          <VolumeX className="w-3.5 h-3.5" aria-hidden="true" />
+          <span className="text-[10px] font-bold tracking-wide leading-none">AUTO DUCK</span>
+        </>
+      )}
     </button>
   );
 }

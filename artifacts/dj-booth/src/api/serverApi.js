@@ -1,3 +1,6 @@
+import { reconcileCommandOutcome } from '@/utils/commandReconcile';
+import { withRequestDeadline } from '@/utils/requestDeadline';
+import { runBoothCommand } from '@/utils/boothCommandFlow';
 function getApiBase() {
   const boothTarget = localStorage.getItem('djbooth_booth_ip')?.trim();
   if (!boothTarget) return '/api';
@@ -92,14 +95,25 @@ function getTokenOverride() { return _tokenOverride; }
 
 const DJ_PATHS = ['/booth/', '/settings/', '/auth/', '/dancers', '/rotation', '/health', '/admin/'];
 
+// A browser fetch has no default timeout. On a half-open connection - an AP roam, a
+// NAT idle-drop, a router reboot, a wedged server socket - the promise can stay pending
+// for minutes or forever. Every caller here runs on a 1 s poll cadence, so an unbounded
+// request is what turns a brief network event into a stuck booth.
+const DEFAULT_REQUEST_TIMEOUT_MS = 12_000;
+
 async function apiFetch(path, options = {}) {
   const isDJPath = DJ_PATHS.some(p => path.startsWith(p));
   const usingOverride = !!_tokenOverride && !isDJPath;
   const token = (usingOverride ? _tokenOverride : null) || getToken();
+  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal: callerSignal, ...fetchOptions } = options;
   const headers = { 'Content-Type': 'application/json', ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  
-  const res = await fetch(`${getApiBase()}${path}`, { ...options, headers });
+
+  // The deadline covers the ENTIRE operation - headers, body and parse. `fetch`
+  // resolving only means headers arrived; a stalled body would otherwise hang forever
+  // with the timer already cleared.
+  return await withRequestDeadline({ timeoutMs, signal: callerSignal, label: path }, async (signal) => {
+  const res = await fetch(`${getApiBase()}${path}`, { ...fetchOptions, headers, signal });
   
   if (res.status === 401) {
     if (usingOverride) {
@@ -112,10 +126,13 @@ async function apiFetch(path, options = {}) {
         window.dispatchEvent(new Event('djbooth-session-expired'));
       }
     }
-    throw new Error('Session expired');
+    const expired = new Error('Session expired');
+    expired.status = 401;          // the server answered; this is not a transport failure
+    throw expired;
   }
   
   if (!res.ok) {
+    // Read inside the deadline: an error body can stall exactly like a success body.
     const err = await res.json().catch(() => ({ error: 'Request failed' }));
     const error = new Error(err.error || 'Request failed');
     error.status = res.status;
@@ -123,7 +140,8 @@ async function apiFetch(path, options = {}) {
     throw error;
   }
   
-  return res.json();
+  return await res.json();
+  });
 }
 
 export const auth = {
@@ -191,44 +209,67 @@ export const boothApi = {
     }
     return apiFetch('/booth/state', { method: 'POST', body: JSON.stringify(state) });
   },
-  getCommand: (commandId) => apiFetch(`/booth/command/${commandId}`),
+  getCommand: (commandId, options = {}) => apiFetch(`/booth/command/${commandId}`, options),
+
+    // Find out what actually happened to a command whose outcome is unknown.
+    //
+    // READ ONLY. Discovering an outcome must never be able to create a second command,
+    // so there is no POST here at all - the server exposes an actor-scoped lookup by the
+    // original requestId for exactly this purpose. A missing record or a restarted
+    // server stays "unknown"; nothing is ever replayed.
+    reconcileCommand: (context, { timeoutMs = 8_000, settleMs = 20_000 } = {}) =>
+      reconcileCommandOutcome({
+        lookupByRequestId: async (rid) => {
+          try {
+            return await apiFetch(`/booth/command/by-request/${encodeURIComponent(rid)}`, { timeoutMs });
+          } catch (error) {
+            if (error?.status === 404) return null;
+            throw error;
+          }
+        },
+        getReceiptById: async (id) => {
+          try {
+            return await apiFetch(`/booth/command/${id}`, { timeoutMs });
+          } catch (error) {
+            if (error?.status === 404) return null;
+            throw error;
+          }
+        },
+        getServerEpoch: async () => {
+          const snapshot = await apiFetch('/booth/state', { timeoutMs });
+          return (snapshot?.state ?? snapshot)?.stateEpoch ?? null;
+        },
+      }, { ...context, settleMs }),
   sendCommand: async (action, payload = {}, options = {}) => {
     const requestId = options.requestId || (
       globalThis.crypto?.randomUUID?.() ||
       `${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
-    const submitted = await apiFetch('/booth/command', {
-      method: 'POST',
-      body: JSON.stringify({
-        action,
-        payload,
-        requestId,
-        expectedRotationVersion: options.expectedRotationVersion,
-        expectedStateVersion: options.expectedStateVersion,
-        nowPlayingGuard: options.nowPlayingGuard,
+    // Everything needed to find out what happened if this call does not complete.
+    // Captured NOW, at send time - not when recovery starts. The epoch identifies the
+    // server instance this command was given to; after a restart nothing it says can
+    // be tied back to this submission.
+    const identity = {
+      requestId, action, payload,
+      submittedAt: Date.now(),
+      serverEpochAtSend: options.stateEpoch ?? null,
+    };
+    return runBoothCommand({
+      submit: () => apiFetch('/booth/command', {
+        method: 'POST',
+        body: JSON.stringify({
+          action,
+          payload,
+          requestId,
+          expectedRotationVersion: options.expectedRotationVersion,
+          expectedStateVersion: options.expectedStateVersion,
+          nowPlayingGuard: options.nowPlayingGuard,
+        }),
       }),
+      getReceipt: (commandId, receiptOptions) => boothApi.getCommand(commandId, receiptOptions),
+      identity,
+      timeoutMs: options.timeoutMs ?? 35_000,
     });
-    if (!submitted.queued) {
-      if (!submitted.ok) throw new Error(submitted.command?.error || 'The kiosk did not apply the command');
-      return submitted;
-    }
-
-    const timeoutMs = options.timeoutMs ?? 35_000;
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 250));
-      const receipt = await boothApi.getCommand(submitted.commandId);
-      if (receipt.queued) continue;
-      if (!receipt.ok) {
-        const error = new Error(receipt.command?.error || 'The kiosk rejected the command');
-        error.details = receipt;
-        throw error;
-      }
-      return receipt;
-    }
-    const error = new Error('The kiosk did not confirm that the command was applied');
-    error.code = 'BOOTH_COMMAND_TIMEOUT';
-    throw error;
   },
   getCommands: (since = 0) => apiFetch(`/booth/commands?since=${since}`),
   claimCommand: (commandId) => apiFetch('/booth/commands/claim', {
@@ -246,39 +287,59 @@ export const boothApi = {
 };
 
 export function connectBoothSSE(onMessage) {
-  const token = getToken();
-  if (!token) return null;
-  
-  const url = `${getApiBase()}/booth/events?token=${encodeURIComponent(token)}`;
-  const es = new EventSource(url);
-  let failCount = 0;
-  
-  es.onmessage = (event) => {
-    try {
-      failCount = 0;
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    } catch {}
-  };
-  
-  es.onerror = () => {
-    es.close();
-    failCount++;
-    if (failCount > 5) {
-      apiFetch('/auth/session').catch(() => {});
-      failCount = 0;
-    }
-    const delay = Math.min(3000 * failCount, 15000);
-    setTimeout(() => {
-      if (!getToken()) return;
-      const reconnected = connectBoothSSE(onMessage);
-      if (reconnected) {
-        onMessage({ type: 'reconnected', eventSource: reconnected });
+  if (!getToken()) return null;
+
+  // The failure count lives here, across reconnect attempts. Previously it was a local
+  // of each call and every reconnect created a fresh closure starting at 0, so the
+  // backoff never grew past the first step and the `failCount > 5` session re-check was
+  // unreachable - during a long outage the booth re-opened a stream every 3 s forever.
+  const state = { failCount: 0, closed: false, timer: null, es: null };
+
+  const open = () => {
+    if (state.closed) return null;
+    const token = getToken();
+    if (!token) return null;
+    const es = new EventSource(`${getApiBase()}/booth/events?token=${encodeURIComponent(token)}`);
+    state.es = es;
+
+    es.onmessage = (event) => {
+      try {
+        state.failCount = 0;
+        onMessage(JSON.parse(event.data));
+      } catch {}
+    };
+
+    es.onerror = () => {
+      es.close();
+      if (state.closed) return;
+      state.failCount++;
+      if (state.failCount > 5) {
+        apiFetch('/auth/session').catch(() => {});
+        state.failCount = 0;
       }
-    }, delay);
+      const delay = Math.min(3000 * state.failCount, 15000);
+      state.timer = setTimeout(() => {
+        state.timer = null;
+        if (state.closed || !getToken()) return;
+        if (open()) onMessage({ type: 'reconnected', eventSource: handle });
+      }, delay);
+    };
+    return es;
   };
-  
-  return es;
+
+  // Returned in place of the raw EventSource so that closing the view also cancels any
+  // reconnect already scheduled. Without this, a pending timer reopened a stream for a
+  // view that had gone away.
+  const handle = {
+    get readyState() { return state.es?.readyState ?? 2; },
+    close() {
+      state.closed = true;
+      if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+      state.es?.close();
+    },
+  };
+
+  return open() ? handle : null;
 }
 
 export { getToken, setToken, clearToken, setSessionInfo, getSessionInfo, isRemoteMode, isPhoneRemoteMode, setPhoneRemoteMode, setBoothIp, getBoothIp, setTokenOverride, getTokenOverride };

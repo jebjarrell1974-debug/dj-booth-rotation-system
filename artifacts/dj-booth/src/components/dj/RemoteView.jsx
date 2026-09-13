@@ -14,11 +14,15 @@ import {
   isRecentlyPlayed,
 } from '@/utils/automaticTrackSelection';
 import { remoteSkipPayload } from '@/utils/skipPlayback';
+import { createCommandFeedback, EMPTY_COMMAND_VIEW } from '@/utils/commandFeedback';
+import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
+import { rotationStartState, clearStartingFlag } from '@/utils/rotationStartState';
+import CommandStatus from '@/components/dj/CommandStatus';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Shuffle,
   ChevronDown, ChevronUp, RefreshCw, Drum, Layers, Star, Activity, Crown, Ban,
-  Sun, Moon, Check
+  Sun, Moon, Check, VolumeX,
 } from 'lucide-react';
 import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
 
@@ -75,7 +79,17 @@ export default function RemoteView({
 
   const [clock, setClock] = useState(Date.now());
   const [lastStateReceivedAt, setLastStateReceivedAt] = useState(() => liveBoothState ? Date.now() : 0);
-  const [commandError, setCommandError] = useState('');
+  // One view for every command outcome, produced by the shared feedback store. It
+  // replaces three shared strings that used to trample each other: an unrelated
+  // success could hide a command still being checked, and clear an uncertainty
+  // outright. Each command now owns its own entry.
+  const [commandView, setCommandView] = useState(EMPTY_COMMAND_VIEW);
+  const [rotationStarting, setRotationStarting] = useState(false);
+  // Options-panel messages are local to that panel and unrelated to command outcomes.
+  const [optionsError, setOptionsError] = useState('');
+  // "requesting" vs "the kiosk confirmed it" - a touch alone never claims the music changed.
+  const [duckRequested, setDuckRequested] = useState(false);
+  const [duckConfirmed, setDuckConfirmed] = useState(false);
   const [showDeactivatePin, setShowDeactivatePin] = useState(false);
   const [deactivatePin, setDeactivatePin] = useState('');
   const deactivatePinInputRef = useRef(null);
@@ -129,15 +143,17 @@ export default function RemoteView({
 
   const sendRawRemoteCommand = useCallback(async (action, payload = {}, options = {}) => {
     if (!isConnectedRef.current) {
-      setCommandError('The kiosk state is stale. No command was sent.');
-      return null;
+      // Throw rather than set a shared string: the feedback store records this against
+      // THIS command, so an unrelated action's outcome is untouched.
+      throw new Error('The kiosk state is stale. No command was sent.');
     }
-    setCommandError('');
     try {
       return await boothApi.sendCommand(action, payload, options);
     } catch (error) {
-      setCommandError(error.message || 'The kiosk rejected the command.');
-      return null;
+      // An unknown outcome must NOT be flattened into null - that discards the
+      // requestId/commandId the reconciliation needs, and tells the operator the action
+      // failed when it may have been applied.
+      throw error;
     }
   }, []);
   const remoteEditingQueueRef = useRef(null);
@@ -152,14 +168,31 @@ export default function RemoteView({
       sendCommand: sendRawRemoteCommand,
     });
   }
+  // Confirmed-success / visible-error / unknown-outcome handling is SHARED with the
+  // desktop remote (DJBooth.jsx with remoteMode true). It used to be written inline
+  // here, which left the desktop surface with none of it. One implementation now
+  // serves both; see src/utils/commandFeedback.js.
+  const surfaceCommandRef = useRef(null);
+  if (!surfaceCommandRef.current) {
+    surfaceCommandRef.current = createCommandFeedback({
+      onChange: setCommandView,
+      // READ ONLY. Discovering an outcome must never create a second command.
+      reconcile: (context) => boothApi.reconcileCommand(context),
+    });
+  }
   const sendRemoteCommand = useCallback((action, payload = {}, options = {}) => {
+    // Every structural control (Add / Remove / Move / assignments) calls this and
+    // then DISCARDS the promise - no .then, no .catch. Surfacing centrally covers all
+    // call sites at once.
+    const surface = (promise) => surfaceCommandRef.current.surface(action, promise);
     if (STRUCTURAL_COMMANDS.has(action)) {
-      return remoteEditingQueueRef.current.enqueue(action, payload, {
+      return surface(remoteEditingQueueRef.current.enqueue(action, payload, {
+        stateEpoch: liveBoothStateRef.current?.stateEpoch,
         ...options,
         structural: true,
-      });
+      }));
     }
-    return sendRawRemoteCommand(action, payload, options);
+    return surface(sendRawRemoteCommand(action, payload, { stateEpoch: liveBoothStateRef.current?.stateEpoch, ...options }));
   }, [sendRawRemoteCommand]);
 
   const songEditsRef = useRef(songEdits);
@@ -311,18 +344,18 @@ export default function RemoteView({
     if (tab !== 'options' || optionGenres.length > 0) return;
     musicApi.getGenres()
       .then(data => setOptionGenres(data.genres || []))
-      .catch(error => setCommandError(error.message || 'Could not load music genres.'));
+      .catch(error => setOptionsError(error.message || 'Could not load music genres.'));
   }, [tab, optionGenres.length]);
 
   const saveRemoteOptions = async (updates) => {
     if (!isConnected || optionsSaving) return;
     setOptionsSaving(true);
-    setCommandError('');
+    setOptionsError('');
     try {
       await djOptionsApi.update(updates);
       onOptionsChange?.({ ...djOptions, ...updates });
     } catch (error) {
-      setCommandError(error.message || 'Could not save genre settings.');
+      setOptionsError(error.message || 'Could not save genre settings.');
     } finally {
       setOptionsSaving(false);
     }
@@ -622,7 +655,12 @@ export default function RemoteView({
                   <SkipForward className="w-4 h-4" />
                 </button>
 
-                <div className="flex items-center gap-1.5 justify-end hidden xs:flex">
+                {/* `xs` is not a configured breakpoint in this project, so `xs:flex`
+                    generated no rule and `hidden` won at every width - which is why the
+                    phone remote appeared to have no duck, volume or voice controls at
+                    all. `sm` is a real breakpoint, so wide screens get the compact
+                    cluster; narrow screens get the dedicated hold-to-duck control below. */}
+                <div className="hidden sm:flex items-center gap-1.5 justify-end">
                   <PressAndHoldDuckButton
                     label="AUTO DUCK"
                     onPress={() => remoteDuckLeaseRef.current?.start()}
@@ -663,13 +701,35 @@ export default function RemoteView({
               <span className="text-[10px] text-gray-500 uppercase tracking-wider">{isConnected ? (isPlaying ? 'Live' : 'Connected') : 'Offline'}</span>
             </div>
 
-            <button
-              onClick={() => sendRemoteCommand(isRotationActive ? 'stopRotation' : 'startRotation')}
-              disabled={!boothStateLoaded}
-              className={`px-3 h-9 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5 ${isRotationActive ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-            >
-              {isRotationActive ? 'Stop Rotation' : 'Start Rotation'}
-            </button>
+            {(() => {
+              // Same derivation as the desktop remote. Start deliberately waits for the
+              // current song to finish, so the control says that instead of looking dead.
+              const startState = rotationStartState({
+                isRotationActive,
+                rotationPending: !!liveBoothState?.rotationPending,
+                starting: rotationStarting,
+                connected: !!boothStateLoaded,
+              });
+              return (
+                <button
+                  onClick={() => {
+                    if (startState.busy) return;              // no duplicate starts
+                    if (isRotationActive) { sendRemoteCommand('stopRotation'); return; }
+                    setRotationStarting(true);
+                    Promise.resolve(sendRemoteCommand('startRotation')).catch(() => setRotationStarting(false));
+                  }}
+                  disabled={startState.disabled}
+                  title={startState.hint}
+                  className={`px-3 h-9 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5 ${
+                    startState.kind === 'active' ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : startState.kind === 'queued' ? 'bg-yellow-600 text-white animate-pulse'
+                      : startState.kind === 'starting' ? 'bg-green-700/60 text-white cursor-wait'
+                      : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                >
+                  {startState.label}
+                </button>
+              );
+            })()}
             <button
               onClick={() => sendRemoteCommand('toggleAnnouncements')}
               disabled={!boothStateLoaded}
@@ -689,21 +749,64 @@ export default function RemoteView({
         </div>
       </header>
 
-      {(!isConnected || commandError) && (
-        <div className={`flex-shrink-0 px-4 py-2 border-b text-xs font-medium flex items-center gap-2 ${
-          commandError
-            ? 'bg-red-950/80 border-red-500/30 text-red-300'
-            : 'bg-amber-950/80 border-amber-500/30 text-amber-300'
-        }`}>
-          <Activity className="w-4 h-4 flex-shrink-0" />
-          <span className="truncate">
-            {commandError || 'Waiting for a fresh state update from the physical kiosk. Controls are disabled.'}
+      {/* Phone-sized hold-to-duck. Prominent on the main playback screen, no menu to
+          open, 56 px tall, clear of Skip and Stop, and it does not move when a notice
+          appears because notices are an overlay. Same lease and same button behaviour
+          as the kiosk control - nothing is reimplemented for the phone. */}
+      <div className="sm:hidden flex-shrink-0 px-3 py-2 border-b border-[#151528] bg-[#0a0a1a]">
+        <PressAndHoldDuckButton
+          label="Hold to Duck"
+          title="Hold to lower the music while you talk"
+          onPress={() => {
+            setDuckRequested(true);
+            Promise.resolve(remoteDuckLeaseRef.current?.start())
+              .then(() => setDuckConfirmed(true))
+              .catch(() => {});
+          }}
+          onRelease={reason => {
+            setDuckRequested(false);
+            setDuckConfirmed(false);
+            remoteDuckLeaseRef.current?.stop(reason);
+          }}
+          disabled={!boothStateLoaded}
+          sizeClassName="w-full h-14 px-4 gap-2"
+        >
+          <VolumeX className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
+          <span className="flex flex-col items-start leading-tight">
+            <span className="text-sm font-bold tracking-wide">
+              {duckRequested ? (duckConfirmed ? 'Music lowered' : 'Ducking…') : 'Hold to Duck'}
+            </span>
+            <span className="text-[10px] opacity-70">
+              {duckRequested
+                ? (duckConfirmed ? 'Release to restore' : 'Asking the booth…')
+                : 'Lower music while held'}
+            </span>
           </span>
-          {commandError && (
-            <button onClick={() => setCommandError('')} className="ml-auto text-current underline underline-offset-2">
-              Dismiss
-            </button>
-          )}
+        </PressAndHoldDuckButton>
+      </div>
+
+      {/* Overlay, not a row: it reserves no space, so no control, song row or
+          playback button moves when a notice appears or disappears. */}
+      <CommandStatus
+        view={commandView}
+        onDismiss={(id) => surfaceCommandRef.current.dismiss(id)}
+        onDismissAll={() => surfaceCommandRef.current.dismissAll()}
+      />
+      {/* Options-panel problems are not command outcomes, so they get their own line
+          rather than competing for the command banner. Also an overlay: no layout shift. */}
+      {optionsError && tab === 'options' && (
+        <div className="absolute left-0 right-0 top-0 z-20 px-2 pt-2 pointer-events-none">
+          <div className="pointer-events-auto rounded-lg border border-red-500/40 bg-red-950/95 text-red-200 text-xs px-3 py-2 shadow-lg flex items-center gap-2">
+            <span className="flex-1">{optionsError}</span>
+            <button onClick={() => setOptionsError('')} className="underline underline-offset-2">Dismiss</button>
+          </div>
+        </div>
+      )}
+      {!isConnected && (
+        <div className="absolute left-0 right-0 bottom-0 z-20 pointer-events-none px-2 pb-2">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-950/90 text-amber-300 text-[11px] px-3 py-1.5 shadow-lg">
+            Waiting for a fresh state update from the physical kiosk. Controls are disabled.
+          </div>
         </div>
       )}
 
@@ -849,7 +952,7 @@ export default function RemoteView({
                               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                 <div className="flex items-center gap-2 flex-1">
                                   <span className="text-xs text-yellow-400 flex-shrink-0 w-8">Add:</span>
-                                  {[{ label: '+15m', ms: 15 * 60 * 1000 }, { label: '+30m', ms: 30 * 60 * 1000 }, { label: '+1h', ms: 60 * 60 * 1000 }].map(({ label, ms }) => (
+                                  {VIP_INCREMENT_OPTIONS.map(({ label, ms }) => (
                                     <button key={label} onClick={() => setVipAddMs(v => v + ms)} className="flex-1 h-9 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-sm font-bold active:bg-yellow-500/30">
                                       {label}
                                     </button>
@@ -1053,9 +1156,9 @@ export default function RemoteView({
                                 return (
                                   <>
                                     <div className="flex items-center gap-2">
-                                      {[15, 30, 60].map(mm => (
-                                        <button key={mm} onClick={() => setVipAddMs(v => v + mm * 60 * 1000)} className="flex-1 h-8 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-xs font-bold active:bg-yellow-500/30">
-                                          +{mm < 60 ? `${mm}m` : '1h'}
+                                      {VIP_INCREMENT_OPTIONS.map(opt => (
+                                        <button key={opt.minutes} onClick={() => setVipAddMs(v => v + opt.ms)} className="flex-1 h-8 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-xs font-bold active:bg-yellow-500/30">
+                                          {opt.label}
                                         </button>
                                       ))}
                                     </div>

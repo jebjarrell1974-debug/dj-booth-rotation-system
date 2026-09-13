@@ -6,7 +6,7 @@ import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFi
 import { spawn as spawnProcess, execSync as execSyncChild } from 'child_process';
 import { networkInterfaces, hostname } from 'os';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
-import {
+import db, {
   getSetting, setSetting, hashPin, verifyPin,
   createDancer, getDancer, getDancerByPin, listDancers, updateDancer, deleteDancer, invalidateDancerSessions,
   createSession, getSession, touchSession, deleteSession, cleanExpiredSessions,
@@ -1875,7 +1875,9 @@ app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
     });
   } catch (error) {
     if (error?.code === 'BOOTH_COMMAND_QUEUE_FULL') {
-      return res.status(503).json({ error: error.message });
+      // Named explicitly: this 5xx is a REFUSAL the client can treat as definite, unlike a
+      // gateway 502/504 where the command may already have been queued.
+      return res.status(503).json({ error: error.message, code: 'BOOTH_COMMAND_QUEUE_FULL' });
     }
     throw error;
   }
@@ -1885,6 +1887,26 @@ app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
     commandId: result.command.id,
     command: result.command,
     duplicate: result.duplicate,
+  });
+});
+
+// Read-only outcome lookup by the ORIGINAL requestId, scoped to the authenticated
+// actor. A client whose submission or receipt timed out uses this to discover what
+// happened WITHOUT sending anything that could create a second command.
+// Registered before the numeric-id route so it is never shadowed by it.
+app.get('/api/booth/command/by-request/:requestId', authenticate, requireDJ, (req, res) => {
+  const actor = boothActor(req);
+  const command = boothCommandQueue.findDuplicate(actor, String(req.params.requestId || ''));
+  if (!command) {
+    // No record: either it never arrived, or its de-duplication entry has aged out.
+    // Both are "unknown" to the caller - never an invitation to resend.
+    return res.status(404).json({ error: 'No record of that request', serverEpoch: BOOTH_STATE_EPOCH });
+  }
+  res.json({
+    ok: command.status === 'applied',
+    queued: ['pending', 'processing'].includes(command.status),
+    command,
+    serverEpoch: BOOTH_STATE_EPOCH,
   });
 });
 
@@ -1900,6 +1922,9 @@ app.get('/api/booth/command/:id', authenticate, requireDJ, (req, res) => {
     ok: command.status === 'applied',
     queued: ['pending', 'processing'].includes(command.status),
     command,
+    // Numeric ids restart from 1 when the process does, so an id alone proves nothing.
+    // The caller compares this and the requestId before believing a receipt is its own.
+    serverEpoch: BOOTH_STATE_EPOCH,
   });
 });
 

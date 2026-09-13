@@ -37,10 +37,14 @@ import MusicLibrary from '@/components/dj/MusicLibrary';
 import { isRemoteMode, isPhoneRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
 import {
   acquireStructuralCommitLock,
+  assertSaveAllWorkspaceUnchanged,
   commandIsExpired,
   mergeWorkspaceAssignments,
   runClaimedCommand,
 } from '@/utils/boothCommandRuntime';
+import { createCommandFeedback, EMPTY_COMMAND_VIEW } from '@/utils/commandFeedback';
+import { rotationStartState, clearStartingFlag } from '@/utils/rotationStartState';
+import CommandStatus from '@/components/dj/CommandStatus';
 import NowPlaying from '@/components/dj/NowPlaying';
 import DancerRoster from '@/components/dj/DancerRoster';
 import StageRotation from '@/components/dj/StageRotation';
@@ -100,6 +104,16 @@ import {
   VOICE_DUCK_GAIN,
 } from '@/utils/ducking';
 import { createRemoteDuckLease } from '@/utils/duckLease';
+import {
+  duckHoldKey, shouldIgnoreDuckAcquire, rememberReleasedDuckHold, noteDuckSession,
+  isKnownDuckSession, leaseForDuckAcquire, loadReleasedDuckHolds, saveReleasedDuckHolds,
+} from '@/utils/duckHoldGuard';
+
+// localStorage is not always reachable (private mode, storage disabled). Ducking must not
+// depend on it: without storage the guard simply starts empty after a reload.
+function duckHoldStorage() {
+  try { return typeof window === 'undefined' ? null : window.localStorage; } catch { return null; }
+}
 import {
   acknowledgeRemoteDrafts,
   createRemoteEditingQueue,
@@ -180,7 +194,7 @@ function setStateIfChanged(setter, next) {
   setter(previous => stableJson(previous) === stableJson(next) ? previous : next);
 }
 
-function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef, manualInterstitialBreaksRef) {
+function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef, manualInterstitialBreaksRef, manualSetLengthsRef, djSavedSongsRef) {
   const songs = {};
   const assignments = mergeWorkspaceAssignments(
     plannedSongAssignmentsRef.current,
@@ -190,11 +204,29 @@ function currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssi
   for (const [id, tracks] of Object.entries(assignments)) {
     songs[id] = (tracks || []).map(getSongName).filter(Boolean);
   }
+  // The manual ledger, derived exactly as the state publisher derives it, so the
+  // server-stamped snapshot and this execution-time snapshot are comparable.
+  // A dancer is operator-owned if they have a manual set length OR DJ-saved songs.
+  // `|| []` preserves an EXPLICIT EMPTY LIST - an operator clearing a set is a
+  // real edit and must not read as "absent".
+  const manualSetLengths = manualSetLengthsRef?.current || {};
+  const manualIds = new Set([
+    ...Object.keys(manualSetLengths),
+    ...Object.keys(djSavedSongsRef?.current || {}),
+  ]);
+  const manualSongs = {};
+  for (const dancerId of manualIds) {
+    if (Object.prototype.hasOwnProperty.call(songs, dancerId)) {
+      manualSongs[dancerId] = songs[dancerId] || [];
+    }
+  }
   return {
     rotation: [...(rotationRef.current || [])],
     rotationSongs: songs,
     interstitialSongs: interstitialSongsRef.current || {},
     manualInterstitialBreaks: manualInterstitialBreaksRef?.current || {},
+    manualRotationSetLengths: { ...manualSetLengths },
+    manualRotationSongs: manualSongs,
     dancerVipMap: dancerVipMapRef.current || {},
     placedFeatures: placedFeaturesRef.current || {},
   };
@@ -205,12 +237,59 @@ function requireExecutor(ref, name) {
   return ref.current;
 }
 
+// How often the kiosk asks the server for pending remote commands.
+//
+// The server pushes a low-latency wake-up over SSE, but that stream does not establish
+// on every booth browser (measured on 004: EventSource stays CONNECTING indefinitely
+// while ordinary fetches to the same origin take ~9 ms). When the wake-up is missing
+// this interval alone bounds how long a remote press waits, and at 1000 ms a
+// hold-to-duck button felt broken - measured delivery was 29-893 ms.
+//
+// The request is a cheap in-memory read over loopback, so polling it four times a
+// second costs almost nothing and bounds delivery to roughly a quarter second. It
+// changes no command semantics: no TTL, no ordering, no validation.
+const COMMAND_POLL_MS = 250;
+
 const STRUCTURAL_REMOTE_ACTIONS = new Set([
   'updateRotation', 'removeDancerFromRotation', 'addDancerToRotation',
   'moveInRotation', 'saveRotation', 'updateSongAssignments',
   'saveRotationWorkspace', 'sendToVip',
   'releaseFromVip', 'placeFeature', 'cancelFeaturePlacement',
 ]);
+
+// Which workspace fields each structural command actually depends on.
+//
+// The optimistic-concurrency guard below used to compare the WHOLE workspace
+// snapshot. That snapshot includes `interstitialSongs`, which the kiosk
+// auto-populates on its own while autoplay is running, so it drifts within about
+// a second of the remote capturing it. Every structural command from the remote
+// then failed with "The kiosk workspace changed before this command could be
+// applied" - including commands that never touch break songs.
+//
+// Guarding each command against only the fields it reads keeps the protection
+// (you still cannot apply a rotation edit computed against a stale rotation)
+// without letting unrelated background churn veto it.
+// An action with no entry here is compared in full - saveRotationWorkspace
+// deliberately has no entry, because it writes the entire workspace.
+const WORKSPACE_GUARD_FIELDS = {
+  addDancerToRotation: ['rotation'],
+  removeDancerFromRotation: ['rotation'],
+  moveInRotation: ['rotation'],
+  updateRotation: ['rotation'],
+  saveRotation: ['rotation'],
+  updateSongAssignments: ['rotation', 'rotationSongs'],
+  sendToVip: ['rotation', 'dancerVipMap'],
+  releaseFromVip: ['rotation', 'dancerVipMap'],
+  placeFeature: ['rotation', 'placedFeatures'],
+  cancelFeaturePlacement: ['rotation', 'placedFeatures'],
+};
+
+function pickWorkspaceFields(workspace, fields) {
+  if (!fields || !workspace) return workspace;
+  const out = {};
+  for (const f of fields) if (f in workspace) out[f] = workspace[f];
+  return out;
+}
 
 export default function DJBooth() {
   const queryClient = useQueryClient();
@@ -1043,6 +1122,31 @@ export default function DJBooth() {
       sendCommand: (action, payload, options) => boothApi.sendCommand(action, payload, options),
     });
   }
+  // Operator-visible outcome of a remote command. The desktop remote had no channel
+  // for this at all: a failure, an unknown outcome and a success all looked the same.
+  // One view for every command outcome (see RemoteView for the reasoning): each
+  // command owns its own entry, so an unrelated success can neither hide nor clear an
+  // outcome that is still unresolved.
+  const [commandView, setCommandView] = useState(EMPTY_COMMAND_VIEW);
+  // Immediate local feedback for Start, cleared as soon as the kiosk's own state says
+  // what really happened (active, or queued behind the current song), or on failure.
+  const [rotationStarting, setRotationStarting] = useState(false);
+  useEffect(() => {
+    if (!rotationStarting) return;
+    if (clearStartingFlag({
+      isRotationActive: remoteMode ? !!liveBoothState?.isRotationActive : isRotationActive,
+      rotationPending: remoteMode ? !!liveBoothState?.rotationPending : rotationPending,
+      connected: remoteMode ? !!liveBoothState?.updatedAt : true,
+    })) setRotationStarting(false);
+  }, [rotationStarting, remoteMode, liveBoothState, isRotationActive, rotationPending]);
+  const surfaceCommandRef = useRef(null);
+  if (!surfaceCommandRef.current) {
+    surfaceCommandRef.current = createCommandFeedback({
+      onChange: setCommandView,
+      // READ ONLY. Discovering an outcome must never create a second command.
+      reconcile: (context) => boothApi.reconcileCommand(context),
+    });
+  }
   const sendBoothCommand = useCallback((action, payload = {}, options = {}) => {
     const structural = STRUCTURAL_REMOTE_ACTIONS.has(action);
     const serializedBreakWorkspace = action === 'updateInterstitialSongs';
@@ -1055,14 +1159,19 @@ export default function DJBooth() {
       } : undefined),
       ...options,
     } : options;
+    // Only the remote has a banner to show this in; on the physical kiosk the
+    // wrapper would be a no-op, so skip it rather than run dead state updates.
+    const surface = remoteMode
+      ? (promise) => surfaceCommandRef.current.surface(action, promise)
+      : (promise) => promise;
     if (remoteMode && (structural || serializedBreakWorkspace)) {
-      return remoteEditingQueueRef.current.enqueue(action, payload, {
+      return surface(remoteEditingQueueRef.current.enqueue(action, payload, {
         ...commandOptions,
         ...(serializedBreakWorkspace ? { key: 'interstitial-workspace' } : {}),
         structural,
-      });
+      }));
     }
-    return boothApi.sendCommand(action, payload, commandOptions);
+    return surface(boothApi.sendCommand(action, payload, commandOptions));
   }, [remoteMode]);
   const publishRemoteInterstitialWorkspace = useCallback((nextSongs, manualBreaks, activeBreakEdit = null) => {
     const mutationVersion = ++remoteInterstitialMutationVersionRef.current;
@@ -1112,6 +1221,16 @@ export default function DJBooth() {
       throw error;
     });
   }, [commitInterstitialWorkspace, sendBoothCommand]);
+  // Lease ids released recently, so a late acquire for the same hold cannot re-duck.
+  const releasedDuckLeasesRef = useRef(new Set());
+  // Highest hold number this kiosk has RELEASED per (actor, remote session). Restored from
+  // storage so a kiosk reload does not forget them, and bounded by age and count so they
+  // cannot accumulate. What this does and does NOT guarantee is spelled out in
+  // utils/duckHoldGuard.js - a record can be evicted, and probation covers that case.
+  const releasedDuckHoldsRef = useRef(null);
+  if (!releasedDuckHoldsRef.current) {
+    releasedDuckHoldsRef.current = loadReleasedDuckHolds(duckHoldStorage());
+  }
   const localDuckOwnerRef = useRef(null);
   const acquireLocalDuck = useCallback(() => {
     if (remoteMode || !audioEngineRef.current?.acquireDuck) return;
@@ -1217,13 +1336,18 @@ export default function DJBooth() {
     if (!remoteMode) return;
     let active = true;
 
+    // One state poll at a time. Without this the 1 s interval kept issuing requests
+    // while earlier ones were still outstanding; on a slow link they stacked up and
+    // exhausted the browser's per-host connection budget, which blocks every other
+    // request the remote needs - including the operator's next command.
     const pollState = () => {
-      if (!active) return;
+      if (!active || statePollInFlightRef.current) return;
+      statePollInFlightRef.current = true;
       boothApi.getState().then(state => {
         if (active && state) {
           setLiveBoothState(previous => acceptBoothSnapshot(previous, state));
         }
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => { statePollInFlightRef.current = false; });
     };
 
     pollState();
@@ -1549,6 +1673,7 @@ export default function DJBooth() {
   const scheduledCommandIdsRef = useRef(new Set());
   const commandExecutionChainRef = useRef(Promise.resolve());
   const commandPollInFlightRef = useRef(false);
+  const statePollInFlightRef = useRef(false);
   const publishBoothStateRef = useRef(null);
   const boothStatePublishChainRef = useRef(Promise.resolve());
   const placeFeatureAtSlotRef = useRef(null);
@@ -1656,10 +1781,29 @@ export default function DJBooth() {
       if (cmd.expectedRotation && JSON.stringify(cmd.expectedRotation) !== JSON.stringify(rotationRef.current)) {
         throw new Error('The kiosk rotation changed before this command could be applied');
       }
-      if (cmd.expectedWorkspace && stableJson(cmd.expectedWorkspace) !== stableJson(
-         currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef, manualInterstitialBreaksRef)
-      )) {
-        throw new Error('The kiosk workspace changed before this command could be applied');
+      // Save All is the operator explicitly publishing the whole arrangement,
+      // exactly like pressing Save All at the booth. Comparing the FULL workspace
+      // made it impossible to use - the kiosk keeps rewriting rotationSongs and
+      // manualRotationSetLengths underneath on its own. It is not exempt from the
+      // guard, though: it is compared on the operator-owned fields listed in
+      // WORKSPACE_GUARD_FIELDS, so a newer operator edit still rejects it at
+      // execution time while automatic song churn does not.
+      if (cmd.expectedWorkspace) {
+        // Compare only the fields this command depends on. Comparing the whole
+        // workspace made auto-populated break songs veto unrelated edits.
+        const liveWorkspace = currentWorkspaceSnapshot(rotationRef, rotationSongsRef, plannedSongAssignmentsRef, interstitialSongsRef, dancerVipMapRef, placedFeaturesRef, isRotationActiveRef, manualInterstitialBreaksRef, manualSetLengthsRef, djSavedSongsRef);
+        if (cmd.action === 'saveRotationWorkspace') {
+          // Fails CLOSED: an incomplete snapshot is refused outright rather than
+          // reduced to whichever safeguards it happens to carry.
+          assertSaveAllWorkspaceUnchanged(cmd.expectedWorkspace, liveWorkspace);
+        } else {
+          const guardFields = WORKSPACE_GUARD_FIELDS[cmd.action] || null;
+          const expectedScoped = pickWorkspaceFields(cmd.expectedWorkspace, guardFields);
+          const liveScoped = pickWorkspaceFields(liveWorkspace, guardFields);
+          if (stableJson(expectedScoped) !== stableJson(liveScoped)) {
+            throw new Error('The kiosk workspace changed before this command could be applied');
+          }
+        }
       }
       switch (cmd.action) {
         case 'skip':
@@ -1756,16 +1900,45 @@ export default function DJBooth() {
         case 'releaseDuck': {
           if (!audioEngineRef.current) throw new Error('Ducking executor is unavailable');
           const leaseId = String(cmd.payload.leaseId || '').trim();
+          const holdKey = duckHoldKey(cmd.actor, cmd.payload.clientId);
+          const holdSeq = Number.isInteger(cmd.payload.holdSeq) ? cmd.payload.holdSeq : null;
+          // Out-of-order safety. The remote sends its release without waiting for the
+          // acquire to be acknowledged, so the two are briefly in flight together and can
+          // reach the server in either order. An acquire applied after its own release
+          // would leave the music ducked with nobody holding the button. Nothing bounds
+          // how late a request may arrive - a client timeout only stops it WAITING - so
+          // the decision is made on hold identity, not on a timer. See duckHoldGuard.js.
+          const knownSession = isKnownDuckSession(releasedDuckHoldsRef.current, holdKey);
+          if (cmd.action === 'acquireDuck') {
+            const ignoredBecause = shouldIgnoreDuckAcquire({
+              leaseId,
+              key: holdKey,
+              holdSeq,
+              releasedLeases: releasedDuckLeasesRef.current,
+              releasedHolds: releasedDuckHoldsRef.current,
+            });
+            if (ignoredBecause) {
+              console.warn(`🦆 Ignoring a late acquireDuck (${ignoredBecause}):`, leaseId);
+              break;
+            }
+          }
           const ownerId = `remote:${cmd.actor || 'unknown'}:${leaseId}`;
           const leaseMs = Math.min(
             DUCK_LEASE_MS,
             Math.max(1000, Number(cmd.payload.leaseMs) || DUCK_LEASE_MS),
           );
+          // Any duck command proves the session exists, so only its FIRST acquire can be
+          // probationary.
+          noteDuckSession(releasedDuckHoldsRef.current, holdKey);
           if (cmd.action === 'acquireDuck') {
             if (!audioEngineRef.current.acquireDuck) throw new Error('Ducking acquire executor is unavailable');
+            // A session this kiosk has no record of - evicted, or never seen - is trusted
+            // for two heartbeats rather than the full lease. A real press renews inside
+            // that and is upgraded immediately; a stale acquire nobody renews unducks
+            // sooner. Ordinary holds are unaffected.
             await audioEngineRef.current.acquireDuck(ownerId, {
               gain: VOICE_DUCK_GAIN,
-              leaseMs,
+              leaseMs: leaseForDuckAcquire({ leaseMs, known: knownSession }),
               immediate: true,
             });
           } else if (cmd.action === 'renewDuck') {
@@ -1774,6 +1947,17 @@ export default function DJBooth() {
           } else {
             if (!audioEngineRef.current.releaseDuck) throw new Error('Ducking release executor is unavailable');
             await audioEngineRef.current.releaseDuck(ownerId, { immediate: true });
+            if (leaseId) {
+              releasedDuckLeasesRef.current.add(leaseId);
+              setTimeout(() => releasedDuckLeasesRef.current.delete(leaseId), DUCK_LEASE_MS * 2);
+            }
+            // Outlives that six-second memory: once a hold has been released, no acquire
+            // for it - or anything older from the same remote session - is honoured, for as
+            // long as this kiosk still holds the record. Persisted so a reload keeps it.
+            if (holdSeq != null) {
+              rememberReleasedDuckHold(releasedDuckHoldsRef.current, holdKey, holdSeq);
+              saveReleasedDuckHolds(duckHoldStorage(), releasedDuckHoldsRef.current);
+            }
           }
           break;
         }
@@ -2182,13 +2366,24 @@ export default function DJBooth() {
     if (remoteMode) return;
     let active = true;
 
+    // A wake-up that arrives while a poll is in flight used to be DROPPED, so the
+    // command it was announcing waited for the next 1 s tick. That is most of why a
+    // remote duck felt slow: the duck lease heartbeats once a second, so a release
+    // very often collided with an in-flight poll. Measured before this change, the
+    // server->kiosk delivery for a release was 719-893 ms; for an acquire, 75-340 ms.
+    // Remember the wake-up instead and poll again as soon as the current one finishes.
+    let pollAgain = false;
     const pollCommands = () => {
-      if (!active || commandPollInFlightRef.current) return;
+      if (!active) return;
+      if (commandPollInFlightRef.current) { pollAgain = true; return; }
       commandPollInFlightRef.current = true;
       boothApi.getCommands(0).then(({ commands }) => {
         if (!active || !commands) return;
         [...commands].sort((a, b) => a.id - b.id).forEach(scheduleCommand);
-      }).catch(() => {}).finally(() => { commandPollInFlightRef.current = false; });
+      }).catch(() => {}).finally(() => {
+        commandPollInFlightRef.current = false;
+        if (pollAgain && active) { pollAgain = false; pollCommands(); }
+      });
     };
 
     pollCommands();
@@ -2210,7 +2405,9 @@ export default function DJBooth() {
     });
     commandSseRef.current = es;
 
-    const commandPollInterval = setInterval(pollCommands, 1000);
+    // See COMMAND_POLL_MS: this interval, not the SSE wake-up, is what actually
+    // decides how quickly a remote press reaches the booth on this hardware.
+    const commandPollInterval = setInterval(pollCommands, COMMAND_POLL_MS);
 
     return () => { active = false; clearInterval(commandPollInterval); commandSseRef.current?.close(); commandSseRef.current = null; };
   }, [remoteMode, scheduleCommand]);
@@ -2269,6 +2466,10 @@ export default function DJBooth() {
            breakSongTotal: activeBreakInfo?.songs?.length
              ?? interstitialSongsRef.current?.[activeBreakInfo?.breakKey || playingInterstitialBreakKeyRef.current]?.length
              ?? 0,
+          // Start Rotation deliberately waits for the current song to finish. Without
+          // publishing that, a remote had no way to tell "queued" from "ignored" - the
+          // operator pressed Start, nothing changed, and only a Skip appeared to work.
+          rotationPending: rotationPendingRef.current,
           breakSongIndex: activeBreakInfo?.currentIndex ?? null,
           commercialFreq: localStorage.getItem('neonaidj_commercial_freq') || 'off',
           commercialCounter: commercialCounterRef.current,
@@ -5329,10 +5530,14 @@ export default function DJBooth() {
       setShowDeactivatePin(false);
       setDeactivatePin('');
       try {
-        await boothApi.sendCommand('deactivateTrack', { pin, trackName });
+        await sendBoothCommand('deactivateTrack', { pin, trackName });
         toast.success(`Deactivated: ${trackName}`);
       } catch (error) {
-        toast.error(error.message || 'Failed to deactivate');
+        // A lost receipt is not a refusal. Saying "failed" here invited a second
+        // deactivation attempt for a track that may already be deactivated.
+        toast.error(error?.resultUnknown
+          ? 'Outcome unknown - checking the kiosk. Do not retry yet.'
+          : (error.message || 'Failed to deactivate'));
       }
       return;
     }
@@ -6993,7 +7198,7 @@ export default function DJBooth() {
   }
 
   return (
-    <div className="h-screen bg-[#08081a] text-white flex flex-col overflow-hidden">
+    <div className="relative h-screen bg-[#08081a] text-white flex flex-col overflow-hidden">
       {!remoteMode && (
         <>
           <AudioEngine
@@ -7079,7 +7284,7 @@ export default function DJBooth() {
                     className="text-white hover:bg-[#1e293b] h-8 px-2 disabled:opacity-30"
                     disabled={skipLocked}
                     title={skipLocked ? 'Announcement in progress — skip re-enables when it finishes' : 'Skip'}
-                    onClick={() => boothApi.sendCommand('skip', remoteSkipPayload(false))}
+                    onClick={() => sendBoothCommand('skip', remoteSkipPayload(false))}
                   >
                     <SkipForward className="w-4 h-4" />
                   </Button>
@@ -7091,7 +7296,7 @@ export default function DJBooth() {
                       const now = Date.now();
                       if (now - lastAnnouncementsToggleRef.current < 1000) return;
                       lastAnnouncementsToggleRef.current = now;
-                      boothApi.sendCommand('toggleAnnouncements');
+                      sendBoothCommand('toggleAnnouncements');
                     }}
                   >
                     {liveBoothState?.announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
@@ -7106,7 +7311,7 @@ export default function DJBooth() {
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-white"
-                    onClick={() => boothApi.sendCommand('setVolume', { volume: Math.max(0, Math.round((volume - 0.05) * 100) / 100) })}
+                    onClick={() => sendBoothCommand('setVolume', { volume: Math.max(0, Math.round((volume - 0.05) * 100) / 100) })}
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </Button>
@@ -7115,7 +7320,7 @@ export default function DJBooth() {
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-white"
-                    onClick={() => boothApi.sendCommand('setVolume', { volume: Math.min(1, Math.round((volume + 0.05) * 100) / 100) })}
+                    onClick={() => sendBoothCommand('setVolume', { volume: Math.min(1, Math.round((volume + 0.05) * 100) / 100) })}
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </Button>
@@ -7123,7 +7328,7 @@ export default function DJBooth() {
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-purple-300"
-                    onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.max(0.5, Math.round((voiceGain - 0.05) * 20) / 20) })}
+                    onClick={() => sendBoothCommand('setVoiceGain', { gain: Math.max(0.5, Math.round((voiceGain - 0.05) * 20) / 20) })}
                   >
                     <Mic className="w-3.5 h-3.5 mr-1" /> {Math.round(voiceGain * 100)}%
                   </Button>
@@ -7131,7 +7336,7 @@ export default function DJBooth() {
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-purple-300"
-                    onClick={() => boothApi.sendCommand('setVoiceGain', { gain: Math.min(1.2, Math.round((voiceGain + 0.05) * 20) / 20) })}
+                    onClick={() => sendBoothCommand('setVoiceGain', { gain: Math.min(1.2, Math.round((voiceGain + 0.05) * 20) / 20) })}
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </Button>
@@ -7308,19 +7513,38 @@ export default function DJBooth() {
                 >
                   Queued...
                 </Button>
-              ) : (
-                <Button
-                  onClick={remoteMode
-                    ? () => boothApi.sendCommand(isRotationActive ? 'stopRotation' : 'startRotation', {})
-                    : (isRotationActive ? stopRotation : startRotation)}
-                  className={isRotationActive 
-                    ? "bg-red-600 hover:bg-red-700 text-white" 
-                    : "bg-green-600 hover:bg-green-700 text-white"
-                  }
-                >
-                  {isRotationActive ? 'Stop Rotation' : 'Start Rotation'}
-                </Button>
-              )
+              ) : (() => {
+                // Authoritative state decides what this says. A press only ever produces
+                // the local "Starting…" state; it never claims the rotation is active.
+                const startState = rotationStartState({
+                  isRotationActive,
+                  rotationPending: remoteMode ? !!liveBoothState?.rotationPending : rotationPending,
+                  starting: rotationStarting,
+                  connected: remoteMode ? !!liveBoothState?.updatedAt : true,
+                });
+                return (
+                  <Button
+                    disabled={startState.disabled}
+                    title={startState.hint}
+                    onClick={() => {
+                      if (startState.busy) return;             // no duplicate starts
+                      if (!remoteMode) { (isRotationActive ? stopRotation : startRotation)(); return; }
+                      if (isRotationActive) { sendBoothCommand('stopRotation', {}); return; }
+                      setRotationStarting(true);
+                      Promise.resolve(sendBoothCommand('startRotation', {}))
+                        .catch(() => setRotationStarting(false));
+                    }}
+                    className={
+                      startState.kind === 'active' ? "bg-red-600 hover:bg-red-700 text-white"
+                        : startState.kind === 'queued' ? "bg-yellow-600 text-white animate-pulse"
+                        : startState.kind === 'starting' ? "bg-green-700/60 text-white cursor-wait"
+                        : "bg-green-600 hover:bg-green-700 text-white"
+                    }
+                  >
+                    {startState.label}
+                  </Button>
+                );
+              })()
             )}
             {!remoteMode && (
               <>
@@ -7364,6 +7588,17 @@ export default function DJBooth() {
           </div>
         </div>
       </header>
+
+      {/* Command feedback is an OVERLAY: it reserves no space, so nothing on the
+          page moves when a notice appears or disappears. Banners clear themselves;
+          anything unconfirmed stays reachable from the status chip. */}
+      {remoteMode && (
+        <CommandStatus
+          view={commandView}
+          onDismiss={(id) => surfaceCommandRef.current.dismiss(id)}
+          onDismissAll={() => surfaceCommandRef.current.dismissAll()}
+        />
+      )}
 
       {/* Main Content */}
       <div className="flex flex-1 min-h-0">
@@ -7426,10 +7661,10 @@ export default function DJBooth() {
                   audioEngineRef={audioEngineRef}
                   externalCommercialFreq={remoteMode ? liveBoothState?.commercialFreq : undefined}
                   onCommercialFreqChange={remoteMode
-                    ? (freq) => boothApi.sendCommand('setCommercialFreq', { freq })
+                    ? (freq) => sendBoothCommand('setCommercialFreq', { freq })
                     : undefined}
                   onAudioCommand={remoteMode
-                    ? (action, payload) => boothApi.sendCommand(action, payload)
+                    ? (action, payload) => sendBoothCommand(action, payload)
                     : undefined}
                 />
               </div>
@@ -7443,7 +7678,7 @@ export default function DJBooth() {
                     <span className="text-xs text-gray-500">Songs/Set:</span>
                     <select
                       value={liveBoothState?.songsPerSet || 3}
-                      onChange={(e) => boothApi.sendCommand('setSongsPerSet', { count: parseInt(e.target.value), source: 'dashboard-dropdown' })}
+                      onChange={(e) => sendBoothCommand('setSongsPerSet', { count: parseInt(e.target.value), source: 'dashboard-dropdown' })}
                       className="bg-[#151528] border border-[#1e293b] text-white text-xs rounded px-2 py-1"
                     >
                       {[1,2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}</option>)}
@@ -7974,10 +8209,18 @@ export default function DJBooth() {
                   ? (dancerId) => sendBoothCommand('removeDancerFromRotation', { dancerId })
                   : removeFromRotation}
                 onStartRotation={remoteMode
-                  ? () => boothApi.sendCommand('startRotation')
+                  ? () => {
+                      // Immediate local feedback. The flag is cleared by authoritative
+                      // kiosk state (active or queued) or by a failed/unknown outcome -
+                      // never by the press itself.
+                      setRotationStarting(true);
+                      Promise.resolve(sendBoothCommand('startRotation'))
+                        .catch(() => setRotationStarting(false));
+                    }
                   : startRotation}
                 isRotationActive={isRotationActive}
-                rotationPending={rotationPending}
+                rotationPending={remoteMode ? !!liveBoothState?.rotationPending : rotationPending}
+                rotationStarting={rotationStarting}
                 onCancelPendingRotation={() => {
                   rotationPendingRef.current = false;
                   setRotationPending(false);
@@ -7985,7 +8228,7 @@ export default function DJBooth() {
                 }}
                 announcementsEnabled={announcementsEnabled}
                 onAnnouncementsToggle={remoteMode
-                  ? () => boothApi.sendCommand('toggleAnnouncements')
+                  ? () => sendBoothCommand('toggleAnnouncements')
                   : (enabled) => setAnnouncementsEnabled(enabled)}
                 skipLocked={skipLocked}
                 currentDancerIndex={currentDancerIndex}
@@ -7993,11 +8236,17 @@ export default function DJBooth() {
                 availablePromos={availablePromos}
                 promoQueue={promoQueue}
                 onSwapPromo={remoteMode
-                  ? (slotIndex) => boothApi.sendCommand('swapPromo', { slotIndex })
+                  ? (slotIndex) => sendBoothCommand('swapPromo', { slotIndex })
                   : swapPromoAtSlot}
+                onSkipCommercial={remoteMode
+                  ? (commercialId) => sendBoothCommand('skipCommercial', { commercialId })
+                  : undefined}
+                remoteSkippedCommercials={remoteMode
+                  ? (liveBoothState?.skippedCommercials || [])
+                  : undefined}
                 onSkipCurrentDancer={() => {
                   if (remoteMode) {
-                    boothApi.sendCommand('skip', remoteSkipPayload(true));
+                    sendBoothCommand('skip', remoteSkipPayload(true));
                     return;
                   }
                   if (!isRotationActiveRef.current) return;
@@ -8012,7 +8261,7 @@ export default function DJBooth() {
                 }}
                 onSkipEntertainerNow={() => {
                   if (remoteMode) {
-                    boothApi.sendCommand('skip', remoteSkipPayload(true));
+                    sendBoothCommand('skip', remoteSkipPayload(true));
                     return;
                   }
                   // Top-level "Next Entertainer" button — hard skip, no break songs.
@@ -8126,7 +8375,7 @@ export default function DJBooth() {
                 breakSongsPerSet={breakSongsPerSet}
                 onBreakSongsPerSetChange={(n) => {
                   if (remoteMode) {
-                    boothApi.sendCommand('setBreakSongsPerSet', { count: n });
+                    sendBoothCommand('setBreakSongsPerSet', { count: n });
                     return;
                   }
                   const wasBreak = breakSongsPerSetRef.current > 0;
@@ -8150,7 +8399,7 @@ export default function DJBooth() {
                 songsPerSet={songsPerSet}
                 onSongsPerSetChange={async (n) => {
                   if (remoteMode) {
-                    await boothApi.sendCommand('setSongsPerSet', { count: n, source: 'full-dj-remote' });
+                    await sendBoothCommand('setSongsPerSet', { count: n, source: 'full-dj-remote' });
                     return;
                   }
                   await applySongsPerSetChange(n, 'booth-buttons');
@@ -8160,7 +8409,7 @@ export default function DJBooth() {
                 autoplayAutoFillEnabled={autoplayAutoFillEnabled}
                 onAutoplayAutoFillToggle={(val) => {
                   if (remoteMode) {
-                    boothApi.sendCommand('setAutoplayAutoFill', { enabled: val });
+                    sendBoothCommand('setAutoplayAutoFill', { enabled: val });
                     return;
                   }
                   setAutoplayAutoFillEnabled(val);
@@ -8171,7 +8420,7 @@ export default function DJBooth() {
                 }}
                 onAutoplayQueueChange={(newQueue) => {
                   if (remoteMode) {
-                    boothApi.sendCommand('setAutoplayQueue', { trackNames: newQueue.map(track => track.name) });
+                    sendBoothCommand('setAutoplayQueue', { trackNames: newQueue.map(track => track.name) });
                     return;
                   }
                   updateAutoplayQueue(newQueue);
@@ -8181,7 +8430,7 @@ export default function DJBooth() {
                   const newQueue = [...autoplayQueueRef.current];
                   newQueue.splice(index, 1);
                   if (remoteMode) {
-                    boothApi.sendCommand('setAutoplayQueue', { trackNames: newQueue.map(track => track.name) });
+                    sendBoothCommand('setAutoplayQueue', { trackNames: newQueue.map(track => track.name) });
                     return;
                   }
                   updateAutoplayQueue(newQueue);
@@ -8223,7 +8472,7 @@ export default function DJBooth() {
                     ? (dancerId) => sendBoothCommand('releaseFromVip', { dancerId })
                     : releaseDancerFromVip}
                   onResetVoiceovers={remoteMode
-                    ? (dancerName) => boothApi.sendCommand('resetDancerVoiceovers', { dancerName })
+                    ? (dancerName) => sendBoothCommand('resetDancerVoiceovers', { dancerName })
                     : (name) => announcementRef.current?.resetAndRegenerateDancer?.(name)}
                 />
               </div>
@@ -8235,7 +8484,7 @@ export default function DJBooth() {
                   onTrackSelect={(track) => {
                     if (editingPlaylist) return;
                     if (remoteMode) {
-                      boothApi.sendCommand('playLibraryTrack', { trackName: track.name });
+                      sendBoothCommand('playLibraryTrack', { trackName: track.name });
                     } else if (track.url) {
                       playTrack(track.url, true, track.name, track.genre);
                     }
@@ -8252,7 +8501,7 @@ export default function DJBooth() {
                     currentDancerIndex={currentDancerIndex}
                     onPlay={remoteMode ? undefined : handleAnnouncementPlay}
                     onRemotePlay={remoteMode
-                      ? (cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })
+                      ? (cacheKey) => sendBoothCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })
                       : undefined}
                     elevenLabsApiKey={elevenLabsKey}
                     openaiApiKey={openaiKey}
@@ -8263,13 +8512,13 @@ export default function DJBooth() {
                     <HouseAnnouncementPanel
                       onPlay={handleAnnouncementPlay}
                       isRemote={remoteMode}
-                      onRemotePlay={(cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })}
+                      onRemotePlay={(cacheKey) => sendBoothCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })}
                     />
                   </div>
                   <ManualAnnouncementPlayer
                     onPlay={remoteMode ? undefined : handleAnnouncementPlay}
                     onRemotePlay={remoteMode
-                      ? (cacheKey) => boothApi.sendCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })
+                      ? (cacheKey) => sendBoothCommand('playHouseAnnouncement', { cacheKey }, { timeoutMs: 180_000 })
                       : undefined}
                   />
                 </div>
@@ -8310,7 +8559,7 @@ export default function DJBooth() {
                       <button key={id}
                         onPointerDown={() => {
                           if (remoteMode) {
-                            boothApi.sendCommand('playSound', { soundId: id, gain: volume * sfxBoost });
+                            sendBoothCommand('playSound', { soundId: id, gain: volume * sfxBoost });
                             return;
                           }
                           const AC = window.AudioContext || window.webkitAudioContext;
@@ -8344,7 +8593,7 @@ export default function DJBooth() {
                       <button key={id}
                         onPointerDown={() => {
                           if (remoteMode) {
-                            boothApi.sendCommand('playSound', { soundId: id, gain: volume * sfxBoost });
+                            sendBoothCommand('playSound', { soundId: id, gain: volume * sfxBoost });
                             return;
                           }
                           const AC = window.AudioContext || window.webkitAudioContext;
@@ -8364,7 +8613,7 @@ export default function DJBooth() {
                   volume={volume}
                   sfxBoost={sfxBoost}
                   onRemotePlay={remoteMode
-                    ? (soundId, gain) => boothApi.sendCommand('playSound', { soundId, gain })
+                    ? (soundId, gain) => sendBoothCommand('playSound', { soundId, gain })
                     : undefined}
                 />
               </div>
@@ -8381,7 +8630,7 @@ export default function DJBooth() {
                   placedFeatures={placedFeatures}
                   allowAudioPreview={!remoteMode}
                   onRemoteAudioPreview={remoteMode
-                    ? (dancerId, type) => boothApi.sendCommand('playFeatureAudio', { dancerId, type }, { timeoutMs: 180_000 })
+                    ? (dancerId, type) => sendBoothCommand('playFeatureAudio', { dancerId, type }, { timeoutMs: 180_000 })
                     : undefined}
                   onPlaceFeature={remoteMode
                     ? (featureId, chosenSetName, playPos, audioFlags) =>

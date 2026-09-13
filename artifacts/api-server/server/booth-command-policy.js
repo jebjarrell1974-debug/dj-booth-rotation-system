@@ -100,6 +100,15 @@ export function validateBoothCommand(action, payload = {}) {
       if (payload.leaseMs != null && !isFiniteNumber(payload.leaseMs, 1000, 10_000)) {
         return invalid('leaseMs must be between 1000 and 10000 milliseconds');
       }
+      // Hold identity, used by the kiosk to refuse an acquire for a hold that has already
+      // been released. Optional so an older remote keeps working.
+      if (payload.clientId != null && !isString(payload.clientId, 128)) {
+        return invalid('clientId must be a string of up to 128 characters');
+      }
+      if (payload.holdSeq != null && !(Number.isInteger(payload.holdSeq) &&
+          payload.holdSeq >= 1 && payload.holdSeq <= 2_000_000_000)) {
+        return invalid('holdSeq must be a positive integer');
+      }
       break;
     case 'setBeatMatch':
       if (typeof payload.enabled !== 'boolean') return invalid('enabled must be boolean');
@@ -250,10 +259,22 @@ export function boothWorkspaceSnapshot(state = {}) {
     dancerVipMap: state.dancerVipMap || {},
     placedFeatures: state.placedFeatures || {},
   };
-  // Preserve the legacy snapshot shape for callers that do not publish the
-  // ownership ledger, while including it for current kiosk state.
-  if (Object.prototype.hasOwnProperty.call(state, 'manualInterstitialBreaks')) {
-    snapshot.manualInterstitialBreaks = state.manualInterstitialBreaks || {};
+    // Preserve the legacy snapshot shape for callers that do not publish the
+    // ownership ledger, while including it for current kiosk state.
+    if (Object.prototype.hasOwnProperty.call(state, 'manualInterstitialBreaks')) {
+      snapshot.manualInterstitialBreaks = state.manualInterstitialBreaks || {};
+    }
+  // The operator's actual manual song CONTENTS. The kiosk publishes this and
+  // normalizeBoothState keeps it, but it was never captured here - so a newer
+  // manual song edit (including an explicit empty list, i.e. a removal) could not
+  // be detected at execution time. Mapped to names exactly like rotationSongs so
+  // the kiosk's own snapshot compares equal.
+  if (Object.prototype.hasOwnProperty.call(state, 'manualRotationSongs')) {
+    const manualSongs = {};
+    for (const [id, tracks] of Object.entries(state.manualRotationSongs || {})) {
+      manualSongs[id] = (tracks || []).map(songName).filter(Boolean);
+    }
+    snapshot.manualRotationSongs = manualSongs;
   }
   return snapshot;
 }
@@ -272,6 +293,10 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
   const publishedBreakTotal = source.breakSongTotal !== undefined ? source.breakSongTotal : null;
   const normalized = {
     isRotationActive: !!read('isRotationActive', false),
+    // Start deliberately waits for the current song to end. Without publishing that,
+    // a remote cannot tell "queued" from "ignored" - the operator pressed Start, saw
+    // nothing change, and only a Skip appeared to work.
+    rotationPending: !!read('rotationPending', false),
     currentDancerIndex: read('currentDancerIndex', 0),
     currentDancerName: read('currentDancerName', null),
     currentTrack: read('currentTrack', null),
