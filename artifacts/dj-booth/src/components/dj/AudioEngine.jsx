@@ -7,6 +7,15 @@ import {
 import { getTrackEndTriggerPoint } from '@/utils/audioPlayback';
 import { createAnnouncementLifecycle } from '@/utils/announcementLifecycle';
 import { createOwnedDeckFadeController } from '@/utils/ownedDeckFade';
+import {
+  ANALYSIS_BODY_TIMEOUT_MS,
+  ANALYSIS_DECODE_TIMEOUT_MS,
+  ANALYSIS_RENDER_TIMEOUT_MS,
+  createBackgroundAnalysisQueue,
+  normalizeAudioCacheKey,
+  withAnalysisDeadline,
+  waitForMediaReady,
+} from '@/utils/audioStartup';
 
 const MAX_SONG_DURATION = 190;
 const MAX_FEATURE_DURATION = 3600;
@@ -25,6 +34,8 @@ const AUTO_GAIN_TARGET_LUFS = -10;
 const AUTO_GAIN_ANALYSIS_SECONDS = 10;
 const AUTO_GAIN_MIN = 0.3;
 const AUTO_GAIN_MAX = 2.5;
+const ANNOUNCEMENT_READY_TIMEOUT_MS = 5000;
+const ANALYSIS_GAIN_RAMP_MS = 750;
 
 const AudioEngine = forwardRef(({ 
   onTrackEnd, 
@@ -55,6 +66,8 @@ const AudioEngine = forwardRef(({
   }
   const autoGainEnabledRef = useRef(true);
   const autoGainCacheRef = useRef(new Map());
+  const trackAnalysisQueueRef = useRef(null);
+  const analysisGainRampRef = useRef(null);
 
   const beatMatchEnabledRef = useRef((() => {
     try { return localStorage.getItem('neonaidj_beat_match') === 'true'; } catch { return false; }
@@ -264,10 +277,15 @@ const AudioEngine = forwardRef(({
     return () => {
       clearInterval(dualDeckMonitor);
       ownedDeckFadeControllerRef.current?.cancel('unmount');
+      if (analysisGainRampRef.current?.frameId != null) {
+        cancelAnimationFrame(analysisGainRampRef.current.frameId);
+      }
+      analysisGainRampRef.current = null;
       deckA.pause();
       deckA.src = '';
       deckB.pause();
       deckB.src = '';
+      trackAnalysisQueueRef.current?.clear();
       announcementLifecycleRef.current?.cancelActive('unmount');
       voice.pause();
       voice.src = '';
@@ -325,6 +343,82 @@ const AudioEngine = forwardRef(({
     return deckGenerationRef.current[handle.deck] === handle.generation
       && !!deck?.src;
   }, []);
+
+  const cancelAnalysisGainRamp = useCallback(() => {
+    if (analysisGainRampRef.current?.frameId != null) {
+      cancelAnimationFrame(analysisGainRampRef.current.frameId);
+    }
+    analysisGainRampRef.current = null;
+  }, []);
+
+  const applyAnalyzedGain = useCallback(({
+    handle,
+    sourceUrl,
+    gain,
+  } = {}) => {
+    if (!autoGainEnabledRef.current
+        || !Number.isFinite(gain)
+        || !isCurrentDeckHandle(handle)
+        || activeDeck.current !== handle.deck
+        || crossfadeInProgressRef.current
+        || !isPlayingRef.current) {
+      return false;
+    }
+
+    const deck = handle.deck === 'A' ? deckARef.current : deckBRef.current;
+    const gainNode = handle.deck === 'A' ? deckAGainRef.current : deckBGainRef.current;
+    if (!deck || deck.src !== sourceUrl || deck.paused || !gainNode?.gain) return false;
+
+    cancelAnalysisGainRamp();
+    const targetGain = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, gain));
+    const startGain = Number.isFinite(gainNode.gain.value) ? gainNode.gain.value : 1;
+    if (Math.abs(targetGain - startGain) < 0.001) return true;
+
+    const entry = {
+      handle,
+      sourceUrl,
+      deck,
+      gainNode,
+      startGain,
+      targetGain,
+      startedAt: performance.now(),
+      frameId: null,
+    };
+    const animate = now => {
+      const stillOwned = analysisGainRampRef.current === entry
+        && isCurrentDeckHandle(handle)
+        && activeDeck.current === handle.deck
+        && isPlayingRef.current
+        && !crossfadeInProgressRef.current
+        && deck.src === sourceUrl
+        && !deck.paused;
+      if (!stillOwned) {
+        if (analysisGainRampRef.current === entry) analysisGainRampRef.current = null;
+        return;
+      }
+
+      const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / ANALYSIS_GAIN_RAMP_MS));
+      try {
+        entry.gainNode.gain.setValueAtTime(
+          entry.startGain + (entry.targetGain - entry.startGain) * progress,
+          audioCtxRef.current?.currentTime || 0,
+        );
+      } catch {
+        if (analysisGainRampRef.current === entry) analysisGainRampRef.current = null;
+        return;
+      }
+
+      if (progress >= 1) {
+        analysisGainRampRef.current = null;
+      } else {
+        entry.frameId = requestAnimationFrame(animate);
+      }
+    };
+
+    analysisGainRampRef.current = entry;
+    entry.frameId = requestAnimationFrame(animate);
+    return true;
+  }, [cancelAnalysisGainRamp, isCurrentDeckHandle]);
 
   const stopOwnedDeck = useCallback((handle) => {
     if (!isCurrentDeckHandle(handle)) return false;
@@ -421,39 +515,52 @@ const AudioEngine = forwardRef(({
     }
   }, []);
 
-  const analyzeTrackLoudness = useCallback(async (deckEl) => {
+  const analyzeTrackLoudness = useCallback(async (deckEl, {
+    sourceUrl: sourceUrlOverride = null,
+    duration: durationOverride = null,
+    signal = null,
+  } = {}) => {
     if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) {
       console.log('🔊 AutoGain: disabled, skipping');
       return { gain: 1.0, bpm: null };
     }
     try {
       const ctx = audioCtxRef.current;
-      if (!ctx || !deckEl.src) {
+      const srcUrl = sourceUrlOverride || deckEl?.src;
+      if (!ctx || !srcUrl) {
         console.warn('🔊 AutoGain: no AudioContext or src, skipping');
-        return { gain: 1.0, bpm: null };
+        return { gain: 1.0, bpm: null, analysisFailed: true };
       }
 
-      const srcUrl = deckEl.src;
-      const cacheKey = srcUrl.replace(/^blob:/, '');
+      if (signal?.aborted) {
+        const error = new Error('Audio analysis was cancelled');
+        error.name = 'AbortError';
+        throw error;
+      }
+      const cacheKey = normalizeAudioCacheKey(srcUrl);
       const cachedGain = autoGainCacheRef.current.get(cacheKey);
       const cachedBpm = bpmCacheRef.current.get(cacheKey);
-      if (cachedGain !== undefined && (cachedBpm !== undefined || !beatMatchEnabledRef.current)) {
-        console.log(`🔊 AutoGain: cached gain=${cachedGain.toFixed(2)}x, bpm=${cachedBpm || '?'}`);
-        return { gain: cachedGain, bpm: cachedBpm || null };
+      const gainReady = !autoGainEnabledRef.current || cachedGain !== undefined;
+      const bpmReady = !beatMatchEnabledRef.current || cachedBpm !== undefined;
+      if (gainReady && bpmReady) {
+        console.log(`🔊 AutoGain: cached gain=${(cachedGain ?? 1).toFixed(2)}x, bpm=${cachedBpm || '?'}`);
+        return { gain: cachedGain ?? 1.0, bpm: cachedBpm ?? null };
       }
 
-      let dur = deckEl.duration;
+      let dur = Number.isFinite(durationOverride) && durationOverride > 0
+        ? durationOverride
+        : deckEl?.duration;
       if (!dur || !isFinite(dur) || dur <= 0) {
         await new Promise((resolve) => {
-          const onMeta = () => { deckEl.removeEventListener('loadedmetadata', onMeta); resolve(); };
-          deckEl.addEventListener('loadedmetadata', onMeta);
-          setTimeout(() => { deckEl.removeEventListener('loadedmetadata', onMeta); resolve(); }, 3000);
+          const onMeta = () => { deckEl?.removeEventListener('loadedmetadata', onMeta); resolve(); };
+          deckEl?.addEventListener('loadedmetadata', onMeta);
+          setTimeout(() => { deckEl?.removeEventListener('loadedmetadata', onMeta); resolve(); }, 3000);
         });
-        dur = deckEl.duration;
+        dur = deckEl?.duration;
       }
       if (!dur || !isFinite(dur) || dur <= 0) {
         console.warn('🔊 AutoGain: duration unavailable after wait, skipping');
-        return { gain: 1.0, bpm: null };
+        return { gain: 1.0, bpm: null, analysisFailed: true };
       }
 
       const sampleRate = ctx.sampleRate || 44100;
@@ -461,23 +568,68 @@ const AudioEngine = forwardRef(({
       const bpmDur = Math.min(dur, 30);
       const maxDur = Math.max(analysisDur, bpmDur);
       const frameCount = Math.floor(maxDur * sampleRate);
-      if (frameCount <= 0) return { gain: 1.0, bpm: null };
+      if (frameCount <= 0) return { gain: 1.0, bpm: null, analysisFailed: true };
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(srcUrl, { signal: controller.signal });
-      clearTimeout(timeout);
-      const arrayBuffer = await response.arrayBuffer();
+      const abortRequest = () => {
+        try { controller.abort(); } catch {}
+      };
+      const removeAbortForwarder = () => {
+        signal?.removeEventListener?.('abort', abortRequest);
+      };
+      signal?.addEventListener?.('abort', abortRequest, { once: true });
+
+      let response;
+      let arrayBuffer;
+      try {
+        response = await withAnalysisDeadline(
+          () => fetch(srcUrl, { signal: controller.signal }),
+          {
+            signal,
+            timeoutMs: ANALYSIS_BODY_TIMEOUT_MS,
+            label: 'Audio analysis response',
+            onTimeout: abortRequest,
+          },
+        );
+        arrayBuffer = await withAnalysisDeadline(
+          () => response.arrayBuffer(),
+          {
+            signal,
+            timeoutMs: ANALYSIS_BODY_TIMEOUT_MS,
+            label: 'Audio analysis body',
+            onTimeout: abortRequest,
+          },
+        );
+      } finally {
+        removeAbortForwarder();
+      }
+      if (response?.ok === false) {
+        throw new Error(`Audio analysis fetch failed (${response.status})`);
+      }
 
       const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
-      const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+      const audioBuffer = await withAnalysisDeadline(
+        () => offlineCtx.decodeAudioData(arrayBuffer),
+        {
+          signal,
+          timeoutMs: ANALYSIS_DECODE_TIMEOUT_MS,
+          label: 'Audio analysis decode',
+        },
+      );
 
       const source = offlineCtx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(offlineCtx.destination);
       source.start(0, 0, maxDur);
 
-      const rendered = await offlineCtx.startRendering();
+      const rendered = await withAnalysisDeadline(
+        () => offlineCtx.startRendering(),
+        {
+          signal,
+          timeoutMs: ANALYSIS_RENDER_TIMEOUT_MS,
+          label: 'Audio analysis render',
+        },
+      );
 
       let gainValue = 1.0;
       if (autoGainEnabledRef.current) {
@@ -517,10 +669,67 @@ const AudioEngine = forwardRef(({
 
       return { gain: gainValue, bpm: detectedBpm };
     } catch (err) {
+      if (err?.name === 'AbortError' || err?.name === 'TimeoutError') throw err;
       console.warn('⚠️ AutoGain: Analysis failed, using 1.0:', err.message);
-      return { gain: 1.0, bpm: null };
+      return { gain: 1.0, bpm: null, analysisFailed: true };
     }
   }, [detectBPMFromBuffer]);
+
+  const getCachedTrackAnalysis = useCallback((sourceUrl) => {
+    if (!sourceUrl) return null;
+    if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) {
+      return { gain: 1.0, bpm: null, complete: true };
+    }
+
+    const cacheKey = normalizeAudioCacheKey(sourceUrl);
+    const cachedGain = autoGainCacheRef.current.get(cacheKey);
+    const cachedBpm = bpmCacheRef.current.get(cacheKey);
+    const gainReady = !autoGainEnabledRef.current || cachedGain !== undefined;
+    const bpmReady = !beatMatchEnabledRef.current || cachedBpm !== undefined;
+    if (!gainReady) return null;
+    // A server-provided promo gain is usable even when BPM is unknown. Keep
+    // that first-play gain; `complete` only controls whether BPM analysis is
+    // queued, and no late BPM result changes playback rate mid-song.
+    return {
+      gain: cachedGain ?? 1.0,
+      bpm: cachedBpm ?? null,
+      complete: bpmReady,
+    };
+  }, []);
+
+  const scheduleTrackAnalysis = useCallback(({
+    sourceUrl,
+    deckEl,
+    duration,
+    handle,
+  }) => {
+    if (!sourceUrl || (!autoGainEnabledRef.current && !beatMatchEnabledRef.current)) return;
+    if (getCachedTrackAnalysis(sourceUrl)?.complete) return;
+
+    if (!trackAnalysisQueueRef.current) {
+      trackAnalysisQueueRef.current = createBackgroundAnalysisQueue({
+        onError: (error, key) => {
+          console.warn(`⚠️ AutoGain: background analysis failed for ${key}:`, error?.message || error);
+        },
+      });
+    }
+
+    const cacheKey = normalizeAudioCacheKey(sourceUrl);
+    const scheduled = trackAnalysisQueueRef.current.schedule(
+      cacheKey,
+      signal => analyzeTrackLoudness(deckEl, { sourceUrl, duration, signal }),
+      {
+        onResult: result => applyAnalyzedGain({
+          handle,
+          sourceUrl,
+          gain: result?.analysisFailed ? null : result?.gain,
+        }),
+      },
+    );
+    if (!scheduled && !trackAnalysisQueueRef.current.has(cacheKey)) {
+      console.warn(`⚠️ AutoGain: background analysis queue is full; deferred analysis skipped for ${cacheKey}`);
+    }
+  }, [analyzeTrackLoudness, applyAnalyzedGain, getCachedTrackAnalysis]);
 
   const loadTrack = useCallback(async (input) => {
     if (!input) return null;
@@ -529,13 +738,13 @@ const AudioEngine = forwardRef(({
       const url = input.url;
       const name = input.name || url.split('/').pop();
       if (input.auto_gain != null && autoGainCacheRef.current) {
-        const cacheKey = url.replace(/^blob:/, '');
+        const cacheKey = normalizeAudioCacheKey(url);
         const gain = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, input.auto_gain));
         autoGainCacheRef.current.set(cacheKey, gain);
         console.log(`🔊 AutoGain: pre-loaded server gain=${gain.toFixed(2)}x for ${name}`);
       }
       if (input.bpm != null && bpmCacheRef.current) {
-        const cacheKey = url.replace(/^blob:/, '');
+        const cacheKey = normalizeAudioCacheKey(url);
         bpmCacheRef.current.set(cacheKey, input.bpm);
         console.log(`🎵 BPM: pre-loaded server bpm=${input.bpm} for ${name}`);
       }
@@ -605,6 +814,7 @@ const AudioEngine = forwardRef(({
       }
     }
 
+    cancelAnalysisGainRamp();
     const ctx = ensureAudioContext();
     crossfadeInProgressRef.current = true;
 
@@ -657,7 +867,17 @@ const AudioEngine = forwardRef(({
       connectDeckSource(inactiveDeck, inactiveGain, inactiveSourceRef, inactiveSourceElRef);
     }
 
-    const analysisResult = await analyzeTrackLoudness(inactiveDeck);
+    // Loudness/BPM analysis can fetch, decode, and render several seconds of
+    // audio. Cached values are safe to use now; an uncached result must never
+    // hold the deck before play starts.
+    const analysisSourceUrl = inactiveDeck.src;
+    const loadedDuration = Number.isFinite(inactiveDeck.duration) && inactiveDeck.duration > 0
+      ? inactiveDeck.duration
+      : (beatMatchEnabledRef.current ? 30 : AUTO_GAIN_ANALYSIS_SECONDS);
+    const analysisResult = getCachedTrackAnalysis(analysisSourceUrl) || {
+      gain: 1.0,
+      bpm: null,
+    };
     const autoGainValue = analysisResult.gain;
     const incomingBpm = analysisResult.bpm;
     inactiveGain.gain.value = autoGainValue;
@@ -770,6 +990,16 @@ const AudioEngine = forwardRef(({
       playTrackLockRef.current = null;
       return false;
     }
+
+    // A late result fills the cache for future starts. It may also ramp the
+    // same still-owned active deck; applyAnalyzedGain refuses stale or
+    // crossfading replacements and never changes playback rate.
+    scheduleTrackAnalysis({
+      sourceUrl: analysisSourceUrl,
+      deckEl: inactiveDeck,
+      duration: loadedDuration,
+      handle: trackHandle,
+    });
 
     isPlayingRef.current = true;
     setIsPlaying(true);
@@ -890,7 +1120,17 @@ const AudioEngine = forwardRef(({
       playTrackLockRef.current = null;
       return false;
     }
-  }, [loadTrack, cleanupDeck, ensureAudioContext, connectDeckSource, analyzeTrackLoudness, cancelOwnedDeckFade, isCurrentDeckHandle]);
+  }, [
+    loadTrack,
+    cleanupDeck,
+    ensureAudioContext,
+    connectDeckSource,
+    getCachedTrackAnalysis,
+    scheduleTrackAnalysis,
+    cancelOwnedDeckFade,
+    cancelAnalysisGainRamp,
+    isCurrentDeckHandle,
+  ]);
 
   const applyDuckGain = useCallback((change = {}) => {
     const ctx = ensureAudioContext();
@@ -956,6 +1196,7 @@ const AudioEngine = forwardRef(({
     onNearEnd = null,
     waitForEnd = true,
     onStarted = null,
+    onPlaybackStarted = null,
   } = {}) => {
     // The voice element is shared, but each invocation owns a distinct
     // generation and duck token. Starting a new announcement must settle the
@@ -973,7 +1214,7 @@ const AudioEngine = forwardRef(({
       let cleaned = false;
       let nearEndFired = false;
       let duckAcquired = false;
-      let canPlayHandler = null;
+      let readyAbortController = null;
       const isCurrent = () => (
         announcementLifecycleRef.current.isCurrent(token)
       );
@@ -983,13 +1224,11 @@ const AudioEngine = forwardRef(({
         if (error) reject(error);
         else resolve();
       };
-      const cleanup = ({ cancelled = false } = {}) => {
+      const cleanup = ({ cancelled = false, abortReady = true } = {}) => {
         if (cleaned) return;
         cleaned = true;
-        if (voice && canPlayHandler) {
-          voice.removeEventListener('canplay', canPlayHandler);
-          canPlayHandler = null;
-        }
+        if (abortReady) readyAbortController?.abort();
+        readyAbortController = null;
         if (voice) {
           if (voice.onended === onEnded) voice.onended = null;
           if (voice.onerror === onError) voice.onerror = null;
@@ -1011,6 +1250,7 @@ const AudioEngine = forwardRef(({
           settle();
           return;
         }
+        readyAbortController?.abort();
         if (voice && isCurrent()) {
           voice.onended = null;
           voice.onerror = null;
@@ -1041,7 +1281,10 @@ const AudioEngine = forwardRef(({
       const onError = (event) => {
         const message = event?.target?.error?.message || 'Announcement audio playback failed';
         console.error('❌ Announcement audio error:', message);
-        cleanup();
+        // Let waitForMediaReady receive the media error as well; aborting its
+        // signal here would replace the useful decode error with a generic
+        // ownership abort.
+        cleanup({ cancelled: true, abortReady: false });
         settle(new Error(message));
       };
       session = { cancel };
@@ -1060,7 +1303,6 @@ const AudioEngine = forwardRef(({
       }
 
       voice.src = audioUrl;
-      voice.load();
       voice.volume = 1.0;
       voice.loop = false;
 
@@ -1082,18 +1324,15 @@ const AudioEngine = forwardRef(({
       voice.onended = onEnded;
       voice.onerror = onError;
 
-      const ready = new Promise((readyResolve) => {
-        if (voice.readyState >= 3) {
-          readyResolve();
-          return;
-        }
-        canPlayHandler = () => {
-          if (voice) voice.removeEventListener('canplay', canPlayHandler);
-          canPlayHandler = null;
-          readyResolve();
-        };
-        voice.addEventListener('canplay', canPlayHandler);
+      readyAbortController = new AbortController();
+      const ready = waitForMediaReady(voice, {
+        timeoutMs: ANNOUNCEMENT_READY_TIMEOUT_MS,
+        signal: readyAbortController.signal,
+        isCurrent,
       });
+      // Install the bounded readiness listeners before load so a synchronous
+      // media failure cannot leave this owner waiting forever.
+      voice.load();
 
       ready.then(async () => {
         if (!isCurrent() || cleaned) {
@@ -1114,6 +1353,9 @@ const AudioEngine = forwardRef(({
             settle();
             return;
           }
+          try { onPlaybackStarted?.(token); } catch (error) {
+            console.warn('⚠️ PlayAnnouncement: onPlaybackStarted callback failed:', error?.message || error);
+          }
           // Remote command receipts describe successful playback startup, not
           // the duration of the media. Event handlers remain installed so
           // normal end/error cleanup and unducking still occur later.
@@ -1124,7 +1366,7 @@ const AudioEngine = forwardRef(({
           settle(error);
         }
       }).catch(error => {
-        cleanup();
+        cleanup({ cancelled: true });
         settle(error);
       });
     });
