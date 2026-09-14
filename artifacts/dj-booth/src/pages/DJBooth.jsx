@@ -78,6 +78,11 @@ import {
   isAutomaticSelectionExcluded,
 } from '@/utils/automaticTrackSelection';
 import {
+  reconcileIncomingPreparedTrack,
+  resolveAuthoritativeNameOnlyTrack,
+  resolveAuthoritativeIncomingSlot,
+} from '@/utils/incomingTrackAuthority';
+import {
   getColdAutoplayStartupDecision,
   getIdleAutoplayStartMode,
   IDLE_AUTOPLAY_START_MODES,
@@ -719,6 +724,7 @@ export default function DJBooth() {
   const playingCommercialRef = useRef(false);
   const commercialEndResolverRef = useRef(null);
   const commercialSessionRef = useRef(null);
+  const commercialPreparedTrackRef = useRef(null);
   const commercialModeRef = useRef(null);
   const promoShuffleRef = useRef([]);
   const promoQueueFingerprintRef = useRef('');
@@ -3079,6 +3085,14 @@ export default function DJBooth() {
     }
     lastAudioActivityRef.current = Date.now();
     console.log('🎵 PlayTrack: Playing track URL, crossfade=' + crossfade);
+    const preparedCommercial = commercialPreparedTrackRef.current;
+    const preparedOwner = preparedCommercial?.url === trackUrl
+      ? preparedCommercial.owner
+      : null;
+    if (preparedCommercial && preparedCommercial.url !== trackUrl) {
+      commercialPreparedTrackRef.current = null;
+      audioEngineRef.current.invalidatePreparedTrack?.({ owner: preparedCommercial.owner });
+    }
     // Commercial boost: Promos-genre tracks route through the music bus and end up
     // ~33% quieter than music to a trained ear. Pre-populate auto_gain * 1.4 (44% LUFS lift)
     // ONLY for Promos so the AudioEngine skips its 10s RMS analysis and uses the boosted value.
@@ -3098,7 +3112,11 @@ export default function DJBooth() {
     }
     let success;
     try {
-      success = await audioEngineRef.current.playTrack(trackPayload, crossfade);
+      success = await audioEngineRef.current.playTrack(
+        trackPayload,
+        crossfade,
+        { preparedOwner },
+      );
     } catch (error) {
       console.warn('⚠️ PlayTrack: Engine rejected requested track:', error?.message || error);
       success = false;
@@ -3107,6 +3125,12 @@ export default function DJBooth() {
       lastAudioActivityRef.current = Date.now();
     }
     if (success !== true) {
+      if (commercialPreparedTrackRef.current?.url === trackUrl) {
+        audioEngineRef.current.invalidatePreparedTrack?.({
+          owner: commercialPreparedTrackRef.current.owner,
+        });
+        commercialPreparedTrackRef.current = null;
+      }
       if (!allowFallback) return false;
       console.warn('⚠️ PlayTrack: Engine returned failure, trying fallback');
       const fallbackOk = await playFallbackTrack(crossfade, rotationSongNumber);
@@ -3116,6 +3140,9 @@ export default function DJBooth() {
         audioEngineRef.current?.resume();
       }
       return fallbackOk;
+    }
+    if (commercialPreparedTrackRef.current?.url === trackUrl) {
+      commercialPreparedTrackRef.current = null;
     }
     playbackExpectedRef.current = true;
     isPlayingRef.current = true;
@@ -4127,8 +4154,138 @@ export default function DJBooth() {
     });
   }, [consumeCommercialBoundary]);
 
-  const playCommercialIfDue = useCallback(async (commercialDecision = null) => {
+  const prepareCommercialIncoming = useCallback((session, nextTrack, incomingTarget = null) => {
+    if (!session || !nextTrack?.url || !audioEngineRef.current?.prepareNextTrack) return;
+    const target = { url: nextTrack.url, name: nextTrack.name };
+    commercialPreparedTrackRef.current = {
+      url: target.url,
+      owner: session,
+      incomingTarget,
+    };
+    let attempts = 0;
+    const tryPrepare = () => {
+      const prepared = commercialPreparedTrackRef.current;
+      if (
+        prepared?.owner !== session
+        || prepared.url !== target.url
+        || session.finished
+        || commercialSessionRef.current !== session
+      ) return;
+      Promise.resolve(
+        audioEngineRef.current?.prepareNextTrack?.(target, { owner: session }),
+      ).then(handle => {
+        const current = commercialPreparedTrackRef.current;
+        if (current?.owner !== session || current.url !== target.url) return;
+        if (handle) return;
+        // A commercial bed can briefly pass through AudioEngine's micro-fade
+        // before it becomes the active owner. Retry only while that handoff
+        // is unsafe; every attempt still refuses crossfade/outgoing decks.
+        if (++attempts < 30) {
+          setTimeout(tryPrepare, 100);
+        } else {
+          commercialPreparedTrackRef.current = null;
+        }
+      }).catch(() => {
+        const current = commercialPreparedTrackRef.current;
+        if (current?.owner === session && current.url === target.url) {
+          commercialPreparedTrackRef.current = null;
+        }
+      });
+    };
+    tryPrepare();
+  }, []);
+
+  const invalidateCommercialPreparation = useCallback((session = null) => {
+    const prepared = commercialPreparedTrackRef.current;
+    if (!prepared || (session && prepared.owner !== session)) return;
+    commercialPreparedTrackRef.current = null;
+    audioEngineRef.current?.invalidatePreparedTrack?.({ owner: prepared.owner });
+  }, []);
+
+  const reconcilePreparedIncoming = useCallback(async (nextTrack, incomingTarget) => {
+    if (!incomingTarget) {
+      return {
+        track: nextTrack,
+        changed: false,
+        intentionalEmpty: false,
+      };
+    }
+    const currentSlot = resolveAuthoritativeIncomingSlot({
+      dancerId: incomingTarget.dancerId,
+      slotIndex: incomingTarget.slotIndex,
+      rotationSongs: rotationSongsRef.current,
+      savedSongs: djSavedSongsRef.current,
+      savedManual: djSavedManualRef.current,
+      manualDancers: manualSetDancersRef.current,
+      manualSetLengths: manualSetLengthsRef.current,
+      isManualSet,
+      getManualSetLength: effectiveSongsPerSet,
+      filterAutomaticTracks,
+    });
+    let reconciliation = reconcileIncomingPreparedTrack({
+      preparedTrack: nextTrack,
+      preparedVersion: incomingTarget.assignmentVersion,
+      currentVersion: rotationAssignmentVersionRef.current,
+      currentSlot,
+    });
+    if (reconciliation.shouldInvalidate) {
+      invalidateCommercialPreparation();
+    }
+    const resolvedNameOnly = await resolveAuthoritativeNameOnlyTrack({
+      currentSlot,
+      currentVersion: rotationAssignmentVersionRef.current,
+      readCurrentSlot: () => ({
+        slot: resolveAuthoritativeIncomingSlot({
+          dancerId: incomingTarget.dancerId,
+          slotIndex: incomingTarget.slotIndex,
+          rotationSongs: rotationSongsRef.current,
+          savedSongs: djSavedSongsRef.current,
+          savedManual: djSavedManualRef.current,
+          manualDancers: manualSetDancersRef.current,
+          manualSetLengths: manualSetLengthsRef.current,
+          isManualSet,
+          getManualSetLength: effectiveSongsPerSet,
+          filterAutomaticTracks,
+        }),
+        version: rotationAssignmentVersionRef.current,
+      }),
+      resolveTrackByName,
+    });
+    if (resolvedNameOnly.currentSlot !== currentSlot) {
+      const latestReconciliation = reconcileIncomingPreparedTrack({
+        preparedTrack: nextTrack,
+        preparedVersion: incomingTarget.assignmentVersion,
+        currentVersion: rotationAssignmentVersionRef.current,
+        currentSlot: resolvedNameOnly.currentSlot,
+      });
+      if (latestReconciliation.shouldInvalidate) {
+        invalidateCommercialPreparation();
+      }
+      reconciliation = latestReconciliation;
+    }
+    if (resolvedNameOnly.track?.url) {
+      reconciliation = {
+        ...reconciliation,
+        track: resolvedNameOnly.track,
+        intentionalEmpty: resolvedNameOnly.intentionalEmpty,
+      };
+    }
+    return reconciliation;
+  }, [
+    effectiveSongsPerSet,
+    invalidateCommercialPreparation,
+    isManualSet,
+    resolveTrackByName,
+  ]);
+
+  const playCommercialIfDue = useCallback(async (
+    commercialDecision = null,
+    { nextTrack = null, incomingTarget = null } = {},
+  ) => {
     if (!commercialDecision?.due) return false;
+    // A prior ad may have ended without an immediate incoming handoff. Never
+    // let that target leak into a later commercial or manual play.
+    invalidateCommercialPreparation();
     commercialPlaybackRef.current = null;
 
     let ownedSession = null;
@@ -4184,7 +4341,10 @@ export default function DJBooth() {
           ownedSession = session;
           commercialSessionRef.current = session;
           playingCommercialRef.current = true;
-          commercialEndResolverRef.current = () => session.cancel();
+           commercialEndResolverRef.current = () => {
+             invalidateCommercialPreparation(session);
+             session.cancel();
+           };
           lastAudioActivityRef.current = Date.now();
           const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
           const markCommercialPlaybackStarted = () => {
@@ -4239,6 +4399,10 @@ export default function DJBooth() {
             );
             if (!trackOk) return false;
             markCommercialPlaybackStarted();
+            // The commercial owns the active deck now. Warm only the selected
+            // incoming entertainer track on the inactive deck; preparation
+            // never starts playback or touches the audible ad deck.
+            prepareCommercialIncoming(session, nextTrack, incomingTarget);
             await session.done;
           } finally {
             clearInterval(keepAlive);
@@ -4303,7 +4467,10 @@ export default function DJBooth() {
         ownedSession = session;
         commercialSessionRef.current = session;
         playingCommercialRef.current = true;
-        commercialEndResolverRef.current = () => session.cancel();
+        commercialEndResolverRef.current = () => {
+          invalidateCommercialPreparation(session);
+          session.cancel();
+        };
         lastAudioActivityRef.current = Date.now();
         const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
         const markCommercialPlaybackStarted = () => {
@@ -4340,7 +4507,12 @@ export default function DJBooth() {
             Promise.resolve(audioEngineRef.current.playAnnouncement(voiceoverUrl, {
               autoDuck: true,
               onStarted: captureVoice,
-              onPlaybackStarted: markCommercialPlaybackStarted,
+              onPlaybackStarted: () => {
+                markCommercialPlaybackStarted();
+                // Voice-only ads do not claim a music deck, but the outgoing
+                // deck remains audible and the inactive deck is still safe.
+                prepareCommercialIncoming(session, nextTrack, incomingTarget);
+              },
             }))
               .then(() => 'voice'),
             session.done.then(() => 'cancelled'),
@@ -4360,7 +4532,10 @@ export default function DJBooth() {
       ownedSession = session;
       commercialSessionRef.current = session;
       playingCommercialRef.current = true;
-      commercialEndResolverRef.current = () => session.cancel();
+       commercialEndResolverRef.current = () => {
+         invalidateCommercialPreparation(session);
+         session.cancel();
+       };
       lastAudioActivityRef.current = Date.now();
 
       const keepAlive = setInterval(() => { lastAudioActivityRef.current = Date.now(); }, 2000);
@@ -4424,6 +4599,7 @@ export default function DJBooth() {
           return false;
         }
         markCommercialPlaybackStarted();
+        prepareCommercialIncoming(session, nextTrack, incomingTarget);
 
         const delayElapsed = await raceDelay(9000);
 
@@ -4457,6 +4633,7 @@ export default function DJBooth() {
       return true;
     } catch (err) {
       if (ownedSession && commercialSessionRef.current === ownedSession) {
+        invalidateCommercialPreparation(ownedSession);
         ownedSession.cancel();
         commercialSessionRef.current = null;
         playingCommercialRef.current = false;
@@ -4465,7 +4642,7 @@ export default function DJBooth() {
       console.warn('⚠️ Commercial playback failed:', err.message);
       return false;
     }
-  }, []);
+  }, [invalidateCommercialPreparation, prepareCommercialIncoming]);
 
   const refreshPromoQueue = useCallback(async () => {
     try {
@@ -4535,8 +4712,10 @@ export default function DJBooth() {
       auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
       console.log('📺 HandleSkip: Skipping commercial');
       if (commercialSessionRef.current) {
+        invalidateCommercialPreparation(commercialSessionRef.current);
         commercialSessionRef.current.cancel();
       } else {
+        invalidateCommercialPreparation();
         commercialEndResolverRef.current?.();
       }
       return;
@@ -5344,14 +5523,32 @@ export default function DJBooth() {
           }
         }
 
+        let incomingAssignmentEmpty = false;
+        let incomingAssignmentManual = false;
+        const incomingTarget = featureArrival
+          ? null
+          : {
+            dancerId: newRotation[newIdx],
+            slotIndex: 0,
+            assignmentVersion: rotationAssignmentVersionRef.current,
+          };
         if (transitionPlan.commercialBeforeIncoming) {
-          const commercialPlayed = await playCommercialIfDue(commercialBoundary);
+          const commercialPlayed = await playCommercialIfDue(commercialBoundary, {
+            nextTrack: featureArrival ? null : nextTrack,
+            incomingTarget,
+          });
           if (commercialPlayed) {
             const adTiming = commercialPlaybackRef.current;
             _skipCommercialPlaybackMs = adTiming?.durationMs || 0;
             _skipHandoffStart = adTiming?.endedAt || Date.now();
             transitionStartTimeRef.current = Date.now();
             lastAudioActivityRef.current = Date.now();
+            if (!featureArrival) {
+              const reconciled = await reconcilePreparedIncoming(nextTrack, incomingTarget);
+              nextTrack = reconciled.track;
+              incomingAssignmentEmpty = reconciled.intentionalEmpty;
+              incomingAssignmentManual = reconciled.manual;
+            }
           }
         }
         if (featureArrival) {
@@ -5378,7 +5575,7 @@ export default function DJBooth() {
                 totalGapMs: trackPlayedAt - _skipTransStart,
                 commercialPlaybackMs: _skipCommercialPlaybackMs,
               });
-            } else {
+            } else if (!incomingAssignmentEmpty && !incomingAssignmentManual) {
               const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
               logDiag('track_play_fallback', {
                 dancer: nextDancer.name,
@@ -5387,7 +5584,7 @@ export default function DJBooth() {
                 success: fallbackOk,
               });
             }
-          } else {
+          } else if (!incomingAssignmentEmpty && !incomingAssignmentManual) {
             const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
             logDiag('track_play_fallback', {
               dancer: nextDancer.name,
@@ -5459,7 +5656,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, takePendingCommercialBoundary, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, getFeatureMeta]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, invalidateCommercialPreparation, reconcilePreparedIncoming, takePendingCommercialBoundary, playFromAutoplayQueue, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, getFeatureMeta]);
   handleSkipRef.current = handleSkip;
 
   // FEATURE SETUP controls (shown on the booth's main screen only while the pre-feature
@@ -5930,14 +6127,32 @@ export default function DJBooth() {
           announcementsEnabled,
           featureArrival,
         });
+        let _piIncomingAssignmentEmpty = false;
+        let _piIncomingAssignmentManual = false;
+        const _piIncomingTarget = featureArrival
+          ? null
+          : {
+            dancerId: _piDancerId,
+            slotIndex: 0,
+            assignmentVersion: rotationAssignmentVersionRef.current,
+          };
         if (transitionPlan.commercialBeforeIncoming) {
-          const commercialPlayed = await playCommercialIfDue(commercialBoundary);
+          const commercialPlayed = await playCommercialIfDue(commercialBoundary, {
+            nextTrack: featureArrival ? null : nextTrack,
+            incomingTarget: _piIncomingTarget,
+          });
           if (commercialPlayed) {
             const adTiming = commercialPlaybackRef.current;
             _piCommercialPlaybackMs = adTiming?.durationMs || 0;
             _piHandoffStart = adTiming?.endedAt || Date.now();
             transitionStartTimeRef.current = Date.now();
             lastAudioActivityRef.current = Date.now();
+            if (!featureArrival) {
+              const reconciled = await reconcilePreparedIncoming(nextTrack, _piIncomingTarget);
+              nextTrack = reconciled.track;
+              _piIncomingAssignmentEmpty = reconciled.intentionalEmpty;
+              _piIncomingAssignmentManual = reconciled.manual;
+            }
           }
         }
         if (featureArrival) {
@@ -5948,8 +6163,10 @@ export default function DJBooth() {
         lastAudioActivityRef.current = Date.now();
         if (nextTrack?.url) {
           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
-          if (!trackOk) await playFallbackTrack(true);
-        } else {
+          if (!trackOk && !_piIncomingAssignmentEmpty && !_piIncomingAssignmentManual) {
+            await playFallbackTrack(true);
+          }
+        } else if (!_piIncomingAssignmentEmpty && !_piIncomingAssignmentManual) {
           await playFallbackTrack(true);
         }
         lastAudioActivityRef.current = Date.now();
@@ -6713,6 +6930,15 @@ export default function DJBooth() {
           announcementsEnabled,
           featureArrival,
         });
+        let _teIncomingAssignmentEmpty = false;
+        let _teIncomingAssignmentManual = false;
+        const _teIncomingTarget = featureArrival
+          ? null
+          : {
+            dancerId: nextDancerId,
+            slotIndex: 0,
+            assignmentVersion: rotationAssignmentVersionRef.current,
+          };
         if (featureArrival) {
           // Feature arrival: let the outro finish first, then run the feature show
           // (it manages its own intro/bed and ducking). A due commercial sits
@@ -6723,7 +6949,10 @@ export default function DJBooth() {
             audioEngineRef.current?.unduck();
           }
           if (transitionPlan.commercialBeforeIncoming) {
-            const commercialPlayed = await playCommercialIfDue(commercialBoundary);
+            const commercialPlayed = await playCommercialIfDue(commercialBoundary, {
+              nextTrack: null,
+              incomingTarget: null,
+            });
             if (commercialPlayed) {
               const adTiming = commercialPlaybackRef.current;
               _teCommercialPlaybackMs = adTiming?.durationMs || 0;
@@ -6756,13 +6985,20 @@ export default function DJBooth() {
            }
          }
          if (transitionPlan.commercialBeforeIncoming) {
-           const commercialPlayed = await playCommercialIfDue(commercialBoundary);
+            const commercialPlayed = await playCommercialIfDue(commercialBoundary, {
+              nextTrack,
+              incomingTarget: _teIncomingTarget,
+            });
            if (commercialPlayed) {
              const adTiming = commercialPlaybackRef.current;
              _teCommercialPlaybackMs = adTiming?.durationMs || 0;
              _teHandoffStart = adTiming?.endedAt || Date.now();
              transitionStartTimeRef.current = Date.now();
              lastAudioActivityRef.current = Date.now();
+              const reconciled = await reconcilePreparedIncoming(nextTrack, _teIncomingTarget);
+              nextTrack = reconciled.track;
+              _teIncomingAssignmentEmpty = reconciled.intentionalEmpty;
+              _teIncomingAssignmentManual = reconciled.manual;
            }
          }
          if (nextTrack && nextTrack.url) {
@@ -6790,7 +7026,7 @@ export default function DJBooth() {
                 totalGapMs: trackPlayedAt - _teTransStart,
                 commercialPlaybackMs: _teCommercialPlaybackMs,
               });
-            } else {
+          } else if (!_teIncomingAssignmentEmpty && !_teIncomingAssignmentManual) {
               const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
               logDiag('track_play_fallback', {
                 dancer: nextDancer.name,
@@ -6799,7 +7035,7 @@ export default function DJBooth() {
                 success: fallbackOk,
               });
             }
-         } else {
+         } else if (!_teIncomingAssignmentEmpty && !_teIncomingAssignmentManual) {
             const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
             logDiag('track_play_fallback', {
               dancer: nextDancer.name,
@@ -6869,7 +7105,7 @@ export default function DJBooth() {
     } finally {
       transitionInProgressRef.current = false;
     }
-  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, consumeCommercialBoundary, takePendingCommercialBoundary, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, beginRotation, getFeatureMeta]);
+  }, [playTrack, playFallbackTrack, playAnnouncement, prefetchAnnouncement, playPrefetchedAnnouncement, playCommercialIfDue, reconcilePreparedIncoming, consumeCommercialBoundary, takePendingCommercialBoundary, updateStageState, tracks, filterCooldown, announcementsEnabled, getDancerTracks, beginRotation, getFeatureMeta]);
 
   const handleAnnouncementPlay = useCallback(async (audioUrl, options) => {
     if (audioEngineRef.current) {

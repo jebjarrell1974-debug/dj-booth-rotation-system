@@ -11,11 +11,13 @@ import {
   ANALYSIS_BODY_TIMEOUT_MS,
   ANALYSIS_DECODE_TIMEOUT_MS,
   ANALYSIS_RENDER_TIMEOUT_MS,
+  MEDIA_READY_TIMEOUT_MS,
   createBackgroundAnalysisQueue,
   normalizeAudioCacheKey,
   withAnalysisDeadline,
   waitForMediaReady,
 } from '@/utils/audioStartup';
+import { createPreparedDeckController } from '@/utils/preparedDeck';
 
 const MAX_SONG_DURATION = 190;
 const MAX_FEATURE_DURATION = 3600;
@@ -113,6 +115,7 @@ const AudioEngine = forwardRef(({
   const deckBUrl = useRef(null);
   const deckGenerationRef = useRef({ A: 0, B: 0 });
   const ownedDeckFadeControllerRef = useRef(null);
+  const preparedDeckControllerRef = useRef(null);
 
   const maxDurationOverrideRef = useRef(null);
 
@@ -126,6 +129,49 @@ const AudioEngine = forwardRef(({
         && !!(handle.deck === 'A' ? deckARef.current : deckBRef.current)?.src
       ),
       audioTime: () => audioCtxRef.current?.currentTime || 0,
+    });
+  }
+
+  if (!preparedDeckControllerRef.current) {
+    preparedDeckControllerRef.current = createPreparedDeckController({
+      getTarget: () => {
+        const deckName = activeDeck.current === 'A' ? 'B' : 'A';
+        const deck = deckName === 'A' ? deckARef.current : deckBRef.current;
+        const active = activeDeck.current === 'A' ? deckARef.current : deckBRef.current;
+        return {
+          deck,
+          deckName,
+          generation: deckGenerationRef.current[deckName] || 0,
+          // A preparation is deliberately refused during a fade or before an
+          // audible owner exists. This keeps an outgoing/crossfading deck out
+          // of the preparation path.
+          unsafe: crossfadeInProgressRef.current || !active?.src || !deck?.paused,
+        };
+      },
+      claimTarget: () => {
+        const deckName = activeDeck.current === 'A' ? 'B' : 'A';
+        const deck = deckName === 'A' ? deckARef.current : deckBRef.current;
+        const active = activeDeck.current === 'A' ? deckARef.current : deckBRef.current;
+        const generation = (deckGenerationRef.current[deckName] || 0) + 1;
+        deckGenerationRef.current[deckName] = generation;
+        return {
+          deck,
+          deckName,
+          generation,
+          unsafe: crossfadeInProgressRef.current || !active?.src || !deck?.paused,
+        };
+      },
+      waitForReady: (deck, { isCurrent }) => waitForMediaReady(deck, {
+        timeoutMs: MEDIA_READY_TIMEOUT_MS,
+        isCurrent,
+      }),
+      onInvalidate: candidate => {
+        const urlRef = candidate.deck === deckARef.current ? deckAUrl : deckBUrl;
+        if (urlRef.current === candidate.url && candidate.url.startsWith('blob:')) {
+          URL.revokeObjectURL(candidate.url);
+          urlRef.current = null;
+        }
+      },
     });
   }
 
@@ -277,6 +323,7 @@ const AudioEngine = forwardRef(({
     return () => {
       clearInterval(dualDeckMonitor);
       ownedDeckFadeControllerRef.current?.cancel('unmount');
+      preparedDeckControllerRef.current?.dispose();
       if (analysisGainRampRef.current?.frameId != null) {
         cancelAnimationFrame(analysisGainRampRef.current.frameId);
       }
@@ -308,6 +355,21 @@ const AudioEngine = forwardRef(({
   const getInactiveDeckGain = () => activeDeck.current === 'A' ? deckBGainRef.current : deckAGainRef.current;
   const getInactiveSourceRef = () => activeDeck.current === 'A' ? deckBSourceRef : deckASourceRef;
   const getInactiveSourceElRef = () => activeDeck.current === 'A' ? deckBSourceElRef : deckASourceElRef;
+
+  const prepareNextTrack = useCallback((fileHandle, { owner = null } = {}) => {
+    if (
+      crossfadeInProgressRef.current
+      || !getActiveDeck()?.src
+      || !preparedDeckControllerRef.current
+    ) {
+      return Promise.resolve(null);
+    }
+    return preparedDeckControllerRef.current.prepare(fileHandle, { owner });
+  }, []);
+
+  const invalidatePreparedTrack = useCallback((criteria = {}) => (
+    preparedDeckControllerRef.current?.invalidate(criteria) || false
+  ), []);
 
   const equalPowerIn = (progress) => Math.sin(progress * Math.PI * 0.5);
   const equalPowerOut = (progress) => Math.cos(progress * Math.PI * 0.5);
@@ -769,7 +831,11 @@ const AudioEngine = forwardRef(({
   const playTrack = useCallback(async (
     fileHandle,
     crossfade = true,
-    { triggerAtMediaEnd = false, onTrackReady = null } = {},
+    {
+      triggerAtMediaEnd = false,
+      onTrackReady = null,
+      preparedOwner = null,
+    } = {},
   ) => {
     if (playTrackLockRef.current) {
       console.log('🚫 PlayTrack: BLOCKED — another track is already loading, skipping this call');
@@ -834,7 +900,20 @@ const AudioEngine = forwardRef(({
     const activeGain = getActiveDeckGain();
     const inactiveSourceRef = getInactiveSourceRef();
     const inactiveDeckName = inactiveDeck === deckARef.current ? 'A' : 'B';
-    const deckGeneration = (deckGenerationRef.current[inactiveDeckName] || 0) + 1;
+    const preparedHandle = preparedDeckControllerRef.current?.adopt({
+      url: trackData.url,
+      owner: preparedOwner,
+    });
+    if (!preparedHandle) {
+      // A changed/failed/cancelled target must not survive into a later
+      // playback request. Invalidation is identity guarded by the helper.
+      preparedDeckControllerRef.current?.invalidate({
+        deck: inactiveDeck,
+        deckName: inactiveDeckName,
+      });
+    }
+    const deckGeneration = preparedHandle?.generation
+      || ((deckGenerationRef.current[inactiveDeckName] || 0) + 1);
     deckGenerationRef.current[inactiveDeckName] = deckGeneration;
     const trackHandle = { deck: inactiveDeckName, generation: deckGeneration };
 
@@ -844,22 +923,28 @@ const AudioEngine = forwardRef(({
     activeDeckEl.ontimeupdate = null;
 
     const inactiveUrlRef = inactiveDeck === deckARef.current ? deckAUrl : deckBUrl;
-    if (inactiveUrlRef.current && inactiveUrlRef.current.startsWith('blob:')) {
-      URL.revokeObjectURL(inactiveUrlRef.current);
-    }
-    inactiveUrlRef.current = trackData.url;
+    if (!preparedHandle) {
+      if (inactiveUrlRef.current && inactiveUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(inactiveUrlRef.current);
+      }
+      inactiveUrlRef.current = trackData.url;
 
-    inactiveDeck.currentTime = 0;
-    inactiveDeck.src = '';
-    inactiveDeck.src = trackData.url;
+      inactiveDeck.currentTime = 0;
+      inactiveDeck.src = '';
+      inactiveDeck.src = trackData.url;
 
-    try {
-      await inactiveDeck.load();
-    } catch (loadErr) {
-      console.error('❌ PlayTrack: Audio load failed:', loadErr.message);
-      releaseLock();
-      playTrackLockRef.current = null;
-      return false;
+      try {
+        await inactiveDeck.load();
+      } catch (loadErr) {
+        console.error('❌ PlayTrack: Audio load failed:', loadErr.message);
+        releaseLock();
+        playTrackLockRef.current = null;
+        return false;
+      }
+    } else {
+      // The preparation already assigned and loaded this exact URL. Do not
+      // reset src/currentTime or call load a second time.
+      inactiveUrlRef.current = trackData.url;
     }
 
     const inactiveSourceElRef = getInactiveSourceElRef();
@@ -1374,6 +1459,7 @@ const AudioEngine = forwardRef(({
 
   const pause = useCallback(() => {
     cancelOwnedDeckFade('pause');
+    preparedDeckControllerRef.current?.invalidate();
     getActiveDeck().pause();
     isPlayingRef.current = false;
     setIsPlaying(false);
@@ -1381,6 +1467,7 @@ const AudioEngine = forwardRef(({
 
   const pauseAll = useCallback(() => {
     cancelOwnedDeckFade('pause-all');
+    preparedDeckControllerRef.current?.invalidate();
     if (fadeAnimationRef.current) {
       cancelAnimationFrame(fadeAnimationRef.current);
       fadeAnimationRef.current = null;
@@ -1488,6 +1575,8 @@ const AudioEngine = forwardRef(({
 
   useImperativeHandle(ref, () => ({
     playTrack,
+    prepareNextTrack,
+    invalidatePreparedTrack,
     captureDeck,
     fadeOwnedDeck,
     stopOwnedDeck,
