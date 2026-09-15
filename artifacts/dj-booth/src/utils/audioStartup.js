@@ -198,6 +198,63 @@ export function withAnalysisDeadline(work, {
 }
 
 export const MEDIA_READY_TIMEOUT_MS = 5000;
+export const TRACK_START_TIMEOUT_MS = 5000;
+
+const createStartupTimeoutError = label => {
+  const error = new Error(`${label} timed out`);
+  error.name = 'TimeoutError';
+  return error;
+};
+
+const createStartupAbortError = () => {
+  const error = new Error('Audio startup was cancelled');
+  error.name = 'AbortError';
+  return error;
+};
+
+/**
+ * Bound startup work which has no native media event to settle it, such as a
+ * FileSystemFileHandle.getFile() call.  The underlying operation may finish
+ * later, but its result is ignored after this promise settles.
+ */
+export function withStartupDeadline(work, {
+  signal = null,
+  timeoutMs = TRACK_START_TIMEOUT_MS,
+  label = 'Audio startup',
+} = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+
+    const cleanup = () => {
+      signal?.removeEventListener?.('abort', onAbort);
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    };
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const onAbort = () => finish(createStartupAbortError());
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+    timer = setTimeout(
+      () => finish(createStartupTimeoutError(label)),
+      Math.max(0, timeoutMs),
+    );
+
+    Promise.resolve()
+      .then(() => (settled ? undefined : work()))
+      .then(value => finish(null, value), error => finish(error));
+  });
+}
 
 const createReadinessAbortError = (message = 'Media readiness was aborted') => {
   const error = new Error(message);
@@ -228,10 +285,9 @@ export function waitForMediaReady(media, {
     let timeout = null;
 
     const removeListeners = () => {
-      if (!media?.removeEventListener) return;
-      media.removeEventListener('canplay', onCanPlay);
-      media.removeEventListener('error', onError);
-      media.removeEventListener('abort', onMediaAbort);
+      media?.removeEventListener?.('canplay', onCanPlay);
+      media?.removeEventListener?.('error', onError);
+      media?.removeEventListener?.('abort', onMediaAbort);
       signal?.removeEventListener?.('abort', onSignalAbort);
       if (timeout !== null) clearTimeout(timeout);
       timeout = null;
@@ -288,5 +344,87 @@ export function waitForMediaReady(media, {
       }
       finish(new Error(`Media readiness timed out after ${timeoutMs}ms`));
     }, Math.max(0, timeoutMs));
+  });
+}
+
+/**
+ * Start a media element without allowing a browser stall to retain the
+ * caller's playback lock indefinitely.  A fulfilled play() promise is the
+ * browser's indication that playback has started; the playing event covers
+ * implementations which resolve play() only after an additional readiness
+ * turn.  Either path is bounded and all listeners are removed on settlement.
+ */
+export function playMediaWithDeadline(media, {
+  timeoutMs = MEDIA_READY_TIMEOUT_MS,
+  signal = null,
+} = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout = null;
+
+    const removeListeners = () => {
+      media?.removeEventListener?.('playing', onPlaying);
+      media?.removeEventListener?.('error', onError);
+      media?.removeEventListener?.('abort', onMediaAbort);
+      media?.removeEventListener?.('emptied', onMediaAbort);
+      signal?.removeEventListener?.('abort', onSignalAbort);
+      if (timeout !== null) clearTimeout(timeout);
+      timeout = null;
+    };
+
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      removeListeners();
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const onPlaying = () => finish();
+    const onError = event => finish(new Error(
+      event?.target?.error?.message
+      || event?.message
+      || 'Media playback failed while starting',
+    ));
+    const onMediaAbort = () => {
+      const error = new Error('Media playback was aborted while starting');
+      error.name = 'AbortError';
+      finish(error);
+    };
+    const onSignalAbort = () => {
+      const error = new Error('Media playback was cancelled');
+      error.name = 'AbortError';
+      finish(error);
+    };
+
+    if (!media || typeof media.play !== 'function') {
+      finish(new Error('Media element is unavailable'));
+      return;
+    }
+    if (signal?.aborted) {
+      onSignalAbort();
+      return;
+    }
+
+    media.addEventListener?.('playing', onPlaying);
+    media.addEventListener?.('error', onError);
+    media.addEventListener?.('abort', onMediaAbort);
+    media.addEventListener?.('emptied', onMediaAbort);
+    signal?.addEventListener?.('abort', onSignalAbort, { once: true });
+    timeout = setTimeout(() => {
+      finish(new Error(`Media playback timed out after ${timeoutMs}ms`));
+    }, Math.max(0, timeoutMs));
+
+    let playResult;
+    try {
+      playResult = media.play();
+    } catch (error) {
+      finish(error);
+      return;
+    }
+    Promise.resolve(playResult).then(
+      () => finish(),
+      error => finish(error),
+    );
   });
 }

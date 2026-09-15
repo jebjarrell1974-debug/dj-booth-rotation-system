@@ -118,6 +118,16 @@ import {
   duckHoldKey, shouldIgnoreDuckAcquire, rememberReleasedDuckHold, noteDuckSession,
   isKnownDuckSession, leaseForDuckAcquire, loadReleasedDuckHolds, saveReleasedDuckHolds,
 } from '@/utils/duckHoldGuard';
+import {
+  claimPlaybackOwnership,
+  createPlaybackOwnership,
+  excludeFailedPlaybackTrack,
+  normalizePlaybackTrackName,
+  ownsPlaybackOperation,
+  shouldHoldSkipTransition,
+  transitionRecoveryAction,
+  watchdogRecoveryOutcome,
+} from '@/utils/playbackOwnership';
 
 // localStorage is not always reachable (private mode, storage disabled). Ducking must not
 // depend on it: without storage the guard simply starts empty after a reload.
@@ -584,6 +594,10 @@ export default function DJBooth() {
   const lastAudioActivityRef = useRef(Date.now());
   const playbackExpectedRef = useRef(false);
   const watchdogRecoveringRef = useRef(false);
+  // Watchdog recovery is deliberately preemptible. A user skip claims a newer
+  // generation so a recovery that is waiting on a fetch/play cannot apply stale
+  // assignment or playback state when it resumes.
+  const playbackOwnershipRef = useRef(createPlaybackOwnership());
   const ctxSuspendCountRef = useRef(0);
   const watchdogFailCountRef = useRef(0);
   const diagLogRef = useRef([]);
@@ -2770,7 +2784,21 @@ export default function DJBooth() {
     }
   }, []);
 
-  const playFallbackTrack = useCallback(async (crossfade = false, rotationSongNumber = null) => {
+  const playFallbackTrack = useCallback(async (
+    crossfade = false,
+    rotationSongNumber = null,
+    { isOperationCurrent = null, excludeNames = [] } = {},
+  ) => {
+    const isCurrent = () => (
+      typeof isOperationCurrent !== 'function' || isOperationCurrent()
+    );
+    const excludedNames = new Set((excludeNames || []).filter(Boolean).map(
+      normalizePlaybackTrackName,
+    ));
+    const isExcluded = track => excludedNames.has(
+      normalizePlaybackTrackName(track?.name),
+    );
+    if (!isCurrent()) return false;
     if (!songHistoryReadyRef.current) {
       console.warn('⚠️ PlayFallback: automatic history is not loaded; refusing an offline repeat');
       return false;
@@ -2814,13 +2842,17 @@ export default function DJBooth() {
     if (document.visibilityState !== 'visible') {
       console.log('⏸️ PlayFallback: Page hidden at start — waiting for visibility');
       await waitForVisible();
+      if (!isCurrent()) return false;
     }
 
     try {
       const token = localStorage.getItem('djbooth_token');
       const opts = djOptionsRef.current;
       const genresParam = opts?.activeGenres?.length > 0 ? `&genres=${encodeURIComponent(opts.activeGenres.join(','))}` : '';
-      const currentNames = currentTrackRef.current ? [currentTrackRef.current] : [];
+      const currentNames = [...new Set([
+        currentTrackRef.current,
+        ...(excludeNames || []),
+      ].filter(Boolean))];
       const excludeParam = currentNames.length > 0
         ? `&exclude=${encodeURIComponent(currentNames.join(','))}`
         : '';
@@ -2828,20 +2860,25 @@ export default function DJBooth() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(5000)
       });
+      if (!isCurrent()) return false;
       if (res.ok) {
         const data = await res.json();
+        if (!isCurrent()) return false;
          const serverTracks = filterUnplayedAutomaticTracks(
            data.tracks || [],
            getRecentSongHistory(songCooldownRef.current),
          )
+          .filter(track => !isExcluded(track))
           .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
         for (let i = 0; i < serverTracks.length; i++) {
           if (hitSuspension) await waitForVisible();
+          if (!isCurrent()) return false;
           const track = serverTracks[i];
           console.log(`🎵 PlayFallback: Server attempt ${i + 1}/${serverTracks.length} with "${track.name}"`);
           try {
+            if (!isCurrent()) return false;
             const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, crossfade);
-            if (success === true) {
+            if (isCurrent() && success === true) {
               recordSongPlayed(track.name);
               setIsPlaying(true);
               updateRotationUI(track);
@@ -2857,7 +2894,9 @@ export default function DJBooth() {
       console.warn('⚠️ PlayFallback: Server random fetch failed, using local pool:', err.message);
     }
 
-    const validTracks = filterAutomaticTracks(filterByActiveGenres(tracks.filter(t => t && t.url)));
+    const validTracks = filterAutomaticTracks(filterByActiveGenres(
+      tracks.filter(t => t && t.url && !isExcluded(t)),
+    ));
     if (validTracks.length === 0) {
       console.error('❌ PlayFallback: No tracks available');
       return false;
@@ -2874,11 +2913,13 @@ export default function DJBooth() {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (hitSuspension) await waitForVisible();
+      if (!isCurrent()) return false;
       const randomTrack = shuffled[attempt];
       console.log(`🎵 PlayFallback: Local attempt ${attempt + 1}/${maxAttempts} with "${randomTrack.name}"`);
       try {
+        if (!isCurrent()) return false;
         const success = await audioEngineRef.current?.playTrack({ url: randomTrack.url, name: randomTrack.name }, crossfade);
-        if (success === true) {
+        if (isCurrent() && success === true) {
           recordSongPlayed(randomTrack.name);
           setIsPlaying(true);
           updateRotationUI(randomTrack);
@@ -2896,7 +2937,11 @@ export default function DJBooth() {
 
   const AUTOPLAY_QUEUE_SIZE = 10;
 
-  const fillAutoplayQueue = useCallback(async (currentQueue = []) => {
+  const fillAutoplayQueue = useCallback(async (currentQueue = [], { isOperationCurrent = null } = {}) => {
+    const isCurrent = () => (
+      typeof isOperationCurrent !== 'function' || isOperationCurrent()
+    );
+    if (!isCurrent()) return autoplayQueueRef.current;
     // DJ-curated mode: when auto-fill is disabled, do not append random tracks.
     // The queue plays exactly what the DJ put there, in order. When it empties,
     // playFromAutoplayQueue's existing fallback chain takes over (one-shot
@@ -2920,8 +2965,10 @@ export default function DJBooth() {
         signal: AbortSignal.timeout(5000)
       });
       if (fillVersion !== autoplayFillVersionRef.current) return autoplayQueueRef.current;
+      if (!isCurrent()) return autoplayQueueRef.current;
       if (res.ok) {
         const data = await res.json();
+        if (!isCurrent()) return autoplayQueueRef.current;
         const latestQueue = autoplayQueueRef.current;
         const latestNames = new Set(latestQueue.map(t => t.name));
          const newTracks = filterUnplayedAutomaticTracks(
@@ -2954,14 +3001,26 @@ export default function DJBooth() {
   }, []);
   updateAutoplayQueueRef.current = updateAutoplayQueue;
 
-  const playFromAutoplayQueue = useCallback(async (crossfade = true, { idleOnly = false } = {}) => {
+  const playFromAutoplayQueue = useCallback(async (
+    crossfade = true,
+    { idleOnly = false, excludeNames = [], isOperationCurrent = null } = {},
+  ) => {
+    const isCurrent = () => (
+      typeof isOperationCurrent !== 'function' || isOperationCurrent()
+    );
+    const excluded = new Set((excludeNames || []).filter(Boolean).map(name => (
+      String(name).toLowerCase().replace(/\.[^.]+$/, '').trim()
+    )));
+    const isExcluded = track => excluded.has(
+      String(track?.name || '').toLowerCase().replace(/\.[^.]+$/, '').trim(),
+    );
     const waitForQueueFill = async () => {
       let waitedMs = 0;
       while (autoplayFillInFlightRef.current && waitedMs < 5500) {
         await new Promise(resolve => setTimeout(resolve, 100));
         waitedMs += 100;
       }
-      return !autoplayFillInFlightRef.current;
+      return !autoplayFillInFlightRef.current && isCurrent();
     };
     const getStartMode = () => getIdleAutoplayStartMode({
       hasQueue: autoplayQueueRef.current.length > 0,
@@ -2971,7 +3030,12 @@ export default function DJBooth() {
       paused: playbackExpectedRef.current && !isPlayingRef.current,
     });
     const playFallback = async () => {
-      const success = await playFallbackTrack(crossfade);
+      if (!isCurrent()) return false;
+      const success = await playFallbackTrack(crossfade, null, {
+        isOperationCurrent,
+        excludeNames,
+      });
+      if (!isCurrent()) return false;
       if (success === true) {
         playbackExpectedRef.current = true;
         isPlayingRef.current = true;
@@ -2980,7 +3044,7 @@ export default function DJBooth() {
     };
     const canStart = () => !idleOnly
       || getStartMode() !== IDLE_AUTOPLAY_START_MODES.BLOCKED;
-    if (!canStart()) return false;
+    if (!canStart() || !isCurrent()) return false;
     if (autoplayPlayingRef.current) return false;
     autoplayPlayingRef.current = true;
     try {
@@ -2988,23 +3052,30 @@ export default function DJBooth() {
       if (queue.length === 0) {
         if (idleOnly && (!autoplayAutoFillEnabledRef.current || !songHistoryReadyRef.current)) return false;
         if (!(await waitForQueueFill())) return false;
-        await fillAutoplayQueue([]);
-        if (!canStart()) return false;
+        await fillAutoplayQueue([], { isOperationCurrent });
+        if (!canStart() || !isCurrent()) return false;
         queue = autoplayQueueRef.current;
         if (queue.length === 0) {
           if (idleOnly && getStartMode() !== IDLE_AUTOPLAY_START_MODES.AUTOFILL) return false;
           return playFallback();
         }
       }
-      const safeQueue = queue.filter(track => !(track?.autoFilled && isAutomaticSelectionExcluded(track)));
+      const availableQueue = queue.filter(track => (
+        !(track?.autoFilled && isAutomaticSelectionExcluded(track))
+      ));
+      // A failed recovery track is never replayed. Emptying the queue lets the
+      // normal refill/failure path decide what to do without retrying it.
+      const nonFailedQueue = availableQueue.filter(track => !isExcluded(track));
+      const safeQueue = nonFailedQueue;
       if (safeQueue.length !== queue.length) {
         queue = safeQueue;
+        if (!isCurrent()) return false;
         updateAutoplayQueue(queue);
         if (queue.length === 0) {
           if (idleOnly && (!autoplayAutoFillEnabledRef.current || !songHistoryReadyRef.current)) return false;
           if (!(await waitForQueueFill())) return false;
-          await fillAutoplayQueue([]);
-          if (!canStart()) return false;
+          await fillAutoplayQueue([], { isOperationCurrent });
+          if (!canStart() || !isCurrent()) return false;
           queue = autoplayQueueRef.current;
           if (queue.length === 0) {
             if (idleOnly && getStartMode() !== IDLE_AUTOPLAY_START_MODES.AUTOFILL) return false;
@@ -3012,13 +3083,19 @@ export default function DJBooth() {
           }
         }
       }
-      if (!canStart()) return false;
+      if (!canStart() || !isCurrent()) return false;
       const track = queue[0];
       const remaining = queue.slice(1);
+      if (!isCurrent()) return false;
       updateAutoplayQueue(remaining);
-      fillAutoplayQueue(remaining);
+      if (isCurrent()) fillAutoplayQueue(remaining, { isOperationCurrent });
       console.log(`🎵 AutoplayQueue: Playing "${track.name}", ${remaining.length} remaining`);
+      if (!isCurrent()) return false;
       const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, crossfade);
+      if (!isCurrent()) {
+        console.log('🧭 AutoplayQueue: stale operation result ignored');
+        return false;
+      }
       if (success !== true) {
         console.warn('⚠️ AutoplayQueue: Track failed, trying fallback');
         if (
@@ -3031,6 +3108,8 @@ export default function DJBooth() {
         return playFallback();
       }
       recordSongPlayed(track.name);
+      currentTrackRef.current = track.name;
+      setCurrentTrack(track.name);
       playbackExpectedRef.current = true;
       isPlayingRef.current = true;
       setIsPlaying(true);
@@ -3133,11 +3212,12 @@ export default function DJBooth() {
       }
       if (!allowFallback) return false;
       console.warn('⚠️ PlayTrack: Engine returned failure, trying fallback');
-      const fallbackOk = await playFallbackTrack(crossfade, rotationSongNumber);
+      const fallbackOk = await playFallbackTrack(crossfade, rotationSongNumber, {
+        excludeNames: name ? [name] : [],
+      });
       if (fallbackOk) playbackExpectedRef.current = true;
       if (!fallbackOk) {
-        console.error('🚨 PlayTrack: All recovery failed — resuming whatever is on active deck');
-        audioEngineRef.current?.resume();
+        console.error('🚨 PlayTrack: Requested track and fallback both failed');
       }
       return fallbackOk;
     }
@@ -4047,7 +4127,11 @@ export default function DJBooth() {
       audioEngineRef.current?.unduck();
       const ok = await playFallbackTrack(false);
       if (!ok) {
-        try { audioEngineRef.current?.resume(); } catch(e) {}
+        logDiag('transition_recovery_failed', {
+          trigger: 'begin_rotation',
+          action: transitionRecoveryAction(ok),
+          error: err?.message || String(err),
+        });
         throw err;
       }
     } finally {
@@ -4704,10 +4788,49 @@ export default function DJBooth() {
     const bypassLockout = opts && typeof opts === 'object' && opts.bypassLockout === true;
     const now = Date.now();
     if (now - lastSkipTimeRef.current < 2000) return;
+    const beginExplicitSkip = async (operation, holdTransition = false) => {
+      const token = claimPlaybackOwnership(playbackOwnershipRef.current, operation);
+      const supersededWatchdog = watchdogRecoveringRef.current;
+      if (supersededWatchdog) {
+        // The explicit command owns the transition now. The old recovery keeps
+        // running only until its next ownership check, where it must stop.
+        watchdogRecoveringRef.current = false;
+        transitionInProgressRef.current = false;
+      }
+      if (holdTransition) {
+        transitionInProgressRef.current = true;
+        transitionStartTimeRef.current = Date.now();
+      }
+      try {
+        await audioEngineRef.current?.cancelPendingTrackStart?.(`explicit_${operation}`);
+      } catch (error) {
+        console.warn('⚠️ HandleSkip: pending track cancellation failed:', error?.message || error);
+      }
+      if (!ownsPlaybackOperation(playbackOwnershipRef.current, token)) {
+        logDiag('skip_superseded_before_playback', {
+          operation,
+          generation: token.generation,
+        });
+        return null;
+      }
+      if (supersededWatchdog) {
+        logDiag('watchdog_superseded', {
+          operation,
+          generation: token.generation,
+        });
+        console.log('🧭 HandleSkip: Explicit skip superseded watchdog recovery');
+      }
+      return token;
+    };
     // Commercial playback has its own dedicated skip path. It is not a
     // rotation track, so the announcement/final-seconds guard below must not
     // swallow a commercial skip.
     if (playingCommercialRef.current) {
+      const skipOperation = await beginExplicitSkip(
+        skipBreaks ? 'explicit-skip-entertainer' : 'explicit-skip-song',
+        false,
+      );
+      if (!skipOperation) return;
       lastSkipTimeRef.current = now;
       auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
       console.log('📺 HandleSkip: Skipping commercial');
@@ -4718,10 +4841,6 @@ export default function DJBooth() {
         invalidateCommercialPreparation();
         commercialEndResolverRef.current?.();
       }
-      return;
-    }
-    if (watchdogRecoveringRef.current) {
-      console.log('⏳ HandleSkip: Watchdog recovery in progress, skipping');
       return;
     }
     // Skip lockout: an announcement fires at track end — a skip landing in the final
@@ -4738,7 +4857,7 @@ export default function DJBooth() {
         return;
       }
     }
-    if (transitionInProgressRef.current) {
+    if (transitionInProgressRef.current && !watchdogRecoveringRef.current) {
       const elapsed = Date.now() - transitionStartTimeRef.current;
       if (elapsed < 30000) return;
       console.warn('⚠️ HandleSkip: Transition lock stuck for', Math.round(elapsed/1000), 's — forcing clear');
@@ -4748,27 +4867,48 @@ export default function DJBooth() {
     // Only accepted rotation skips consume the debounce and write the audit
     // event. Rejected final-seconds/transition requests above must not mutate
     // playback state or poison the next legitimate song skip.
+    const skipOperation = await beginExplicitSkip(
+      skipBreaks ? 'explicit-skip-entertainer' : 'explicit-skip-song',
+      shouldHoldSkipTransition({
+        rotationActive: isRotationActiveRef.current,
+        rotationCount: rotationRef.current.length,
+      }),
+    );
+    if (!skipOperation) return;
     lastSkipTimeRef.current = now;
     auditEvent(skipBreaks ? 'skip_entertainer' : 'skip_song');
     
     if (!isRotationActiveRef.current || rotationRef.current.length === 0) {
-      if (rotationPendingRef.current) {
-        console.log('⏭️ HandleSkip: Rotation pending — starting rotation now');
-        await beginRotation();
-        return;
-      }
-      lastAudioActivityRef.current = Date.now();
       try {
-        console.log('⏭️ HandleSkip (no rotation): Playing from shared autoplay starter');
-        const ok = await playFromAutoplayQueue(true, { idleOnly: true });
-        if (!ok && isPlayingRef.current) {
-          console.error('🚨 HandleSkip (no rotation): Idle starter declined/failed — resuming active deck');
-          audioEngineRef.current?.resume();
+        if (rotationPendingRef.current) {
+          console.log('⏭️ HandleSkip: Rotation pending — starting rotation now');
+          await beginRotation();
+          return;
+        }
+        lastAudioActivityRef.current = Date.now();
+        try {
+          console.log('⏭️ HandleSkip (no rotation): Playing from shared autoplay starter');
+          const ok = await playFromAutoplayQueue(true, { idleOnly: true });
+          if (!ok) {
+            console.error('🚨 HandleSkip (no rotation): Idle starter declined/failed — leaving deck untouched');
+            logDiag('transition_recovery_failed', {
+              trigger: 'skip_idle',
+              action: transitionRecoveryAction(ok),
+            });
+          }
+        } catch (err) {
+          console.error('🚨 HandleSkip (no rotation): Unexpected error:', err);
+          logDiag('transition_recovery_failed', {
+            trigger: 'skip_idle',
+            action: transitionRecoveryAction(false),
+            error: err?.message || String(err),
+          });
         }
       } catch (err) {
-        console.error('🚨 HandleSkip (no rotation): Unexpected error:', err);
-        if (isPlayingRef.current) {
-          try { audioEngineRef.current?.resume(); } catch(e) {}
+        console.error('🚨 HandleSkip: Pending rotation start failed:', err);
+      } finally {
+        if (ownsPlaybackOperation(playbackOwnershipRef.current, skipOperation)) {
+          transitionInProgressRef.current = false;
         }
       }
       return;
@@ -5030,7 +5170,11 @@ export default function DJBooth() {
           // queues may intentionally fill an empty slot with a fallback.
           console.warn('⚠️ HandleSkip: Track URL unresolvable for index', skipAdvance.trackIndex, '— playing fallback without changing assignment');
           if (effectiveManualAssignment) {
-            audioEngineRef.current?.resume();
+            logDiag('transition_recovery_failed', {
+              trigger: 'skip_manual_assignment',
+              action: transitionRecoveryAction(false),
+              track: nextTrackName || null,
+            });
             transitionInProgressRef.current = false;
             return;
           }
@@ -5650,8 +5794,12 @@ export default function DJBooth() {
       audioEngineRef.current?.unduck();
       const ok = await playFallbackTrack(true);
       if (!ok) {
-        console.error('🚨 HandleSkip: All recovery failed — resuming active deck');
-        audioEngineRef.current?.resume();
+        console.error('🚨 HandleSkip: All recovery failed — leaving deck untouched');
+        logDiag('transition_recovery_failed', {
+          trigger: 'skip_transition',
+          action: transitionRecoveryAction(ok),
+          error: error?.message || String(error),
+        });
       }
     } finally {
       transitionInProgressRef.current = false;
@@ -5764,7 +5912,11 @@ export default function DJBooth() {
       lastAudioActivityRef.current = Date.now();
     } catch (err) {
       console.error('🚨 Start feature now failed:', err);
-      try { audioEngineRef.current?.resume(); } catch {}
+      logDiag('transition_recovery_failed', {
+        trigger: 'feature_start',
+        action: transitionRecoveryAction(false),
+        error: err?.message || String(err),
+      });
     } finally {
       transitionInProgressRef.current = false;
     }
@@ -5958,15 +6110,20 @@ export default function DJBooth() {
       try {
         console.log('🎵 HandleTrackEnd (no rotation): Playing from shared autoplay starter');
         const ok = await playFromAutoplayQueue(true, { idleOnly: true });
-        if (!ok && isPlayingRef.current) {
-          console.error('🚨 HandleTrackEnd (no rotation): Idle starter declined/failed — resuming active deck');
-          audioEngineRef.current?.resume();
+        if (!ok) {
+          console.error('🚨 HandleTrackEnd (no rotation): Idle starter declined/failed — leaving deck untouched');
+          logDiag('transition_recovery_failed', {
+            trigger: 'track_end_idle',
+            action: transitionRecoveryAction(ok),
+          });
         }
       } catch (err) {
         console.error('🚨 HandleTrackEnd (no rotation): Unexpected error:', err);
-        if (isPlayingRef.current) {
-          try { audioEngineRef.current?.resume(); } catch(e) {}
-        }
+        logDiag('transition_recovery_failed', {
+          trigger: 'track_end_idle',
+          action: transitionRecoveryAction(false),
+          error: err?.message || String(err),
+        });
       }
       return;
     }
@@ -6414,7 +6571,11 @@ export default function DJBooth() {
           console.warn(`⚠️ HandleTrackEnd: assigned song ${songNum + 1} for ${dancer.name} unresolvable (${unresolvedName || 'missing entry'})`);
           logDiag?.('assigned_track_unresolved', { dancer: dancer.name, songNum: songNum + 1, wanted: unresolvedName || null });
           if (effectiveManualAssignment) {
-            audioEngineRef.current?.resume();
+             logDiag('transition_recovery_failed', {
+               trigger: 'track_end_manual_assignment',
+               action: transitionRecoveryAction(false),
+               track: unresolvedName || null,
+             });
             transitionInProgressRef.current = false;
             return;
           }
@@ -7099,8 +7260,12 @@ export default function DJBooth() {
       audioEngineRef.current?.unduck();
       const ok = await playFallbackTrack(true);
       if (!ok) {
-        console.error('🚨 HandleTrackEnd: All recovery failed — resuming active deck');
-        audioEngineRef.current?.resume();
+        console.error('🚨 HandleTrackEnd: All recovery failed — leaving deck untouched');
+        logDiag('transition_recovery_failed', {
+          trigger: 'track_end_transition',
+          action: transitionRecoveryAction(ok),
+          error: error?.message || String(error),
+        });
       }
     } finally {
       transitionInProgressRef.current = false;
@@ -7173,9 +7338,9 @@ export default function DJBooth() {
         paused: false,
       });
       if (idleNoRotation && idleStartMode === IDLE_AUTOPLAY_START_MODES.BLOCKED) return;
-      // Do not race a transition, another watchdog recovery, or an autoplay
+      // Do not race another watchdog recovery or an autoplay
       // starter already loading a queue track.
-      if (watchdogRecoveringRef.current || transitionInProgressRef.current || autoplayPlayingRef.current) return;
+      if (watchdogRecoveringRef.current || autoplayPlayingRef.current) return;
       if (playingCommercialRef.current) return;
       if (tracks.length === 0) return;
       if (initialLoadGraceRef.current) return;
@@ -7206,6 +7371,10 @@ export default function DJBooth() {
         const transitionTime = Date.now() - transitionStartTimeRef.current;
         if (transitionTime > 30000) {
           console.warn('🐕 WATCHDOG: Transition stuck for', Math.round(transitionTime/1000), 's — force clearing');
+          logDiag('watchdog_transition_stuck', {
+            ageMs: transitionTime,
+            generation: playbackOwnershipRef.current.generation,
+          });
           transitionInProgressRef.current = false;
         } else {
           return;
@@ -7227,26 +7396,60 @@ export default function DJBooth() {
         lastWatchdogRef.current = { at: Date.now(), silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack };
         logDiag('watchdog_fired', { silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack });
       }
+      const recoveryOperation = claimPlaybackOwnership(
+        playbackOwnershipRef.current,
+        'watchdog-recovery',
+      );
+      const ownsRecovery = () => ownsPlaybackOperation(
+        playbackOwnershipRef.current,
+        recoveryOperation,
+      );
       watchdogRecoveringRef.current = true;
       transitionInProgressRef.current = true;
       transitionStartTimeRef.current = Date.now();
       
       try {
-        try {
-          audioEngineRef.current?.pauseAll();
-        } catch (e) {
-          console.warn('🐕 WATCHDOG: pauseAll() before recovery failed:', e.message);
-        }
+        // Do not pause the active deck while diagnosing silence. A heartbeat
+        // false positive must not turn an audible outgoing track into dead air;
+        // the replacement play owns the handoff when it is ready.
         await new Promise(r => setTimeout(r, 200));
+        if (!ownsRecovery()) {
+          logDiag('watchdog_recovery_stale', {
+            phase: 'pause',
+            generation: recoveryOperation.generation,
+          });
+          return;
+        }
 
         // Capture what failed and who was on stage
         const failedSong = currentTrackRef.current;
-        const wdDancerId = rotationRef.current[currentDancerIndexRef.current];
-        const wdDancer = dancersRef.current?.find(d => String(d.id) === String(wdDancerId));
+        const readAuthoritativeWatchdogAssignment = () => {
+          const liveRotation = rotationRef.current || [];
+          const liveDancerId = liveRotation[currentDancerIndexRef.current];
+          const liveSlot = resolveAuthoritativeIncomingSlot({
+            dancerId: liveDancerId,
+            slotIndex: Math.max(0, currentSongNumberRef.current - 1),
+            rotationSongs: rotationSongsRef.current,
+            savedSongs: djSavedSongsRef.current,
+            savedManual: djSavedManualRef.current,
+            manualDancers: manualSetDancersRef.current,
+            manualSetLengths: manualSetLengthsRef.current,
+            isManualSet,
+            getManualSetLength: effectiveSongsPerSet,
+            filterAutomaticTracks,
+          });
+          return {
+            rotation: liveRotation,
+            dancerId: liveDancerId,
+            dancer: dancersRef.current?.find(d => String(d.id) === String(liveDancerId)),
+            slot: liveSlot,
+          };
+        };
+        let watchdogAssignment = readAuthoritativeWatchdogAssignment();
+        let wdDancerId = watchdogAssignment.dancerId;
+        let wdDancer = watchdogAssignment.dancer;
         const wdDancerName = wdDancer?.name || null;
-        const watchdogManualIsEmpty = wdDancerId != null
-          && isManualSet(wdDancerId)
-          && effectiveSongsPerSet(wdDancerId) === 0;
+        let watchdogManualIsEmpty = !!watchdogAssignment.slot?.intentionalEmpty;
 
         // Log the playback error — only for real dead-air (rotation active).
         // In idle autoplay recovery there is no failure to report.
@@ -7275,6 +7478,21 @@ export default function DJBooth() {
             }
           }
         };
+        const normalizeRecoveryName = normalizePlaybackTrackName;
+        const recoveryTrackSucceeded = (track, source) => {
+          if (!ownsRecovery()) return false;
+          currentTrackRef.current = track?.name || currentTrackRef.current;
+          if (track?.name) setCurrentTrack(track.name);
+          lastAudioActivityRef.current = Date.now();
+          setIsPlaying(true);
+          logDiag('watchdog_recovery_outcome', {
+            outcome: 'success',
+            source,
+            generation: recoveryOperation.generation,
+            excludedFailedSong: !!normalizeRecoveryName(failedSong),
+          });
+          return true;
+        };
 
         let recovered = false;
 
@@ -7292,10 +7510,23 @@ export default function DJBooth() {
           && idleStartMode !== IDLE_AUTOPLAY_START_MODES.BLOCKED
         ) {
           try {
-            const ok = await playFromAutoplayQueue(false, { idleOnly: true });
-            if (ok === true) {
+            const ok = await playFromAutoplayQueue(false, {
+              idleOnly: true,
+              excludeNames: failedSong ? [failedSong] : [],
+              isOperationCurrent: ownsRecovery,
+            });
+            if (!ownsRecovery()) {
+              logDiag('watchdog_recovery_stale', {
+                phase: 'idle-queue',
+                generation: recoveryOperation.generation,
+              });
+              return;
+            }
+            if (ok === true && recoveryTrackSucceeded(
+              { name: currentTrackRef.current },
+              'idle-queue',
+            )) {
               console.log('🐕 WATCHDOG: Autoplay-queue recovery succeeded');
-              lastAudioActivityRef.current = Date.now();
               recovered = true;
             }
           } catch (e) {
@@ -7305,25 +7536,56 @@ export default function DJBooth() {
 
         // First: try songs from the current dancer's playlist
         if (wdDancerId && !recovered && !watchdogManualIsEmpty) {
-             const cooldowns = getRecentSongHistory(songCooldownRef.current);
-          const watchdogAssignment = rotationSongsRef.current[wdDancerId] || [];
-          const watchdogPlaylist = isManualSet(wdDancerId)
-            ? watchdogAssignment
-            : filterAutomaticTracks(watchdogAssignment);
+          watchdogAssignment = readAuthoritativeWatchdogAssignment();
+          wdDancerId = watchdogAssignment.dancerId;
+          wdDancer = watchdogAssignment.dancer;
+          watchdogManualIsEmpty = !!watchdogAssignment.slot?.intentionalEmpty;
+          const cooldowns = getRecentSongHistory(songCooldownRef.current);
+          const exactAuthoritativeSlot = !!watchdogAssignment.slot?.manual
+            || watchdogAssignment.slot?.source === 'saved';
+          const watchdogPlaylist = exactAuthoritativeSlot
+            ? (watchdogAssignment.slot?.track ? [watchdogAssignment.slot.track] : [])
+            : filterAutomaticTracks(watchdogAssignment.slot?.tracks || []);
           const playlist = watchdogPlaylist.filter(t => {
-            if (!t || !t.url) return false;
-             return isManualSet(wdDancerId)
+            if (!t || !(t.url || (exactAuthoritativeSlot && t.name))) return false;
+             return exactAuthoritativeSlot
                || (songHistoryReadyRef.current
                   && !isRecentlyPlayed(t.name, cooldowns));
           });
-          const sorted = [...playlist].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
-          for (const track of sorted.slice(0, 8)) {
+          const safePlaylist = excludeFailedPlaybackTrack(playlist, failedSong);
+          const candidates = safePlaylist;
+          const sorted = [...candidates].sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
+           for (const assignedTrack of sorted.slice(0, 8)) {
             try {
+               if (!ownsRecovery()) return;
+               let track = assignedTrack;
+               if (!track.url && track.name) {
+                 const resolved = await resolveTrackByName(track.name);
+                 if (!ownsRecovery()) {
+                   logDiag('watchdog_recovery_stale', {
+                     phase: 'dancer-name-resolution',
+                     generation: recoveryOperation.generation,
+                   });
+                   return;
+                 }
+                 const latestAssignment = readAuthoritativeWatchdogAssignment();
+                 const stillAssigned = normalizeRecoveryName(
+                   latestAssignment.slot?.track?.name,
+                 ) === normalizeRecoveryName(track.name);
+                 if (!stillAssigned) continue;
+                 if (resolved?.url) track = { ...track, ...resolved };
+               }
+               if (!track.url) continue;
               const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-               if (success === true) {
+               if (!ownsRecovery()) {
+                 logDiag('watchdog_recovery_stale', {
+                   phase: 'dancer-playlist',
+                   generation: recoveryOperation.generation,
+                 });
+                 return;
+               }
+               if (success === true && recoveryTrackSucceeded(track, 'dancer-playlist')) {
                 console.log('🐕 WATCHDOG: Dancer playlist recovery succeeded with "' + track.name + '"');
-                lastAudioActivityRef.current = Date.now();
-                setIsPlaying(true);
                 recordSongPlayed(track.name);
                 updateWatchdogRotationUI(track);
                 recovered = true;
@@ -7343,8 +7605,9 @@ export default function DJBooth() {
           && (!noRotationRecovery || autoplayAutoFillEnabledRef.current)
         ) {
           try {
+            if (!ownsRecovery()) return;
             const token = localStorage.getItem('djbooth_token');
-            const wdCurrent = currentTrackRef.current ? [currentTrackRef.current] : [];
+            const wdCurrent = [...new Set([failedSong, currentTrackRef.current].filter(Boolean))];
             const wdExclude = wdCurrent.length > 0
               ? `&exclude=${encodeURIComponent(wdCurrent.join(','))}`
               : '';
@@ -7354,26 +7617,45 @@ export default function DJBooth() {
             });
             if (res.ok) {
               const data = await res.json();
-               const serverTracks = filterUnplayedAutomaticTracks(
-                 data.tracks || [],
-                 getRecentSongHistory(songCooldownRef.current),
-               )
-                .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
-              for (let i = 0; i < serverTracks.length; i++) {
-                try {
-                  const track = serverTracks[i];
-                  const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-                   if (success === true) {
-                    console.log('🐕 WATCHDOG: Server recovery succeeded with "' + track.name + '"');
-                    lastAudioActivityRef.current = Date.now();
-                    setIsPlaying(true);
-                    recordSongPlayed(track.name);
-                    updateWatchdogRotationUI(track);
-                    recovered = true;
-                    break;
+              if (!ownsRecovery()) return;
+              watchdogAssignment = readAuthoritativeWatchdogAssignment();
+              wdDancerId = watchdogAssignment.dancerId;
+              watchdogManualIsEmpty = !!watchdogAssignment.slot?.intentionalEmpty;
+              const manualRecovery = watchdogAssignment.slot?.manual
+                || watchdogAssignment.slot?.source === 'saved';
+              if (!watchdogManualIsEmpty && !manualRecovery) {
+                const serverCandidates = filterUnplayedAutomaticTracks(
+                    data.tracks || [],
+                    getRecentSongHistory(songCooldownRef.current),
+                  )
+                   .map(t => ({ ...t, url: `/api/music/stream/${t.id}` }));
+                const nonFailedServerTracks = excludeFailedPlaybackTrack(
+                  serverCandidates,
+                  failedSong,
+                );
+                const serverTracks = nonFailedServerTracks;
+                for (let i = 0; i < serverTracks.length; i++) {
+                  try {
+                    const track = serverTracks[i];
+                    if (!ownsRecovery()) return;
+                    const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
+                    if (!ownsRecovery()) {
+                      logDiag('watchdog_recovery_stale', {
+                        phase: 'server',
+                        generation: recoveryOperation.generation,
+                      });
+                      return;
+                    }
+                    if (success === true && recoveryTrackSucceeded(track, 'server')) {
+                      console.log('🐕 WATCHDOG: Server recovery succeeded with "' + track.name + '"');
+                      recordSongPlayed(track.name);
+                      updateWatchdogRotationUI(track);
+                      recovered = true;
+                      break;
+                    }
+                  } catch (e) {
+                    console.error('🐕 WATCHDOG: Server recovery attempt', i+1, 'failed:', e.message);
                   }
-                } catch (e) {
-                  console.error('🐕 WATCHDOG: Server recovery attempt', i+1, 'failed:', e.message);
                 }
               }
             }
@@ -7386,38 +7668,67 @@ export default function DJBooth() {
         if (
           !recovered
           && !watchdogManualIsEmpty
+          && !watchdogAssignment.slot?.manual
           && (!noRotationRecovery || autoplayAutoFillEnabledRef.current)
         ) {
-          const cooldowns = getRecentSongHistory(songCooldownRef.current);
-          const validTracks = filterAutomaticTracks(tracks).filter(t => {
-            if (!t || !t.url) return false;
-             return !isRecentlyPlayed(t.name, cooldowns);
-          });
-          const shuffled = fisherYatesShuffle(validTracks);
-          shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
-          for (let i = 0; i < Math.min(5, shuffled.length); i++) {
-            try {
-              const track = shuffled[i];
-              const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
-               if (success === true) {
-                console.log('🐕 WATCHDOG: Local recovery succeeded with "' + track.name + '"');
-                lastAudioActivityRef.current = Date.now();
-                setIsPlaying(true);
-                recordSongPlayed(track.name);
-                updateWatchdogRotationUI(track);
-                recovered = true;
-                break;
+          watchdogAssignment = readAuthoritativeWatchdogAssignment();
+          watchdogManualIsEmpty = !!watchdogAssignment.slot?.intentionalEmpty;
+          const manualRecovery = watchdogAssignment.slot?.manual
+            || watchdogAssignment.slot?.source === 'saved';
+          if (!watchdogManualIsEmpty && !manualRecovery) {
+            const cooldowns = getRecentSongHistory(songCooldownRef.current);
+            const validTracks = filterAutomaticTracks(tracks).filter(t => {
+              if (!t || !t.url) return false;
+               return !isRecentlyPlayed(t.name, cooldowns);
+            });
+            const safeTracks = excludeFailedPlaybackTrack(validTracks, failedSong);
+            const localRecoveryTracks = safeTracks;
+            const shuffled = fisherYatesShuffle(localRecoveryTracks);
+            shuffled.sort((a, b) => (cooldowns[a.name] || 0) - (cooldowns[b.name] || 0));
+            for (let i = 0; i < Math.min(5, shuffled.length); i++) {
+              try {
+                if (!ownsRecovery()) return;
+                const track = shuffled[i];
+                const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, false);
+                if (!ownsRecovery()) {
+                  logDiag('watchdog_recovery_stale', {
+                    phase: 'local',
+                    generation: recoveryOperation.generation,
+                  });
+                  return;
+                }
+                if (success === true && recoveryTrackSucceeded(track, 'local')) {
+                  console.log('🐕 WATCHDOG: Local recovery succeeded with "' + track.name + '"');
+                  recordSongPlayed(track.name);
+                  updateWatchdogRotationUI(track);
+                  recovered = true;
+                  break;
+                }
+              } catch (e) {
+                console.error('🐕 WATCHDOG: Local recovery attempt', i+1, 'failed:', e.message);
               }
-            } catch (e) {
-              console.error('🐕 WATCHDOG: Local recovery attempt', i+1, 'failed:', e.message);
             }
           }
         }
         
-        if (!recovered) {
-          console.error('🐕 WATCHDOG: ALL recovery attempts failed — trying resume as last resort');
-          try { audioEngineRef.current?.resume(); } catch(e) {}
-          lastAudioActivityRef.current = Date.now();
+        const recoveryOutcome = watchdogRecoveryOutcome({
+          owns: ownsRecovery(),
+          recovered,
+        });
+        if (recoveryOutcome === 'stale') {
+          logDiag('watchdog_recovery_stale', {
+            phase: 'failure',
+            generation: recoveryOperation.generation,
+          });
+          return;
+        }
+        if (recoveryOutcome === 'failed') {
+          console.error('🐕 WATCHDOG: ALL recovery attempts failed — leaving the deck untouched');
+          logDiag('watchdog_recovery_outcome', {
+            outcome: 'failed',
+            source: 'all',
+            generation: recoveryOperation.generation,
+          });
           watchdogFailCountRef.current += 1;
           if (watchdogFailCountRef.current >= WATCHDOG_FAIL_RELOAD_COUNT) {
             const failCycles = watchdogFailCountRef.current;
@@ -7428,17 +7739,28 @@ export default function DJBooth() {
           watchdogFailCountRef.current = 0;
         }
       } catch (err) {
+        if (ownsRecovery()) {
+          logDiag('watchdog_recovery_outcome', {
+            outcome: 'error',
+            source: 'exception',
+            generation: recoveryOperation.generation,
+          });
+        }
         console.error('🐕 WATCHDOG: Recovery error:', err);
-        lastAudioActivityRef.current = Date.now();
+        if (ownsRecovery()) lastAudioActivityRef.current = Date.now();
       } finally {
-        watchdogRecoveringRef.current = false;
-        transitionInProgressRef.current = false;
+        // A superseding explicit skip owns these flags now. Never let an old
+        // watchdog completion unlock or clear the newer transition.
+        if (ownsRecovery()) {
+          watchdogRecoveringRef.current = false;
+          transitionInProgressRef.current = false;
+        }
       }
     };
     
     const intervalId = setInterval(watchdogCheck, WATCHDOG_INTERVAL);
     return () => clearInterval(intervalId);
-  }, [tracks, recordSongPlayed, playFromAutoplayQueue]);
+  }, [tracks, recordSongPlayed, playFromAutoplayQueue, resolveTrackByName]);
 
   // Rotation management
   const addToRotation = async (dancerId) => {

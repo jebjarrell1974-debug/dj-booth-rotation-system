@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ANALYSIS_BODY_TIMEOUT_MS,
+  TRACK_START_TIMEOUT_MS,
   createBackgroundAnalysisQueue,
   normalizeAudioCacheKey,
+  playMediaWithDeadline,
+  withStartupDeadline,
   withAnalysisDeadline,
   waitForMediaReady,
 } from './audioStartup.js';
@@ -185,4 +188,106 @@ test('an error settles readiness before canplay and removes ownership listeners'
   media.readyState = 3;
   media.emit('canplay');
   assert.equal(media.listenerCount('canplay'), 0);
+});
+
+test('play readiness resolves from playing and removes all startup listeners', async () => {
+  const media = createMedia();
+  media.play = () => new Promise(() => {});
+  const started = playMediaWithDeadline(media, { timeoutMs: 1000 });
+
+  media.emit('playing');
+  await started;
+  assert.equal(media.listenerCount('playing'), 0);
+  assert.equal(media.listenerCount('error'), 0);
+  assert.equal(media.listenerCount('abort'), 0);
+  assert.equal(media.listenerCount('emptied'), 0);
+});
+
+test('a stalled play has a bounded outcome and releases its listeners', async () => {
+  const media = createMedia();
+  media.play = () => new Promise(() => {});
+
+  await assert.rejects(
+    playMediaWithDeadline(media, { timeoutMs: 1 }),
+    /timed out/,
+  );
+  assert.equal(media.listenerCount('playing'), 0);
+  assert.equal(media.listenerCount('error'), 0);
+  assert.equal(media.listenerCount('abort'), 0);
+  assert.equal(media.listenerCount('emptied'), 0);
+});
+
+test('a play rejection is returned as an error without leaving listeners behind', async () => {
+  const media = createMedia();
+  media.play = () => Promise.reject(new Error('autoplay denied'));
+
+  await assert.rejects(
+    playMediaWithDeadline(media, { timeoutMs: 1000 }),
+    /autoplay denied/,
+  );
+  assert.equal(media.listenerCount('playing'), 0);
+  assert.equal(media.listenerCount('error'), 0);
+  assert.equal(media.listenerCount('abort'), 0);
+  assert.equal(media.listenerCount('emptied'), 0);
+});
+
+test('cancelling readiness aborts the wait and removes its listeners', async () => {
+  const media = createMedia();
+  const controller = new AbortController();
+  const ready = waitForMediaReady(media, {
+    signal: controller.signal,
+    timeoutMs: 1000,
+  });
+
+  controller.abort('superseded');
+  await assert.rejects(ready, error => error?.name === 'AbortError');
+  assert.equal(media.listenerCount('canplay'), 0);
+  assert.equal(media.listenerCount('error'), 0);
+  assert.equal(media.listenerCount('abort'), 0);
+});
+
+test('cancelling play aborts the pending start and removes its listeners', async () => {
+  const media = createMedia();
+  media.play = () => new Promise(() => {});
+  const controller = new AbortController();
+  const started = playMediaWithDeadline(media, {
+    signal: controller.signal,
+    timeoutMs: 1000,
+  });
+
+  controller.abort('superseded');
+  await assert.rejects(started, error => error?.name === 'AbortError');
+  assert.equal(media.listenerCount('playing'), 0);
+  assert.equal(media.listenerCount('error'), 0);
+  assert.equal(media.listenerCount('abort'), 0);
+  assert.equal(media.listenerCount('emptied'), 0);
+});
+
+test('an unbounded getFile operation is deadline-bound and cancellable', async () => {
+  const fileHandle = { getFile: () => new Promise(() => {}) };
+  const controller = new AbortController();
+  const reading = withStartupDeadline(
+    () => fileHandle.getFile(),
+    {
+      signal: controller.signal,
+      timeoutMs: TRACK_START_TIMEOUT_MS > 0 ? 1 : 0,
+      label: 'Track file read',
+    },
+  );
+
+  await assert.rejects(reading, error => (
+    error?.name === 'TimeoutError' && /Track file read timed out/.test(error.message)
+  ));
+
+  const cancellationController = new AbortController();
+  const cancelled = withStartupDeadline(
+    () => fileHandle.getFile(),
+    {
+      signal: cancellationController.signal,
+      timeoutMs: 1000,
+      label: 'Track file read',
+    },
+  );
+  cancellationController.abort('cancelled');
+  await assert.rejects(cancelled, error => error?.name === 'AbortError');
 });

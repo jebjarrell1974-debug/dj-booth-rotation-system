@@ -12,8 +12,11 @@ import {
   ANALYSIS_DECODE_TIMEOUT_MS,
   ANALYSIS_RENDER_TIMEOUT_MS,
   MEDIA_READY_TIMEOUT_MS,
+  TRACK_START_TIMEOUT_MS,
   createBackgroundAnalysisQueue,
   normalizeAudioCacheKey,
+  playMediaWithDeadline,
+  withStartupDeadline,
   withAnalysisDeadline,
   waitForMediaReady,
 } from '@/utils/audioStartup';
@@ -100,6 +103,7 @@ const AudioEngine = forwardRef(({
   }, []);
   const crossfadeInProgressRef = useRef(false);
   const playTrackLockRef = useRef(null);
+  const pendingTrackStartRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -322,6 +326,7 @@ const AudioEngine = forwardRef(({
 
     return () => {
       clearInterval(dualDeckMonitor);
+      pendingTrackStartRef.current?.controller.abort('unmount');
       ownedDeckFadeControllerRef.current?.cancel('unmount');
       preparedDeckControllerRef.current?.dispose();
       if (analysisGainRampRef.current?.frameId != null) {
@@ -793,7 +798,7 @@ const AudioEngine = forwardRef(({
     }
   }, [analyzeTrackLoudness, applyAnalyzedGain, getCachedTrackAnalysis]);
 
-  const loadTrack = useCallback(async (input) => {
+  const loadTrack = useCallback(async (input, { signal = null } = {}) => {
     if (!input) return null;
 
     if (typeof input === 'object' && input.url) {
@@ -819,11 +824,18 @@ const AudioEngine = forwardRef(({
     }
 
     try {
-      const file = await input.getFile();
+      const file = await withStartupDeadline(
+        () => input.getFile(),
+        {
+          signal,
+          timeoutMs: TRACK_START_TIMEOUT_MS,
+          label: 'Track file read',
+        },
+      );
       const url = URL.createObjectURL(file);
       return { url, name: file.name, file };
     } catch (err) {
-      console.error('❌ LoadTrack: Failed to read file (permission may have been revoked):', err.message);
+      console.error('❌ LoadTrack: Failed to read file:', err?.message || err);
       return null;
     }
   }, []);
@@ -835,6 +847,7 @@ const AudioEngine = forwardRef(({
       triggerAtMediaEnd = false,
       onTrackReady = null,
       preparedOwner = null,
+      startupSignal = null,
     } = {},
   ) => {
     if (playTrackLockRef.current) {
@@ -843,21 +856,55 @@ const AudioEngine = forwardRef(({
     }
 
     let releaseLock;
-    playTrackLockRef.current = new Promise(r => { releaseLock = r; });
+    let lockReleased = false;
+    const lock = new Promise(resolve => { releaseLock = resolve; });
+    playTrackLockRef.current = lock;
+    const releasePlayTrackLock = () => {
+      if (lockReleased) return;
+      lockReleased = true;
+      if (playTrackLockRef.current === lock) {
+        playTrackLockRef.current = null;
+      }
+      releaseLock();
+    };
+    const startupController = new AbortController();
+    const pendingStart = {
+      controller: startupController,
+      lock,
+    };
+    pendingTrackStartRef.current = pendingStart;
+    const forwardExternalAbort = () => {
+      if (!startupController.signal.aborted) {
+        startupController.abort(startupSignal?.reason);
+      }
+    };
+    if (startupSignal?.aborted) {
+      forwardExternalAbort();
+    } else {
+      startupSignal?.addEventListener?.('abort', forwardExternalAbort, { once: true });
+    }
+    let incomingDeckForCleanup = null;
+    let incomingPlaybackStarted = false;
+    const cleanupIncomingDeck = () => {
+      if (!incomingDeckForCleanup) return;
+      incomingDeckForCleanup.pause();
+      incomingDeckForCleanup.onended = null;
+      incomingDeckForCleanup.ontimeupdate = null;
+      incomingDeckForCleanup.src = '';
+      cleanupDeck(incomingDeckForCleanup);
+    };
 
     try {
-    cancelOwnedDeckFade('new-track');
-
     const deckA = deckARef.current;
     const deckB = deckBRef.current;
     const aDeck = activeDeck.current;
     console.log(`🔍 PlayTrack: DECK STATE before load — active=${aDeck}, A.paused=${deckA?.paused}, A.src=${deckA?.src ? 'set' : 'empty'}, B.paused=${deckB?.paused}, B.src=${deckB?.src ? 'set' : 'empty'}`);
 
-    const trackData = await loadTrack(fileHandle);
-    if (!trackData) {
+    const trackData = await loadTrack(fileHandle, {
+      signal: startupController.signal,
+    });
+    if (!trackData || startupController.signal.aborted) {
       console.error('❌ PlayTrack: loadTrack returned null — file unreadable');
-      releaseLock();
-      playTrackLockRef.current = null;
       return false;
     }
 
@@ -874,25 +921,11 @@ const AudioEngine = forwardRef(({
       const probe = new Audio();
       if (probe.canPlayType(codecMime) === '') {
         console.error(`❌ PlayTrack: Browser cannot play ${urlExt.toUpperCase()} (${trackData.name}) — skipping`);
-        releaseLock();
-        playTrackLockRef.current = null;
         return false;
       }
     }
 
-    cancelAnalysisGainRamp();
     const ctx = ensureAudioContext();
-    crossfadeInProgressRef.current = true;
-
-    if (fadeAnimationRef.current) {
-      cancelAnimationFrame(fadeAnimationRef.current);
-      fadeAnimationRef.current = null;
-    }
-    if (safetyFadeRef.current) {
-      cancelAnimationFrame(safetyFadeRef.current);
-      safetyFadeRef.current = null;
-    }
-    safetyFadeHandleRef.current = null;
 
     const inactiveDeck = getInactiveDeck();
     const activeDeckEl = getActiveDeck();
@@ -900,6 +933,7 @@ const AudioEngine = forwardRef(({
     const activeGain = getActiveDeckGain();
     const inactiveSourceRef = getInactiveSourceRef();
     const inactiveDeckName = inactiveDeck === deckARef.current ? 'A' : 'B';
+    incomingDeckForCleanup = inactiveDeck;
     const preparedHandle = preparedDeckControllerRef.current?.adopt({
       url: trackData.url,
       owner: preparedOwner,
@@ -914,13 +948,7 @@ const AudioEngine = forwardRef(({
     }
     const deckGeneration = preparedHandle?.generation
       || ((deckGenerationRef.current[inactiveDeckName] || 0) + 1);
-    deckGenerationRef.current[inactiveDeckName] = deckGeneration;
     const trackHandle = { deck: inactiveDeckName, generation: deckGeneration };
-
-    inactiveDeck.onended = null;
-    inactiveDeck.ontimeupdate = null;
-    activeDeckEl.onended = null;
-    activeDeckEl.ontimeupdate = null;
 
     const inactiveUrlRef = inactiveDeck === deckARef.current ? deckAUrl : deckBUrl;
     if (!preparedHandle) {
@@ -934,11 +962,14 @@ const AudioEngine = forwardRef(({
       inactiveDeck.src = trackData.url;
 
       try {
-        await inactiveDeck.load();
+        inactiveDeck.load();
+        await waitForMediaReady(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
       } catch (loadErr) {
         console.error('❌ PlayTrack: Audio load failed:', loadErr.message);
-        releaseLock();
-        playTrackLockRef.current = null;
+        cleanupIncomingDeck();
         return false;
       }
     } else {
@@ -969,12 +1000,6 @@ const AudioEngine = forwardRef(({
 
     const maxDur = maxDurationOverrideRef.current || MAX_SONG_DURATION;
     const effectiveDuration = Math.min(inactiveDeck.duration || maxDur, maxDur);
-    maxDurationOverrideRef.current = null;
-    setDuration(effectiveDuration);
-    setCurrentTrack(trackData.name);
-    setCurrentTime(0);
-    lastTimeUpdateRef.current = 0;
-    onTrackChangeRef.current?.(trackData.name);
 
     const outgoingBpm = activeDeckBpmRef.current;
     const doBeatMatch = beatMatchEnabledRef.current && outgoingBpm && incomingBpm && Math.abs(outgoingBpm - incomingBpm) > 1;
@@ -987,10 +1012,45 @@ const AudioEngine = forwardRef(({
       inactiveDeck.playbackRate = clampedRate;
     }
 
+    const commitIncomingStart = () => {
+      // This is intentionally called only after playMediaWithDeadline has
+      // settled successfully. A failed/aborted start must not disturb the
+      // current fade, handlers, deck generation, or published track state.
+      cancelAnalysisGainRamp();
+      cancelOwnedDeckFade('new-track');
+      if (fadeAnimationRef.current) {
+        cancelAnimationFrame(fadeAnimationRef.current);
+        fadeAnimationRef.current = null;
+      }
+      if (safetyFadeRef.current) {
+        cancelAnimationFrame(safetyFadeRef.current);
+        safetyFadeRef.current = null;
+      }
+      safetyFadeHandleRef.current = null;
+      deckGenerationRef.current[inactiveDeckName] = deckGeneration;
+      inactiveDeck.onended = null;
+      inactiveDeck.ontimeupdate = null;
+      activeDeckEl.onended = null;
+      activeDeckEl.ontimeupdate = null;
+
+      maxDurationOverrideRef.current = null;
+      setDuration(effectiveDuration);
+      setCurrentTrack(trackData.name);
+      setCurrentTime(0);
+      lastTimeUpdateRef.current = 0;
+      onTrackChangeRef.current?.(trackData.name);
+    };
+
     try {
       if (crossfade && isPlayingRef.current) {
         inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
-        await inactiveDeck.play();
+        await playMediaWithDeadline(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        incomingPlaybackStarted = true;
+        commitIncomingStart();
+        crossfadeInProgressRef.current = true;
 
         const targetVolume = autoGainValue;
         const oldStartVolume = activeGain.gain.value;
@@ -1029,7 +1089,13 @@ const AudioEngine = forwardRef(({
         const oldStartVolume = activeGain.gain.value;
         inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
         if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
-        await inactiveDeck.play();
+        await playMediaWithDeadline(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        incomingPlaybackStarted = true;
+        commitIncomingStart();
+        crossfadeInProgressRef.current = true;
 
         const startTime = performance.now();
         const fadeDuration = MICRO_CROSSFADE_DURATION * 1000;
@@ -1056,23 +1122,29 @@ const AudioEngine = forwardRef(({
 
         fadeAnimationRef.current = requestAnimationFrame(animateMicroFade);
       } else {
-        crossfadeInProgressRef.current = false;
-        activeDeckEl.pause();
-        activeDeckEl.src = '';
-        cleanupDeck(activeDeckEl);
         inactiveGain.gain.setValueAtTime(autoGainValue, ctx.currentTime);
         inactiveDeck.currentTime = 0;
         if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
-        await inactiveDeck.play();
+        await playMediaWithDeadline(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        incomingPlaybackStarted = true;
+        commitIncomingStart();
+        crossfadeInProgressRef.current = false;
+        // Keep the outgoing deck intact until the replacement has actually
+        // started. A rejected/stalled play must not interrupt audible audio.
+        activeDeckEl.pause();
+        activeDeckEl.src = '';
+        cleanupDeck(activeDeckEl);
         activeDeckBpmRef.current = incomingBpm;
         activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
       }
     } catch (playErr) {
-      crossfadeInProgressRef.current = false;
-      console.error('❌ PlayTrack: play() failed:', playErr.message);
-      activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
-      releaseLock();
-      playTrackLockRef.current = null;
+      console.error('❌ PlayTrack: play() failed:', playErr?.message || playErr);
+      if (!incomingPlaybackStarted && incomingDeckForCleanup) {
+        cleanupIncomingDeck();
+      }
       return false;
     }
 
@@ -1196,14 +1268,19 @@ const AudioEngine = forwardRef(({
     newDeck.ontimeupdate = timeUpdateHandler;
     newDeck.onended = endedHandler;
 
-    releaseLock();
-    playTrackLockRef.current = null;
     return true;
     } catch (outerErr) {
-      console.error('❌ PlayTrack: Unexpected error:', outerErr.message);
-      releaseLock();
-      playTrackLockRef.current = null;
+      console.error('❌ PlayTrack: Unexpected error:', outerErr?.message || outerErr);
+      if (!incomingPlaybackStarted && incomingDeckForCleanup) {
+        cleanupIncomingDeck();
+      }
       return false;
+    } finally {
+      startupSignal?.removeEventListener?.('abort', forwardExternalAbort);
+      if (pendingTrackStartRef.current === pendingStart) {
+        pendingTrackStartRef.current = null;
+      }
+      releasePlayTrackLock();
     }
   }, [
     loadTrack,
@@ -1211,11 +1288,22 @@ const AudioEngine = forwardRef(({
     ensureAudioContext,
     connectDeckSource,
     getCachedTrackAnalysis,
+    playMediaWithDeadline,
     scheduleTrackAnalysis,
     cancelOwnedDeckFade,
     cancelAnalysisGainRamp,
     isCurrentDeckHandle,
   ]);
+
+  const cancelPendingTrackStart = useCallback(async (reason = 'cancelled') => {
+    const pending = pendingTrackStartRef.current;
+    if (!pending) return false;
+    if (!pending.controller.signal.aborted) {
+      pending.controller.abort(reason);
+    }
+    await pending.lock;
+    return true;
+  }, []);
 
   const applyDuckGain = useCallback((change = {}) => {
     const ctx = ensureAudioContext();
@@ -1575,6 +1663,7 @@ const AudioEngine = forwardRef(({
 
   useImperativeHandle(ref, () => ({
     playTrack,
+    cancelPendingTrackStart,
     prepareNextTrack,
     invalidatePreparedTrack,
     captureDeck,
