@@ -4,6 +4,8 @@ import {
   capSongAssignments,
   capSongAssignmentsPreservingManual,
   capSongList,
+  buildAutomaticRepickExcludes,
+  canCommitAutomaticBottomPick,
   currentRotationDancerId,
   filterManualAssignments,
   fillSongListToLimit,
@@ -228,6 +230,28 @@ test('a late automatic result cannot replace a newer DJ assignment', async () =>
   await pendingAutomaticWriter;
 
   assert.deepEqual(rotationSongs, { rylei: ['dj-one.mp3', 'dj-two.mp3'] });
+});
+
+test('automatic repicks exclude the entire completed set and current track', () => {
+  assert.deepEqual(buildAutomaticRepickExcludes(
+    [{ name: 'first.mp3' }, 'second.mp3'],
+    { name: 'second.mp3' },
+  ), ['first.mp3', 'second.mp3']);
+});
+
+test('automatic bottom picks require current ownership of an empty bottom slot', () => {
+  const base = {
+    capturedVersion: 8,
+    currentVersion: 8,
+    dancerId: 'finished',
+    rotation: ['next', 'finished'],
+    currentAssignment: undefined,
+  };
+  assert.equal(canCommitAutomaticBottomPick(base), true);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, currentVersion: 9 }), false);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, rotation: ['finished', 'next'] }), false);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, currentAssignment: ['newer.mp3'] }), false);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, hasManualOwnership: true }), false);
 });
 
 test('normalizes invalid set lengths safely', () => {

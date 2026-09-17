@@ -60,6 +60,8 @@ import FeatureEntertainerPanel from '@/components/dj/FeatureEntertainerPanel';
 import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
 import {
   applyManualAssignments,
+  buildAutomaticRepickExcludes,
+  canCommitAutomaticBottomPick,
   capSongAssignmentsPreservingManual,
   capSongList,
   filterManualAssignments,
@@ -547,8 +549,11 @@ export default function DJBooth() {
     const capped = preserveManualAssignments(next, songsPerSetRef.current);
     rotationSongsRef.current = capped;
     setRotationSongs(capped);
+    if (!remoteMode) {
+      try { localStorage.setItem('djbooth_rotation_songs', JSON.stringify(capped)); } catch {}
+    }
     return capped;
-  }, []);
+  }, [remoteMode]);
 
   const capAllAssignmentsToSetSize = useCallback((count) => {
     const limit = normalizeSongsPerSet(count, DEFAULT_SONGS_PER_SET);
@@ -2550,9 +2555,12 @@ export default function DJBooth() {
     const dancer = dnc.find(d => d.id === dancerId);
     if (!dancer) return;
     if (bgPrePickRef.current?.dancerId === dancerId) return;
-    const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
+    const repickExcludes = buildAutomaticRepickExcludes(
+      rotationSongsRef.current[dancerId],
+      currentTrackRef.current,
+    );
     console.log(`🎵 BgPrePick: Starting for ${dancer.name} (song ${currentSongNumber} of ${currentSetLength} — early pre-pick)`);
-    const promise = getDancerTracksRef.current(dancer, playingTrackExclude, true)
+    const promise = getDancerTracksRef.current(dancer, repickExcludes, true)
       .then(tracks => {
         if (bgPrePickRef.current?.dancerId === dancerId) {
           bgPrePickRef.current.tracks = tracks;
@@ -2564,7 +2572,7 @@ export default function DJBooth() {
         console.warn(`⚠️ BgPrePick: Failed for ${dancer.name}:`, e.message);
         return [];
       });
-    bgPrePickRef.current = { dancerId, promise, tracks: null };
+    bgPrePickRef.current = { dancerId, promise, tracks: null, repickExcludes };
   }, [isRotationActive, currentSongNumber, songsPerSet, rotationSongs, currentDancerIndex]);
 
   // Reconcile the localStorage-restored feature placement map against the
@@ -5352,6 +5360,8 @@ export default function DJBooth() {
           currentDancerIndexRef.current = 0;
           setCurrentSongNumber(0);
           currentSongNumberRef.current = 0;
+          const finishedPreviousSongs = rotationSongsRef.current[finishedId] || [];
+          const _repickVer = ++rotationAssignmentVersionRef.current;
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
           commitRotationSongs(clearedSongs);
@@ -5372,11 +5382,21 @@ export default function DJBooth() {
             console.log(`🎵 Flip-to-bottom: keeping DJ-saved songs for ${finishedDancerForRepick.name} — skipping auto re-pick`);
             logDiag?.('flip_repick_skipped_dj_saved', { dancer: finishedDancerForRepick.name });
           } else if (finishedDancerForRepick) {
-            const _repickVer = ++rotationAssignmentVersionRef.current;
-            getDancerTracks(finishedDancerForRepick, [], true, 5000)
+            const repickExcludes = buildAutomaticRepickExcludes(
+              finishedPreviousSongs,
+              currentTrackRef.current,
+            );
+            getDancerTracks(finishedDancerForRepick, repickExcludes, true, 5000)
               .then(repicked => {
-                if (_repickVer !== rotationAssignmentVersionRef.current) {
-                  console.log(`🚫 Flip-to-bottom re-pick stale (ver ${_repickVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
+                if (!canCommitAutomaticBottomPick({
+                  capturedVersion: _repickVer,
+                  currentVersion: rotationAssignmentVersionRef.current,
+                  dancerId: finishedId,
+                  rotation: rotationRef.current,
+                  currentAssignment: rotationSongsRef.current[finishedId],
+                  hasManualOwnership: isManualSet(finishedId),
+                })) {
+                  console.log(`🚫 Flip-to-bottom re-pick lost ownership (ver ${_repickVer} → ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
                   return;
                 }
                 if (djSavedManualRef.current[finishedId]) {
@@ -5530,9 +5550,11 @@ export default function DJBooth() {
         // Consumption happens only when her saved set actually STARTS playing
         // (next-dancer / post-interstitial sites). Early consumption here was the
         // Jul 25 "rerolled + saved, still played old songs" root cause.
+        const finishedPreviousSongs = rotationSongsRef.current[finishedDancerId] || [];
+        const transitionAssignmentVersion = ++rotationAssignmentVersionRef.current;
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
-        rotationSongsRef.current = preserveManualAssignments(scratchSongs, songsPerSetRef.current);
+        commitRotationSongs(scratchSongs);
         // Honor DJ-saved songs for the INCOMING dancer too — if DJ explicitly picked
         // these on Save All, play them even if on cooldown. Only the .url check stays
         // (we can't play a track with no URL). This prevents the "DJ assigns songs →
@@ -5575,10 +5597,12 @@ export default function DJBooth() {
               })
             : null));
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
-        const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
+        const repickExcludes = buildAutomaticRepickExcludes(
+          finishedPreviousSongs,
+          currentTrackRef.current,
+        );
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
-        const transitionAssignmentVersion = rotationAssignmentVersionRef.current;
         let [freshTracks, prePicked] = await Promise.all([
           (() => {
             const _ev = nextDancerHasManualSet
@@ -5599,7 +5623,7 @@ export default function DJBooth() {
             : finishedDancer
               ? bgPick
                 ? (console.log(`🎵 Pre-pick for ${finishedDancer.name}: using background pre-pick`), bgPick.promise.catch(() => []))
-                : getDancerTracks(finishedDancer, playingTrackExclude, true, 1500).catch(e => {
+                : getDancerTracks(finishedDancer, repickExcludes, true, 1500).catch(e => {
                     console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
                     return [];
                   })
@@ -5624,7 +5648,9 @@ export default function DJBooth() {
               djSavedSongsRef.current[finishedDancerId] || rotationSongsRef.current[finishedDancerId],
               songsPerSetRef.current
             );
-          if (isManualSet(finishedDancerId) || latestFinished.length > 0) prePicked = latestFinished;
+          prePicked = isManualSet(finishedDancerId) || latestFinished.length > 0
+            ? latestFinished
+            : [];
 
           if (latestIncomingSaved.length > 0) {
             manualSetDancersRef.current.add(nextDancerId);
@@ -5639,6 +5665,22 @@ export default function DJBooth() {
         if (nextTrack && !nextTrack.url && nextTrack.name) {
           const _rt = await resolveTrackByName(nextTrack.name);
           if (_rt?.url) { nextTrack = _rt; if (Array.isArray(freshTracks)) freshTracks[0] = _rt; }
+        }
+
+        if (
+          !djSavedValid
+          && prePicked?.length > 0
+          && !canCommitAutomaticBottomPick({
+            capturedVersion: transitionAssignmentVersion,
+            currentVersion: rotationAssignmentVersionRef.current,
+            dancerId: finishedDancerId,
+            rotation: rotationRef.current,
+            currentAssignment: rotationSongsRef.current[finishedDancerId],
+            hasManualOwnership: isManualSet(finishedDancerId),
+          })
+        ) {
+          console.log(`🚫 Pre-pick ownership changed — discarding stale automatic result for ${finishedDancer?.name}`);
+          prePicked = [];
         }
 
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };
@@ -6965,9 +7007,11 @@ export default function DJBooth() {
         // Consumption happens only when her saved set actually STARTS playing
         // (next-dancer / post-interstitial sites). Early consumption here was the
         // Jul 25 "rerolled + saved, still played old songs" root cause.
+        const finishedPreviousSongs = rotationSongsRef.current[finishedDancerId] || [];
+        const transitionAssignmentVersion = ++rotationAssignmentVersionRef.current;
         const scratchSongs = { ...rotationSongsRef.current };
         delete scratchSongs[finishedDancerId];
-        rotationSongsRef.current = preserveManualAssignments(scratchSongs, songsPerSetRef.current);
+        commitRotationSongs(scratchSongs);
         // Honor DJ-saved songs for the INCOMING dancer too — if DJ explicitly picked
         // these on Save All, play them even if on cooldown. Only the .url check stays
         // (we can't play a track with no URL). This prevents the "DJ assigns songs →
@@ -7010,10 +7054,12 @@ export default function DJBooth() {
               })
             : null));
         const finishedDancer = dnc.find(d => d.id === finishedDancerId);
-        const playingTrackExclude = currentTrackRef.current ? [currentTrackRef.current] : [];
+        const repickExcludes = buildAutomaticRepickExcludes(
+          finishedPreviousSongs,
+          currentTrackRef.current,
+        );
         const bgPick = bgPrePickRef.current?.dancerId === finishedDancerId ? bgPrePickRef.current : null;
         bgPrePickRef.current = null;
-        const transitionAssignmentVersion = rotationAssignmentVersionRef.current;
         let [freshTracks, prePicked] = await Promise.all([
           (() => {
             const _ev = nextDancerHasManualSet
@@ -7034,7 +7080,7 @@ export default function DJBooth() {
             : finishedDancer
               ? bgPick
                 ? (console.log(`🎵 Pre-pick for ${finishedDancer.name}: using background pre-pick`), bgPick.promise.catch(() => []))
-                : getDancerTracks(finishedDancer, playingTrackExclude, true, 1500).catch(e => {
+                : getDancerTracks(finishedDancer, repickExcludes, true, 1500).catch(e => {
                     console.warn('⚠️ Pre-pick failed for', finishedDancer.name, e.message);
                     return [];
                   })
@@ -7059,7 +7105,9 @@ export default function DJBooth() {
               djSavedSongsRef.current[finishedDancerId] || rotationSongsRef.current[finishedDancerId],
               songsPerSetRef.current
             );
-          if (isManualSet(finishedDancerId) || latestFinished.length > 0) prePicked = latestFinished;
+          prePicked = isManualSet(finishedDancerId) || latestFinished.length > 0
+            ? latestFinished
+            : [];
 
           if (latestIncomingSaved.length > 0) {
             manualSetDancersRef.current.add(nextDancerId);
@@ -7074,6 +7122,22 @@ export default function DJBooth() {
         if (nextTrack && !nextTrack.url && nextTrack.name) {
           const _rt = await resolveTrackByName(nextTrack.name);
           if (_rt?.url) { nextTrack = _rt; if (Array.isArray(freshTracks)) freshTracks[0] = _rt; }
+        }
+
+        if (
+          !djSavedValid
+          && prePicked?.length > 0
+          && !canCommitAutomaticBottomPick({
+            capturedVersion: transitionAssignmentVersion,
+            currentVersion: rotationAssignmentVersionRef.current,
+            dancerId: finishedDancerId,
+            rotation: rotationRef.current,
+            currentAssignment: rotationSongsRef.current[finishedDancerId],
+            hasManualOwnership: isManualSet(finishedDancerId),
+          })
+        ) {
+          console.log(`🚫 Pre-pick ownership changed — discarding stale automatic result for ${finishedDancer?.name}`);
+          prePicked = [];
         }
 
         const updatedSongs = { ...rotationSongsRef.current, [newRotation[newIdx]]: freshTracks };

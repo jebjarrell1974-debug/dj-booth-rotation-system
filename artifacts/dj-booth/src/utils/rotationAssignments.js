@@ -130,6 +130,35 @@ export function getSongName(song) {
   return null;
 }
 
+// A completed automatic set must not be eligible for its own next-cycle
+// pre-pick. The server's play-history cooldown is still authoritative, but
+// these explicit excludes close the gap while play history is being recorded
+// and make background pre-picks safe before the final track has ended.
+export function buildAutomaticRepickExcludes(previousSongs, currentTrack) {
+  const names = [
+    ...(Array.isArray(previousSongs) ? previousSongs : []),
+    currentTrack,
+  ].map(getSongName).filter(Boolean);
+  return [...new Set(names)];
+}
+
+// Async automatic picks may finish after a DJ edit, another transition, or a
+// reload reconciliation. Commit only while the exact transition still owns an
+// empty bottom slot for this dancer. Manual/DJ-saved ownership always wins.
+export function canCommitAutomaticBottomPick({
+  capturedVersion,
+  currentVersion,
+  dancerId,
+  rotation,
+  currentAssignment,
+  hasManualOwnership = false,
+}) {
+  if (capturedVersion !== currentVersion || hasManualOwnership) return false;
+  if (!Array.isArray(rotation) || rotation.length === 0) return false;
+  if (String(rotation[rotation.length - 1]) !== String(dancerId)) return false;
+  return !Array.isArray(currentAssignment) || currentAssignment.length === 0;
+}
+
 export function normalizeSongList(songs, songsPerSet) {
   if (!Array.isArray(songs)) return [];
   return capSongList(songs.map(getSongName).filter(Boolean), songsPerSet);
