@@ -143,6 +143,7 @@ import {
 import { acceptBoothSnapshot } from '@/utils/boothStateSnapshot';
 import {
   getCommercialTransitionPlan,
+  hasAdvancingPlayback,
   rebaseBreakCursor,
 } from '@/utils/audioPlayback';
 
@@ -599,6 +600,7 @@ export default function DJBooth() {
   const lastAudioActivityRef = useRef(Date.now());
   const playbackExpectedRef = useRef(false);
   const watchdogRecoveringRef = useRef(false);
+  const watchdogMediaSampleRef = useRef(null);
   // Watchdog recovery is deliberately preemptible. A user skip claims a newer
   // generation so a recovery that is waiting on a fetch/play cannot apply stale
   // assignment or playback state when it resumes.
@@ -7440,6 +7442,14 @@ export default function DJBooth() {
         }
       }
       
+      const playbackHealth = audioEngineRef.current?.getPlaybackHealth?.() || null;
+      const previousPlaybackHealth = watchdogMediaSampleRef.current;
+      watchdogMediaSampleRef.current = playbackHealth;
+      if (hasAdvancingPlayback(previousPlaybackHealth, playbackHealth)) {
+        lastAudioActivityRef.current = Date.now();
+        return;
+      }
+
       const silentFor = Date.now() - lastAudioActivityRef.current;
       if (silentFor < SILENCE_THRESHOLD) return;
       
@@ -7470,7 +7480,12 @@ export default function DJBooth() {
         const _wdDancerName = _wdDancer?.name || null;
         const _wdTrack = currentTrackRef.current;
         lastWatchdogRef.current = { at: Date.now(), silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack };
-        logDiag('watchdog_fired', { silentMs: silentFor, dancer: _wdDancerName, track: _wdTrack });
+        logDiag('watchdog_fired', {
+          silentMs: silentFor,
+          dancer: _wdDancerName,
+          track: _wdTrack,
+          playbackHealth,
+        });
       }
       const recoveryOperation = claimPlaybackOwnership(
         playbackOwnershipRef.current,
