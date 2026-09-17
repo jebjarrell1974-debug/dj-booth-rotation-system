@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   capSongAssignments,
   capSongAssignmentsPreservingManual,
@@ -252,6 +253,20 @@ test('automatic bottom picks require current ownership of an empty bottom slot',
   assert.equal(canCommitAutomaticBottomPick({ ...base, rotation: ['finished', 'next'] }), false);
   assert.equal(canCommitAutomaticBottomPick({ ...base, currentAssignment: ['newer.mp3'] }), false);
   assert.equal(canCommitAutomaticBottomPick({ ...base, hasManualOwnership: true }), false);
+});
+
+test('every flip-to-bottom caller excludes the completed set and guards async ownership', () => {
+  const source = readFileSync(new URL('../pages/DJBooth.jsx', import.meta.url), 'utf8');
+  const branchStarts = [...source.matchAll(/const finishedDancerForRepick =/g)].map(match => match.index);
+  assert.equal(branchStarts.length, 2, 'expected skip-break and natural-break repick callers');
+
+  for (const start of branchStarts) {
+    const branch = source.slice(start, start + 2600);
+    assert.match(branch, /buildAutomaticRepickExcludes\(\s*finishedPreviousSongs,\s*currentTrackRef\.current,/);
+    assert.match(branch, /getDancerTracks\(finishedDancerForRepick, repickExcludes, true, 5000\)/);
+    assert.match(branch, /canCommitAutomaticBottomPick\(\{/);
+    assert.doesNotMatch(branch, /getDancerTracks\(finishedDancerForRepick, \[\], true, 5000\)/);
+  }
 });
 
 test('normalizes invalid set lengths safely', () => {

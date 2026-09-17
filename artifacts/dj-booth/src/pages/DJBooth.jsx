@@ -6829,6 +6829,8 @@ export default function DJBooth() {
           currentDancerIndexRef.current = 0;
           setCurrentSongNumber(0);
           currentSongNumberRef.current = 0;
+          const finishedPreviousSongs = rotationSongsRef.current[finishedId] || [];
+          const _repickVer = ++rotationAssignmentVersionRef.current;
           const clearedSongs = { ...rotationSongsRef.current };
           delete clearedSongs[finishedId];
           commitRotationSongs(clearedSongs);
@@ -6849,11 +6851,21 @@ export default function DJBooth() {
             console.log(`🎵 Flip-to-bottom: keeping DJ-saved songs for ${finishedDancerForRepick.name} — skipping auto re-pick`);
             logDiag?.('flip_repick_skipped_dj_saved', { dancer: finishedDancerForRepick.name });
           } else if (finishedDancerForRepick) {
-            const _repickVer = ++rotationAssignmentVersionRef.current;
-            getDancerTracks(finishedDancerForRepick, [], true, 5000)
+            const repickExcludes = buildAutomaticRepickExcludes(
+              finishedPreviousSongs,
+              currentTrackRef.current,
+            );
+            getDancerTracks(finishedDancerForRepick, repickExcludes, true, 5000)
               .then(repicked => {
-                if (_repickVer !== rotationAssignmentVersionRef.current) {
-                  console.log(`🚫 Flip-to-bottom re-pick stale (ver ${_repickVer} ≠ ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
+                if (!canCommitAutomaticBottomPick({
+                  capturedVersion: _repickVer,
+                  currentVersion: rotationAssignmentVersionRef.current,
+                  dancerId: finishedId,
+                  rotation: rotationRef.current,
+                  currentAssignment: rotationSongsRef.current[finishedId],
+                  hasManualOwnership: isManualSet(finishedId),
+                })) {
+                  console.log(`🚫 Flip-to-bottom re-pick lost ownership (ver ${_repickVer} → ${rotationAssignmentVersionRef.current}) — discarding for ${finishedDancerForRepick.name}`);
                   return;
                 }
                 if (djSavedManualRef.current[finishedId]) {
