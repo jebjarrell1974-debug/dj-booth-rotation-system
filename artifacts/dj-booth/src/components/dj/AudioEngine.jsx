@@ -4,11 +4,7 @@ import {
   VOICE_DUCK_GAIN,
   DUCK_LEASE_MS,
 } from '@/utils/ducking';
-import {
-  getTrackEndTriggerPoint,
-  ownsDeckCrossfade,
-  ownsDeckStartup,
-} from '@/utils/audioPlayback';
+import { getTrackEndTriggerPoint } from '@/utils/audioPlayback';
 import { createAnnouncementLifecycle } from '@/utils/announcementLifecycle';
 import { createOwnedDeckFadeController } from '@/utils/ownedDeckFade';
 import {
@@ -115,7 +111,6 @@ const AudioEngine = forwardRef(({
   const [duration, setDuration] = useState(0);
 
   const fadeAnimationRef = useRef(null);
-  const crossfadeOwnerRef = useRef(0);
   const safetyFadeRef = useRef(null);
   const safetyFadeHandleRef = useRef(null);
   const lastTimeUpdateRef = useRef(0);
@@ -889,11 +884,9 @@ const AudioEngine = forwardRef(({
       startupSignal?.addEventListener?.('abort', forwardExternalAbort, { once: true });
     }
     let incomingDeckForCleanup = null;
-    let incomingDeckNameForCleanup = null;
     let incomingPlaybackStarted = false;
     const cleanupIncomingDeck = () => {
       if (!incomingDeckForCleanup) return;
-      if (incomingDeckNameForCleanup === activeDeck.current) return;
       incomingDeckForCleanup.pause();
       incomingDeckForCleanup.onended = null;
       incomingDeckForCleanup.ontimeupdate = null;
@@ -904,6 +897,8 @@ const AudioEngine = forwardRef(({
     try {
     const deckA = deckARef.current;
     const deckB = deckBRef.current;
+    const aDeck = activeDeck.current;
+    console.log(`🔍 PlayTrack: DECK STATE before load — active=${aDeck}, A.paused=${deckA?.paused}, A.src=${deckA?.src ? 'set' : 'empty'}, B.paused=${deckB?.paused}, B.src=${deckB?.src ? 'set' : 'empty'}`);
 
     const trackData = await loadTrack(fileHandle, {
       signal: startupController.signal,
@@ -930,37 +925,15 @@ const AudioEngine = forwardRef(({
       }
     }
 
-    // Never choose a deck pair while an earlier crossfade can still flip the
-    // active pointer. Let audible overlap finish first, then capture ownership
-    // atomically before preparing the inactive deck.
-    const crossfadeWaitDeadline = performance.now() + (CROSSFADE_DURATION * 1000) + 1500;
-    while (crossfadeInProgressRef.current
-        && !startupController.signal.aborted
-        && performance.now() < crossfadeWaitDeadline) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    if (startupController.signal.aborted || crossfadeInProgressRef.current) {
-      console.warn('⚠️ PlayTrack: prior crossfade did not settle before startup deadline');
-      return false;
-    }
-
     const ctx = ensureAudioContext();
 
-    const outgoingDeckName = activeDeck.current;
     const inactiveDeck = getInactiveDeck();
     const activeDeckEl = getActiveDeck();
     const inactiveGain = getInactiveDeckGain();
     const activeGain = getActiveDeckGain();
     const inactiveSourceRef = getInactiveSourceRef();
     const inactiveDeckName = inactiveDeck === deckARef.current ? 'A' : 'B';
-    console.log(`🔍 PlayTrack: DECK STATE before load — active=${outgoingDeckName}, A.paused=${deckA?.paused}, A.src=${deckA?.src ? 'set' : 'empty'}, B.paused=${deckB?.paused}, B.src=${deckB?.src ? 'set' : 'empty'}`);
     incomingDeckForCleanup = inactiveDeck;
-    incomingDeckNameForCleanup = inactiveDeckName;
-    const ownsStartup = () => ownsDeckStartup({
-      capturedActiveDeck: outgoingDeckName,
-      currentActiveDeck: activeDeck.current,
-      crossfadeInProgress: crossfadeInProgressRef.current,
-    });
     const preparedHandle = preparedDeckControllerRef.current?.adopt({
       url: trackData.url,
       owner: preparedOwner,
@@ -994,11 +967,6 @@ const AudioEngine = forwardRef(({
           timeoutMs: MEDIA_READY_TIMEOUT_MS,
           signal: startupController.signal,
         });
-        if (!ownsStartup()) {
-          console.warn('⚠️ PlayTrack: deck ownership changed while media was loading');
-          cleanupIncomingDeck();
-          return false;
-        }
       } catch (loadErr) {
         console.error('❌ PlayTrack: Audio load failed:', loadErr.message);
         cleanupIncomingDeck();
@@ -1050,7 +1018,6 @@ const AudioEngine = forwardRef(({
       // current fade, handlers, deck generation, or published track state.
       cancelAnalysisGainRamp();
       cancelOwnedDeckFade('new-track');
-      const crossfadeOwner = ++crossfadeOwnerRef.current;
       if (fadeAnimationRef.current) {
         cancelAnimationFrame(fadeAnimationRef.current);
         fadeAnimationRef.current = null;
@@ -1072,18 +1039,7 @@ const AudioEngine = forwardRef(({
       setCurrentTime(0);
       lastTimeUpdateRef.current = 0;
       onTrackChangeRef.current?.(trackData.name);
-      return crossfadeOwner;
     };
-
-    const ownsCrossfade = (crossfadeOwner) => ownsDeckCrossfade({
-      owner: crossfadeOwner,
-      currentOwner: crossfadeOwnerRef.current,
-      outgoingDeck: outgoingDeckName,
-      activeDeck: activeDeck.current,
-      incomingDeck: inactiveDeckName,
-      incomingGeneration: deckGeneration,
-      deckGenerations: deckGenerationRef.current,
-    });
 
     try {
       if (crossfade && isPlayingRef.current) {
@@ -1093,12 +1049,7 @@ const AudioEngine = forwardRef(({
           signal: startupController.signal,
         });
         incomingPlaybackStarted = true;
-        if (!ownsStartup()) {
-          console.warn('⚠️ PlayTrack: deck ownership changed while playback was starting');
-          cleanupIncomingDeck();
-          return false;
-        }
-        const crossfadeOwner = commitIncomingStart();
+        commitIncomingStart();
         crossfadeInProgressRef.current = true;
 
         const targetVolume = autoGainValue;
@@ -1107,7 +1058,6 @@ const AudioEngine = forwardRef(({
         const fadeDuration = CROSSFADE_DURATION * 1000;
 
         const animateFade = (now) => {
-          if (!ownsCrossfade(crossfadeOwner)) return;
           const elapsed = now - startTime;
           const progress = Math.min(elapsed / fadeDuration, 1);
 
@@ -1129,7 +1079,7 @@ const AudioEngine = forwardRef(({
             activeDeckEl.pause();
             activeDeckEl.src = '';
             cleanupDeck(activeDeckEl);
-            activeDeck.current = inactiveDeckName;
+            activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
           }
         };
 
@@ -1144,19 +1094,13 @@ const AudioEngine = forwardRef(({
           signal: startupController.signal,
         });
         incomingPlaybackStarted = true;
-        if (!ownsStartup()) {
-          console.warn('⚠️ PlayTrack: deck ownership changed while playback was starting');
-          cleanupIncomingDeck();
-          return false;
-        }
-        const crossfadeOwner = commitIncomingStart();
+        commitIncomingStart();
         crossfadeInProgressRef.current = true;
 
         const startTime = performance.now();
         const fadeDuration = MICRO_CROSSFADE_DURATION * 1000;
 
         const animateMicroFade = (now) => {
-          if (!ownsCrossfade(crossfadeOwner)) return;
           const elapsed = now - startTime;
           const progress = Math.min(elapsed / fadeDuration, 1);
 
@@ -1172,7 +1116,7 @@ const AudioEngine = forwardRef(({
             activeDeckEl.pause();
             activeDeckEl.src = '';
             cleanupDeck(activeDeckEl);
-            activeDeck.current = inactiveDeckName;
+            activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
           }
         };
 
@@ -1186,11 +1130,6 @@ const AudioEngine = forwardRef(({
           signal: startupController.signal,
         });
         incomingPlaybackStarted = true;
-        if (!ownsStartup()) {
-          console.warn('⚠️ PlayTrack: deck ownership changed while playback was starting');
-          cleanupIncomingDeck();
-          return false;
-        }
         commitIncomingStart();
         crossfadeInProgressRef.current = false;
         // Keep the outgoing deck intact until the replacement has actually
@@ -1199,7 +1138,7 @@ const AudioEngine = forwardRef(({
         activeDeckEl.src = '';
         cleanupDeck(activeDeckEl);
         activeDeckBpmRef.current = incomingBpm;
-        activeDeck.current = inactiveDeckName;
+        activeDeck.current = activeDeck.current === 'A' ? 'B' : 'A';
       }
     } catch (playErr) {
       console.error('❌ PlayTrack: play() failed:', playErr?.message || playErr);
@@ -1722,30 +1661,6 @@ const AudioEngine = forwardRef(({
     try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_voice_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
   }, []);
 
-  const getPlaybackHealth = useCallback(() => {
-    const describeDeck = (deckName, deck, gainRef) => ({
-      generation: deckGenerationRef.current[deckName] || 0,
-      paused: deck?.paused ?? true,
-      ended: deck?.ended ?? false,
-      currentTime: Number.isFinite(deck?.currentTime) ? deck.currentTime : null,
-      duration: Number.isFinite(deck?.duration) ? deck.duration : null,
-      readyState: deck?.readyState ?? 0,
-      srcSet: !!deck?.src,
-      gain: Number.isFinite(gainRef.current?.gain?.value)
-        ? gainRef.current.gain.value
-        : null,
-    });
-    return {
-      activeDeck: activeDeck.current,
-      crossfadeInProgress: crossfadeInProgressRef.current,
-      audioContextState: audioCtxRef.current?.state || 'missing',
-      decks: {
-        A: describeDeck('A', deckARef.current, deckAGainRef),
-        B: describeDeck('B', deckBRef.current, deckBGainRef),
-      },
-    };
-  }, []);
-
   useImperativeHandle(ref, () => ({
     playTrack,
     cancelPendingTrackStart,
@@ -1778,7 +1693,6 @@ const AudioEngine = forwardRef(({
       try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_beat_match: enabled ? 'true' : 'false' }) }).catch(() => {}); } catch {}
     },
     getBeatMatchEnabled: () => beatMatchEnabledRef.current,
-    getPlaybackHealth,
     isPlaying,
     currentTrack,
     currentTime,
