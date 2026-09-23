@@ -736,7 +736,7 @@ export const AUTOMATIC_EXCLUDED_GENRES = ['Promo Beds', 'Promos'];
 const AUTOMATIC_EXCLUDED_PLACEHOLDERS = AUTOMATIC_EXCLUDED_GENRES.map(() => '?').join(',');
 
 export function getMusicTracks({ page = 1, limit = 100, search = '', genre = '', excludeDirty = false, excludeDjOnly = false } = {}) {
-  let where = ['blocked = 0'];
+  let where = ["blocked = 0", "LOWER(path) NOT LIKE '%.wma'", "LOWER(name) NOT LIKE '%.wma'"];
   let params = [];
   if (excludeDirty) {
     where.push("name NOT LIKE '%dirty%' COLLATE NOCASE");
@@ -810,28 +810,35 @@ export function scrubDjOnlyFromAllPlaylists() {
 }
 
 export function getMusicTrackById(id) {
-  return readDb.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
+  const track = readDb.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
+  return track && isPlayableMusicTrack(track) ? track : null;
 }
 
 export function getMusicTrackByName(name) {
   // Exact match first; then case-insensitive; then with/without a trailing
   // extension. Feature-show set resolution goes through here — a miss used to
   // cascade into a RANDOM library track under the feature intro, so be forgiving.
-  let row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ?').get(name);
-  if (row) return row;
-  row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE').get(name);
-  if (row) return row;
+  let row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(name);
+  if (row && isPlayableMusicTrack(row)) return row;
+  row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(name);
+  if (row && isPlayableMusicTrack(row)) return row;
   const noExt = name.replace(/\.[a-z0-9]{2,4}$/i, '');
   if (noExt !== name) {
-    row = readDb.prepare('SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE').get(noExt);
-    if (row) return row;
+    row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(noExt);
+    if (row && isPlayableMusicTrack(row)) return row;
   }
   // LIKE metacharacters in the track name must be escaped or a name containing
   // % / _ could match an unrelated row.
   const likeSafe = noExt.replace(/([\\%_])/g, '\\$1');
-  return readDb.prepare(
-    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' ESCAPE '\\' COLLATE NOCASE ORDER BY LENGTH(name) ASC"
+  row = readDb.prepare(
+    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' ESCAPE '\\' COLLATE NOCASE AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma' ORDER BY LENGTH(name) ASC"
   ).get(likeSafe);
+  return row && isPlayableMusicTrack(row) ? row : null;
+}
+
+function isPlayableMusicTrack(track) {
+  const path = String(track?.path || track?.name || '');
+  return !/\.wma$/i.test(path);
 }
 
 export function deleteMusicTrackFromDB(trackName) {
@@ -893,7 +900,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = [], autom
   const playedNames = automatic ? getAutomaticCooldownTrackNames() : [];
   const allExcluded = [...new Set([...excludeNames, ...playedNames])];
 
-  const conditions = ['t.blocked = 0'];
+  const conditions = ['t.blocked = 0', "LOWER(t.path) NOT LIKE '%.wma'", "LOWER(t.name) NOT LIKE '%.wma'"];
   const params = [];
 
   if (allExcluded.length > 0) {
@@ -922,7 +929,7 @@ export function getRandomTracks(count = 3, excludeNames = [], genres = [], autom
   ).all(...params);
 
   if (pool.length < count) {
-    const fallbackConditions = ['t.blocked = 0'];
+    const fallbackConditions = ['t.blocked = 0', "LOWER(t.path) NOT LIKE '%.wma'", "LOWER(t.name) NOT LIKE '%.wma'"];
     const fallbackParams = [];
     const fallbackExcluded = [...new Set([...allExcluded, ...pool.map(t => t.name)])];
     if (fallbackExcluded.length > 0) {
@@ -1000,6 +1007,7 @@ export function selectTracksForSet({
         `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
          FROM music_tracks t
          WHERE t.name = ? AND t.blocked = 0
+           AND LOWER(t.path) NOT LIKE '%.wma' AND LOWER(t.name) NOT LIKE '%.wma'
            ${automatic ? `AND t.genre COLLATE NOCASE NOT IN (${AUTOMATIC_EXCLUDED_PLACEHOLDERS})` : ''}
            AND t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})`
       ).get(
@@ -1023,6 +1031,7 @@ export function selectTracksForSet({
           `SELECT t.id, t.name, t.path, t.genre, t.auto_gain
            FROM music_tracks t
            WHERE LOWER(t.name) = LOWER(?) AND t.blocked = 0
+             AND LOWER(t.path) NOT LIKE '%.wma' AND LOWER(t.name) NOT LIKE '%.wma'
              ${automatic ? `AND t.genre COLLATE NOCASE NOT IN (${AUTOMATIC_EXCLUDED_PLACEHOLDERS})` : ''}
              AND t.genre COLLATE NOCASE NOT IN (${DJ_ONLY_PLACEHOLDERS})
            LIMIT 1`

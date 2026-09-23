@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VIP_INCREMENT_MINUTES, VIP_INCREMENT_OPTIONS, vipTotalLabel } from './vipDurations.js';
+import { MAX_VIP_DURATION_MS, VIP_INCREMENT_MINUTES, VIP_INCREMENT_OPTIONS, parseVipDurationMs, sanitizeVipMap, vipTotalLabel } from './vipDurations.js';
 
 test('+10 min is offered alongside the existing increments, smallest first', () => {
   assert.deepEqual(VIP_INCREMENT_MINUTES, [10, 15, 30, 60]);
@@ -37,4 +37,19 @@ test('the running total reads correctly for the operator', () => {
 test('zero stages nothing, so the confirm button stays disabled', () => {
   assert.equal(vipTotalLabel(0), '—');
   assert.equal(Number(0) > 0, false);
+});
+
+test('VIP duration accepts only finite positive bounded integers', () => {
+  assert.equal(parseVipDurationMs(600000), 600000);
+  for (const invalid of [0, -1, 1.5, NaN, Infinity, MAX_VIP_DURATION_MS + 1, null, '600000', 'nope']) {
+    assert.equal(parseVipDurationMs(invalid), null);
+  }
+});
+
+test('malformed and expired persisted VIP entries are discarded', () => {
+  assert.deepEqual(sanitizeVipMap({
+    good: { expiresAt: 2000 },
+    expired: { expiresAt: 999 },
+    malformed: { expiresAt: 'never' },
+  }, 1000), { good: { expiresAt: 2000 } });
 });

@@ -16,6 +16,7 @@ import {
 import { remoteSkipPayload } from '@/utils/skipPlayback';
 import { createCommandFeedback, EMPTY_COMMAND_VIEW } from '@/utils/commandFeedback';
 import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
+import { decayVipRemaining } from '@/utils/vipCountdown';
 import { rotationStartState, clearStartingFlag } from '@/utils/rotationStartState';
 import CommandStatus from '@/components/dj/CommandStatus';
 import {
@@ -79,6 +80,7 @@ export default function RemoteView({
 
   const [clock, setClock] = useState(Date.now());
   const [lastStateReceivedAt, setLastStateReceivedAt] = useState(() => liveBoothState ? Date.now() : 0);
+  const vipSnapshotReceiptRef = useRef({ at: performance.now(), values: {} });
   // One view for every command outcome, produced by the shared feedback store. It
   // replaces three shared strings that used to trample each other: an unrelated
   // success could hide a command still being checked, and clear an uncertainty
@@ -105,6 +107,10 @@ export default function RemoteView({
     if (!liveBoothState) return;
     if (liveBoothState.updatedAt) lastServerUpdateRef.current = liveBoothState.updatedAt;
     setLastStateReceivedAt(Date.now());
+    vipSnapshotReceiptRef.current = {
+      at: performance.now(),
+      values: liveBoothState.dancerVipRemainingMs || {},
+    };
   }, [liveBoothState]);
   useEffect(() => {
     if (pendingCommercialFreq != null && String(liveBoothState?.commercialFreq) === pendingCommercialFreq) {
@@ -137,6 +143,12 @@ export default function RemoteView({
   const activeBreakKey = liveBoothState?.activeBreakKey || null;
   const activeBreakIndex = liveBoothState?.breakSongIndex ?? null;
   const dancerVipMap = liveBoothState?.dancerVipMap || {};
+  const dancerVipRemainingMs = vipSnapshotReceiptRef.current.values;
+  const vipRemainingFor = (id) => decayVipRemaining(
+    dancerVipRemainingMs[String(id)],
+    vipSnapshotReceiptRef.current.at,
+    performance.now(),
+  );
   const promoQueue = liveBoothState?.promoQueue || [];
   const skippedCommercials = new Set(liveBoothState?.skippedCommercials || []);
   const skipLocked = !!liveBoothState?.skipLocked;
@@ -1132,7 +1144,7 @@ export default function RemoteView({
                     {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
                       const vipDancer = dancers?.find(d => String(d.id) === String(dancerId));
                       if (!vipDancer) return null;
-                      const msLeft = vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0;
+                      const msLeft = vipRemainingFor(dancerId);
                       const minsLeft = Math.floor(msLeft / 60000);
                       const secsLeft = Math.floor((msLeft % 60000) / 1000);
                       return (

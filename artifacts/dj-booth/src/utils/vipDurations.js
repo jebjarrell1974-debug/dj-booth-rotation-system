@@ -4,6 +4,23 @@
  * then confirms - it is not a one-tap fixed-duration submit.
  */
 export const VIP_INCREMENT_MINUTES = Object.freeze([10, 15, 30, 60]);
+export const MAX_VIP_DURATION_MS = 24 * 60 * 60 * 1000;
+
+export function parseVipDurationMs(value, { max = MAX_VIP_DURATION_MS } = {}) {
+  const duration = value;
+  if (!Number.isFinite(duration) || !Number.isInteger(duration) || duration <= 0 || duration > max) {
+    return null;
+  }
+  return duration;
+}
+
+export function sanitizeVipMap(value, now = Date.now()) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => {
+    const expiresAt = Number(entry?.expiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > now;
+  }));
+}
 
 export const VIP_INCREMENT_OPTIONS = Object.freeze(
   VIP_INCREMENT_MINUTES.map(minutes => Object.freeze({

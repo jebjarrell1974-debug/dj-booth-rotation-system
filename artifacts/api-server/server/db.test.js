@@ -153,6 +153,29 @@ test('explicit manual selection and library lookup may repeat played tracks', ()
   assert.equal(getMusicTrackByName('manual-repeat').name, 'manual-repeat');
 });
 
+test('stale WMA rows are never returned as playable while playlist names remain intact', () => {
+  upsertMusicTrack('legacy.wma', '/music/legacy.wma', 'House', 0, '2026-01-01T00:00:00.000Z');
+
+  assert.equal(getMusicTrackByName('legacy.wma'), null);
+  assert.deepEqual(
+    selectTracksForSet({
+      count: 1,
+      dancerPlaylist: ['legacy.wma'],
+      strictPlaylist: true,
+      automatic: true,
+    }),
+    [],
+  );
+  assert.equal(db.prepare('SELECT name FROM music_tracks WHERE path = ?').get('/music/legacy.wma').name, 'legacy.wma');
+});
+
+test('WMA duplicate cannot shadow a playable track with the same name', () => {
+  upsertMusicTrack('same-name.mp3', '/music/same-name.wma', 'House', 0, '2026-01-01T00:00:00.000Z');
+  upsertMusicTrack('same-name.mp3', '/music/same-name.mp3', 'House', 0, '2026-01-01T00:00:00.000Z');
+
+  assert.equal(getMusicTrackByName('same-name.mp3').path, '/music/same-name.mp3');
+});
+
 test('play history cleanup preserves the durable no-repeat ledger', () => {
   addTrack('retained-history-song');
   logPlayHistory('retained-history-song', 'Dancer', 'House');

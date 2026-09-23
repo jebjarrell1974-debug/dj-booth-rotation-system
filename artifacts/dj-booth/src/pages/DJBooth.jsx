@@ -130,6 +130,9 @@ import {
   transitionRecoveryAction,
   watchdogRecoveryOutcome,
 } from '@/utils/playbackOwnership';
+import { parseVipDurationMs, sanitizeVipMap } from '@/utils/vipDurations';
+import { createVipRemainingSnapshot } from '@/utils/vipCountdown';
+import { advanceActiveSet, beginActiveSet, createActiveSetCursor, locateCursorDancer, ownsActiveSet } from '@/utils/activeSetCursor';
 
 // localStorage is not always reachable (private mode, storage disabled). Ducking must not
 // depend on it: without storage the guard simply starts empty after a reload.
@@ -374,7 +377,7 @@ export default function DJBooth() {
       if (raw) {
         const parsed = JSON.parse(raw);
         const now = Date.now();
-        return Object.fromEntries(Object.entries(parsed).filter(([, v]) => !v.expiresAt || v.expiresAt > now));
+        return sanitizeVipMap(parsed, now);
       }
     } catch {}
     return {};
@@ -433,6 +436,41 @@ export default function DJBooth() {
   });
   const currentDancerIndexRef = useRef(0);
   const currentSongNumberRef = useRef(1);
+  // One owner for the active set. The legacy refs remain for UI compatibility,
+  // but transition decisions use this cursor so a delayed completion cannot
+  // combine an old song number with a newly reordered dancer.
+  const activeSetCursorRef = useRef(createActiveSetCursor());
+  const activeSetGenerationRef = useRef(0);
+  const beginOwnedSet = (dancerId, setLength) => {
+    activeSetGenerationRef.current += 1;
+    const cursor = beginActiveSet(activeSetCursorRef.current, {
+      dancerId,
+      setLength,
+      generation: activeSetGenerationRef.current,
+    });
+    activeSetCursorRef.current = cursor;
+    currentSongNumberRef.current = cursor.songNumber;
+    return cursor;
+  };
+  const writeOwnedSong = (generation, dancerId, songNumber) => {
+    if (!ownsActiveSet(activeSetCursorRef.current, { dancerId, generation })) return false;
+    currentSongNumberRef.current = songNumber;
+    setCurrentSongNumber(songNumber);
+    return true;
+  };
+  const writeOwnedIndex = (generation, dancerId, index) => {
+    if (!ownsActiveSet(activeSetCursorRef.current, { dancerId, generation })) return false;
+    currentDancerIndexRef.current = index;
+    setCurrentDancerIndex(index);
+    return true;
+  };
+  const restoreActiveSet = (dancerId, songNumber, setLength) => {
+    if (dancerId == null) return null;
+    const cursor = beginOwnedSet(dancerId, Math.max(0, Number(setLength) || 0));
+    activeSetCursorRef.current = advanceActiveSet(cursor, Math.max(0, Number(songNumber) || 0));
+    currentSongNumberRef.current = activeSetCursorRef.current.songNumber;
+    return activeSetCursorRef.current;
+  };
   const rotationSongsRef = useRef(rotationSongs);
   // Feature Entertainer placements. Source of truth for "which armed set + produced
   // audio belongs to a feature placed into the upcoming rotation". Keyed by dancer id:
@@ -585,6 +623,19 @@ export default function DJBooth() {
   }, [rotationSongs, songsPerSet, remoteMode]);
 
   const rotationRef = useRef([]);
+  useEffect(() => {
+    if (!isRotationActiveRef.current || rotationRef.current.length === 0) return;
+    const dancerId = rotationRef.current[currentDancerIndexRef.current];
+    const cursor = activeSetCursorRef.current;
+    if (dancerId != null && String(cursor.dancerId) !== String(dancerId)) {
+      logDiag?.('active_set_cursor_started', {
+        dancerId: String(dancerId),
+        songNumber: activeSetCursorRef.current.songNumber,
+        setLength: activeSetCursorRef.current.setLength,
+        generation: activeSetCursorRef.current.generation,
+      });
+    }
+  }, [currentDancerIndex, rotation]);
   const remoteRotationDraftRef = useRef(null);
   const remoteRotationRevisionRef = useRef(0);
   const dancersRef = useRef([]);
@@ -1431,6 +1482,14 @@ export default function DJBooth() {
     currentDancerIndexRef.current = nextCurrentDancerIndex;
     setStateIfChanged(setCurrentSongNumber, nextCurrentSongNumber);
     currentSongNumberRef.current = nextCurrentSongNumber;
+    const restoredDancerId = liveBoothState.rotation?.[nextCurrentDancerIndex];
+    if (nextIsRotationActive && restoredDancerId != null) {
+      beginOwnedSet(restoredDancerId, effectiveSongsPerSet(restoredDancerId));
+      activeSetCursorRef.current = advanceActiveSet(
+        activeSetCursorRef.current,
+        nextCurrentSongNumber,
+      );
+    }
     setStateIfChanged(setCurrentTrack, nextCurrentTrack);
     currentTrackRef.current = nextCurrentTrack;
     setStateIfChanged(setIsPlaying, nextIsPlaying);
@@ -1574,7 +1633,12 @@ export default function DJBooth() {
   //  - dancer on stage         -> add to her pending (after-set) VIP duration
   //  - otherwise               -> send her to VIP now for durationMs
   const sendDancerToVip = useCallback(async (dancerId, durationMs) => {
-    if (!durationMs || durationMs <= 0) return;
+    const validatedDurationMs = parseVipDurationMs(durationMs);
+    if (validatedDurationMs == null) {
+      logDiag('vip_rejected_invalid_duration', { dancerId: String(dancerId), durationMs });
+      return;
+    }
+    durationMs = validatedDurationMs;
     const idStr = String(dancerId);
     const isOnStage = rotationRef.current[currentDancerIndexRef.current] === dancerId && isRotationActiveRef.current;
     const _vipDancerName = dancersRef.current.find(d => String(d.id) === idStr)?.name;
@@ -2511,6 +2575,7 @@ export default function DJBooth() {
           availablePromos: availablePromos.map(p => ({ cache_key: p.cache_key, dancer_name: p.dancer_name })),
           skippedCommercials: (() => { try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); } catch { return []; } })(),  // kept for remote rotation display
           dancerVipMap: dancerVipMapRef.current,
+          dancerVipRemainingMs: createVipRemainingSnapshot(dancerVipMapRef.current),
           placedFeatures: placedFeaturesRef.current,
           autoplayQueue: autoplayQueueRef.current,
           autoplayAutoFillEnabled: autoplayAutoFillEnabledRef.current,
@@ -2612,12 +2677,18 @@ export default function DJBooth() {
         const idx = valid.length > 0 ? Math.min(activeStage.current_dancer_index || 0, valid.length - 1) : 0;
         setCurrentDancerIndex(idx);
         currentDancerIndexRef.current = idx;
+        if (isRotationActiveRef.current) {
+          restoreActiveSet(valid[idx], currentSongNumberRef.current, effectiveSongsPerSet(valid[idx]));
+        }
       } else {
         setRotation(saved);
         rotationRef.current = saved;
         const idx = activeStage.current_dancer_index || 0;
         setCurrentDancerIndex(idx);
         currentDancerIndexRef.current = idx;
+        if (isRotationActiveRef.current) {
+          restoreActiveSet(saved[idx], currentSongNumberRef.current, effectiveSongsPerSet(saved[idx]));
+        }
       }
     }
   }, [activeStage, dancers.length]);
@@ -2640,11 +2711,25 @@ export default function DJBooth() {
     }
   }, [dancers]);
 
-  useEffect(() => {
+  const playbackRestoreDoneRef = useRef(false);
+  const pendingPlaybackStateRef = useRef((() => {
     try {
-      const raw = localStorage.getItem('djbooth_playback_state');
-      if (raw) {
-        const s = JSON.parse(raw);
+      const parsed = JSON.parse(localStorage.getItem('djbooth_playback_state') || 'null');
+      return parsed
+        && typeof parsed === 'object'
+        && !Array.isArray(parsed)
+        && Number.isFinite(Number(parsed.currentSongNumber))
+        ? parsed
+        : null;
+    } catch {
+      return null;
+    }
+  })());
+  useEffect(() => {
+    if (playbackRestoreDoneRef.current) return;
+    try {
+      const s = pendingPlaybackStateRef.current;
+      if (s) {
         if (s.songsPerSet != null) {
           const restoredSetSize = normalizeSongsPerSet(s.songsPerSet, songsPerSetRef.current);
           auditSongsPerSet(songsPerSetRef.current, restoredSetSize, 'localstorage-mount');
@@ -2660,16 +2745,35 @@ export default function DJBooth() {
           const restoredSongNumber = Number.parseInt(s.currentSongNumber, 10);
           // Older builds used 999 as a hard-skip sentinel. Do not resurrect it
           // into the soft song-skip state after a watchdog/browser restart.
-          const safeSongNumber = Number.isInteger(restoredSongNumber) &&
-            restoredSongNumber >= 0 &&
-            restoredSongNumber <= songsPerSetRef.current
-            ? restoredSongNumber
-            : 0;
-          setCurrentSongNumber(safeSongNumber);
-          currentSongNumberRef.current = safeSongNumber;
+          const restoredRotation = rotationRef.current.length > 0
+            ? rotationRef.current
+            : (activeStage?.rotation_order || []);
+          const restoredIndex = activeStage?.current_dancer_index ?? currentDancerIndexRef.current;
+          const restoredDancerId = restoredRotation[restoredIndex];
+          if (restoredDancerId != null && dancersRef.current.some(d => String(d.id) === String(restoredDancerId))) {
+            const persistedSetLength = Number(s.setLength);
+            const restoredSetLength = Number.isInteger(persistedSetLength) && persistedSetLength > 0
+              ? persistedSetLength
+              : effectiveSongsPerSet(restoredDancerId);
+            const safeSongNumber = Number.isInteger(restoredSongNumber) &&
+              restoredSongNumber >= 0 &&
+              restoredSongNumber <= restoredSetLength
+              ? restoredSongNumber
+              : 0;
+            restoreActiveSet(
+              restoredDancerId,
+              safeSongNumber,
+              restoredSetLength,
+            );
+            setCurrentSongNumber(safeSongNumber);
+            pendingPlaybackStateRef.current = null;
+            playbackRestoreDoneRef.current = true;
+          }
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      pendingPlaybackStateRef.current = null;
+    }
     const token = localStorage.getItem('djbooth_token');
     if (token) {
       fetch('/api/client-settings', { headers: { Authorization: `Bearer ${token}` } })
@@ -2685,21 +2789,26 @@ export default function DJBooth() {
           }
           capAllAssignmentsToSetSize(songsPerSetRef.current);
           songsPerSetMountedRef.current = true;
+          if (!pendingPlaybackStateRef.current) playbackRestoreDoneRef.current = true;
         })
         .catch(() => {
           capAllAssignmentsToSetSize(songsPerSetRef.current);
           songsPerSetMountedRef.current = true;
+          if (!pendingPlaybackStateRef.current) playbackRestoreDoneRef.current = true;
         });
     } else {
       capAllAssignmentsToSetSize(songsPerSetRef.current);
       songsPerSetMountedRef.current = true;
+      if (!pendingPlaybackStateRef.current) playbackRestoreDoneRef.current = true;
     }
-  }, []);
+  }, [activeStage, rotation]);
 
   useEffect(() => {
+    if (!playbackRestoreDoneRef.current) return;
     localStorage.setItem('djbooth_playback_state', JSON.stringify({
       isRotationActive,
       currentSongNumber,
+      setLength: activeSetCursorRef.current?.setLength ?? songsPerSet,
       songsPerSet,
       breakSongsPerSet,
     }));
@@ -2795,7 +2904,7 @@ export default function DJBooth() {
   const playFallbackTrack = useCallback(async (
     crossfade = false,
     rotationSongNumber = null,
-    { isOperationCurrent = null, excludeNames = [] } = {},
+    { isOperationCurrent = null, excludeNames = [], dancerId = null } = {},
   ) => {
     const isCurrent = () => (
       typeof isOperationCurrent !== 'function' || isOperationCurrent()
@@ -2887,7 +2996,7 @@ export default function DJBooth() {
             if (!isCurrent()) return false;
             const success = await audioEngineRef.current?.playTrack({ url: track.url, name: track.name }, crossfade);
             if (isCurrent() && success === true) {
-              recordSongPlayed(track.name);
+              recordSongPlayed(track.name, dancerId ?? activeSetCursorRef.current.dancerId ?? null);
               setIsPlaying(true);
               updateRotationUI(track);
               return true;
@@ -2928,7 +3037,7 @@ export default function DJBooth() {
         if (!isCurrent()) return false;
         const success = await audioEngineRef.current?.playTrack({ url: randomTrack.url, name: randomTrack.name }, crossfade);
         if (isCurrent() && success === true) {
-          recordSongPlayed(randomTrack.name);
+          recordSongPlayed(randomTrack.name, dancerId ?? activeSetCursorRef.current.dancerId ?? null);
           setIsPlaying(true);
           updateRotationUI(randomTrack);
           return true;
@@ -3145,7 +3254,7 @@ export default function DJBooth() {
     crossfade = true,
     trackName = null,
     trackGenre = null,
-    { allowFallback = true, rotationSongNumber = null } = {},
+    { allowFallback = true, rotationSongNumber = null, dancerId = null } = {},
   ) => {
     if (!trackUrl) {
       console.error('❌ PlayTrack: No track URL provided');
@@ -3222,6 +3331,13 @@ export default function DJBooth() {
       console.warn('⚠️ PlayTrack: Engine returned failure, trying fallback');
       const fallbackOk = await playFallbackTrack(crossfade, rotationSongNumber, {
         excludeNames: name ? [name] : [],
+        dancerId,
+      });
+      logDiag?.('track_play_fallback', {
+        requested: name,
+        requestedPlayed: false,
+        fallbackPlayed: fallbackOk === true,
+        dancerId: dancerId ?? activeSetCursorRef.current.dancerId ?? null,
       });
       if (fallbackOk) playbackExpectedRef.current = true;
       if (!fallbackOk) {
@@ -3234,7 +3350,11 @@ export default function DJBooth() {
     }
     playbackExpectedRef.current = true;
     isPlayingRef.current = true;
-    if (name) recordSongPlayed(name, null, trackGenre);
+    if (name) recordSongPlayed(
+      name,
+      dancerId ?? activeSetCursorRef.current.dancerId ?? null,
+      trackGenre,
+    );
     setIsPlaying(true);
     return true;
   }, [recordSongPlayed, playFallbackTrack, isFeatureTrack, tracks]);
@@ -3841,7 +3961,7 @@ export default function DJBooth() {
     let started = false;
     if (setTrack?.url) {
       console.log('🌟 FEATURE show set starting:', setTrack.name, '(full-length, no cut)');
-      started = await playTrack(setTrack.url, true, setTrack.name, 'FEATURE');
+       started = await playTrack(setTrack.url, true, setTrack.name, 'FEATURE', { dancerId: dancer.id });
       if (!started) console.warn('⚠️ FEATURE: chosen set failed to PLAY (bad/corrupt file?):', setTrack.name);
     }
     if (!started && folderNames.length > 0) {
@@ -3852,13 +3972,13 @@ export default function DJBooth() {
         const alt = await resolveTrackByName(n);
         if (!alt?.url) continue;
         console.warn('🌟 FEATURE: retrying with another of her songs:', n);
-        started = await playTrack(alt.url, true, alt.name, 'FEATURE');
+         started = await playTrack(alt.url, true, alt.name, 'FEATURE', { dancerId: dancer.id });
         if (started) { setTrack = alt; break; }
       }
     }
     if (!started) {
       console.warn('⚠️ FEATURE: nothing from her folder would play — falling back to library');
-      await playFallbackTrack(true);
+       await playFallbackTrack(true, null, { dancerId: dancer.id });
     }
     return setTrack;
   }, [announcementsEnabled, resolveTrackByName, getDancerTracks, getFeatureMeta, prefetchAnnouncement, playPrefetchedAnnouncement, playTrack, playFallbackTrack, fetchFeatureAudioUrl]);
@@ -4009,6 +4129,8 @@ export default function DJBooth() {
     transitionInProgressRef.current = true;
     transitionStartTimeRef.current = Date.now();
     lastAudioActivityRef.current = Date.now();
+    beginOwnedSet(cleanRotation[0], effectiveSongsPerSet(cleanRotation[0]));
+    const incomingGeneration = activeSetCursorRef.current.generation;
     const beginAssignmentVersion = ++rotationAssignmentVersionRef.current;
     
     try {
@@ -4076,10 +4198,14 @@ export default function DJBooth() {
     isRotationActiveRef.current = true;
     setCurrentDancerIndex(0);
     currentDancerIndexRef.current = 0;
-    setCurrentSongNumber(1);
-    currentSongNumberRef.current = 1;
+    writeOwnedSong(incomingGeneration, cleanRotation[0], 1);
     
-    await updateStageState(0);
+    if (ownsActiveSet(activeSetCursorRef.current, {
+      dancerId: cleanRotation[0],
+      generation: incomingGeneration,
+    })) {
+      await updateStageState(0);
+    }
     
     const dancer = dnc.find(d => d.id === cleanRotation[0]);
     console.log('🎤 BeginRotation: First dancer:', dancer?.name);
@@ -4097,10 +4223,10 @@ export default function DJBooth() {
       if (firstTrack && firstTrack.url) {
         console.log('🎵 BeginRotation: Playing first track:', firstTrack.name);
         lastAudioActivityRef.current = Date.now();
-        const success = await playTrack(firstTrack.url, false, firstTrack.name, firstTrack.genre);
+        const success = await playTrack(firstTrack.url, false, firstTrack.name, firstTrack.genre, { dancerId: dancer.id });
         if (success === false) {
           console.warn('⚠️ BeginRotation: First track failed, trying fallback');
-          await playFallbackTrack(false);
+          await playFallbackTrack(false, null, { dancerId: dancer.id });
         }
         lastAudioActivityRef.current = Date.now();
         if (announcementsEnabled) {
@@ -4117,7 +4243,7 @@ export default function DJBooth() {
       } else {
         console.warn('⚠️ BeginRotation: No valid track, trying fallback');
         lastAudioActivityRef.current = Date.now();
-        await playFallbackTrack(false);
+        await playFallbackTrack(false, null, { dancerId: dancer.id });
         lastAudioActivityRef.current = Date.now();
         if (announcementsEnabled) {
           const _fm = getFeatureMeta(dancer);
@@ -4133,7 +4259,7 @@ export default function DJBooth() {
     } catch (err) {
       console.error('❌ BeginRotation error:', err);
       audioEngineRef.current?.unduck();
-      const ok = await playFallbackTrack(false);
+      const ok = await playFallbackTrack(false, null, { dancerId: dancer.id });
       if (!ok) {
         logDiag('transition_recovery_failed', {
           trigger: 'begin_rotation',
@@ -4987,8 +5113,26 @@ export default function DJBooth() {
     transitionStartTimeRef.current = Date.now();
     lastAudioActivityRef.current = Date.now();
 
-    const idx = currentDancerIndexRef.current;
-    const songNum = currentSongNumberRef.current;
+    let cursor = activeSetCursorRef.current;
+    let cursorIdx = locateCursorDancer(cursor, rotationRef.current);
+    if (cursorIdx < 0 && rotationRef.current[currentDancerIndexRef.current] != null) {
+      cursor = beginOwnedSet(
+        rotationRef.current[currentDancerIndexRef.current],
+        effectiveSongsPerSet(rotationRef.current[currentDancerIndexRef.current]),
+      );
+      cursorIdx = currentDancerIndexRef.current;
+    }
+    const idx = cursorIdx >= 0 ? cursorIdx : currentDancerIndexRef.current;
+    const songNum = cursorIdx >= 0 ? cursor.songNumber : currentSongNumberRef.current;
+    const transitionGeneration = cursor.generation;
+    logDiag?.('transition_start', {
+      trigger: 'skip',
+      dancerId: cursor?.dancerId || null,
+      songNumber: songNum,
+      setLength: cursor?.setLength ?? null,
+      generation: cursor?.generation ?? null,
+      liveRotationIndex: idx,
+    });
     const songs = rotationSongsRef.current;
     const rot = rotationRef.current;
     const dnc = dancersRef.current;
@@ -5028,8 +5172,7 @@ export default function DJBooth() {
       if (getFeatureMeta(dancer)) {
         console.log('🌟 HandleSkip: pending interstitial boundary routes into FEATURE arrival');
         await playFeatureArrivalRef.current(dancer);
-        currentSongNumberRef.current = 1;
-        setCurrentSongNumber(1);
+        writeOwnedSong(transitionGeneration, dancer.id, 1);
         lastAudioActivityRef.current = Date.now();
         transitionInProgressRef.current = false;
         return;
@@ -5084,7 +5227,9 @@ export default function DJBooth() {
     dancerTracks = Array.isArray(dancerTracks)
       ? dancerTracks.filter(track => getSongName(track))
       : [];
-    const configuredSetSize = effectiveSongsPerSet(rot[idx]);
+    const configuredSetSize = cursorIdx >= 0 && cursor.dancerId === String(rot[idx])
+      ? cursor.setLength
+      : effectiveSongsPerSet(rot[idx]);
     if (!skipBreaks && dancerTracks.length < configuredSetSize) {
       const existingNames = dancerTracks.map(getSongName).filter(Boolean);
       const refillVersion = rotationAssignmentVersionRef.current;
@@ -5186,10 +5331,13 @@ export default function DJBooth() {
             transitionInProgressRef.current = false;
             return;
           }
-          const fallbackOk = await playFallbackTrack(false, newSongNum);
+          const fallbackOk = await playFallbackTrack(false, newSongNum, { dancerId: dancer.id });
           if (fallbackOk && songNumberAfterPlayback(songNum, newSongNum, true) !== songNum) {
-            currentSongNumberRef.current = newSongNum;
-            setCurrentSongNumber(newSongNum);
+            if (ownsActiveSet(activeSetCursorRef.current, { dancerId: dancer.id, generation: transitionGeneration })) {
+              activeSetCursorRef.current = advanceActiveSet(activeSetCursorRef.current, newSongNum);
+              currentSongNumberRef.current = newSongNum;
+              setCurrentSongNumber(newSongNum);
+            }
           }
           if (announcementsEnabled) audioEngineRef.current?.unduck();
           transitionInProgressRef.current = false;
@@ -5198,12 +5346,17 @@ export default function DJBooth() {
 
         // Sync crowd display to the current dancer BEFORE announcing.
         // Without this, RotationDisplay keeps showing the previously removed dancer.
-        updateStageState(idx, rot);
-        fetch('/api/stage/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rotation_order: rot, current_dancer_index: idx, is_active: true })
-        }).catch(() => {});
+        if (ownsActiveSet(activeSetCursorRef.current, {
+          dancerId: dancer.id,
+          generation: transitionGeneration,
+        })) {
+          updateStageState(idx, rot);
+          fetch('/api/stage/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rotation_order: rot, current_dancer_index: idx, is_active: true })
+          }).catch(() => {});
+        }
 
         let playbackSucceeded = false;
         if (announcementsEnabled) {
@@ -5219,15 +5372,15 @@ export default function DJBooth() {
               false,
               nextTrack.name,
               nextTrack.genre,
-              { allowFallback: false, rotationSongNumber: newSongNum },
+               { allowFallback: false, rotationSongNumber: newSongNum, dancerId: dancer.id },
             ) === true;
             playbackSucceeded = requestedTrackPlayed;
             if (!playbackSucceeded && !effectiveManualAssignment) {
-              playbackSucceeded = await playFallbackTrack(false, newSongNum) === true;
+              playbackSucceeded = await playFallbackTrack(false, newSongNum, { dancerId: dancer.id }) === true;
             }
           } else {
             playbackSucceeded = !effectiveManualAssignment
-              && (await playFallbackTrack(false, newSongNum)) === true;
+              && (await playFallbackTrack(false, newSongNum, { dancerId: dancer.id })) === true;
           }
           audioEngineRef.current?.unduck();
         } else {
@@ -5238,20 +5391,23 @@ export default function DJBooth() {
               true,
               nextTrack.name,
               nextTrack.genre,
-              { allowFallback: false, rotationSongNumber: newSongNum },
+               { allowFallback: false, rotationSongNumber: newSongNum, dancerId: dancer.id },
             ) === true;
             playbackSucceeded = requestedTrackPlayed;
             if (!playbackSucceeded && !effectiveManualAssignment) {
-              playbackSucceeded = await playFallbackTrack(true, newSongNum) === true;
+              playbackSucceeded = await playFallbackTrack(true, newSongNum, { dancerId: dancer.id }) === true;
             }
           } else {
             playbackSucceeded = !effectiveManualAssignment
-              && (await playFallbackTrack(true, newSongNum)) === true;
+              && (await playFallbackTrack(true, newSongNum, { dancerId: dancer.id })) === true;
           }
         }
         if (songNumberAfterPlayback(songNum, newSongNum, playbackSucceeded) !== songNum) {
-          currentSongNumberRef.current = newSongNum;
-          setCurrentSongNumber(newSongNum);
+          if (ownsActiveSet(activeSetCursorRef.current, { dancerId: dancer.id, generation: transitionGeneration })) {
+            activeSetCursorRef.current = advanceActiveSet(activeSetCursorRef.current, newSongNum);
+            currentSongNumberRef.current = newSongNum;
+            setCurrentSongNumber(newSongNum);
+          }
         }
       } else {
         const _finishingFeature = dancer.entertainer_type === 'feature';
@@ -5447,11 +5603,11 @@ export default function DJBooth() {
             if (firstBreakTrack?.url) {
               console.log('🎵 HandleSkip: Playing break song during outro:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
-              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name, firstBreakTrack.genre);
-              if (!ok) await playFallbackTrack(false);
+              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name, firstBreakTrack.genre, { dancerId: nextDancer.id });
+              if (!ok) await playFallbackTrack(false, null, { dancerId: nextDancer.id });
             } else {
               console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
-              await playFallbackTrack(false);
+              await playFallbackTrack(false, null, { dancerId: nextDancer.id });
             }
             await announcementDone;
             audioEngineRef.current?.unduck();
@@ -5459,11 +5615,11 @@ export default function DJBooth() {
             if (firstBreakTrack?.url) {
               console.log('🎵 HandleSkip: Playing break song:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
-              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre);
-              if (!ok) await playFallbackTrack(true);
+              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre, { dancerId: nextDancer.id });
+              if (!ok) await playFallbackTrack(true, null, { dancerId: nextDancer.id });
             } else {
               console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
-              await playFallbackTrack(true);
+              await playFallbackTrack(true, null, { dancerId: nextDancer.id });
             }
           }
 
@@ -5507,13 +5663,14 @@ export default function DJBooth() {
           transitionInProgressRef.current = false;
           return;
         }
+        beginOwnedSet(nextDancer.id, effectiveSongsPerSet(nextDancer.id));
+        const incomingGeneration = activeSetCursorRef.current.generation;
 
         // Apply rotation immediately so any DJ reorders during the async transition land on top
         setRotation(newRotation);
         rotationRef.current = newRotation;
         const finishedIdx = newRotation.length - 1;
-        setCurrentDancerIndex(finishedIdx);
-        currentDancerIndexRef.current = finishedIdx;
+        writeOwnedIndex(incomingGeneration, nextDancer.id, finishedIdx);
 
         const _skipTransStart = Date.now();
         let _skipCommercialPlaybackMs = 0;
@@ -5750,6 +5907,7 @@ export default function DJBooth() {
               !transitionPlan.overlapOutro,
               nextTrack.name,
               nextTrack.genre,
+              { allowFallback: true, rotationSongNumber: 1, dancerId: nextDancer.id },
             );
             if (trackOk) {
               const trackPlayedAt = Date.now();
@@ -5762,7 +5920,7 @@ export default function DJBooth() {
                 commercialPlaybackMs: _skipCommercialPlaybackMs,
               });
             } else if (!incomingAssignmentEmpty && !incomingAssignmentManual) {
-              const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
+              const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro, null, { dancerId: nextDancer.id });
               logDiag('track_play_fallback', {
                 dancer: nextDancer.name,
                 reason: 'requested_failed',
@@ -5771,7 +5929,7 @@ export default function DJBooth() {
               });
             }
           } else if (!incomingAssignmentEmpty && !incomingAssignmentManual) {
-            const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
+            const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro, null, { dancerId: nextDancer.id });
             logDiag('track_play_fallback', {
               dancer: nextDancer.name,
               reason: 'no_url',
@@ -5825,11 +5983,9 @@ export default function DJBooth() {
         const finalRot = rotationRef.current;
         const finalIdx = finalRot.indexOf(nextDancer.id);
         const resolvedIdx = finalIdx !== -1 ? finalIdx : 0;
-        currentDancerIndexRef.current = resolvedIdx;
-        currentSongNumberRef.current = 1;
-        setCurrentDancerIndex(resolvedIdx);
-        setCurrentSongNumber(1);
-        await updateStageState(resolvedIdx, finalRot);
+        const indexOwned = writeOwnedIndex(incomingGeneration, nextDancer.id, resolvedIdx);
+        const songOwned = writeOwnedSong(incomingGeneration, nextDancer.id, 1);
+        if (indexOwned && songOwned) await updateStageState(resolvedIdx, finalRot);
       }
     } catch (error) {
       console.error('❌ HandleSkip error, falling back to random track:', error);
@@ -5928,13 +6084,15 @@ export default function DJBooth() {
         boundaryKey: `feature-${breakKey}`,
         slotIndex: 0,
       });
-      const featureDancer = dancersRef.current.find(d => d.id === featureId);
+       const featureDancer = dancersRef.current.find(d => d.id === featureId);
       if (!featureDancer) {
         console.warn('⚠️ Start feature now: feature dancer not found — falling back');
-        await playFallbackTrack(true);
+         await playFallbackTrack(true, null, { dancerId: featureId });
         return;
       }
-      const transitionPlan = getCommercialTransitionPlan({
+       beginOwnedSet(featureDancer.id, 1);
+       const incomingGeneration = activeSetCursorRef.current.generation;
+       const transitionPlan = getCommercialTransitionPlan({
         commercialDue: commercialBoundary.due,
         announcementsEnabled,
         featureArrival: true,
@@ -5949,8 +6107,7 @@ export default function DJBooth() {
       console.log('🌟 Start feature now: jumping straight to', featureDancer.name, 'intro');
       // The feature is already at rotation index 0 from the pre-feature break flip.
       await playFeatureArrivalRef.current(featureDancer);
-      currentSongNumberRef.current = 1;
-      setCurrentSongNumber(1);
+       writeOwnedSong(incomingGeneration, featureDancer.id, 1);
       lastAudioActivityRef.current = Date.now();
     } catch (err) {
       console.error('🚨 Start feature now failed:', err);
@@ -6233,6 +6390,8 @@ export default function DJBooth() {
         transitionInProgressRef.current = false;
         return;
       }
+      beginOwnedSet(nextDancer.id, effectiveSongsPerSet(nextDancer.id));
+      const incomingGeneration = activeSetCursorRef.current.generation;
 
       logDiag('post_interstitial_resolve', {
         nextDancer: nextDancer.name,
@@ -6361,12 +6520,12 @@ export default function DJBooth() {
         } else {
         lastAudioActivityRef.current = Date.now();
         if (nextTrack?.url) {
-          const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre);
+           const trackOk = await playTrack(nextTrack.url, true, nextTrack.name, nextTrack.genre, { dancerId: nextDancer.id });
           if (!trackOk && !_piIncomingAssignmentEmpty && !_piIncomingAssignmentManual) {
-            await playFallbackTrack(true);
+             await playFallbackTrack(true, null, { dancerId: nextDancer.id });
           }
         } else if (!_piIncomingAssignmentEmpty && !_piIncomingAssignmentManual) {
-          await playFallbackTrack(true);
+           await playFallbackTrack(true, null, { dancerId: nextDancer.id });
         }
         lastAudioActivityRef.current = Date.now();
 
@@ -6396,10 +6555,8 @@ export default function DJBooth() {
           });
         }
         setRotation(liveRot);
-        currentDancerIndexRef.current = newIdx;
-        currentSongNumberRef.current = 1;
-        setCurrentDancerIndex(newIdx);
-        setCurrentSongNumber(1);
+        const indexOwned = writeOwnedIndex(incomingGeneration, nextDancer.id, newIdx);
+        const songOwned = writeOwnedSong(incomingGeneration, nextDancer.id, 1);
         const _piTotalDurationMs = Date.now() - _piTransStart;
         const _piHandoffDurationMs = Date.now() - _piHandoffStart;
         lastTransitionMsRef.current = _piHandoffDurationMs;
@@ -6415,7 +6572,7 @@ export default function DJBooth() {
             _piTotalDurationMs - _piCommercialPlaybackMs - _piHandoffDurationMs,
           ),
         });
-        await updateStageState(newIdx, liveRot);
+        if (indexOwned && songOwned) await updateStageState(newIdx, liveRot);
       } catch (err) {
         logDiag('post_interstitial_error', { msg: String(err?.message || err) });
         console.error('❌ HandleTrackEnd (post-interstitial) error:', err);
@@ -6427,8 +6584,26 @@ export default function DJBooth() {
       return;
     }
     
-    const idx = currentDancerIndexRef.current;
-    const songNum = currentSongNumberRef.current;
+    let cursor = activeSetCursorRef.current;
+    let cursorIdx = locateCursorDancer(cursor, rotationRef.current);
+    if (cursorIdx < 0 && rotationRef.current[currentDancerIndexRef.current] != null) {
+      cursor = beginOwnedSet(
+        rotationRef.current[currentDancerIndexRef.current],
+        effectiveSongsPerSet(rotationRef.current[currentDancerIndexRef.current]),
+      );
+      cursorIdx = currentDancerIndexRef.current;
+    }
+    const idx = cursorIdx >= 0 ? cursorIdx : currentDancerIndexRef.current;
+    const songNum = cursorIdx >= 0 ? cursor.songNumber : currentSongNumberRef.current;
+    const transitionGeneration = cursor.generation;
+    logDiag?.('transition_start', {
+      trigger: 'track_end',
+      dancerId: cursor?.dancerId || null,
+      songNumber: songNum,
+      setLength: cursor?.setLength ?? null,
+      generation: cursor?.generation ?? null,
+      liveRotationIndex: idx,
+    });
     const songs = rotationSongsRef.current;
     const rot = rotationRef.current;
     const dnc = dancersRef.current;
@@ -6493,7 +6668,9 @@ export default function DJBooth() {
     dancerTracks = Array.isArray(dancerTracks)
       ? dancerTracks.filter(track => getSongName(track))
       : [];
-    const configuredSetSize = effectiveSongsPerSet(rot[idx]);
+    const configuredSetSize = cursorIdx >= 0 && cursor.dancerId === String(rot[idx])
+      ? cursor.setLength
+      : effectiveSongsPerSet(rot[idx]);
     if (dancerTracks.length < configuredSetSize) {
       const existingNames = dancerTracks.map(getSongName).filter(Boolean);
       const refillVersion = rotationAssignmentVersionRef.current;
@@ -6648,10 +6825,13 @@ export default function DJBooth() {
 
         if (!nextTrack?.url) {
           const fallbackOk = !effectiveManualAssignment
-            && (await playFallbackTrack(true, newSongNum)) === true;
+            && (await playFallbackTrack(true, newSongNum, { dancerId: dancer.id })) === true;
           if (fallbackOk) {
-            currentSongNumberRef.current = newSongNum;
-            setCurrentSongNumber(newSongNum);
+            if (ownsActiveSet(activeSetCursorRef.current, { dancerId: dancer.id, generation: transitionGeneration })) {
+              activeSetCursorRef.current = advanceActiveSet(activeSetCursorRef.current, newSongNum);
+              currentSongNumberRef.current = newSongNum;
+              setCurrentSongNumber(newSongNum);
+            }
           }
           if (announcementsEnabled) audioEngineRef.current?.unduck();
           transitionInProgressRef.current = false;
@@ -6673,16 +6853,16 @@ export default function DJBooth() {
               false,
               nextTrack.name,
               nextTrack.genre,
-              { allowFallback: false, rotationSongNumber: newSongNum },
+               { allowFallback: false, rotationSongNumber: newSongNum, dancerId: dancer.id },
             ) === true;
             replacementTrackPlayed = requestedTrackPlayed;
             playbackSucceeded = requestedTrackPlayed;
             if (!playbackSucceeded && !effectiveManualAssignment) {
-              playbackSucceeded = await playFallbackTrack(false, newSongNum) === true;
+              playbackSucceeded = await playFallbackTrack(false, newSongNum, { dancerId: dancer.id }) === true;
             }
           } else {
             playbackSucceeded = !effectiveManualAssignment
-              && (await playFallbackTrack(false, newSongNum)) === true;
+              && (await playFallbackTrack(false, newSongNum, { dancerId: dancer.id })) === true;
           }
           await announcementDone;
           audioEngineRef.current?.unduck();
@@ -6694,16 +6874,16 @@ export default function DJBooth() {
               true,
               nextTrack.name,
               nextTrack.genre,
-              { allowFallback: false, rotationSongNumber: newSongNum },
+               { allowFallback: false, rotationSongNumber: newSongNum, dancerId: dancer.id },
             ) === true;
             replacementTrackPlayed = requestedTrackPlayed;
             playbackSucceeded = requestedTrackPlayed;
             if (!playbackSucceeded && !effectiveManualAssignment) {
-              playbackSucceeded = await playFallbackTrack(true, newSongNum) === true;
+              playbackSucceeded = await playFallbackTrack(true, newSongNum, { dancerId: dancer.id }) === true;
             }
           } else {
             playbackSucceeded = !effectiveManualAssignment
-              && (await playFallbackTrack(true, newSongNum)) === true;
+              && (await playFallbackTrack(true, newSongNum, { dancerId: dancer.id })) === true;
           }
         }
         if (replacementTrack && replacementTrackPlayed && replacementVersion != null
@@ -6717,8 +6897,11 @@ export default function DJBooth() {
           });
         }
         if (songNumberAfterPlayback(songNum, newSongNum, playbackSucceeded) !== songNum) {
-          currentSongNumberRef.current = newSongNum;
-          setCurrentSongNumber(newSongNum);
+          if (ownsActiveSet(activeSetCursorRef.current, { dancerId: dancer.id, generation: transitionGeneration })) {
+            activeSetCursorRef.current = advanceActiveSet(activeSetCursorRef.current, newSongNum);
+            currentSongNumberRef.current = newSongNum;
+            setCurrentSongNumber(newSongNum);
+          }
         }
       } else {
         const _finishingFeature = dancer.entertainer_type === 'feature';
@@ -6976,18 +7159,24 @@ export default function DJBooth() {
           transitionInProgressRef.current = false;
           return;
         }
+        beginOwnedSet(nextDancer.id, effectiveSongsPerSet(nextDancer.id));
+        const incomingGeneration = activeSetCursorRef.current.generation;
 
         // Apply rotation immediately so any DJ reorders during the async transition land on top
         setRotation(newRotation);
         rotationRef.current = newRotation;
         const finishedIdx = newRotation.length - 1;
-        setCurrentDancerIndex(finishedIdx);
-        currentDancerIndexRef.current = finishedIdx;
+        writeOwnedIndex(incomingGeneration, nextDancer.id, finishedIdx);
 
         // Sync crowd display to the new rotation BEFORE announcing.
         // Without this, RotationDisplay keeps showing the finished dancer at the top
         // (stale DB state) until updateStageState fires at the very end of the transition.
-        updateStageState(newIdx, newRotation);
+        if (ownsActiveSet(activeSetCursorRef.current, {
+          dancerId: nextDancer.id,
+          generation: incomingGeneration,
+        })) {
+          updateStageState(newIdx, newRotation);
+        }
         fetch('/api/stage/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -7252,6 +7441,7 @@ export default function DJBooth() {
              !transitionPlan.overlapOutro,
              nextTrack.name,
              nextTrack.genre,
+              { allowFallback: true, rotationSongNumber: 1, dancerId: nextDancer.id },
            );
             if (trackOk) {
               const trackPlayedAt = Date.now();
@@ -7264,7 +7454,7 @@ export default function DJBooth() {
                 commercialPlaybackMs: _teCommercialPlaybackMs,
               });
           } else if (!_teIncomingAssignmentEmpty && !_teIncomingAssignmentManual) {
-              const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
+               const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro, null, { dancerId: nextDancer.id });
               logDiag('track_play_fallback', {
                 dancer: nextDancer.name,
                 reason: 'requested_failed',
@@ -7273,7 +7463,7 @@ export default function DJBooth() {
               });
             }
          } else if (!_teIncomingAssignmentEmpty && !_teIncomingAssignmentManual) {
-            const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro);
+             const fallbackOk = await playFallbackTrack(!transitionPlan.overlapOutro, null, { dancerId: nextDancer.id });
             logDiag('track_play_fallback', {
               dancer: nextDancer.name,
               reason: 'no_url',
@@ -7325,11 +7515,9 @@ export default function DJBooth() {
         const finalRot = rotationRef.current;
         const finalIdx = finalRot.indexOf(nextDancer.id);
         const resolvedIdx = finalIdx !== -1 ? finalIdx : 0;
-        currentDancerIndexRef.current = resolvedIdx;
-        currentSongNumberRef.current = 1;
-        setCurrentDancerIndex(resolvedIdx);
-        setCurrentSongNumber(1);
-        await updateStageState(resolvedIdx, finalRot);
+         const indexOwned = writeOwnedIndex(incomingGeneration, nextDancer.id, resolvedIdx);
+         const songOwned = writeOwnedSong(incomingGeneration, nextDancer.id, 1);
+         if (indexOwned && songOwned) await updateStageState(resolvedIdx, finalRot);
       }
     } catch (error) {
       console.error('❌ HandleTrackEnd error, falling back to random track:', error);
@@ -9242,6 +9430,7 @@ export default function DJBooth() {
                   setTimeout(() => handleSkipRef.current?.(), 100);
                 }}
                 dancerVipMap={dancerVipMap}
+                dancerVipRemainingMs={remoteMode ? (liveBoothState?.dancerVipRemainingMs || {}) : {}}
                 pendingVipMap={pendingVipState}
                 onSendToVip={remoteMode
                   ? (dancerId, durationMs) => sendBoothCommand('sendToVip', { dancerId, durationMs })

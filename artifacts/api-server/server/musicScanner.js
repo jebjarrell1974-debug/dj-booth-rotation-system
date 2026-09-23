@@ -2,26 +2,27 @@ import { readdirSync, statSync } from 'fs';
 import { join, extname, relative } from 'path';
 import { bulkUpsertTracks, removeDeletedTracks, setSetting, getMusicTrackCount } from './db.js';
 
-const SUPPORTED_EXTENSIONS = new Set(['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.wma']);
+const SUPPORTED_EXTENSIONS = new Set(['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg']);
 
 let lastScanPaths = null;
 let lastScanSizes = null;
 let lastTopLevelCount = -1;
 
-function walkDirectory(dirPath, rootPath, results = []) {
+function walkDirectory(dirPath, rootPath, results = [], state = { complete: true }) {
   let entries;
   try {
     entries = readdirSync(dirPath, { withFileTypes: true });
   } catch (err) {
     console.warn(`⚠️ MusicScanner: Cannot read directory ${dirPath}: ${err.message}`);
-    return results;
+    state.complete = false;
+    return { results, complete: false };
   }
 
   for (const entry of entries) {
     const fullPath = join(dirPath, entry.name);
     if (entry.isDirectory()) {
       if (entry.name.startsWith('.')) continue;
-      walkDirectory(fullPath, rootPath, results);
+      walkDirectory(fullPath, rootPath, results, state);
     } else if (entry.isFile()) {
       if (entry.name.startsWith('._') || entry.name.startsWith('.')) continue;
       const ext = extname(entry.name).toLowerCase();
@@ -54,7 +55,7 @@ function walkDirectory(dirPath, rootPath, results = []) {
       }
     }
   }
-  return results;
+  return { results, complete: state.complete };
 }
 
 function quickDirectoryCheck(musicPath) {
@@ -78,19 +79,16 @@ export function scanMusicFolder(musicPath, forceFullScan = false) {
     return { added: 0, removed: 0, total: 0, skipped: false };
   }
 
-  if (!forceFullScan && lastScanPaths) {
-    const topLevelCount = quickDirectoryCheck(musicPath);
-    if (topLevelCount >= 0 && topLevelCount === lastTopLevelCount && lastScanPaths.size === getMusicTrackCount()) {
-      console.log(`🎵 MusicScanner: Quick check — no changes detected (${lastScanPaths.size} tracks), skipping full scan`);
-      setSetting('last_music_scan', new Date().toISOString());
-      return { added: 0, removed: 0, total: lastScanPaths.size, skipped: true };
-    }
-  }
+  // Do not use the top-level count as a cache shortcut. It cannot detect a
+  // nested directory becoming unreadable, which would make a partial traversal
+  // look complete and allow legitimate DB rows to be deleted.
 
   const startTime = Date.now();
   console.log(`🎵 MusicScanner: ${forceFullScan ? 'Full' : 'Incremental'} scan of ${musicPath}...`);
 
-  const tracks = walkDirectory(musicPath, musicPath);
+  const traversal = walkDirectory(musicPath, musicPath);
+  const tracks = traversal.results;
+  const scanComplete = traversal.complete;
   const currentPaths = new Set(tracks.map(t => t.path));
   const currentSizes = new Map(tracks.map(t => [t.path, t.size]));
 
@@ -106,13 +104,21 @@ export function scanMusicFolder(musicPath, forceFullScan = false) {
       if (!currentPaths.has(oldPath)) removedPaths.push(oldPath);
     }
     if (changedTracks.length === 0 && removedPaths.length === 0) {
-      console.log(`🎵 MusicScanner: No changes detected in ${tracks.length} tracks (${((Date.now() - startTime) / 1000).toFixed(1)}s)`);
-      lastScanPaths = currentPaths;
-      lastScanSizes = currentSizes;
-      setSetting('last_music_scan', new Date().toISOString());
-      return { added: 0, removed: 0, total: tracks.length, skipped: false };
+      if (scanComplete) {
+        console.log(`🎵 MusicScanner: No changes detected in ${tracks.length} tracks (${((Date.now() - startTime) / 1000).toFixed(1)}s)`);
+        lastScanPaths = currentPaths;
+        lastScanSizes = currentSizes;
+        setSetting('last_music_scan', new Date().toISOString());
+        return { added: 0, removed: 0, total: tracks.length, skipped: false };
+      }
     }
     console.log(`🎵 MusicScanner: ${changedTracks.length} changed/new, ${removedPaths.length} removed`);
+  }
+
+  if (!scanComplete) {
+    if (changedTracks.length > 0) bulkUpsertTracks(changedTracks);
+    console.warn(`⚠️ MusicScanner: Incomplete scan — upserted ${changedTracks.length} discovered tracks but preserved deletion/cache/timestamp state`);
+    return { added: changedTracks.length, removed: 0, total: getMusicTrackCount(), incomplete: true };
   }
 
   if (changedTracks.length > 0) {

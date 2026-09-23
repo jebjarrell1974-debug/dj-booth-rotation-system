@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
+import { decayVipRemaining } from '@/utils/vipCountdown';
 import { rotationStartState } from '@/utils/rotationStartState';
 import {
   capSongList,
@@ -198,6 +199,7 @@ export default function RotationPlaylistManager({
   songCooldownsReady = false,
   currentTrack = null,
   dancerVipMap = {},
+  dancerVipRemainingMs = {},
   pendingVipMap = {},
   onSendToVip,
   onReleaseFromVip,
@@ -310,6 +312,10 @@ export default function RotationPlaylistManager({
   const [vipAddMs, setVipAddMs] = useState(0);
   useEffect(() => { setVipAddMs(0); }, [vipModalDancerId]);
   const [vipCountdowns, setVipCountdowns] = useState({});
+  const vipSnapshotReceiptRef = React.useRef({ at: performance.now(), values: dancerVipRemainingMs });
+  useEffect(() => {
+    vipSnapshotReceiptRef.current = { at: performance.now(), values: dancerVipRemainingMs || {} };
+  }, [dancerVipRemainingMs]);
 
   // Tick VIP countdowns every second
   useEffect(() => {
@@ -2272,7 +2278,13 @@ export default function RotationPlaylistManager({
                 {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
                   const dancer = (dancers || []).find(d => String(d.id) === String(dancerId));
                   if (!dancer) return null;
-                  const ms = vipCountdowns[dancerId] ?? (vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0);
+                  const ms = remoteMode
+                    ? decayVipRemaining(
+                      vipSnapshotReceiptRef.current.values?.[dancerId],
+                      vipSnapshotReceiptRef.current.at,
+                      performance.now(),
+                    )
+                    : (vipCountdowns[dancerId] ?? (vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0));
                   const totalMins = Math.floor(ms / 60000);
                   const secs = Math.floor((ms % 60000) / 1000);
                   const hrs = Math.floor(totalMins / 60);

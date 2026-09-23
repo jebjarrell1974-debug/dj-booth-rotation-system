@@ -24,6 +24,11 @@ test('only explicit normal DJ commands validate', () => {
   assert.equal(validateBoothCommand('reboot', {}).ok, false);
   assert.equal(validateBoothCommand('setVolume', { volume: 1.01 }).ok, false);
   assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: 0 }).ok, false);
+  assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: 1.5 }).ok, false);
+  assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: '60000' }).ok, false);
+  assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: NaN }).ok, false);
+  assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: (24 * 60 * 60 * 1000) + 1 }).ok, false);
+  assert.equal(validateBoothCommand('sendToVip', { dancerId: 4, durationMs: 60000 }).ok, true);
   assert.equal(validateBoothCommand('updateRotation', { rotation: [1, 'dancer-2'] }).ok, true);
   assert.equal(validateBoothCommand('updateSongAssignments', { assignments: { 1: ['Song A'] } }).ok, true);
   assert.equal(validateBoothCommand('updateSongAssignments', { assignments: { 1: 'Song A' } }).ok, false);

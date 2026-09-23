@@ -28,6 +28,8 @@ const isId = value => (Number.isInteger(value) && value >= 0) ||
   (typeof value === 'string' && value.trim().length > 0 && value.length <= 128);
 const isFiniteNumber = (value, min, max) => typeof value === 'number' &&
   Number.isFinite(value) && value >= min && value <= max;
+const isPositiveDurationMs = value => typeof value === 'number' &&
+  Number.isFinite(value) && Number.isInteger(value) && value > 0 && value <= 24 * 60 * 60 * 1000;
 const isString = (value, max = 512) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const isIdArray = value => Array.isArray(value) && value.length <= 500 && value.every(isId);
 const isStringArray = value => Array.isArray(value) && value.length <= 50 && value.every(item => isString(item, 512));
@@ -139,7 +141,7 @@ export function validateBoothCommand(action, payload = {}) {
       if (!isId(payload.dancerId) || !['up', 'down'].includes(payload.direction)) return invalid('dancerId and direction (up/down) are required');
       break;
     case 'sendToVip':
-      if (!isId(payload.dancerId) || !isFiniteNumber(payload.durationMs, 1, 24 * 60 * 60 * 1000)) return invalid('dancerId and a VIP duration up to 24 hours are required');
+      if (!isId(payload.dancerId) || !isPositiveDurationMs(payload.durationMs)) return invalid('dancerId and a VIP duration up to 24 hours are required');
       if (payload.skipIfActive != null && typeof payload.skipIfActive !== 'boolean') return invalid('skipIfActive must be boolean');
       break;
     case 'updateInterstitialSongs':
@@ -328,6 +330,7 @@ export function normalizeBoothState(previous, state, now = Date.now()) {
     availablePromos: read('availablePromos', []) ?? [],
     skippedCommercials: read('skippedCommercials', []) ?? [],
     dancerVipMap: read('dancerVipMap', {}) ?? {},
+     dancerVipRemainingMs: read('dancerVipRemainingMs', {}) ?? {},
     placedFeatures: read('placedFeatures', {}) ?? {},
     autoplayQueue: read('autoplayQueue', []) ?? [],
     autoplayAutoFillEnabled: read('autoplayAutoFillEnabled', true) !== false,

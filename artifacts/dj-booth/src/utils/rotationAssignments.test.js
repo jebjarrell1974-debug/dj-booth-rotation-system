@@ -269,6 +269,35 @@ test('every flip-to-bottom caller excludes the completed set and guards async ow
   }
 });
 
+test('transition handoffs claim once and guard completion writes by generation', () => {
+  const source = readFileSync(new URL('../pages/DJBooth.jsx', import.meta.url), 'utf8');
+  assert.match(source, /beginOwnedSet\(cleanRotation\[0\]/);
+  assert.match(source, /restoreActiveSet\(/);
+  assert.match(source, /writeOwnedIndex\(incomingGeneration, nextDancer\.id/);
+  assert.match(source, /writeOwnedSong\(incomingGeneration, nextDancer\.id, 1\)/);
+  assert.doesNotMatch(source, /beginOwnedSet\(nextDancer\.id, effectiveSongsPerSet\(nextDancer\.id\)\);[\s\S]{0,4000}beginOwnedSet\(nextDancer\.id, effectiveSongsPerSet\(nextDancer\.id\)\);/);
+  assert.doesNotMatch(source, /currentDancerIndexRef\.current = resolvedIdx;\s*currentSongNumberRef\.current = 1/);
+  assert.doesNotMatch(source, /setCurrentDancerIndex\(resolvedIdx\);\s*setCurrentSongNumber\(1\)/);
+  assert.doesNotMatch(source, /currentDancerIndexRef\.current = newIdx;\s*currentSongNumberRef\.current = 1/);
+  assert.doesNotMatch(source, /\{ dancerId: nextDancer\.id \},\s*\{ dancerId: nextDancer\.id \}/);
+  assert.doesNotMatch(source, /nextDancer\.id\s*\},\s*\{[^}]*nextDancer\.id/);
+  assert.doesNotMatch(source, /nextTrack\.genre,\s*\{[^}]+\},\s*\{[^}]+\}/);
+  assert.match(source, /nextTrack\.genre,\s*\{ allowFallback: true, rotationSongNumber: 1, dancerId: nextDancer\.id \}/);
+  assert.match(source, /playbackRestoreDoneRef\.current = true;\s*\}/);
+  assert.match(source, /if \(indexOwned && songOwned\) await updateStageState/);
+  assert.match(source, /if \(ownsActiveSet\(activeSetCursorRef\.current,[\s\S]{0,180}incomingGeneration[\s\S]{0,80}\)\) \{\s*updateStageState/);
+  assert.match(source, /const pendingPlaybackStateRef = useRef/);
+  assert.match(source, /pendingPlaybackStateRef\.current = null;\s*playbackRestoreDoneRef\.current = true/);
+  assert.doesNotMatch(source, /const raw = localStorage\.getItem\('djbooth_playback_state'\)/);
+  assert.match(source, /if \(!playbackRestoreDoneRef\.current\) return;\s*localStorage\.setItem\('djbooth_playback_state'/);
+  assert.match(source, /dancerId: cleanRotation\[0\],[\s\S]{0,100}generation: incomingGeneration[\s\S]{0,100}updateStageState\(0\)/);
+  assert.match(source, /dancerId: dancer\.id,[\s\S]{0,100}generation: transitionGeneration[\s\S]{0,100}updateStageState\(idx, rot\)/);
+  assert.match(source, /updateStageState\(idx, rot\);[\s\S]{0,350}fetch\(['"]\/api\/stage\/sync/);
+  assert.doesNotMatch(source, /updateStageState\(idx, rot\);\s*\}\s*fetch\(['"]\/api\/stage\/sync/);
+  assert.match(source, /const restoredSetLength = Number\.isInteger\(persistedSetLength\)[\s\S]{0,500}restoredSongNumber <= restoredSetLength/);
+  assert.match(source, /restoreActiveSet\(\s*restoredDancerId,\s*safeSongNumber,\s*restoredSetLength/);
+});
+
 test('normalizes invalid set lengths safely', () => {
   assert.equal(normalizeSongsPerSet('2'), 2);
   assert.equal(normalizeSongsPerSet(0), 1);
