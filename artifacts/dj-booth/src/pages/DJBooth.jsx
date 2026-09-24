@@ -34,7 +34,7 @@ import {
 import AudioEngine from '@/components/dj/AudioEngine';
 import PressAndHoldDuckButton from '@/components/dj/PressAndHoldDuckButton';
 import MusicLibrary from '@/components/dj/MusicLibrary';
-import { isRemoteMode, isPhoneRemoteMode, boothApi, connectBoothSSE, djOptionsApi } from '@/api/serverApi';
+import { isRemoteMode, isPhoneRemoteMode, boothApi, connectBoothSSE, djOptionsApi, startRemoteTelemetry } from '@/api/serverApi';
 import {
   acquireStructuralCommitLock,
   assertSaveAllWorkspaceUnchanged,
@@ -132,7 +132,7 @@ import {
 } from '@/utils/playbackOwnership';
 import { parseVipDurationMs, sanitizeVipMap } from '@/utils/vipDurations';
 import { createVipRemainingSnapshot } from '@/utils/vipCountdown';
-import { advanceActiveSet, beginActiveSet, createActiveSetCursor, locateCursorDancer, ownsActiveSet } from '@/utils/activeSetCursor';
+import { advanceActiveSet, beginActiveSet, createActiveSetCursor, locateCursorDancer, ownsActiveSet, rebaseRotationIndex } from '@/utils/activeSetCursor';
 
 // localStorage is not always reachable (private mode, storage disabled). Ducking must not
 // depend on it: without storage the guard simply starts empty after a reload.
@@ -322,6 +322,10 @@ export default function DJBooth() {
   const audioEngineRef = useRef(null);
   const remoteMode = isRemoteMode();
   const phoneRemoteMode = isPhoneRemoteMode();
+  useEffect(() => {
+    if (!remoteMode) return;
+    return startRemoteTelemetry(phoneRemoteMode ? 'phone' : 'desktop');
+  }, [remoteMode, phoneRemoteMode]);
   
   // Music tracks state (loaded from server)
   const [tracks, setTracks] = useState([]);
@@ -1945,6 +1949,10 @@ export default function DJBooth() {
           break;
         case 'removeDancerFromRotation':
           if (cmd.payload.dancerId != null) {
+            if (isRotationActiveRef.current
+                && String(activeSetCursorRef.current.dancerId) === String(cmd.payload.dancerId)) {
+              throw new Error('The active entertainer cannot be removed during her set; use Next Entertainer first');
+            }
             const oldRotation = [...rotationRef.current];
             const oldIndex = currentDancerIndexRef.current;
             const _removedIdx = rotationRef.current.indexOf(cmd.payload.dancerId);
@@ -4081,20 +4089,51 @@ export default function DJBooth() {
   cancelFeaturePlacementRef.current = cancelFeaturePlacement;
 
   saveRotationRef.current = async (newRot) => {
+    const nextIndex = rebaseRotationIndex(
+      rotationRef.current, newRot, currentDancerIndexRef.current,
+      activeSetCursorRef.current, isRotationActiveRef.current,
+    );
+    const activeIdAtSave = activeSetCursorRef.current.dancerId;
     try {
       if (activeStage) {
         await updateStageMutation.mutateAsync({
           id: activeStage.id,
-          data: { rotation_order: newRot, current_dancer_index: currentDancerIndexRef.current, is_active: true }
+          data: { rotation_order: newRot, current_dancer_index: nextIndex, is_active: true }
         });
       } else if (newRot.length > 0) {
         await localEntities.Stage.create({
           name: 'Main Stage',
           rotation_order: newRot,
-          current_dancer_index: currentDancerIndexRef.current,
+          current_dancer_index: nextIndex,
           is_active: true,
         });
         await queryClient.invalidateQueries({ queryKey: ['stages'] });
+      }
+      currentDancerIndexRef.current = nextIndex;
+      setCurrentDancerIndex(nextIndex);
+      // The display reads this in-memory endpoint rather than the Stage table.
+      // Retry a transient failure, but never replay an obsolete rotation after a newer edit.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+          if (currentDancerIndexRef.current !== nextIndex) break;
+          if (isRotationActiveRef.current && activeSetCursorRef.current.dancerId !== activeIdAtSave) break;
+        }
+        try {
+          const response = await fetch('/api/stage/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rotation_order: newRot, current_dancer_index: nextIndex, is_active: true }),
+          });
+          if (response.ok) break;
+          throw new Error(`HTTP ${response.status}`);
+        } catch (syncError) {
+          console.warn(`⚠️ Crowd rotation sync failed (attempt ${attempt + 1}):`, syncError);
+          if (attempt === 2) {
+            logDiag('stage_sync_failed', { reason: String(syncError), rotationLength: newRot.length });
+            toast.error('Rotation saved, but the crowd display did not update. Check its screen.');
+          }
+        }
       }
       console.log('💾 Remote saveRotation: persisted to DB');
     } catch (err) {
@@ -5669,8 +5708,7 @@ export default function DJBooth() {
         // Apply rotation immediately so any DJ reorders during the async transition land on top
         setRotation(newRotation);
         rotationRef.current = newRotation;
-        const finishedIdx = newRotation.length - 1;
-        writeOwnedIndex(incomingGeneration, nextDancer.id, finishedIdx);
+        writeOwnedIndex(incomingGeneration, nextDancer.id, newIdx);
 
         const _skipTransStart = Date.now();
         let _skipCommercialPlaybackMs = 0;
@@ -7165,8 +7203,7 @@ export default function DJBooth() {
         // Apply rotation immediately so any DJ reorders during the async transition land on top
         setRotation(newRotation);
         rotationRef.current = newRotation;
-        const finishedIdx = newRotation.length - 1;
-        writeOwnedIndex(incomingGeneration, nextDancer.id, finishedIdx);
+        writeOwnedIndex(incomingGeneration, nextDancer.id, newIdx);
 
         // Sync crowd display to the new rotation BEFORE announcing.
         // Without this, RotationDisplay keeps showing the finished dancer at the top

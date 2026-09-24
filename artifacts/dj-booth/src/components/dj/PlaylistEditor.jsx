@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Music, X, Shuffle, Save, AlertCircle, ChevronUp, ChevronDown, Trash2, Search, Folder } from 'lucide-react';
+import { musicApi } from '@/api/serverApi';
 
 const PAGE_SIZE = 200;
 
@@ -22,6 +23,7 @@ export default function PlaylistEditor({
   const [serverCurrentPage, setServerCurrentPage] = useState(1);
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
   const serverMountedRef = useRef(false);
   const searchTimeoutRef = useRef(null);
 
@@ -30,23 +32,16 @@ export default function PlaylistEditor({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const getAuthHeaders = useCallback(() => {
-    const token = localStorage.getItem('djbooth_token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   const fetchServerTracks = useCallback(async (page = 1, append = false) => {
     setServerLoading(true);
+    setServerError('');
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: PAGE_SIZE.toString(),
+      const data = await musicApi.getTracks({
+        page,
+        limit: PAGE_SIZE,
+        search: debouncedSearch.trim(),
+        genre: debouncedSearch.trim() ? '' : (activeGenre || ''),
       });
-      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      if (activeGenre && !debouncedSearch.trim()) params.set('genre', activeGenre);
-      const res = await fetch(`/api/music/tracks?${params}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
       const fetched = (data.tracks || []).map(t => ({ ...t, url: '/api/music/stream/' + t.id }));
       if (append) {
         setServerTracks(prev => [...prev, ...fetched]);
@@ -60,11 +55,12 @@ export default function PlaylistEditor({
         setServerGenres(data.genres);
       }
     } catch (err) {
+      setServerError(err.message || 'Could not load the music library.');
       console.error('PlaylistEditor: fetch tracks error', err);
     } finally {
       setServerLoading(false);
     }
-  }, [getAuthHeaders, debouncedSearch, activeGenre]);
+  }, [debouncedSearch, activeGenre]);
 
   useEffect(() => {
     if (!serverMountedRef.current) {
@@ -325,7 +321,9 @@ export default function PlaylistEditor({
                     </button>
                   </div>
                 )}
-                {serverTracks.length === 0 && !serverLoading && (
+                {serverError ? (
+                  <div className="p-8 text-center text-red-400 text-sm">{serverError}</div>
+                ) : serverTracks.length === 0 && !serverLoading && (
                   <div className="p-8 text-center text-gray-500 text-sm">
                     {debouncedSearch.trim() || activeGenre ? 'No tracks match your search' : 'No tracks found'}
                   </div>

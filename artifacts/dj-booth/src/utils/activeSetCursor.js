@@ -21,6 +21,22 @@ export function locateCursorDancer(cursor, rotation) {
   return rotation.findIndex(id => String(id) === String(cursor.dancerId));
 }
 
+export function rebaseRotationIndex(previousRotation, nextRotation, currentIndex, cursor, isActive) {
+  if (!Array.isArray(nextRotation) || nextRotation.length === 0) {
+    if (isActive) throw new Error('Stop the rotation before clearing every entertainer');
+    return 0;
+  }
+  const activeId = isActive && cursor?.dancerId != null
+    ? cursor.dancerId
+    : previousRotation?.[currentIndex];
+  if (activeId == null) return Math.max(0, Math.min(currentIndex || 0, nextRotation.length - 1));
+  const nextIndex = nextRotation.findIndex(id => String(id) === String(activeId));
+  if (nextIndex < 0 && isActive) {
+    throw new Error('The active entertainer must remain in the rotation; use Next Entertainer or stop the rotation first');
+  }
+  return nextIndex >= 0 ? nextIndex : Math.max(0, Math.min(currentIndex || 0, nextRotation.length - 1));
+}
+
 export function ownsActiveSet(cursor, { dancerId, generation } = {}) {
   return !!cursor
     && String(cursor.dancerId) === String(dancerId)

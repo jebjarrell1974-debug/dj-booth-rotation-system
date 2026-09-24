@@ -19,6 +19,7 @@ import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
 import { decayVipRemaining } from '@/utils/vipCountdown';
 import { rotationStartState, clearStartingFlag } from '@/utils/rotationStartState';
 import CommandStatus from '@/components/dj/CommandStatus';
+import { toast } from 'sonner';
 import {
   SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
   Radio, SlidersHorizontal, Volume2, Save, Shuffle,
@@ -71,6 +72,7 @@ export default function RemoteView({
   const [libGenres, setLibGenres] = useState([]);
   const [libTotal, setLibTotal] = useState(0);
   const [libLoading, setLibLoading] = useState(false);
+  const [libError, setLibError] = useState('');
   const [libraryStandalone, setLibraryStandalone] = useState(false);
   const [libraryStatus, setLibraryStatus] = useState('');
   const libSearchTimer = useRef(null);
@@ -324,19 +326,19 @@ export default function RemoteView({
 
   const fetchLib = useCallback(async (search, genre) => {
     setLibLoading(true);
+    setLibError('');
     try {
-      const token = localStorage.getItem('djbooth_token');
-      const params = new URLSearchParams({ page: '1', limit: '300' });
-      if (search) params.set('search', search);
-      if (genre && !search) params.set('genre', genre);
-      const res = await fetch(`/api/music/tracks?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const data = await res.json();
-        setLibTracks(data.tracks || []);
-        setLibTotal(data.total || 0);
-        if (data.genres?.length > 0) setLibGenres(data.genres);
-      }
+      const data = await musicApi.getTracks({
+        page: 1,
+        limit: 300,
+        search,
+        genre: search ? '' : genre,
+      });
+      setLibTracks(data.tracks || []);
+      setLibTotal(data.total || 0);
+      if (data.genres?.length > 0) setLibGenres(data.genres);
     } catch (err) {
+      setLibError(err.message || 'Could not load the music library.');
       console.warn(`⚠️ Remote library load failed: ${err.message}`);
     }
     setLibLoading(false);
@@ -434,6 +436,8 @@ export default function RemoteView({
 
   const rerollSong = async (dancerId, songIdx) => {
     const key = `${dancerId}-${songIdx}`;
+    const revisionAtStart = songEditRevisionsRef.current[String(dancerId)] || 0;
+    const songAtStart = getSongs(dancerId)[songIdx];
     const rerollDancer = dancers?.find(d => d.id === dancerId);
     const persistentPlaylist = Array.isArray(rerollDancer?.playlist) ? rerollDancer.playlist : [];
     const shownSongs = getSongs(dancerId) || [];
@@ -447,34 +451,28 @@ export default function RemoteView({
           if (id !== dancerId || i !== songIdx) allAssigned.push(n);
         });
       });
-      const token = localStorage.getItem('djbooth_token');
-      const res = await fetch('/api/music/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          count: 1,
-          excludeNames: [...new Set(allAssigned)],
-          dancerPlaylist,
-          strictPlaylist: true,
-          automatic: true,
-        }),
-        signal: AbortSignal.timeout(5000),
+      const data = await musicApi.selectTracks({
+        count: 1,
+        excludeNames: [...new Set(allAssigned)],
+        dancerPlaylist,
+        strictPlaylist: true,
+        automatic: true,
       });
-      if (res.ok) {
-        const data = await res.json();
-        const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
-        if (newTrack) {
+      const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
+      if (newTrack) {
+        if ((songEditRevisionsRef.current[String(dancerId)] || 0) === revisionAtStart
+            && getSongs(dancerId)[songIdx] === songAtStart) {
           const current = [...getSongs(dancerId)];
           current[songIdx] = newTrack.name;
           setSongs(dancerId, current);
-         } else {
-           console.warn('⚠️ Remote reroll: automatic pool exhausted; no unplayed track available');
         }
-       } else {
-         console.warn(`⚠️ Remote reroll: automatic selection failed (${res.status})`);
+      } else {
+        console.warn('⚠️ Remote reroll: automatic pool exhausted; no unplayed track available');
+        toast.error('No unplayed song is available for this entertainer');
       }
     } catch (err) {
       console.warn(`⚠️ Remote reroll failed: ${err.message}`);
+      toast.error(`Could not pick a song: ${err.message}`);
     }
     setRerolling(prev => { const n = { ...prev }; delete n[key]; return n; });
   };
@@ -1274,6 +1272,8 @@ export default function RemoteView({
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {libLoading ? (
                   <div className="py-8 text-center text-gray-500">Searching...</div>
+                ) : libError ? (
+                  <div className="py-8 px-4 text-center text-red-400">{libError}</div>
                 ) : libTracks.length === 0 ? (
                   <div className="py-8 text-center text-gray-500">No tracks found</div>
                 ) : (

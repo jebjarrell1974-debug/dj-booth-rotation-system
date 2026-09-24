@@ -1,6 +1,77 @@
 import { reconcileCommandOutcome } from '@/utils/commandReconcile';
 import { withRequestDeadline } from '@/utils/requestDeadline';
 import { runBoothCommand } from '@/utils/boothCommandFlow';
+import {
+  noteRemoteBoothState, recordRemoteTelemetry, shouldRecordRemoteFailure,
+  startRemoteTelemetry as startTelemetry,
+} from '@/utils/remoteTelemetry';
+
+function telemetryEndpoint(path) {
+  if (path.startsWith('/music/tracks')) return 'music_tracks';
+  if (path.startsWith('/music/select')) return 'music_select';
+  if (path === '/booth/state') return 'booth_state';
+  if (path === '/booth/command') return 'booth_command';
+  if (path.startsWith('/booth/commands/')) return 'booth_receipt';
+  return 'other';
+}
+
+function telemetryFailure(error) {
+  if (Number.isInteger(error?.status)) return 'http';
+  if (error?.code === 'REQUEST_TIMEOUT' || error?.code === 'BOOTH_COMMAND_TIMEOUT') return 'timeout';
+  if (error?.name === 'AbortError') return 'abort';
+  if (error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT') return 'timeout';
+  if (error instanceof SyntaxError) return 'parse';
+  return 'network';
+}
+
+export function startRemoteTelemetry(view) {
+  if (!isRemoteMode()) return () => {};
+  const getContext = () => {
+    const apiBase = getApiBase();
+    let targetHost = 'unknown';
+    let configuredHost = 'unset';
+    try { targetHost = new URL(apiBase, window.location.href).hostname; } catch {}
+    try {
+      const configured = getBoothIp();
+      if (configured) configuredHost = new URL(
+        /^https?:\/\//i.test(configured) ? configured : `http://${configured}`,
+      ).hostname;
+    } catch {}
+    return { view, originHost: window.location.hostname, targetHost, configuredHost };
+  };
+  return startTelemetry({
+    getContext,
+    compareStage: async (booth) => {
+      const { originHost, targetHost } = getContext();
+      if (originHost !== targetHost || Date.now() - booth.receivedAt > 15_000) return null;
+      const response = await fetch('/api/stage/current', { signal: AbortSignal.timeout(5_000) });
+      if (!response.ok) throw new Error('Stage unavailable');
+      const stage = await response.json();
+      const boothId = booth.rotation[booth.currentDancerIndex];
+      const stageId = stage?.rotation_order?.[stage?.current_dancer_index];
+      return {
+        matches: boothId != null && stageId != null && String(boothId) === String(stageId),
+        boothIndex: booth.currentDancerIndex, stageIndex: stage?.current_dancer_index,
+        rotationLength: booth.rotation.length, stageLength: stage?.rotation_order?.length,
+        stageAgeMs: Number.isFinite(stage?.syncedAt)
+          ? Math.min(Math.max(0, Date.now() - stage.syncedAt), 86_400_000) : undefined,
+        rotationVersion: Number.isSafeInteger(booth.rotationVersion) ? booth.rotationVersion : undefined,
+      };
+    },
+    // Same origin, not getApiBase(): if the saved target is wrong, 005 must
+    // still receive the remote's report when the browser can reach its page.
+    send: async (entries) => {
+      const res = await fetch('/api/diag/remote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) throw new Error(`Diagnostics HTTP ${res.status}`);
+    },
+  });
+}
+
 function getApiBase() {
   const boothTarget = localStorage.getItem('djbooth_booth_ip')?.trim();
   if (!boothTarget) return '/api';
@@ -112,7 +183,10 @@ async function apiFetch(path, options = {}) {
   // The deadline covers the ENTIRE operation - headers, body and parse. `fetch`
   // resolving only means headers arrived; a stalled body would otherwise hang forever
   // with the timer already cleared.
-  return await withRequestDeadline({ timeoutMs, signal: callerSignal, label: path }, async (signal) => {
+  const start = Date.now();
+  const endpoint = telemetryEndpoint(path);
+  try {
+  const result = await withRequestDeadline({ timeoutMs, signal: callerSignal, label: path }, async (signal) => {
   const res = await fetch(`${getApiBase()}${path}`, { ...fetchOptions, headers, signal });
   
   if (res.status === 401) {
@@ -142,6 +216,25 @@ async function apiFetch(path, options = {}) {
   
   return await res.json();
   });
+  if (endpoint === 'booth_state') noteRemoteBoothState(result?.state ?? result);
+  if (endpoint === 'music_tracks' || endpoint === 'music_select') {
+    recordRemoteTelemetry('remote_request', {
+      endpoint, result: 'ok', durationMs: Math.min(Date.now() - start, 120_000),
+      count: Array.isArray(result?.tracks) ? result.tracks.length : 0,
+      total: Number.isSafeInteger(result?.total) ? result.total : undefined,
+    });
+  }
+  return result;
+  } catch (error) {
+    const result = telemetryFailure(error);
+    if (shouldRecordRemoteFailure(endpoint, result)) {
+      recordRemoteTelemetry('remote_request', {
+        endpoint, result, status: error?.status,
+        durationMs: Math.min(Date.now() - start, 120_000),
+      });
+    }
+    throw error;
+  }
 }
 
 export const auth = {
@@ -176,6 +269,11 @@ export const musicApi = {
   getTracks: ({ page = 1, limit = 100, search = '', genre = '' } = {}) =>
     apiFetch(`/music/tracks?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&genre=${encodeURIComponent(genre)}`),
   getGenres: () => apiFetch('/music/genres'),
+  selectTracks: ({ count = 2, excludeNames = [], genres = [], dancerPlaylist = [], strictPlaylist = false, automatic = false } = {}) =>
+    apiFetch('/music/select', {
+      method: 'POST',
+      body: JSON.stringify({ count, excludeNames, genres, dancerPlaylist, strictPlaylist, automatic }),
+    }),
 };
 
 export const djOptionsApi = {
@@ -254,7 +352,9 @@ export const boothApi = {
       submittedAt: Date.now(),
       serverEpochAtSend: options.stateEpoch ?? null,
     };
-    return runBoothCommand({
+    const started = Date.now();
+    try {
+    const result = await runBoothCommand({
       submit: () => apiFetch('/booth/command', {
         method: 'POST',
         body: JSON.stringify({
@@ -270,6 +370,21 @@ export const boothApi = {
       identity,
       timeoutMs: options.timeoutMs ?? 35_000,
     });
+    recordRemoteTelemetry('remote_command', {
+      action, requestId, outcome: 'applied',
+      durationMs: Math.min(Date.now() - started, 120_000),
+    });
+    return result;
+    } catch (error) {
+      recordRemoteTelemetry('remote_command', {
+        action, requestId,
+        outcome: error?.rejectedByServer ? 'rejected' : 'unknown',
+        result: error?.rejectedByServer ? 'unknown' : telemetryFailure(error),
+        status: error?.status,
+        durationMs: Math.min(Date.now() - started, 120_000),
+      });
+      throw error;
+    }
   },
   getCommands: (since = 0) => apiFetch(`/booth/commands?since=${since}`),
   claimCommand: (commandId) => apiFetch('/booth/commands/claim', {
