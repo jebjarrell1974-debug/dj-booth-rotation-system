@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { musicApi } from '@/api/serverApi';
 import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
 import { decayVipRemaining } from '@/utils/vipCountdown';
 import { rotationStartState } from '@/utils/rotationStartState';
@@ -429,6 +430,7 @@ export default function RotationPlaylistManager({
   const [serverCurrentPage, setServerCurrentPage] = useState(1);
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
   const serverMountedRef = useRef(false);
   const searchTimeoutRef = useRef(null);
 
@@ -862,23 +864,16 @@ export default function RotationPlaylistManager({
     })();
   }, [songsPerSet, tracks, dancers, djOptions, remoteMode, songCooldownsReady]);
 
-  const getAuthHeaders = useCallback(() => {
-    const token = localStorage.getItem('djbooth_token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   const fetchServerTracks = useCallback(async (page = 1, append = false) => {
     setServerLoading(true);
+    setServerError('');
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: TRACKS_PER_PAGE.toString(),
+      const data = await musicApi.getTracks({
+        page,
+        limit: TRACKS_PER_PAGE,
+        search: debouncedSearch.trim(),
+        genre: debouncedSearch.trim() ? '' : (activeGenre || ''),
       });
-      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      if (activeGenre && !debouncedSearch.trim()) params.set('genre', activeGenre);
-      const res = await fetch(`/api/music/tracks?${params}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
       const raw = (data.tracks || []).map(t => ({ ...t, url: '/api/music/stream/' + t.id }));
       const seen = new Set();
       const fetched = raw.filter(t => {
@@ -901,11 +896,12 @@ export default function RotationPlaylistManager({
         setServerGenres(data.genres);
       }
     } catch (err) {
+      setServerError(err.message || 'Could not load the music library.');
       console.error('RotationPlaylistManager: fetch tracks error', err);
     } finally {
       setServerLoading(false);
     }
-  }, [getAuthHeaders, debouncedSearch, activeGenre]);
+  }, [debouncedSearch, activeGenre]);
 
   useEffect(() => {
     if (!serverMountedRef.current) {
@@ -956,10 +952,14 @@ export default function RotationPlaylistManager({
       const newRotation = [...localRotation];
       const [moved] = newRotation.splice(source.index, 1);
       newRotation.splice(destination.index, 0, moved);
-      setLocalRotation(newRotation);
       if (isRotationActive && localRotation[0] !== newRotation[0]) {
-        onDancerDragReorder?.(newRotation, localRotation[0], newRotation[0]);
+        const outcome = onDancerDragReorder?.(
+          newRotation, localRotation[0], newRotation[0],
+          resolvedRotation => setLocalRotation(resolvedRotation),
+        );
+        if (outcome === false || outcome === 'deferred') return;
       }
+      setLocalRotation(newRotation);
       return;
     }
 
@@ -1060,6 +1060,7 @@ export default function RotationPlaylistManager({
 
   const rerollSong = useCallback(async (dancerId, songIndex) => {
     const key = `${dancerId}-${songIndex}`;
+    const assignmentAtStart = JSON.stringify(songAssignmentsRef.current[dancerId] || []);
     if (rerollingRef.current.has(key)) return;
     if (!songCooldownsReady) {
       const message = 'Automatic history is not ready; no automatic re-roll was made';
@@ -1085,35 +1086,35 @@ export default function RotationPlaylistManager({
       const dancerPlaylist = dancer?.playlist || [];
       const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
       try {
-        const token = localStorage.getItem('djbooth_token');
-        const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-        const res = await fetch('/api/music/select', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            count: 1,
-            excludeNames: [...new Set(allAssigned)],
-            genres: activeGenres,
-            dancerPlaylist,
-            automatic: true,
-          }),
-          signal: AbortSignal.timeout(5000)
+        const data = await musicApi.selectTracks({
+          count: 1,
+          excludeNames: [...new Set(allAssigned)],
+          genres: activeGenres,
+          dancerPlaylist,
+          automatic: true,
         });
-        if (res.ok) {
-          const data = await res.json();
-          const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
-          if (newTrack) {
-            const current = [...(songAssignmentsRef.current[dancerId] || [])];
-            current[songIndex] = newTrack.name;
-            publishManualAssignment(dancerId, current);
-            toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
-            return;
-          }
+        const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
+        if (newTrack) {
+          if (JSON.stringify(songAssignmentsRef.current[dancerId] || []) !== assignmentAtStart) return;
+          const current = [...(songAssignmentsRef.current[dancerId] || [])];
+          current[songIndex] = newTrack.name;
+          publishManualAssignment(dancerId, current);
+          toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
+          return;
         }
       } catch (err) {
         console.warn('Re-roll failed:', err.message);
+        if (remoteMode) {
+          toast.error(`Could not pick a song: ${err.message}`);
+          return;
+        }
       }
 
+      if (remoteMode) {
+        toast.error('No unplayed song is available for this entertainer');
+        return;
+      }
+      if (JSON.stringify(songAssignmentsRef.current[dancerId] || []) !== assignmentAtStart) return;
       const excludeSet = new Set(allAssigned);
       const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
       const playlistSet = new Set(dancerPlaylist);
@@ -1504,7 +1505,9 @@ export default function RotationPlaylistManager({
                       </button>
                     </div>
                   )}
-                  {serverTracks.length === 0 && !serverLoading && (
+                  {serverError ? (
+                    <div className="text-center py-8 px-3 text-red-400 text-sm">{serverError}</div>
+                  ) : serverTracks.length === 0 && !serverLoading && (
                     <div className="text-center py-8 text-gray-500 text-sm">
                       {debouncedSearch.trim() || activeGenre ? 'No tracks match your search' : 'No music files found'}
                     </div>

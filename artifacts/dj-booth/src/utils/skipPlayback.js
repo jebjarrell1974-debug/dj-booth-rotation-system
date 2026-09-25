@@ -49,6 +49,23 @@ export function remoteSkipPayload(nextEntertainer = false) {
   return nextEntertainer ? { skipBreaks: true } : {};
 }
 
+// Put the selected entertainer immediately after the still-playing set owner.
+// The hard-skip path then moves that owner to the bottom and starts the
+// selected entertainer, without playing the outgoing outro or break.
+export function planImmediateHandoff(rotation, activeId, selectedId) {
+  if (!Array.isArray(rotation) || rotation.length < 2 ||
+      activeId == null || selectedId == null ||
+      String(activeId) === String(selectedId)) return null;
+  const active = rotation.find(id => String(id) === String(activeId));
+  const selected = rotation.find(id => String(id) === String(selectedId));
+  if (active == null || selected == null) return null;
+  return [
+    active,
+    selected,
+    ...rotation.filter(id => String(id) !== String(active) && String(id) !== String(selected)),
+  ];
+}
+
 export function canCommitAssignmentRefill(startVersion, currentVersion) {
   return startVersion === currentVersion;
 }

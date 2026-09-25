@@ -42,6 +42,7 @@ import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos
 import { listFeatureBeds, listMusicFolders, listFolderTracks, produceFeatureAudio, featureCacheKey, ensureFeatureBedsFolder } from './feature-producer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
+import { allowRemoteTelemetry, sanitizeRemoteTelemetry } from './remote-telemetry.js';
 import { startGenericVoiceoverRefresh } from './generic-voiceover-refresh.js';
 import {
   BoothCommandQueue,
@@ -1740,6 +1741,39 @@ app.post('/api/diag/log', authenticate, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Diagnostics must remain available when the configured target issued a token
+// that THIS page-serving unit cannot validate, or when target auth expires.
+// This write-only route grants no booth access; limit it to same-origin browser
+// requests, small batches and a per-IP budget. Never accept arbitrary fields.
+app.post('/api/diag/remote', (req, res) => {
+  let sameOrigin = false;
+  try {
+    sameOrigin = !!req.headers.origin
+      && new URL(req.headers.origin).host === req.headers.host;
+  } catch {}
+  if (!sameOrigin) return res.status(403).json({ error: 'Same-origin browser required' });
+  if (Number(req.headers['content-length']) > 16_384) {
+    return res.status(413).json({ error: 'Remote diagnostic batch too large' });
+  }
+  if (JSON.stringify(req.body || {}).length > 16_384) {
+    return res.status(413).json({ error: 'Remote diagnostic batch too large' });
+  }
+  const entries = req.body?.entries;
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 25) {
+    return res.status(400).json({ error: 'Expected 1–25 remote events' });
+  }
+  if (!allowRemoteTelemetry(req.ip, entries.length)) {
+    return res.status(429).json({ error: 'Remote diagnostic rate limit' });
+  }
+  const safe = entries.map(sanitizeRemoteTelemetry);
+  if (safe.some(entry => !entry)) return res.status(400).json({ error: 'Invalid remote event' });
+  const written = appendDiagBatch(safe, {
+    hostname: hostname(), source: 'staff_remote', remoteIp: req.ip,
+  });
+  if (written !== safe.length) return res.status(503).json({ error: 'Remote diagnostics unavailable' });
+  res.json({ written });
 });
 
 app.get('/api/diag/log/recent', authenticate, requireDJ, (req, res) => {

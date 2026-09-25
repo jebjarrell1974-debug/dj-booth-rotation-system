@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import { isRemoteMode } from '@/api/serverApi';
+import { isRemoteMode, isPhoneRemoteMode, startRemoteTelemetry } from '@/api/serverApi';
 import BootScreen from '@/components/BootScreen';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
 import LicenseSuspended from '@/components/LicenseSuspended';
@@ -276,6 +276,12 @@ function LicenseGate({ children }) {
 }
 
 function App() {
+  // The remote stays active across routes; reporting cannot depend on a page
+  // component that unmounts when staff navigate or re-authenticate.
+  useEffect(() => {
+    if (!isRemoteMode()) return;
+    return startRemoteTelemetry(isPhoneRemoteMode() ? 'phone' : 'desktop');
+  }, []);
   // LAN/public clients are command-only and must not wait for physical-kiosk
   // music scan, voiceover sync, or other local boot work.
   const skipBoot = isRemoteMode() ||

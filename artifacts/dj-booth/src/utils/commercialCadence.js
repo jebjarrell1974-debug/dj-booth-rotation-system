@@ -98,6 +98,28 @@ export function takeCommercialBoundary({
   return consumeBoundary(fallback);
 }
 
+// An immediate manual handoff advances the cadence but cannot play an ad
+// before the selected entertainer. Carry due ads to subsequent ordinary
+// boundaries in FIFO order, retaining each ad's original slot identity.
+export function routeDeferredCommercialBoundary(
+  boundary, queued = [], { defer = false, pending = false } = {},
+) {
+  const next = [...queued];
+  if (defer) {
+    if (boundary.due) {
+      if (pending) next.unshift(boundary);
+      else next.push(boundary);
+    }
+    return { boundary: { ...boundary, due: false }, queued: next };
+  }
+  const earlier = next.shift();
+  if (earlier) {
+    if (boundary.due) next.push(boundary);
+    return { boundary: earlier, queued: next };
+  }
+  return { boundary, queued: next };
+}
+
 /**
  * The ordinary song-skip planner treats song zero as an in-set song. When a
  * final interstitial skip has already opened a pending boundary, callers must
