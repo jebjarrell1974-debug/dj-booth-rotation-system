@@ -1,0 +1,1670 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { boothApi, djOptionsApi, musicApi } from '@/api/serverApi';
+import PressAndHoldDuckButton from '@/components/dj/PressAndHoldDuckButton';
+import { createRemoteDuckLease } from '@/utils/duckLease';
+import HouseAnnouncementPanel from '@/components/dj/HouseAnnouncementPanel';
+import { capSongList, normalizeManualSongList, queueLatestManualAssignment } from '@/utils/rotationAssignments';
+import {
+  acknowledgeRemoteDrafts,
+  createRemoteEditingQueue,
+  mergeRemoteBreakWorkspace,
+} from '@/utils/remoteEditingQueue';
+import {
+  filterUnplayedAutomaticTracks,
+  isRecentlyPlayed,
+} from '@/utils/automaticTrackSelection';
+import { remoteSkipPayload } from '@/utils/skipPlayback';
+import { createCommandFeedback, EMPTY_COMMAND_VIEW } from '@/utils/commandFeedback';
+import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
+import { decayVipRemaining } from '@/utils/vipCountdown';
+import { rotationStartState, clearStartingFlag } from '@/utils/rotationStartState';
+import CommandStatus from '@/components/dj/CommandStatus';
+import { toast } from 'sonner';
+import {
+  SkipForward, Mic, MicOff, Users, Music, Plus, Minus, X, LogOut,
+  Radio, SlidersHorizontal, Volume2, Save, Shuffle,
+  ChevronDown, ChevronUp, RefreshCw, Drum, Layers, Star, Activity, Crown, Ban,
+  Sun, Moon, Check, VolumeX,
+} from 'lucide-react';
+import ZoneProDailyControls from '@/components/dj/ZoneProDailyControls';
+
+const stripExt = (name) => name?.replace(/\.[^.]+$/, '') || '';
+const STRUCTURAL_COMMANDS = new Set([
+  'updateRotation',
+  'removeDancerFromRotation',
+  'addDancerToRotation',
+  'moveInRotation',
+  'saveRotation',
+  'updateSongAssignments',
+  'saveRotationWorkspace',
+  'sendToVip',
+  'releaseFromVip',
+  'placeFeature',
+  'cancelFeaturePlacement',
+]);
+const BOOTH_STALE_AFTER_MS = 10_000;
+
+export default function RemoteView({
+  dancers,
+  liveBoothState,
+  djOptions = {},
+  onOptionsChange,
+  onLogout,
+  songCooldowns = {},
+}) {
+  const [tab, setTab] = useState('rotation');
+  const [songEdits, setSongEdits] = useState({});
+  const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [expandedDancer, setExpandedDancer] = useState(null);
+  const [vipPickerFor, setVipPickerFor] = useState(null);
+  const [vipExtendFor, setVipExtendFor] = useState(null);
+  const [vipAddMs, setVipAddMs] = useState(0);
+  useEffect(() => { setVipAddMs(0); }, [vipPickerFor, vipExtendFor]);
+
+  const [assigningTo, setAssigningTo] = useState(null);
+  const [assigningBreak, setAssigningBreak] = useState(null);
+  const [breakQueueDraft, setBreakQueueDraft] = useState(null);
+  const [rerolling, setRerolling] = useState({});
+
+  const [libSearch, setLibSearch] = useState('');
+  const [libGenre, setLibGenre] = useState('');
+  const [libTracks, setLibTracks] = useState([]);
+  const [libGenres, setLibGenres] = useState([]);
+  const [libTotal, setLibTotal] = useState(0);
+  const [libLoading, setLibLoading] = useState(false);
+  const [libError, setLibError] = useState('');
+  const [libraryStandalone, setLibraryStandalone] = useState(false);
+  const [libraryStatus, setLibraryStatus] = useState('');
+  const libSearchTimer = useRef(null);
+  const [optionGenres, setOptionGenres] = useState([]);
+  const [optionsSaving, setOptionsSaving] = useState(false);
+  const [pendingCommercialFreq, setPendingCommercialFreq] = useState(null);
+
+  const [clock, setClock] = useState(Date.now());
+  const [lastStateReceivedAt, setLastStateReceivedAt] = useState(() => liveBoothState ? Date.now() : 0);
+  const vipSnapshotReceiptRef = useRef({ at: performance.now(), values: {} });
+  // One view for every command outcome, produced by the shared feedback store. It
+  // replaces three shared strings that used to trample each other: an unrelated
+  // success could hide a command still being checked, and clear an uncertainty
+  // outright. Each command now owns its own entry.
+  const [commandView, setCommandView] = useState(EMPTY_COMMAND_VIEW);
+  const [rotationStarting, setRotationStarting] = useState(false);
+  // Options-panel messages are local to that panel and unrelated to command outcomes.
+  const [optionsError, setOptionsError] = useState('');
+  // "requesting" vs "the kiosk confirmed it" - a touch alone never claims the music changed.
+  const [duckRequested, setDuckRequested] = useState(false);
+  const [duckConfirmed, setDuckConfirmed] = useState(false);
+  const [showDeactivatePin, setShowDeactivatePin] = useState(false);
+  const [deactivatePin, setDeactivatePin] = useState('');
+  const deactivatePinInputRef = useRef(null);
+  const lastServerUpdateRef = useRef(null);
+  const liveBoothStateRef = useRef(liveBoothState);
+  liveBoothStateRef.current = liveBoothState;
+  const isConnectedRef = useRef(false);
+  useEffect(() => {
+    const interval = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  useEffect(() => {
+    if (!liveBoothState) return;
+    if (liveBoothState.updatedAt) lastServerUpdateRef.current = liveBoothState.updatedAt;
+    setLastStateReceivedAt(Date.now());
+    vipSnapshotReceiptRef.current = {
+      at: performance.now(),
+      values: liveBoothState.dancerVipRemainingMs || {},
+    };
+  }, [liveBoothState]);
+  useEffect(() => {
+    if (pendingCommercialFreq != null && String(liveBoothState?.commercialFreq) === pendingCommercialFreq) {
+      setPendingCommercialFreq(null);
+    }
+  }, [liveBoothState?.commercialFreq, pendingCommercialFreq]);
+
+  const isOnCooldown = (name) => isRecentlyPlayed(name, songCooldowns, clock);
+  const stateAgeMs = lastStateReceivedAt ? Math.max(0, clock - lastStateReceivedAt) : Infinity;
+  const isConnected = stateAgeMs <= BOOTH_STALE_AFTER_MS;
+  isConnectedRef.current = isConnected;
+  const isPlaying = liveBoothState?.isPlaying;
+  const isRotationActive = liveBoothState?.isRotationActive;
+  const currentDancerName = liveBoothState?.currentDancerName || '';
+  const currentTrack = liveBoothState?.currentTrack || '';
+  const currentSongNumber = liveBoothState?.currentSongNumber || 0;
+  const songsPerSet = liveBoothState?.songsPerSet || 3;
+  const boothStateLoaded = isConnected;
+  const announcementsEnabled = liveBoothState?.announcementsEnabled !== false;
+  const rotationList = liveBoothState?.rotation || [];
+  const currentDancerIndex = liveBoothState?.currentDancerIndex || 0;
+  const rotationSongs = liveBoothState?.rotationSongs || {};
+  const manualRotationSongs = liveBoothState?.manualRotationSongs || {};
+  const currentVolume = liveBoothState?.volume != null ? liveBoothState.volume : 0.8;
+  const currentVoiceGain = liveBoothState?.voiceGain != null ? liveBoothState.voiceGain : 1.5;
+  const breakSongsPerSet = liveBoothState?.breakSongsPerSet ?? 0;
+  const interstitialSongs = liveBoothState?.interstitialSongs || {};
+  const displayedInterstitialSongs = breakQueueDraft || interstitialSongs;
+  const manualInterstitialBreaks = liveBoothState?.manualInterstitialBreaks || {};
+  const activeBreakKey = liveBoothState?.activeBreakKey || null;
+  const activeBreakIndex = liveBoothState?.breakSongIndex ?? null;
+  const dancerVipMap = liveBoothState?.dancerVipMap || {};
+  const dancerVipRemainingMs = vipSnapshotReceiptRef.current.values;
+  const vipRemainingFor = (id) => decayVipRemaining(
+    dancerVipRemainingMs[String(id)],
+    vipSnapshotReceiptRef.current.at,
+    performance.now(),
+  );
+  const promoQueue = liveBoothState?.promoQueue || [];
+  const skippedCommercials = new Set(liveBoothState?.skippedCommercials || []);
+  const skipLocked = !!liveBoothState?.skipLocked;
+
+  const sendRawRemoteCommand = useCallback(async (action, payload = {}, options = {}) => {
+    if (!isConnectedRef.current) {
+      // Throw rather than set a shared string: the feedback store records this against
+      // THIS command, so an unrelated action's outcome is untouched.
+      throw new Error('The kiosk state is stale. No command was sent.');
+    }
+    try {
+      return await boothApi.sendCommand(action, payload, options);
+    } catch (error) {
+      // An unknown outcome must NOT be flattened into null - that discards the
+      // requestId/commandId the reconciliation needs, and tells the operator the action
+      // failed when it may have been applied.
+      throw error;
+    }
+  }, []);
+  const remoteEditingQueueRef = useRef(null);
+  if (!remoteEditingQueueRef.current) {
+    remoteEditingQueueRef.current = createRemoteEditingQueue({
+      getRotationVersion: () => {
+        const state = liveBoothStateRef.current;
+        return state
+          ? { rotationVersion: state.rotationVersion, stateEpoch: state.stateEpoch }
+          : undefined;
+      },
+      sendCommand: sendRawRemoteCommand,
+    });
+  }
+  // Confirmed-success / visible-error / unknown-outcome handling is SHARED with the
+  // desktop remote (DJBooth.jsx with remoteMode true). It used to be written inline
+  // here, which left the desktop surface with none of it. One implementation now
+  // serves both; see src/utils/commandFeedback.js.
+  const surfaceCommandRef = useRef(null);
+  if (!surfaceCommandRef.current) {
+    surfaceCommandRef.current = createCommandFeedback({
+      onChange: setCommandView,
+      // READ ONLY. Discovering an outcome must never create a second command.
+      reconcile: (context) => boothApi.reconcileCommand(context),
+    });
+  }
+  const sendRemoteCommand = useCallback((action, payload = {}, options = {}) => {
+    // Every structural control (Add / Remove / Move / assignments) calls this and
+    // then DISCARDS the promise - no .then, no .catch. Surfacing centrally covers all
+    // call sites at once.
+    const surface = (promise) => surfaceCommandRef.current.surface(action, promise);
+    if (STRUCTURAL_COMMANDS.has(action)) {
+      return surface(remoteEditingQueueRef.current.enqueue(action, payload, {
+        stateEpoch: liveBoothStateRef.current?.stateEpoch,
+        ...options,
+        structural: true,
+      }));
+    }
+    return surface(sendRawRemoteCommand(action, payload, { stateEpoch: liveBoothStateRef.current?.stateEpoch, ...options }));
+  }, [sendRawRemoteCommand]);
+
+  const songEditsRef = useRef(songEdits);
+  songEditsRef.current = songEdits;
+  const songEditRevisionsRef = useRef({});
+  const breakQueueDraftRef = useRef(null);
+  const breakQueueManualRef = useRef(null);
+  const breakQueueRevisionRef = useRef(0);
+  const authoritativeInterstitialSongsRef = useRef(interstitialSongs);
+  const authoritativeManualBreaksRef = useRef(manualInterstitialBreaks);
+  authoritativeInterstitialSongsRef.current = interstitialSongs;
+  authoritativeManualBreaksRef.current = manualInterstitialBreaks;
+
+  const publishManualAssignment = useCallback((dancerId, songs) => {
+    const key = String(dancerId);
+    const normalized = normalizeManualSongList(songs);
+    return remoteEditingQueueRef.current.enqueue('updateSongAssignments', {
+      assignments: { [dancerId]: normalized },
+      clientRevision: (songEditRevisionsRef.current[key] || 0),
+    }, {
+      key: `assignment:${key}`,
+      structural: true,
+    });
+  }, []);
+  const publishBreakQueue = useCallback((nextSongs, breakKey) => {
+    const currentSongs = breakQueueDraftRef.current || authoritativeInterstitialSongsRef.current;
+    const currentManual = breakQueueDraftRef.current
+      ? (breakQueueManualRef.current || {})
+      : authoritativeManualBreaksRef.current;
+    const merged = mergeRemoteBreakWorkspace(currentSongs, currentManual, nextSongs, breakKey);
+    const normalized = merged.songs;
+    const nextManual = merged.manualBreaks;
+    const revision = ++breakQueueRevisionRef.current;
+    breakQueueDraftRef.current = normalized;
+    breakQueueManualRef.current = nextManual;
+    // Paint the phone/full-remote queue immediately; the kiosk remains the
+    // authority and the draft is reconciled as soon as its snapshot arrives.
+    setBreakQueueDraft(normalized);
+    return remoteEditingQueueRef.current.enqueue('updateInterstitialSongs', {
+      interstitialSongs: normalized,
+      manualInterstitialBreaks: nextManual,
+    }, {
+      key: 'interstitial-workspace',
+      structural: false,
+    }).then(result => {
+      if (!result && breakQueueRevisionRef.current === revision) {
+        breakQueueDraftRef.current = null;
+        breakQueueManualRef.current = null;
+        setBreakQueueDraft(null);
+      }
+      return result;
+    });
+  }, []);
+  useEffect(() => {
+    if (!breakQueueDraft) return;
+    if (
+      JSON.stringify(interstitialSongs) === JSON.stringify(breakQueueDraft) &&
+      JSON.stringify(manualInterstitialBreaks) === JSON.stringify(breakQueueManualRef.current || {})
+    ) {
+      breakQueueDraftRef.current = null;
+      breakQueueManualRef.current = null;
+      setBreakQueueDraft(null);
+    }
+  }, [interstitialSongs, manualInterstitialBreaks, breakQueueDraft]);
+  const remoteDuckLeaseRef = useRef(null);
+  const remoteDuckSendRef = useRef(null);
+  remoteDuckSendRef.current = (action, payload, options) => (
+    sendRemoteCommand(action, payload, options).then(result => {
+      if (!result) throw new Error('The kiosk did not accept the duck command');
+      return result;
+    })
+  );
+  if (!remoteDuckLeaseRef.current) {
+    remoteDuckLeaseRef.current = createRemoteDuckLease({
+      send: (action, payload, options) => remoteDuckSendRef.current?.(action, payload, options),
+      onError: () => remoteDuckLeaseRef.current?.stop('command-error'),
+    });
+  }
+  useEffect(() => () => {
+    remoteDuckLeaseRef.current?.stop('unmount');
+  }, []);
+  useEffect(() => {
+    if (isConnected) return undefined;
+    remoteDuckLeaseRef.current?.stop('connection-stale');
+    return undefined;
+  }, [isConnected]);
+
+  const openDeactivate = () => {
+    if (!currentTrack || !isConnected) return;
+    setDeactivatePin('');
+    setShowDeactivatePin(true);
+    setTimeout(() => deactivatePinInputRef.current?.focus(), 100);
+  };
+
+  const confirmDeactivate = async () => {
+    if (!currentTrack || !/^\d{5}$/.test(deactivatePin)) return;
+    const result = await sendRemoteCommand('deactivateTrack', {
+      trackName: currentTrack,
+      pin: deactivatePin,
+    });
+    if (result) {
+      setShowDeactivatePin(false);
+      setDeactivatePin('');
+    }
+  };
+
+  const currentDancer = dancers?.find(d => d.id === rotationList[currentDancerIndex]);
+  const rotationDancers = rotationList.map(id => dancers?.find(d => d.id === id)).filter(Boolean);
+  const allActiveDancers = (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name));
+  const currentSetLength = currentDancer
+    ? (Object.prototype.hasOwnProperty.call(songEdits, currentDancer.id)
+      ? normalizeManualSongList(songEdits[currentDancer.id]).length
+      : Object.prototype.hasOwnProperty.call(manualRotationSongs, currentDancer.id)
+        ? normalizeManualSongList(manualRotationSongs[currentDancer.id]).length
+        : songsPerSet)
+    : songsPerSet;
+
+  const fetchLib = useCallback(async (search, genre) => {
+    setLibLoading(true);
+    setLibError('');
+    try {
+      const data = await musicApi.getTracks({
+        page: 1,
+        limit: 300,
+        search,
+        genre: search ? '' : genre,
+      });
+      setLibTracks(data.tracks || []);
+      setLibTotal(data.total || 0);
+      if (data.genres?.length > 0) setLibGenres(data.genres);
+    } catch (err) {
+      setLibError(err.message || 'Could not load the music library.');
+      console.warn(`⚠️ Remote library load failed: ${err.message}`);
+    }
+    setLibLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'library') fetchLib('', '');
+  }, [tab, fetchLib]);
+
+  useEffect(() => {
+    clearTimeout(libSearchTimer.current);
+    libSearchTimer.current = setTimeout(() => fetchLib(libSearch, libGenre), 300);
+    return () => clearTimeout(libSearchTimer.current);
+  }, [libSearch, libGenre, fetchLib]);
+
+  useEffect(() => {
+    if (tab !== 'options' || optionGenres.length > 0) return;
+    musicApi.getGenres()
+      .then(data => setOptionGenres(data.genres || []))
+      .catch(error => setOptionsError(error.message || 'Could not load music genres.'));
+  }, [tab, optionGenres.length]);
+
+  const saveRemoteOptions = async (updates) => {
+    if (!isConnected || optionsSaving) return;
+    setOptionsSaving(true);
+    setOptionsError('');
+    try {
+      await djOptionsApi.update(updates);
+      onOptionsChange?.({ ...djOptions, ...updates });
+    } catch (error) {
+      setOptionsError(error.message || 'Could not save genre settings.');
+    } finally {
+      setOptionsSaving(false);
+    }
+  };
+
+  const toggleShiftGenre = (kind, genreName) => {
+    if (kind === 'day') {
+      const dayShift = {
+        startTime: '12:00',
+        endTime: '20:00',
+        genres: [],
+        ...(djOptions.dayShift || {}),
+        enabled: true,
+      };
+      const genres = dayShift.genres.includes(genreName)
+        ? dayShift.genres.filter(name => name !== genreName)
+        : [...dayShift.genres, genreName];
+      saveRemoteOptions({ dayShift: { ...dayShift, genres } });
+      return;
+    }
+    const current = djOptions.activeGenres || [];
+    const activeGenres = current.includes(genreName)
+      ? current.filter(name => name !== genreName)
+      : [...current, genreName];
+    saveRemoteOptions({ activeGenres });
+  };
+
+  const getSongs = (dancerId) => {
+    if (Object.prototype.hasOwnProperty.call(songEditsRef.current, dancerId)) {
+      return normalizeManualSongList(songEditsRef.current[dancerId]);
+    }
+    if (Object.prototype.hasOwnProperty.call(manualRotationSongs, dancerId)) {
+      return normalizeManualSongList(manualRotationSongs[dancerId]);
+    }
+    const songs = rotationSongs[dancerId] || [];
+    return capSongList(songs.map(s => typeof s === 'string' ? s : s.name), songsPerSet);
+  };
+
+  const setSongs = (dancerId, songs) => {
+    const normalized = normalizeManualSongList(songs);
+    const key = String(dancerId);
+    const nextRevision = (songEditRevisionsRef.current[key] || 0) + 1;
+    songEditRevisionsRef.current[key] = nextRevision;
+    const nextEdits = queueLatestManualAssignment(songEditsRef.current, key, normalized);
+    songEditsRef.current = nextEdits;
+    setSongEdits(nextEdits);
+    setHasUnsaved(true);
+    // Phone edits are live too: apply the current assignment immediately and
+    // retain Save Changes for the workspace/rotation controls.
+    publishManualAssignment(dancerId, normalized);
+  };
+
+  const addSong = (dancerId, trackName) => {
+    const current = getSongs(dancerId);
+    if (current.includes(trackName)) return;
+    setSongs(dancerId, [...current, trackName]);
+  };
+
+  const removeSong = (dancerId, idx) => {
+    const current = [...getSongs(dancerId)];
+    current.splice(idx, 1);
+    setSongs(dancerId, current);
+  };
+
+  const rerollSong = async (dancerId, songIdx) => {
+    const key = `${dancerId}-${songIdx}`;
+    const revisionAtStart = songEditRevisionsRef.current[String(dancerId)] || 0;
+    const songAtStart = getSongs(dancerId)[songIdx];
+    const rerollDancer = dancers?.find(d => d.id === dancerId);
+    const persistentPlaylist = Array.isArray(rerollDancer?.playlist) ? rerollDancer.playlist : [];
+    const shownSongs = getSongs(dancerId) || [];
+    const dancerPlaylist = [...new Set([...shownSongs, ...persistentPlaylist].filter(Boolean))];
+    if (dancerPlaylist.length === 0) return;
+    setRerolling(prev => ({ ...prev, [key]: true }));
+    try {
+      const allAssigned = [];
+      rotationList.forEach(id => {
+        getSongs(id).forEach((n, i) => {
+          if (id !== dancerId || i !== songIdx) allAssigned.push(n);
+        });
+      });
+      const data = await musicApi.selectTracks({
+        count: 1,
+        excludeNames: [...new Set(allAssigned)],
+        dancerPlaylist,
+        strictPlaylist: true,
+        automatic: true,
+      });
+      const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
+      if (newTrack) {
+        if ((songEditRevisionsRef.current[String(dancerId)] || 0) === revisionAtStart
+            && getSongs(dancerId)[songIdx] === songAtStart) {
+          const current = [...getSongs(dancerId)];
+          current[songIdx] = newTrack.name;
+          setSongs(dancerId, current);
+        }
+      } else {
+        console.warn('⚠️ Remote reroll: automatic pool exhausted; no unplayed track available');
+        toast.error('No unplayed song is available for this entertainer');
+      }
+    } catch (err) {
+      console.warn(`⚠️ Remote reroll failed: ${err.message}`);
+      toast.error(`Could not pick a song: ${err.message}`);
+    }
+    setRerolling(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
+  const handleSaveAll = async () => {
+    // Assignment/break commands may still be in flight. Drain them first, then
+    // read refs: React state captured by this callback can predate the final
+    // command receipt (and a user can edit while the drain is waiting).
+    await remoteEditingQueueRef.current.flush();
+    const latestState = liveBoothStateRef.current || {};
+    const latestSongEdits = { ...(songEditsRef.current || {}) };
+    const latestBreakSongs = breakQueueDraftRef.current || latestState.interstitialSongs || {};
+    const latestManualBreaks = breakQueueDraftRef.current
+      ? (breakQueueManualRef.current || {})
+      : (latestState.manualInterstitialBreaks || {});
+    const savedRevisions = Object.fromEntries(
+      Object.keys(latestSongEdits).map(dancerId => [
+        dancerId,
+        songEditRevisionsRef.current[dancerId] || 0,
+      ]),
+    );
+    const latestRotation = latestState.rotation || [];
+    const latestCurrentDancerIndex = latestState.currentDancerIndex ?? 0;
+    const latestCurrentSongNumber = latestState.currentSongNumber || 0;
+    const latestCurrentTrack = latestState.currentTrack || '';
+    const result = await sendRemoteCommand('saveRotationWorkspace', {
+      rotation: latestRotation,
+      assignments: Object.fromEntries(
+        Object.entries(latestSongEdits).map(([dancerId, songs]) => [
+          dancerId,
+          normalizeManualSongList(songs),
+        ]),
+      ),
+      interstitialSongs: latestBreakSongs,
+      manualInterstitialBreaks: latestManualBreaks,
+      manualOverrides: Object.keys(latestSongEdits),
+    }, {
+      nowPlayingGuard: latestState.isRotationActive ? {
+        dancerId: latestRotation[latestCurrentDancerIndex],
+        songNumber: latestCurrentSongNumber,
+        track: latestCurrentTrack,
+      } : undefined,
+    });
+    if (result) {
+      const remaining = acknowledgeRemoteDrafts(
+        songEditsRef.current,
+        savedRevisions,
+        songEditRevisionsRef.current,
+      );
+      songEditsRef.current = remaining;
+      setSongEdits(remaining);
+      setHasUnsaved(Object.keys(remaining).length > 0);
+    }
+  };
+
+  const handleAssignTrack = (trackName) => {
+    if (assigningBreak) {
+      const { breakKey, index } = assigningBreak;
+      const updated = { ...displayedInterstitialSongs };
+      const arr = [...(updated[breakKey] || [])];
+      if (index >= arr.length) arr.push(trackName);
+      else arr[index] = trackName;
+      updated[breakKey] = arr;
+      publishBreakQueue(updated, breakKey);
+      setAssigningBreak(null);
+      setAssigningTo(null);
+      setTab('rotation');
+      return;
+    }
+    if (assigningTo) {
+      const { dancerId, songIdx } = assigningTo;
+      const updated = [...getSongs(dancerId)];
+      updated[songIdx] = trackName;
+      setSongs(dancerId, updated);
+      if (libraryStandalone) {
+        const dancerName = dancers.find(d => d.id === dancerId)?.name || 'entertainer';
+         setLibraryStatus(`${stripExt(trackName)} assigned to ${dancerName}, song ${songIdx + 1}. Applied live; Save Changes is optional.`);
+      } else {
+        setAssigningTo(null);
+        setTab('rotation');
+      }
+    }
+  };
+
+  const openLibraryForSong = (dancerId, songIdx) => {
+    setLibraryStandalone(false);
+    setLibraryStatus('');
+    setAssigningBreak(null);
+    setAssigningTo({ dancerId, songIdx });
+    setLibSearch('');
+    setLibGenre('');
+    setTab('library');
+  };
+
+  const editableLibrarySlots = (dancerId) => {
+    if (!dancerId) return [];
+    const songs = getSongs(dancerId);
+    const dancerIndex = rotationList.indexOf(dancerId);
+    const isManual = Object.prototype.hasOwnProperty.call(songEdits, dancerId)
+      || Object.prototype.hasOwnProperty.call(manualRotationSongs, dancerId);
+    const slotCount = isManual
+      ? songs.length + 1
+      : Math.min(songsPerSet, songs.length + (songs.length < songsPerSet ? 1 : 0));
+    return Array.from({ length: slotCount }, (_, songIdx) => ({
+      songIdx,
+      disabled: isRotationActive && dancerIndex === currentDancerIndex && songIdx === currentSongNumber - 1,
+    }));
+  };
+
+  const chooseLibraryTarget = (dancerId) => {
+    const firstEditable = editableLibrarySlots(dancerId).find(slot => !slot.disabled);
+    setAssigningTo(firstEditable ? { dancerId, songIdx: firstEditable.songIdx } : null);
+    setLibraryStatus('');
+  };
+
+  const openFullLibrary = () => {
+    setLibraryStandalone(true);
+    setAssigningBreak(null);
+    setLibraryStatus('');
+    const nextDancer = rotationDancers.length > 0
+      ? rotationDancers[(currentDancerIndex + 1) % rotationDancers.length]
+      : null;
+    chooseLibraryTarget(nextDancer?.id || rotationDancers[0]?.id || null);
+    setLibSearch('');
+    setLibGenre('');
+    setTab('library');
+  };
+
+  const changeTab = (id) => {
+    if (id === 'library') {
+      openFullLibrary();
+      return;
+    }
+    setTab(id);
+    setAssigningTo(null);
+    setAssigningBreak(null);
+    setLibraryStandalone(false);
+    setLibraryStatus('');
+  };
+
+  return (
+    <div className="h-[100dvh] bg-[#08081a] text-white flex flex-col overflow-hidden select-none font-sans">
+
+      {/* ── HEADER ── */}
+      <header className="border-b border-[#151528] px-4 py-2 flex-shrink-0 bg-[#0a0a1a]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-[#00d4ff] flex items-center justify-center">
+                <Radio className="w-4 h-4 text-black" />
+              </div>
+              <div className="hidden sm:block">
+                <h1 className="text-lg font-bold tracking-tight leading-tight">NEON AI DJ</h1>
+                <p className="text-[10px] text-gray-500">Remote Manager Console</p>
+              </div>
+            </div>
+
+            <div className="bg-[#0d0d1f] rounded-lg border border-[#1e293b] p-2 min-w-0 flex-1 relative flex items-center gap-3">
+              {currentDancer ? (
+                <>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: currentDancer.color || '#00d4ff' }}>
+                    {currentDancer.name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-500 truncate">
+                      {currentDancer.name}{isRotationActive ? ` - Song ${currentSongNumber}/${currentSetLength || 1}` : ''}
+                    </p>
+                    <p className="text-sm text-white truncate">{currentTrack || 'Select a track'}</p>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 text-sm text-gray-500 pl-2">No active entertainer</div>
+              )}
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  disabled={!boothStateLoaded || !currentTrack}
+                  onClick={openDeactivate}
+                  title="Deactivate this song and replace it without counting it against the entertainer"
+                  className="w-7 h-7 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center justify-center disabled:opacity-30 transition-colors"
+                >
+                  <Ban className="w-4 h-4" />
+                </button>
+                <button
+                  disabled={!boothStateLoaded || skipLocked}
+                  onClick={() => sendRemoteCommand('skip', remoteSkipPayload(false))}
+                  title={skipLocked ? 'Skip is locked during announcements and the final 10 seconds' : 'Skip'}
+                  className="w-7 h-7 rounded-md text-white hover:bg-[#1e293b] flex items-center justify-center disabled:opacity-30 transition-colors"
+                >
+                  <SkipForward className="w-4 h-4" />
+                </button>
+
+                {/* `xs` is not a configured breakpoint in this project, so `xs:flex`
+                    generated no rule and `hidden` won at every width - which is why the
+                    phone remote appeared to have no duck, volume or voice controls at
+                    all. `sm` is a real breakpoint, so wide screens get the compact
+                    cluster; narrow screens get the dedicated hold-to-duck control below. */}
+                <div className="hidden sm:flex items-center gap-1.5 justify-end">
+                  <PressAndHoldDuckButton
+                    label="AUTO DUCK"
+                    onPress={() => remoteDuckLeaseRef.current?.start()}
+                    onRelease={reason => remoteDuckLeaseRef.current?.stop(reason)}
+                    disabled={!boothStateLoaded}
+                  />
+                  <Volume2 className="w-4 h-4 text-gray-500" />
+                  <button onClick={() => sendRemoteCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })} disabled={!boothStateLoaded || Math.round(currentVolume * 100) <= 0} className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors">
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="w-11 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center">
+                    <span className="text-xs font-bold text-white tabular-nums">{Math.round(currentVolume * 100)}%</span>
+                  </div>
+                  <button onClick={() => sendRemoteCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })} disabled={!boothStateLoaded || Math.round(currentVolume * 100) >= 100} className="w-7 h-7 rounded-md bg-[#151528] border border-[#2e2e5a] flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors">
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="w-px h-5 bg-[#2e2e5a] mx-0.5" />
+
+                  <Mic className="w-4 h-4 text-[#a855f7]" />
+                  <button onClick={() => sendRemoteCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })} disabled={!boothStateLoaded || Math.round(currentVoiceGain * 100) <= 50} className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors">
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="w-11 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center">
+                    <span className="text-xs font-bold text-[#a855f7] tabular-nums">{Math.round(currentVoiceGain * 100)}%</span>
+                  </div>
+                  <button onClick={() => sendRemoteCommand('setVoiceGain', { gain: Math.min(1.2, currentVoiceGain + 0.1) })} disabled={!boothStateLoaded || Math.round(currentVoiceGain * 100) >= 120} className="w-7 h-7 rounded-md bg-[#151528] border border-[#a855f7]/30 flex items-center justify-center text-white hover:bg-[#2e2e5a] active:bg-[#2e2e5a] disabled:opacity-30 transition-colors">
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="hidden lg:flex items-center gap-1.5 mr-2">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? (isPlaying ? 'bg-green-400 animate-pulse' : 'bg-yellow-400') : 'bg-red-500'}`} />
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">{isConnected ? (isPlaying ? 'Live' : 'Connected') : 'Offline'}</span>
+            </div>
+
+            {(() => {
+              // Same derivation as the desktop remote. Start deliberately waits for the
+              // current song to finish, so the control says that instead of looking dead.
+              const startState = rotationStartState({
+                isRotationActive,
+                rotationPending: !!liveBoothState?.rotationPending,
+                starting: rotationStarting,
+                connected: !!boothStateLoaded,
+              });
+              return (
+                <button
+                  onClick={() => {
+                    if (startState.busy) return;              // no duplicate starts
+                    if (isRotationActive) { sendRemoteCommand('stopRotation'); return; }
+                    setRotationStarting(true);
+                    Promise.resolve(sendRemoteCommand('startRotation')).catch(() => setRotationStarting(false));
+                  }}
+                  disabled={startState.disabled}
+                  title={startState.hint}
+                  className={`px-3 h-9 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5 ${
+                    startState.kind === 'active' ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : startState.kind === 'queued' ? 'bg-yellow-600 text-white animate-pulse'
+                      : startState.kind === 'starting' ? 'bg-green-700/60 text-white cursor-wait'
+                      : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                >
+                  {startState.label}
+                </button>
+              );
+            })()}
+            <button
+              onClick={() => sendRemoteCommand('toggleAnnouncements')}
+              disabled={!boothStateLoaded}
+              className={`w-9 h-9 rounded-md flex items-center justify-center transition-colors disabled:opacity-50 ${announcementsEnabled ? 'text-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20' : 'text-gray-500 hover:bg-[#151528]'}`}
+              title="Toggle Announcements"
+            >
+              {announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={onLogout}
+              className="w-9 h-9 rounded-md flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#151528] transition-colors ml-1"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Phone-sized hold-to-duck. Prominent on the main playback screen, no menu to
+          open, 56 px tall, clear of Skip and Stop, and it does not move when a notice
+          appears because notices are an overlay. Same lease and same button behaviour
+          as the kiosk control - nothing is reimplemented for the phone. */}
+      <div className="sm:hidden flex-shrink-0 px-3 py-2 border-b border-[#151528] bg-[#0a0a1a]">
+        <PressAndHoldDuckButton
+          label="Hold to Duck"
+          title="Hold to lower the music while you talk"
+          onPress={() => {
+            setDuckRequested(true);
+            Promise.resolve(remoteDuckLeaseRef.current?.start())
+              .then(() => setDuckConfirmed(true))
+              .catch(() => {});
+          }}
+          onRelease={reason => {
+            setDuckRequested(false);
+            setDuckConfirmed(false);
+            remoteDuckLeaseRef.current?.stop(reason);
+          }}
+          disabled={!boothStateLoaded}
+          sizeClassName="w-full h-14 px-4 gap-2"
+        >
+          <VolumeX className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
+          <span className="flex flex-col items-start leading-tight">
+            <span className="text-sm font-bold tracking-wide">
+              {duckRequested ? (duckConfirmed ? 'Music lowered' : 'Ducking…') : 'Hold to Duck'}
+            </span>
+            <span className="text-[10px] opacity-70">
+              {duckRequested
+                ? (duckConfirmed ? 'Release to restore' : 'Asking the booth…')
+                : 'Lower music while held'}
+            </span>
+          </span>
+        </PressAndHoldDuckButton>
+      </div>
+
+      {/* Overlay, not a row: it reserves no space, so no control, song row or
+          playback button moves when a notice appears or disappears. */}
+      <CommandStatus
+        view={commandView}
+        onDismiss={(id) => surfaceCommandRef.current.dismiss(id)}
+        onDismissAll={() => surfaceCommandRef.current.dismissAll()}
+      />
+      {/* Options-panel problems are not command outcomes, so they get their own line
+          rather than competing for the command banner. Also an overlay: no layout shift. */}
+      {optionsError && tab === 'options' && (
+        <div className="absolute left-0 right-0 top-0 z-20 px-2 pt-2 pointer-events-none">
+          <div className="pointer-events-auto rounded-lg border border-red-500/40 bg-red-950/95 text-red-200 text-xs px-3 py-2 shadow-lg flex items-center gap-2">
+            <span className="flex-1">{optionsError}</span>
+            <button onClick={() => setOptionsError('')} className="underline underline-offset-2">Dismiss</button>
+          </div>
+        </div>
+      )}
+      {!isConnected && (
+        <div className="absolute left-0 right-0 bottom-0 z-20 pointer-events-none px-2 pb-2">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-950/90 text-amber-300 text-[11px] px-3 py-1.5 shadow-lg">
+            Waiting for a fresh state update from the physical kiosk. Controls are disabled.
+          </div>
+        </div>
+      )}
+
+      {/* ── MAIN CONTENT ── */}
+      <div className="flex flex-col md:flex-row flex-1 min-h-0">
+
+        {/* Left Sidebar Navigation (Desktop) */}
+        <div className="hidden md:flex w-16 flex-col bg-[#0a0a1a] border-r border-[#151528] py-2 gap-0.5 items-center flex-shrink-0">
+          {[
+            { id: 'rotation',      icon: Layers,           label: 'Rotation' },
+              { id: 'library',       icon: Music,            label: 'Music' },
+            { id: 'dancers',       icon: Users,            label: 'Roster' },
+            { id: 'options',       icon: SlidersHorizontal,label: 'Options' },
+            { id: 'zones',         icon: Radio,            label: 'Zones' },
+            { id: 'announce',      icon: Mic,              label: 'Announce' },
+            { id: 'sounds',        icon: Drum,             label: 'SFX' },
+            { id: 'promos',        icon: Star,             label: 'Feature' },
+          ].map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              onClick={() => changeTab(id)}
+              className={`w-14 h-14 flex flex-col items-center justify-center rounded-xl gap-1 transition-colors relative ${
+                tab === id
+                  ? 'bg-[#00d4ff]/15 text-[#00d4ff]'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-[#151528]'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-[9px] font-medium leading-tight">{label}</span>
+              {id === 'rotation' && hasUnsaved && <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-green-400" />}
+            </button>
+          ))}
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 relative min-h-0 overflow-hidden bg-[#0d0d1f]">
+          {!boothStateLoaded && (
+            <div className="absolute inset-0 z-50 bg-[#08081a]/80 backdrop-blur-[1px] flex items-center justify-center p-6">
+              <div className="max-w-sm rounded-xl border border-amber-500/30 bg-[#0d0d1f] p-5 text-center shadow-2xl">
+                <Activity className="w-7 h-7 text-amber-400 mx-auto mb-3" />
+                <div className="text-base font-semibold text-white">Kiosk state is unavailable</div>
+                <div className="text-sm text-gray-400 mt-1">No operational commands will be sent until the physical kiosk reconnects.</div>
+              </div>
+            </div>
+          )}
+
+          {/* ─────────── ROTATION TAB ─────────── */}
+          {tab === 'rotation' && (
+            <div className="h-full flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-[#1e293b]">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">Live Rotation</span>
+
+                  <div className="hidden sm:flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Songs/Set:</span>
+                    <select
+                      value={songsPerSet}
+                      onChange={(e) => sendRemoteCommand('setSongsPerSet', { count: parseInt(e.target.value), source: 'dashboard-dropdown' })}
+                      className="bg-[#151528] border border-[#1e293b] text-white text-xs rounded px-2 py-1 outline-none"
+                    >
+                      {[1,2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="hidden sm:flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Breaks/Set:</span>
+                    <select
+                      value={breakSongsPerSet}
+                      onChange={(e) => sendRemoteCommand('setBreakSongsPerSet', { count: parseInt(e.target.value) })}
+                      className="bg-[#151528] border border-[#1e293b] text-white text-xs rounded px-2 py-1 outline-none"
+                    >
+                      {[0,1,2,3].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSaveAll}
+                  disabled={!hasUnsaved}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${hasUnsaved ? 'bg-green-500 text-black animate-pulse' : 'bg-[#151528] text-gray-500'}`}
+                >
+                  <Save className="w-4 h-4" />
+                  Save Changes
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {rotationDancers.length === 0 && (
+                  <div className="text-center py-12 text-lg text-gray-600">No rotation active. Add entertainers from the Roster tab.</div>
+                )}
+
+                {rotationDancers.map((dancer, idx) => {
+                  const isOnStage = idx === currentDancerIndex && isRotationActive;
+                  const songs = getSongs(dancer.id);
+                  const isExpanded = expandedDancer === dancer.id;
+                  const showVipPicker = vipPickerFor === dancer.id;
+                  // Break queues are keyed by dancer identity (the kiosk
+                  // playback path), not the display position. They remain
+                  // editable even when the automatic default is zero.
+                  const breakKey = `after-${dancer.id}`;
+                  const breakSlots = displayedInterstitialSongs[breakKey] || [];
+
+                  return (
+                    <div key={dancer.id} className={`rounded-xl border transition-colors bg-[#08081a] ${isOnStage ? 'border-[#00d4ff]/50' : 'border-[#1e293b]'}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className={`text-base font-bold w-6 text-center flex-shrink-0 ${isOnStage ? 'text-[#00d4ff]' : 'text-gray-600'}`}>{isOnStage ? '▶' : idx + 1}</div>
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                            {dancer.name?.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-lg font-semibold truncate ${isOnStage ? 'text-white' : 'text-gray-300'}`}>{dancer.name}</div>
+                            <div className="text-sm text-gray-500 truncate">{songs.length} song{songs.length !== 1 ? 's' : ''} assigned · {breakSlots.length} break song{breakSlots.length !== 1 ? 's' : ''}{breakSongsPerSet > 0 ? ` (${breakSongsPerSet} automatic)` : ' (manual only)'}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-shrink-0 pl-12 sm:pl-0">
+                          <button onClick={() => setVipPickerFor(showVipPicker ? null : dancer.id)} title="VIP" className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${showVipPicker ? 'bg-yellow-500/25 text-yellow-400' : 'bg-[#1e293b] text-gray-400 hover:bg-[#2e2e5a]'}`}>
+                            <Crown className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => sendRemoteCommand('moveInRotation', { dancerId: dancer.id, direction: 'up' })} disabled={idx === 0} title="Move Up" className="w-10 h-10 rounded-xl bg-[#1e293b] flex items-center justify-center text-gray-400 hover:bg-[#2e2e5a] disabled:opacity-20 transition-colors">
+                            <ChevronUp className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => sendRemoteCommand('moveInRotation', { dancerId: dancer.id, direction: 'down' })} disabled={idx === rotationDancers.length - 1} title="Move Down" className="w-10 h-10 rounded-xl bg-[#1e293b] flex items-center justify-center text-gray-400 hover:bg-[#2e2e5a] disabled:opacity-20 transition-colors">
+                            <ChevronDown className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => setExpandedDancer(isExpanded ? null : dancer.id)} title="Edit Songs" className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isExpanded ? 'bg-[#00d4ff]/25 text-[#00d4ff]' : 'bg-[#1e293b] text-gray-400 hover:bg-[#2e2e5a]'}`}>
+                            <Music className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => sendRemoteCommand('removeDancerFromRotation', { dancerId: dancer.id })} title="Remove" className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center text-red-400 hover:bg-red-500/25 ml-2 transition-colors">
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {showVipPicker && (
+                        <div className="px-3 pb-3 pt-1 border-t border-[#1e293b] ml-12 sm:ml-0">
+                          {(() => {
+                            const addMins = Math.round(vipAddMs / 60000);
+                            const h = Math.floor(addMins / 60), m = addMins % 60;
+                            const lbl = addMins === 0 ? '—' : (h > 0 ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`);
+                            return (
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <span className="text-xs text-yellow-400 flex-shrink-0 w-8">Add:</span>
+                                  {VIP_INCREMENT_OPTIONS.map(({ label, ms }) => (
+                                    <button key={label} onClick={() => setVipAddMs(v => v + ms)} className="flex-1 h-9 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-sm font-bold active:bg-yellow-500/30">
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-2 flex-1">
+                                  <span className="text-xs text-yellow-300 flex-shrink-0 w-16">Total: {lbl}</span>
+                                  <button disabled={vipAddMs === 0} onClick={() => { if (vipAddMs > 0) sendRemoteCommand('sendToVip', { dancerId: dancer.id, durationMs: vipAddMs }); setVipPickerFor(null); }} className="flex-1 h-9 rounded-lg bg-yellow-500 text-black text-sm font-bold active:bg-yellow-400 disabled:opacity-30">
+                                    Send to VIP
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {isExpanded && (
+                        <div className="px-4 pb-4 border-t border-[#1e293b]">
+                          <div className="pt-3 pb-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-xs font-semibold text-violet-400 uppercase tracking-wider">
+                                Break Queue {activeBreakKey === breakKey ? '(playing)' : ''}
+                              </div>
+                              <button
+                                onClick={() => { setAssigningBreak({ breakKey, index: breakSlots.length }); setTab('library'); }}
+                                className="h-7 px-2 rounded-md bg-violet-500/15 text-violet-300 text-xs font-semibold flex items-center gap-1 hover:bg-violet-500/25"
+                              >
+                                <Plus className="w-3.5 h-3.5" /> Add song
+                              </button>
+                            </div>
+                            <div className="space-y-1.5">
+                              {breakSlots.length === 0 && (
+                                <div className="text-sm text-gray-500 py-2 italic">
+                                  No manual songs. The automatic default applies when this break starts.
+                                </div>
+                              )}
+                              {breakSlots.map((slot, i) => {
+                                const isCurrentBreakSong = activeBreakKey === breakKey && i === activeBreakIndex;
+                                return (
+                                  <div key={`${slot}-${i}`} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border ${isCurrentBreakSong ? 'border-cyan-400/40 bg-cyan-900/15' : 'border-violet-500/25 bg-violet-900/10'}`}>
+                                    <span className="text-xs font-bold text-violet-400 w-5">B{i + 1}</span>
+                                    <button
+                                      disabled={isCurrentBreakSong}
+                                      onClick={() => { setAssigningBreak({ breakKey, index: i }); setTab('library'); }}
+                                      className="text-sm flex-1 min-w-0 truncate text-left text-gray-200 hover:text-white disabled:text-cyan-300"
+                                      title={isCurrentBreakSong ? 'The current break song continues until Skip' : 'Replace this break song'}
+                                    >
+                                      {stripExt(slot)}
+                                    </button>
+                                    <button
+                                      disabled={isCurrentBreakSong || i === 0}
+                                      onClick={() => {
+                                        const next = [...breakSlots];
+                                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                                        publishBreakQueue({ ...displayedInterstitialSongs, [breakKey]: next }, breakKey);
+                                      }}
+                                      className="w-7 h-7 rounded-md bg-[#1e293b] text-gray-400 flex items-center justify-center disabled:opacity-25"
+                                      title="Move up"
+                                    >
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      disabled={isCurrentBreakSong || i === breakSlots.length - 1}
+                                      onClick={() => {
+                                        const next = [...breakSlots];
+                                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                                        publishBreakQueue({ ...displayedInterstitialSongs, [breakKey]: next }, breakKey);
+                                      }}
+                                      className="w-7 h-7 rounded-md bg-[#1e293b] text-gray-400 flex items-center justify-center disabled:opacity-25"
+                                      title="Move down"
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      disabled={isCurrentBreakSong}
+                                      onClick={() => {
+                                        const next = [...breakSlots];
+                                        next.splice(i, 1);
+                                        const updated = { ...displayedInterstitialSongs };
+                                        if (next.length > 0) updated[breakKey] = next;
+                                        else delete updated[breakKey];
+                                        publishBreakQueue(updated, breakKey);
+                                      }}
+                                      className="w-7 h-7 rounded-md bg-red-500/10 text-red-400 flex items-center justify-center disabled:opacity-25"
+                                      title="Remove break song"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="pt-3">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Playlist Songs</div>
+                            <div className="space-y-1.5">
+                              {songs.length === 0 && <div className="text-sm text-gray-500 py-2 italic">No songs — system auto-picks at stage time</div>}
+                              {songs.map((song, songIdx) => {
+                                const isNowPlaying = isOnStage && songIdx === (currentSongNumber - 1);
+                                const rerollKey = `${dancer.id}-${songIdx}`;
+                                const isRerolling = rerolling[rerollKey];
+                                return (
+                                  <div key={songIdx} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${isNowPlaying ? 'bg-[#00d4ff]/10 border-[#00d4ff]/30' : 'bg-[#0d0d1f] border-[#1e293b]'}`}>
+                                    <span className={`text-sm font-bold w-5 ${isNowPlaying ? 'text-[#00d4ff]' : 'text-gray-500'}`}>{isNowPlaying ? '▶' : songIdx + 1}</span>
+                                    <button
+                                      type="button"
+                                      disabled={isNowPlaying}
+                                      onClick={() => openLibraryForSong(dancer.id, songIdx)}
+                                      className={`text-sm flex-1 min-w-0 text-left truncate rounded px-1 -mx-1 ${
+                                        isOnCooldown(song) ? 'text-orange-300' : 'text-gray-300'
+                                      } ${isNowPlaying ? '' : 'hover:text-[#00d4ff] hover:bg-[#00d4ff]/10'}`}
+                                      title={isNowPlaying ? 'The currently playing song cannot be changed here' : 'Choose an exact replacement from the full music library'}
+                                    >
+                                      {stripExt(song)}
+                                    </button>
+                                    {!isNowPlaying && (
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <button
+                                          onClick={() => openLibraryForSong(dancer.id, songIdx)}
+                                          className="w-8 h-8 rounded-lg bg-[#00d4ff]/15 flex items-center justify-center text-[#00d4ff] hover:bg-[#00d4ff]/25 transition-colors"
+                                          title="Choose from Music Library"
+                                        >
+                                          <Music className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => rerollSong(dancer.id, songIdx)} disabled={isRerolling} className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 hover:bg-amber-500/25 disabled:opacity-40 transition-colors" title="Reroll Song">
+                                          {isRerolling ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
+                                        </button>
+                                        <button onClick={() => removeSong(dancer.id, songIdx)} className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-colors" title="Remove Song">
+                                          <X className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ─────────── ROSTER TAB ─────────── */}
+          {tab === 'dancers' && (
+            <div className="h-full overflow-y-auto px-4 py-4 space-y-8">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Add to Rotation</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {allActiveDancers.filter(d => !rotationList.includes(d.id)).map(dancer => (
+                    <button key={dancer.id} onClick={() => { sendRemoteCommand('addDancerToRotation', { dancerId: dancer.id }); setTab('rotation'); }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#08081a] border border-[#1e293b] hover:bg-[#151528] transition-all group hover:border-[#00d4ff]/30 text-left">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                        {dancer.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-base text-gray-300 flex-1 font-medium group-hover:text-white transition-colors truncate">{dancer.name}</span>
+                      <Plus className="w-5 h-5 text-[#00d4ff] opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                    </button>
+                  ))}
+                  {allActiveDancers.filter(d => !rotationList.includes(d.id)).length === 0 && (
+                    <div className="col-span-full py-12 text-center text-gray-500 italic">All active entertainers are in rotation</div>
+                  )}
+                </div>
+              </div>
+
+              {Object.keys(dancerVipMap).length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-yellow-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Crown className="w-4 h-4" /> In VIP
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
+                      const vipDancer = dancers?.find(d => String(d.id) === String(dancerId));
+                      if (!vipDancer) return null;
+                      const msLeft = vipRemainingFor(dancerId);
+                      const minsLeft = Math.floor(msLeft / 60000);
+                      const secsLeft = Math.floor((msLeft % 60000) / 1000);
+                      return (
+                        <div key={dancerId} className="p-4 rounded-xl border border-yellow-500/30 bg-yellow-900/10">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0" style={{ backgroundColor: vipDancer.color || '#00d4ff' }}>
+                              {vipDancer.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-base font-semibold text-white truncate">{vipDancer.name}</div>
+                              <div className="text-sm text-yellow-400 font-medium">Returns in {minsLeft}:{String(secsLeft).padStart(2, '0')}</div>
+                            </div>
+                          </div>
+
+                          {vipExtendFor === vipDancer.id ? (
+                            <div className="pt-3 border-t border-yellow-500/20 space-y-2">
+                              {(() => {
+                                const addMins = Math.round(vipAddMs / 60000);
+                                const h = Math.floor(addMins / 60), m = addMins % 60;
+                                const lbl = addMins === 0 ? '—' : (h > 0 ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`);
+                                return (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      {VIP_INCREMENT_OPTIONS.map(opt => (
+                                        <button key={opt.minutes} onClick={() => setVipAddMs(v => v + opt.ms)} className="flex-1 h-8 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-xs font-bold active:bg-yellow-500/30">
+                                          {opt.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-yellow-300 flex-shrink-0 w-16">Tot: {lbl}</span>
+                                      <button disabled={vipAddMs === 0} onClick={() => { if (vipAddMs > 0) sendRemoteCommand('sendToVip', { dancerId: vipDancer.id, durationMs: vipAddMs }); setVipExtendFor(null); }} className="flex-1 h-8 rounded-lg bg-yellow-500 text-black text-xs font-bold active:bg-yellow-400 disabled:opacity-30">Extend</button>
+                                      <button onClick={() => setVipExtendFor(null)} className="flex-1 h-8 rounded-lg bg-[#1e293b] text-gray-400 text-xs active:bg-[#2e2e5a]">Cancel</button>
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 pt-3 border-t border-yellow-500/20">
+                              <button onClick={() => { setVipExtendFor(vipDancer.id); setVipAddMs(0); }} className="flex-1 h-9 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 text-sm font-semibold hover:bg-yellow-500/25 transition-colors">
+                                Extend Time
+                              </button>
+                              <button
+                                onClick={() => sendRemoteCommand('releaseFromVip', { dancerId: vipDancer.id })}
+                                className="flex-1 min-h-9 h-auto py-2 rounded-lg bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-semibold hover:bg-green-500/25 transition-colors"
+                                title={`End ${vipDancer.name}'s VIP early and return her to rotation`}
+                              >
+                                Return to Rotation
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─────────── LIBRARY SEARCH TAB ─────────── */}
+          {tab === 'library' && (
+            <div className="h-full flex flex-col bg-[#0d0d1f]">
+              <div className="p-3 border-b border-[#1e293b] bg-[#0a0a1a] flex flex-col sm:flex-row sm:items-center gap-3 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-1">
+                  <button onClick={() => changeTab('rotation')} className="h-10 px-3 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-medium hover:bg-[#2e2e5a] transition-colors">
+                    Back
+                  </button>
+                  <div className="flex-1 text-sm text-[#00d4ff] font-medium truncate">
+                    {assigningBreak ? `Picking B${assigningBreak.index + 1}` :
+                     assigningTo ? `Replacing song ${assigningTo.songIdx + 1} for ${dancers.find(d => d.id === assigningTo.dancerId)?.name || 'Dancer'}` :
+                     'Full Music Library'}
+                  </div>
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <input type="text" value={libSearch} onChange={e => setLibSearch(e.target.value)} placeholder="Search..." className="w-full sm:w-48 h-10 bg-[#08081a] border border-[#1e293b] rounded-lg px-3 text-sm focus:outline-none focus:border-[#00d4ff] transition-colors" />
+                  <select value={libGenre} onChange={e => setLibGenre(e.target.value)} className="w-full sm:w-32 h-10 bg-[#08081a] border border-[#1e293b] rounded-lg px-2 text-sm focus:outline-none focus:border-[#00d4ff] transition-colors">
+                    <option value="">All Genres</option>
+                    {libGenres.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              {libraryStandalone && (
+                <div className="flex-shrink-0 px-3 py-3 border-b border-[#1e293b] bg-[#08081a]">
+                  <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+                    <label className="flex-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Entertainer
+                      <select
+                        value={assigningTo?.dancerId || ''}
+                        onChange={event => chooseLibraryTarget(event.target.value)}
+                        className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-base normal-case text-white"
+                      >
+                        <option value="">Choose entertainer</option>
+                        {rotationDancers.map(dancer => <option key={dancer.id} value={dancer.id}>{dancer.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="w-full lg:w-56 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Song Slot
+                      <select
+                        value={assigningTo?.songIdx ?? ''}
+                        disabled={!assigningTo}
+                        onChange={event => setAssigningTo(current => current ? { ...current, songIdx: Number(event.target.value) } : current)}
+                        className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-base normal-case text-white disabled:opacity-40"
+                      >
+                        {assigningTo && editableLibrarySlots(assigningTo.dancerId).map(({ songIdx, disabled }) => (
+                          <option key={songIdx} value={songIdx} disabled={disabled}>
+                            Song {songIdx + 1}{disabled ? ' — currently playing' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      onClick={handleSaveAll}
+                      disabled={!hasUnsaved}
+                      className={`h-11 px-5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 ${hasUnsaved ? 'bg-green-500 text-black animate-pulse' : 'bg-[#151528] text-gray-500'}`}
+                    >
+                      <Save className="w-4 h-4" />
+                      Save Changes
+                    </button>
+                  </div>
+                  <p className={`mt-2 text-sm ${libraryStatus ? 'text-green-400' : 'text-gray-500'}`}>
+                    {libraryStatus || (assigningTo ? 'Click any track below to assign it to this slot.' : 'Add an entertainer to the rotation before assigning music.')}
+                  </p>
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {libLoading ? (
+                  <div className="py-8 text-center text-gray-500">Searching...</div>
+                ) : libError ? (
+                  <div className="py-8 px-4 text-center text-red-400">{libError}</div>
+                ) : libTracks.length === 0 ? (
+                  <div className="py-8 text-center text-gray-500">No tracks found</div>
+                ) : (
+                  libTracks.map(t => {
+                    const cd = isOnCooldown(t.name);
+                    return (
+                      <button key={t.path} disabled={!assigningTo && !assigningBreak} onClick={() => handleAssignTrack(t.name)} className="w-full text-left px-4 py-3 rounded-xl border border-transparent hover:bg-[#151528] hover:border-[#1e293b] transition-all flex items-center justify-between group disabled:opacity-40 disabled:cursor-not-allowed">
+                        <span className={`text-base truncate flex-1 pr-4 ${cd ? 'text-orange-300' : 'text-gray-300 group-hover:text-white'}`}>{stripExt(t.name)}</span>
+                        {cd && <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-orange-500/20 text-orange-400">Recently Played</span>}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ─────────── ANNOUNCE TAB ─────────── */}
+          {tab === 'announce' && (
+            <div className="h-full overflow-hidden flex flex-col p-4 bg-[#0d0d1f]">
+              <div className="flex-1 overflow-y-auto max-w-3xl w-full mx-auto">
+                <HouseAnnouncementPanel
+                  isRemote
+                  onRemotePlay={(cacheKey) => sendRemoteCommand('playHouseAnnouncement', { cacheKey })}
+                />
+              </div>
+            </div>
+          )}
+
+          {showDeactivatePin && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4" onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }}>
+              <div className="bg-[#0d0d1f] border border-red-500/40 rounded-2xl p-6 w-full max-w-[340px] shadow-2xl" onClick={event => event.stopPropagation()}>
+                <h3 className="text-lg font-bold text-red-400 mb-1">Deactivate Current Song</h3>
+                <p className="text-xs text-gray-400 mb-4 truncate">{stripExt(currentTrack) || 'Current song'}</p>
+                <p className="text-sm text-gray-300 mb-3">
+                  Enter your 5-digit DJ PIN. The kiosk will replace this song without counting it against the entertainer.
+                </p>
+                <input
+                  ref={deactivatePinInputRef}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={5}
+                  value={deactivatePin}
+                  onChange={event => setDeactivatePin(event.target.value.replace(/\D/g, '').slice(0, 5))}
+                  onKeyDown={event => { if (event.key === 'Enter') confirmDeactivate(); }}
+                  className="w-full bg-[#08081a] border border-[#1e293b] rounded-lg px-4 py-3 text-center text-2xl font-mono text-white tracking-[0.5em] focus:outline-none focus:border-red-500/60 mb-4"
+                  placeholder="•••••"
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowDeactivatePin(false); setDeactivatePin(''); }}
+                    className="flex-1 py-2.5 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-semibold active:bg-[#2e2e5a] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeactivate}
+                    disabled={deactivatePin.length !== 5}
+                    className="flex-1 py-2.5 rounded-lg bg-red-500 text-white text-sm font-semibold active:bg-red-600 disabled:opacity-30 transition-colors"
+                  >
+                    Deactivate
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─────────── PROMOS TAB ─────────── */}
+          {tab === 'promos' && (
+            <div className="h-full overflow-y-auto p-4 bg-[#0d0d1f]">
+              <div className="max-w-4xl w-full mx-auto space-y-4">
+                <div className="rounded-xl border border-violet-500/25 bg-violet-950/10 p-4">
+                  <h2 className="text-lg font-bold text-white">Feature & Promo Queue</h2>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Reorder or skip the promos already prepared on the physical kiosk. Creating and recording new promo audio remains kiosk-only.
+                  </p>
+                </div>
+                {promoQueue.length === 0 ? (
+                  <div className="rounded-xl border border-[#1e293b] bg-[#08081a] py-14 text-center text-gray-500">
+                    No promos are currently queued.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {promoQueue.map((promo, idx) => {
+                      const promoId = promo?.cache_key || promo?.id || String(idx);
+                      const promoName = promo?.dancer_name || promo?.cache_key?.replace(/^promo_/, '').replace(/_/g, ' ') || 'Promo';
+                      const isSkipped = skippedCommercials.has(promoId);
+                      return (
+                        <div key={promoId} className={`flex items-center gap-3 rounded-xl border border-[#1e293b] bg-[#08081a] p-3 ${isSkipped ? 'opacity-40' : ''}`}>
+                          <div className="w-8 h-8 rounded-lg bg-violet-500/15 text-violet-300 flex items-center justify-center font-bold text-sm">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-white truncate capitalize">{promoName}</div>
+                            <div className="text-xs text-gray-500">{isSkipped ? 'Skipped' : 'Queued between entertainer sets'}</div>
+                          </div>
+                          <button
+                            onClick={() => sendRemoteCommand('swapPromo', { slotIndex: idx })}
+                            className="h-9 px-3 rounded-lg bg-[#1e293b] text-gray-300 text-sm font-semibold hover:bg-[#2e2e5a]"
+                          >
+                            Swap
+                          </button>
+                          <button
+                            onClick={() => sendRemoteCommand('skipCommercial', { commercialId: promoId })}
+                            disabled={isSkipped}
+                            className="h-9 px-3 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-sm font-semibold disabled:opacity-30"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ─────────── SOUNDS TAB ─────────── */}
+          {tab === 'sounds' && (
+            <div className="h-full overflow-y-auto p-4 bg-[#0d0d1f]">
+              <div className="max-w-4xl mx-auto">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Soundboard</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {[
+                    { id: 'airhorn', label: 'Airhorn' },
+                    { id: 'applause', label: 'Applause' },
+                    { id: 'cashregister', label: 'Ca-Ching' },
+                    { id: 'drumroll', label: 'Drumroll' },
+                    { id: 'rimshot', label: 'Rimshot' },
+                    { id: 'siren', label: 'Siren' },
+                    { id: 'scratch', label: 'Record Scratch' },
+                    { id: 'whip', label: 'Whip Crack' },
+                    { id: 'buzzer', label: 'Buzzer' },
+                    { id: 'cheer', label: 'Cheer' }
+                  ].map(sfx => (
+                    <button
+                      key={sfx.id}
+                      onClick={() => sendRemoteCommand('playSound', { soundId: sfx.id })}
+                      className="h-20 rounded-xl bg-[#151528] border border-[#1e293b] hover:bg-[#1e293b] hover:border-[#2e2e5a] text-gray-300 font-bold active:bg-[#00d4ff]/20 active:text-[#00d4ff] active:border-[#00d4ff]/50 transition-all flex flex-col items-center justify-center gap-2"
+                    >
+                      <Drum className="w-5 h-5 opacity-70" />
+                      <span className="text-sm">{sfx.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─────────── ZONES TAB ─────────── */}
+          {tab === 'zones' && (
+            <div className="h-full overflow-hidden bg-[#0d0d1f]">
+              <ZoneProDailyControls />
+            </div>
+          )}
+
+          {/* ─────────── OPTIONS TAB ─────────── */}
+          {tab === 'options' && (
+            <div className="h-full overflow-y-auto p-4 bg-[#0d0d1f]">
+              <div className="max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-[#1e293b] bg-[#08081a] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-[#00d4ff] mb-3">Music Volume</div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => sendRemoteCommand('setVolume', { volume: Math.max(0, currentVolume - 0.05) })} disabled={currentVolume <= 0} className="w-12 h-12 rounded-xl bg-[#1e293b] flex items-center justify-center disabled:opacity-30"><Minus className="w-5 h-5" /></button>
+                    <div className="flex-1 text-center text-2xl font-bold tabular-nums">{Math.round(currentVolume * 100)}%</div>
+                    <button onClick={() => sendRemoteCommand('setVolume', { volume: Math.min(1, currentVolume + 0.05) })} disabled={currentVolume >= 1} className="w-12 h-12 rounded-xl bg-[#1e293b] flex items-center justify-center disabled:opacity-30"><Plus className="w-5 h-5" /></button>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#1e293b] bg-[#08081a] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-violet-400 mb-3">Voice Volume</div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => sendRemoteCommand('setVoiceGain', { gain: Math.max(0.5, currentVoiceGain - 0.1) })} disabled={currentVoiceGain <= 0.5} className="w-12 h-12 rounded-xl bg-[#1e293b] flex items-center justify-center disabled:opacity-30"><Minus className="w-5 h-5" /></button>
+                    <div className="flex-1 text-center text-2xl font-bold tabular-nums">{Math.round(currentVoiceGain * 100)}%</div>
+                    <button onClick={() => sendRemoteCommand('setVoiceGain', { gain: Math.min(1.2, currentVoiceGain + 0.1) })} disabled={currentVoiceGain >= 1.2} className="w-12 h-12 rounded-xl bg-[#1e293b] flex items-center justify-center disabled:opacity-30"><Plus className="w-5 h-5" /></button>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#1e293b] bg-[#08081a] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Set Format</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs text-gray-500">
+                      Songs per set
+                      <select value={songsPerSet} onChange={(event) => sendRemoteCommand('setSongsPerSet', { count: Number(event.target.value), source: 'remote-options' })} className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white">
+                        {[1,2,3,4,5,6,7,8].map(count => <option key={count} value={count}>{count}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-xs text-gray-500">
+                      Break songs
+                      <select value={breakSongsPerSet} onChange={(event) => sendRemoteCommand('setBreakSongsPerSet', { count: Number(event.target.value) })} className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white">
+                        {[0,1,2,3].map(count => <option key={count} value={count}>{count}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#1e293b] bg-[#08081a] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Announcements & Promos</div>
+                  <button onClick={() => sendRemoteCommand('toggleAnnouncements')} className={`w-full h-11 rounded-lg font-semibold ${announcementsEnabled ? 'bg-[#00d4ff]/15 text-[#00d4ff]' : 'bg-[#1e293b] text-gray-400'}`}>
+                    Announcements {announcementsEnabled ? 'On' : 'Off'}
+                  </button>
+                  <label className="block text-xs text-gray-500 mt-3">
+                    Promo frequency
+                    <select
+                      value={pendingCommercialFreq ?? String(liveBoothState?.commercialFreq ?? 'off')}
+                      onChange={async (event) => {
+                        const freq = event.target.value;
+                        setPendingCommercialFreq(freq);
+                        const result = await sendRemoteCommand('setCommercialFreq', { freq });
+                        if (!result) setPendingCommercialFreq(null);
+                      }}
+                      className="mt-1 w-full h-11 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white"
+                    >
+                      <option value="off">Off</option>
+                      <option value="1">Every set</option>
+                      <option value="2">Every other set</option>
+                      <option value="3">Every third set</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="md:col-span-2 rounded-xl border border-cyan-500/20 bg-[#08081a] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-[#00d4ff] mb-3">Music Selection Mode</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => saveRemoteOptions({ musicMode: 'dancer_first' })}
+                      disabled={optionsSaving}
+                      className={`p-3 rounded-xl border text-left transition-colors ${
+                        (djOptions.musicMode || 'dancer_first') === 'dancer_first'
+                          ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40 text-[#00d4ff]'
+                          : 'bg-[#151528] border-[#2e2e5a] text-gray-300'
+                      }`}
+                    >
+                      <span className="font-semibold block">Entertainer First</span>
+                      <span className="text-xs text-gray-500 block mt-1">Use her playlist first, then selected genres as fallback.</span>
+                    </button>
+                    <button
+                      onClick={() => saveRemoteOptions({ musicMode: 'folders_only' })}
+                      disabled={optionsSaving}
+                      className={`p-3 rounded-xl border text-left transition-colors ${
+                        djOptions.musicMode === 'folders_only'
+                          ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40 text-[#00d4ff]'
+                          : 'bg-[#151528] border-[#2e2e5a] text-gray-300'
+                      }`}
+                    >
+                      <span className="font-semibold block">Selected Genres Only</span>
+                      <span className="text-xs text-gray-500 block mt-1">Bypass entertainer folders and use the shift genre selections.</span>
+                    </button>
+                  </div>
+                </div>
+                {(() => {
+                  const dayShift = {
+                    startTime: '12:00',
+                    endTime: '20:00',
+                    genres: [],
+                    ...(djOptions.dayShift || {}),
+                    enabled: true,
+                  };
+                  const shifts = [
+                    {
+                      kind: 'day',
+                      title: 'Day Shift Genres',
+                      subtitle: `${dayShift.startTime} to ${dayShift.endTime}`,
+                      genres: dayShift.genres,
+                      accent: 'text-amber-300',
+                      border: 'border-amber-500/20',
+                      selected: 'bg-amber-500/15 border-amber-500/40 text-amber-200',
+                      Icon: Sun,
+                    },
+                    {
+                      kind: 'night',
+                      title: 'Night Shift Genres',
+                      subtitle: 'Used outside the Day Shift window',
+                      genres: djOptions.activeGenres || [],
+                      accent: 'text-violet-300',
+                      border: 'border-violet-500/20',
+                      selected: 'bg-violet-500/15 border-violet-500/40 text-violet-200',
+                      Icon: Moon,
+                    },
+                  ];
+                  return shifts.map(shift => (
+                    <div key={shift.kind} className={`rounded-xl border ${shift.border} bg-[#08081a] p-4`}>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <shift.Icon className={`w-4 h-4 ${shift.accent}`} />
+                          <div>
+                            <div className={`text-xs font-semibold uppercase tracking-wider ${shift.accent}`}>{shift.title}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">{shift.subtitle}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => shift.kind === 'day'
+                              ? saveRemoteOptions({ dayShift: { ...dayShift, genres: optionGenres.map(genre => genre.name) } })
+                              : saveRemoteOptions({ activeGenres: optionGenres.map(genre => genre.name) })}
+                            disabled={optionsSaving}
+                            className="text-xs text-gray-400 hover:text-white"
+                          >
+                            All
+                          </button>
+                          <button
+                            onClick={() => shift.kind === 'day'
+                              ? saveRemoteOptions({ dayShift: { ...dayShift, genres: [] } })
+                              : saveRemoteOptions({ activeGenres: [] })}
+                            disabled={optionsSaving}
+                            className="text-xs text-gray-500 hover:text-white"
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      {shift.kind === 'day' && (
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <label className="text-xs text-gray-500">
+                            From
+                            <input
+                              type="time"
+                              value={dayShift.startTime}
+                              onChange={event => saveRemoteOptions({ dayShift: { ...dayShift, startTime: event.target.value } })}
+                              className="mt-1 w-full h-10 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white"
+                            />
+                          </label>
+                          <label className="text-xs text-gray-500">
+                            To
+                            <input
+                              type="time"
+                              value={dayShift.endTime}
+                              onChange={event => saveRemoteOptions({ dayShift: { ...dayShift, endTime: event.target.value } })}
+                              className="mt-1 w-full h-10 rounded-lg bg-[#151528] border border-[#2e2e5a] px-3 text-white"
+                            />
+                          </label>
+                        </div>
+                      )}
+                      <div className="max-h-64 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pr-1">
+                        {optionGenres.length === 0 ? (
+                          <div className="col-span-full py-4 text-center text-xs text-gray-500">Loading genres…</div>
+                        ) : optionGenres.map(genre => {
+                          const selected = shift.genres.includes(genre.name);
+                          return (
+                            <button
+                              key={`${shift.kind}-${genre.name}`}
+                              onClick={() => toggleShiftGenre(shift.kind, genre.name)}
+                              disabled={optionsSaving}
+                              className={`min-h-10 px-3 py-2 rounded-lg border flex items-center gap-2 text-left text-sm ${
+                                selected ? shift.selected : 'bg-[#151528] border-[#2e2e5a] text-gray-300'
+                              } disabled:opacity-50`}
+                            >
+                              <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${selected ? 'border-current' : 'border-gray-600'}`}>
+                                {selected && <Check className="w-3 h-3" />}
+                              </span>
+                              <span className="truncate flex-1">{genre.name}</span>
+                              <span className="text-[10px] text-gray-600">{genre.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
+                <div className="md:col-span-2 rounded-xl border border-[#1e293b] bg-[#08081a] p-4 text-sm text-gray-400">
+                  System maintenance, credentials, display configuration, recovery tools, and deep audio-zone setup are available only on the physical kiosk.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── BOTTOM NAV (Mobile) ── */}
+        <div className="md:hidden flex-shrink-0 flex items-stretch border-t border-[#151528] bg-[#080818] overflow-x-auto snap-x">
+          {[
+            { id: 'rotation',      icon: Layers,           label: 'Rotation' },
+              { id: 'library',       icon: Music,            label: 'Music' },
+            { id: 'dancers',       icon: Users,            label: 'Roster' },
+            { id: 'options',       icon: SlidersHorizontal,label: 'Options' },
+            { id: 'zones',         icon: Radio,            label: 'Zones' },
+            { id: 'announce',      icon: Mic,              label: 'Announce' },
+            { id: 'sounds',        icon: Drum,             label: 'SFX' },
+            { id: 'promos',        icon: Star,             label: 'Feature' },
+          ].map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              onClick={() => changeTab(id)}
+              className={`flex-none w-20 flex flex-col items-center justify-center gap-1 py-3 snap-start relative transition-colors ${tab === id ? 'text-[#00d4ff]' : 'text-gray-600 active:text-gray-400'}`}
+            >
+              {tab === id && <div className="absolute top-0 inset-x-0 h-0.5 bg-[#00d4ff] rounded-b" />}
+              <Icon className="w-5 h-5" />
+              <span className="text-[10px] font-medium">{label}</span>
+              {id === 'rotation' && hasUnsaved && <div className="absolute top-2 right-4 w-1.5 h-1.5 rounded-full bg-green-400" />}
+            </button>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  );
+}

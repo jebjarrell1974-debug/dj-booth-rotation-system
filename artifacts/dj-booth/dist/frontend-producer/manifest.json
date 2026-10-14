@@ -1,0 +1,2449 @@
+{
+  "schema": 1,
+  "scope": "frontend-boot-assets",
+  "releaseOrder": {
+    "workspaceId": "0da5aa4c-60fb-40ad-aa80-e907281bc9d5",
+    "sequence": 2,
+    "nonce": "4dc4c68a-e81f-41b8-bc48-1340805af1cd"
+  },
+  "build": {
+    "command": "build:homebase",
+    "config": "artifacts/dj-booth/homebase-vite.config.js"
+  },
+  "environment": {
+    "node": "v24.13.0",
+    "pnpm": "10.26.1",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "dependencies": {
+    "@babel+code-frame@7.29.0/@babel/code-frame": {
+      "name": "@babel/code-frame",
+      "version": "7.29.0",
+      "manifestSha256": "f1edbd801d5f52c81d692ce6d3b6b678722a123e484c697c92f58a5e79b63cb5"
+    },
+    "@babel+compat-data@7.29.0/@babel/compat-data": {
+      "name": "@babel/compat-data",
+      "version": "7.29.0",
+      "manifestSha256": "c3c5bddb5d350c9c3cea47fa3c207b01f0444406fee76c8b7bd425f80bbe9b0e"
+    },
+    "@babel+core@7.29.0/@babel/core": {
+      "name": "@babel/core",
+      "version": "7.29.0",
+      "manifestSha256": "75da9f340b343cdc8ca4caa986b594b5f99333d1c198710ec13f6b3d3c8bde57"
+    },
+    "@babel+generator@7.29.1/@babel/generator": {
+      "name": "@babel/generator",
+      "version": "7.29.1",
+      "manifestSha256": "182379be2e4ff9781ca8114fc0b5e298c217583ad45d04b0a086de01cc78297e"
+    },
+    "@babel+helper-compilation-targets@7.28.6/@babel/helper-compilation-targets": {
+      "name": "@babel/helper-compilation-targets",
+      "version": "7.28.6",
+      "manifestSha256": "9f230a16ebb86ca5050c717c7e264bbbd14f532d242ad91c328110a0c413afe7"
+    },
+    "@babel+helper-globals@7.28.0/@babel/helper-globals": {
+      "name": "@babel/helper-globals",
+      "version": "7.28.0",
+      "manifestSha256": "682b1987d9d895c77aa8a2ff70bd143bf63973bf6f6c52ccec2f85555de3a613"
+    },
+    "@babel+helper-module-imports@7.28.6/@babel/helper-module-imports": {
+      "name": "@babel/helper-module-imports",
+      "version": "7.28.6",
+      "manifestSha256": "058bf279a834c1a0bbc0e225b6fef63b7ca896bf3f2bc898cd024da94f2f0709"
+    },
+    "@babel+helper-module-transforms@7.28.6_@babel+core@7.29.0/@babel/helper-module-transforms": {
+      "name": "@babel/helper-module-transforms",
+      "version": "7.28.6",
+      "manifestSha256": "f0378df0db3a3acfb651721e8fc1df12d4eb2710d7d1a43601ce37e0b6270f49"
+    },
+    "@babel+helper-plugin-utils@7.28.6/@babel/helper-plugin-utils": {
+      "name": "@babel/helper-plugin-utils",
+      "version": "7.28.6",
+      "manifestSha256": "743f3eebd628ada817a0892fa4a3b8927842075c8dc9e1ad7be1bdff1ad31e0a"
+    },
+    "@babel+helper-string-parser@7.27.1/@babel/helper-string-parser": {
+      "name": "@babel/helper-string-parser",
+      "version": "7.27.1",
+      "manifestSha256": "2ed21f6ba1c3ad4b49e247fc9b6bc3274ac7160613879f4fd6e770a53d976d8f"
+    },
+    "@babel+helper-validator-identifier@7.28.5/@babel/helper-validator-identifier": {
+      "name": "@babel/helper-validator-identifier",
+      "version": "7.28.5",
+      "manifestSha256": "716eb3e9a849686b727f4c6fefb8aa48c2740ce18685cc8c73922be0e08b11df"
+    },
+    "@babel+helper-validator-option@7.27.1/@babel/helper-validator-option": {
+      "name": "@babel/helper-validator-option",
+      "version": "7.27.1",
+      "manifestSha256": "ad08e3ee6278941db2124234397bd4e245c2abd0ecfdd95e4b4050bbecd1e904"
+    },
+    "@babel+helpers@7.28.6/@babel/helpers": {
+      "name": "@babel/helpers",
+      "version": "7.28.6",
+      "manifestSha256": "178687704d303e14022414699719eb9545c23a3366ee0789a3aa2dd4cd6d7ff6"
+    },
+    "@babel+parser@7.29.0/@babel/parser": {
+      "name": "@babel/parser",
+      "version": "7.29.0",
+      "manifestSha256": "f9f93c4e80bdda3c57a8c3c2d3869ef3e2ab4f6c7cdb6f3c1d0336e6bf17b285"
+    },
+    "@babel+plugin-transform-react-jsx-self@7.27.1_@babel+core@7.29.0/@babel/plugin-transform-react-jsx-self": {
+      "name": "@babel/plugin-transform-react-jsx-self",
+      "version": "7.27.1",
+      "manifestSha256": "a3d00015e7c69a096e19094f87237220679624b1caca0431a3859a1eeb35130b"
+    },
+    "@babel+plugin-transform-react-jsx-source@7.27.1_@babel+core@7.29.0/@babel/plugin-transform-react-jsx-source": {
+      "name": "@babel/plugin-transform-react-jsx-source",
+      "version": "7.27.1",
+      "manifestSha256": "dac8ff82c2d23853238fa4c96e8046b04f2b437ffaad4ac599927f43b010351b"
+    },
+    "@babel+runtime@7.28.6/@babel/runtime": {
+      "name": "@babel/runtime",
+      "version": "7.28.6",
+      "manifestSha256": "9e6c7958c59e73ac441c181a185cf9f8f320fdf3906eb11b54fcbcb76e5e2d24"
+    },
+    "@babel+runtime@7.29.2/@babel/runtime": {
+      "name": "@babel/runtime",
+      "version": "7.29.2",
+      "manifestSha256": "a34bfb8ab99545a10b211e8918e4a58cc66740366644298cb8efa3b766537ee0"
+    },
+    "@babel+template@7.28.6/@babel/template": {
+      "name": "@babel/template",
+      "version": "7.28.6",
+      "manifestSha256": "aaae7beaeb436106cad485dbc87fedb8338324663ec1333077295555308780fb"
+    },
+    "@babel+traverse@7.29.0/@babel/traverse": {
+      "name": "@babel/traverse",
+      "version": "7.29.0",
+      "manifestSha256": "687d6d4751da0255cad826d00bade6f2e124ae71ead0594d0fb446880913512d"
+    },
+    "@babel+types@7.29.0/@babel/types": {
+      "name": "@babel/types",
+      "version": "7.29.0",
+      "manifestSha256": "3c3c04e2170a1015f2108af564b5602f0962a437a03dd3bc19782bcf77476b20"
+    },
+    "@breezystack+lamejs@1.2.7/@breezystack/lamejs": {
+      "name": "@breezystack/lamejs",
+      "version": "1.2.7",
+      "manifestSha256": "cd7e0d13df9e60b931dd7b307c2e1c06af9c44667dda281d5c77d7d226034f9e"
+    },
+    "@date-fns+tz@1.4.1/@date-fns/tz": {
+      "name": "@date-fns/tz",
+      "version": "1.4.1",
+      "manifestSha256": "5c8f764217d5a055fe67d86d91035cee98b629d03c0c0cb9a799249f7fe0943d"
+    },
+    "@drizzle-team+brocli@0.10.2/@drizzle-team/brocli": {
+      "name": "@drizzle-team/brocli",
+      "version": "0.10.2",
+      "manifestSha256": "e31fb1484547591a3ad6c42d0665b57eef7dc02777426c54d6cc06cf7fb55b58"
+    },
+    "@esbuild+linux-x64@0.27.3/@esbuild/linux-x64": {
+      "name": "@esbuild/linux-x64",
+      "version": "0.27.3",
+      "manifestSha256": "928ed0e92fe72dd6753c2384b6bff40ec1416ec04f006076b660ee5d746caabb"
+    },
+    "@floating-ui+core@1.7.5/@floating-ui/core": {
+      "name": "@floating-ui/core",
+      "version": "1.7.5",
+      "manifestSha256": "ec5c5a43811aa416f16993f0ffe41bd2394f8df9f96e3310e45e48bfd45d4076"
+    },
+    "@floating-ui+dom@1.7.6/@floating-ui/dom": {
+      "name": "@floating-ui/dom",
+      "version": "1.7.6",
+      "manifestSha256": "a4e0f2ca9b1d9da984d5797ca63900fa62c1c0b9122244fe12dbfa4cd560d5d3"
+    },
+    "@floating-ui+react-dom@2.1.8_react-dom@19.1.0_react@19.1.0__react@19.1.0/@floating-ui/react-dom": {
+      "name": "@floating-ui/react-dom",
+      "version": "2.1.8",
+      "manifestSha256": "c1785d0992ad658cc5e5ef2e03c26f4d484c80d56e4ca88f5a0e8b5e88e03a65"
+    },
+    "@floating-ui+utils@0.2.11/@floating-ui/utils": {
+      "name": "@floating-ui/utils",
+      "version": "0.2.11",
+      "manifestSha256": "eafb7da610cc3694a26048c290db1a078a9dc6359a4bafaf2f8e067d69f9c847"
+    },
+    "@hello-pangea+dnd@17.0.0_@types+react@19.2.14_react-dom@19.1.0_react@19.1.0__react@19.1.0/@hello-pangea/dnd": {
+      "name": "@hello-pangea/dnd",
+      "version": "17.0.0",
+      "manifestSha256": "54aff3c259ef496dcc5788e0c1e5b093d37f73f482cda5736e86bfdb3423a5ca"
+    },
+    "@hookform+resolvers@3.10.0_react-hook-form@7.71.2_react@19.1.0_/@hookform/resolvers": {
+      "name": "@hookform/resolvers",
+      "version": "3.10.0",
+      "manifestSha256": "5a0aab6f47ea926b2a1b739dcccc0bfc3190f7c61c949e9a587c071125d82d34"
+    },
+    "@jridgewell+gen-mapping@0.3.13/@jridgewell/gen-mapping": {
+      "name": "@jridgewell/gen-mapping",
+      "version": "0.3.13",
+      "manifestSha256": "6264fca78382a9782f8e8d5e653e7bf43dc8aa6d469f3322a82e531093896a01"
+    },
+    "@jridgewell+remapping@2.3.5/@jridgewell/remapping": {
+      "name": "@jridgewell/remapping",
+      "version": "2.3.5",
+      "manifestSha256": "cc535fb0665977104146fb8fe6c81ff63d2c9ae7f7b783d86e7f7db064cde57a"
+    },
+    "@jridgewell+resolve-uri@3.1.2/@jridgewell/resolve-uri": {
+      "name": "@jridgewell/resolve-uri",
+      "version": "3.1.2",
+      "manifestSha256": "0793e722ffe08f3b4f1862c4dc96d920a62d6811a3648b4feb02f06c63227e8b"
+    },
+    "@jridgewell+sourcemap-codec@1.5.5/@jridgewell/sourcemap-codec": {
+      "name": "@jridgewell/sourcemap-codec",
+      "version": "1.5.5",
+      "manifestSha256": "398fc774628ec1592c794e8c14ecdc0096206a2521545e527e5a06429dac6006"
+    },
+    "@jridgewell+trace-mapping@0.3.31/@jridgewell/trace-mapping": {
+      "name": "@jridgewell/trace-mapping",
+      "version": "0.3.31",
+      "manifestSha256": "7f5eacc669d36013f9b792ab15721a97d48b26b093100122aa6c8691ebe656be"
+    },
+    "@noble+ciphers@1.3.0/@noble/ciphers": {
+      "name": "@noble/ciphers",
+      "version": "1.3.0",
+      "manifestSha256": "d4fd92770dc4d2af454902aaea3e16f053e6f8b48ad2d95c016c662a5f1be2d4"
+    },
+    "@noble+hashes@1.8.0/@noble/hashes": {
+      "name": "@noble/hashes",
+      "version": "1.8.0",
+      "manifestSha256": "7c4657c5e616c22cefa2691cc30670824a639dc71d97bf83925be2d239dc60e3"
+    },
+    "@octokit+auth-token@6.0.0/@octokit/auth-token": {
+      "name": "@octokit/auth-token",
+      "version": "6.0.0",
+      "manifestSha256": "916ba8a9318aacd1ce30a0b320ee9fd2173baf9456e42e167af77ac94796bce9"
+    },
+    "@octokit+core@7.0.6/@octokit/core": {
+      "name": "@octokit/core",
+      "version": "7.0.6",
+      "manifestSha256": "5aa0a4cfcd40bb2c945d558421b94d6e5d2c12d93dcdebf006c9b6be19037fe3"
+    },
+    "@octokit+endpoint@11.0.3/@octokit/endpoint": {
+      "name": "@octokit/endpoint",
+      "version": "11.0.3",
+      "manifestSha256": "1654c4ed3505edde3d9381d2e6f15a43a74273b984b8867e60d64cf1c168d4dd"
+    },
+    "@octokit+graphql@9.0.3/@octokit/graphql": {
+      "name": "@octokit/graphql",
+      "version": "9.0.3",
+      "manifestSha256": "b311facf89adfaca3ba5a7bc291339e3001fe08b0db71b081efaf82827b18b4a"
+    },
+    "@octokit+openapi-types@27.0.0/@octokit/openapi-types": {
+      "name": "@octokit/openapi-types",
+      "version": "27.0.0",
+      "manifestSha256": "52de88588855b0cc47a229c01cd77febb735e9063499a1c62f16aaa13d3723aa"
+    },
+    "@octokit+plugin-paginate-rest@14.0.0_@octokit+core@7.0.6/@octokit/plugin-paginate-rest": {
+      "name": "@octokit/plugin-paginate-rest",
+      "version": "14.0.0",
+      "manifestSha256": "adfd7f664dbb75fbe528c6250864375ee2a4479401ed5825d2b88b543e00db08"
+    },
+    "@octokit+plugin-request-log@6.0.0_@octokit+core@7.0.6/@octokit/plugin-request-log": {
+      "name": "@octokit/plugin-request-log",
+      "version": "6.0.0",
+      "manifestSha256": "ae58fc2c2791515dfd44cfefa77ae44509b03ffeade6ee0c0b57411c4045dfb8"
+    },
+    "@octokit+plugin-rest-endpoint-methods@17.0.0_@octokit+core@7.0.6/@octokit/plugin-rest-endpoint-methods": {
+      "name": "@octokit/plugin-rest-endpoint-methods",
+      "version": "17.0.0",
+      "manifestSha256": "15af8b786835c74de4eebc59cae95198f6abb8eaabc8454d252eb0b91c37cad8"
+    },
+    "@octokit+request-error@7.1.0/@octokit/request-error": {
+      "name": "@octokit/request-error",
+      "version": "7.1.0",
+      "manifestSha256": "c2e4e65cdf3e5556c2aa168a8210ae6788a32890c528e20f6b2d0578e0f6b15b"
+    },
+    "@octokit+request@10.0.8/@octokit/request": {
+      "name": "@octokit/request",
+      "version": "10.0.8",
+      "manifestSha256": "13002ee0a800c5d9534c050b840bc3f64a5de984a1a40d4f2c18f99d61584329"
+    },
+    "@octokit+rest@22.0.1/@octokit/rest": {
+      "name": "@octokit/rest",
+      "version": "22.0.1",
+      "manifestSha256": "196c7e699c7ef858b79f82ba1ab6389bb7217eb9791d2abff88079fab82bd1bd"
+    },
+    "@octokit+types@16.0.0/@octokit/types": {
+      "name": "@octokit/types",
+      "version": "16.0.0",
+      "manifestSha256": "f356b6b25df7d7cba7c143f70a24401e772e8a419db5f4cb7fd200f8486046fa"
+    },
+    "@radix-ui+number@1.1.1/@radix-ui/number": {
+      "name": "@radix-ui/number",
+      "version": "1.1.1",
+      "manifestSha256": "c1a398060a438655c46112033017bff1688a85e3264b5296e3589119e391d49e"
+    },
+    "@radix-ui+primitive@1.1.3/@radix-ui/primitive": {
+      "name": "@radix-ui/primitive",
+      "version": "1.1.3",
+      "manifestSha256": "3184dc6dc9489fa275da76d80974a95295bf4b15f1c21170ef386d0172e5c5b6"
+    },
+    "@radix-ui+react-accordion@1.2.12_@types+react-dom@19.2.3_@types+react@19.2.14__@types+r_5d739927d94d01dd2696ffe6af8edfd6/@radix-ui/react-accordion": {
+      "name": "@radix-ui/react-accordion",
+      "version": "1.2.12",
+      "manifestSha256": "070c03b88dc49834b8443d4d5c1dcff3fc1756290f4ead4644be545318da230a"
+    },
+    "@radix-ui+react-alert-dialog@1.1.15_@types+react-dom@19.2.3_@types+react@19.2.14__@type_ed0209bc7e3a2050f497acd93cf2bc3d/@radix-ui/react-alert-dialog": {
+      "name": "@radix-ui/react-alert-dialog",
+      "version": "1.1.15",
+      "manifestSha256": "c7f091d781717531b2154e56143fe836156933ee3672de12c4b95a064a3f9450"
+    },
+    "@radix-ui+react-arrow@1.1.7_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react@_bcabc9fc031e14a5c1d36580cfe17c1e/@radix-ui/react-arrow": {
+      "name": "@radix-ui/react-arrow",
+      "version": "1.1.7",
+      "manifestSha256": "243b93c4ce4dde24edb7902ebd847f909192fb262e308ac482fa85b0d573d950"
+    },
+    "@radix-ui+react-aspect-ratio@1.1.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types_e2fa11d5eabaa05111ea7a70f889b369/@radix-ui/react-aspect-ratio": {
+      "name": "@radix-ui/react-aspect-ratio",
+      "version": "1.1.8",
+      "manifestSha256": "9824ad684e3a4e4df39f226e3d0e9824aa4556036680938fb484fea27e190572"
+    },
+    "@radix-ui+react-avatar@1.1.11_@types+react-dom@19.2.3_@types+react@19.2.14__@types+reac_6ec17df92404235cee01ed10ac55b0e7/@radix-ui/react-avatar": {
+      "name": "@radix-ui/react-avatar",
+      "version": "1.1.11",
+      "manifestSha256": "621ea870a6dc4eaf03ce21387198618e670bd4d2776b967ebf875fb50a4ea491"
+    },
+    "@radix-ui+react-checkbox@1.3.3_@types+react-dom@19.2.3_@types+react@19.2.14__@types+rea_c210ac2611606080c3e6cc0805bb1395/@radix-ui/react-checkbox": {
+      "name": "@radix-ui/react-checkbox",
+      "version": "1.3.3",
+      "manifestSha256": "e1bf27985b71bf71e7119b92f865c929012d478ba13100cbea78c371037cac36"
+    },
+    "@radix-ui+react-collapsible@1.1.12_@types+react-dom@19.2.3_@types+react@19.2.14__@types_b2e9d08cba6e06f2f74dcd612a392d0b/@radix-ui/react-collapsible": {
+      "name": "@radix-ui/react-collapsible",
+      "version": "1.1.12",
+      "manifestSha256": "53c0f0be42dc02e0c2ab0c7fd0f9b351ca3cc661fd74268f77004d1688142bd0"
+    },
+    "@radix-ui+react-collection@1.1.7_@types+react-dom@19.2.3_@types+react@19.2.14__@types+r_e0738efcfa428c24e81e84562184105a/@radix-ui/react-collection": {
+      "name": "@radix-ui/react-collection",
+      "version": "1.1.7",
+      "manifestSha256": "b15d027b7e3f7a67814c6487791e566246f2f5ddfdc4bc329e35e181f14ceb12"
+    },
+    "@radix-ui+react-compose-refs@1.1.2_@types+react@19.2.14_react@19.1.0/@radix-ui/react-compose-refs": {
+      "name": "@radix-ui/react-compose-refs",
+      "version": "1.1.2",
+      "manifestSha256": "4373969b0a688de99b33ed5c24cf91d707f638573f24fbd2dd2ad2c441c9b34c"
+    },
+    "@radix-ui+react-context-menu@2.2.16_@types+react-dom@19.2.3_@types+react@19.2.14__@type_f49ce9faae5a2d0f954b43645dac3160/@radix-ui/react-context-menu": {
+      "name": "@radix-ui/react-context-menu",
+      "version": "2.2.16",
+      "manifestSha256": "f86cf53b87905e0717ed1876771e3a8d28ed0d0de97288b850b5e72ab874d89c"
+    },
+    "@radix-ui+react-context@1.1.2_@types+react@19.2.14_react@19.1.0/@radix-ui/react-context": {
+      "name": "@radix-ui/react-context",
+      "version": "1.1.2",
+      "manifestSha256": "70bee29bb1a5a8cc5fca28805bc5a4b9ddbe56ec7c914a28163b3e8bfe6edcb7"
+    },
+    "@radix-ui+react-context@1.1.3_@types+react@19.2.14_react@19.1.0/@radix-ui/react-context": {
+      "name": "@radix-ui/react-context",
+      "version": "1.1.3",
+      "manifestSha256": "05cc636c419d6cce449cee0ce636c28cbdc389f525bf5594dc6796ea31d561fa"
+    },
+    "@radix-ui+react-dialog@1.1.15_@types+react-dom@19.2.3_@types+react@19.2.14__@types+reac_33da12bbe503c7690c070124d6e5c3e6/@radix-ui/react-dialog": {
+      "name": "@radix-ui/react-dialog",
+      "version": "1.1.15",
+      "manifestSha256": "d8abbe136c810f243dee9fa56f637b7e15d95fc1973ba47a61ae6aba39830e26"
+    },
+    "@radix-ui+react-direction@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-direction": {
+      "name": "@radix-ui/react-direction",
+      "version": "1.1.1",
+      "manifestSha256": "cf9134c4c5e4495c71fb536c77dd2588cfbab3886c18b049ee39c9d120ea502f"
+    },
+    "@radix-ui+react-dismissable-layer@1.1.11_@types+react-dom@19.2.3_@types+react@19.2.14___adba7072b53bb6c0a22054d9f64a7dd2/@radix-ui/react-dismissable-layer": {
+      "name": "@radix-ui/react-dismissable-layer",
+      "version": "1.1.11",
+      "manifestSha256": "61887237d86e8ab85d199c866f56d06b21d99addc4f5f441254c4c9c4cba6dd8"
+    },
+    "@radix-ui+react-dropdown-menu@2.1.16_@types+react-dom@19.2.3_@types+react@19.2.14__@typ_a1a35e012af827b470f6bb0755523d98/@radix-ui/react-dropdown-menu": {
+      "name": "@radix-ui/react-dropdown-menu",
+      "version": "2.1.16",
+      "manifestSha256": "23b94002557c7bd6dd631eed1c00ee11cda1981c7c5b96f4aa578060ed38634b"
+    },
+    "@radix-ui+react-focus-guards@1.1.3_@types+react@19.2.14_react@19.1.0/@radix-ui/react-focus-guards": {
+      "name": "@radix-ui/react-focus-guards",
+      "version": "1.1.3",
+      "manifestSha256": "bee53f03071125d2d88e8f4288e6d9df08c9b7e4334deafaa9e6a0fdaa5e6637"
+    },
+    "@radix-ui+react-focus-scope@1.1.7_@types+react-dom@19.2.3_@types+react@19.2.14__@types+_0c2be3b8c63d940f8c25c8d98f7224e2/@radix-ui/react-focus-scope": {
+      "name": "@radix-ui/react-focus-scope",
+      "version": "1.1.7",
+      "manifestSha256": "ebc9fba87fe923d5c71f624268777a415ce5021e2d09b0647243bd900473ad83"
+    },
+    "@radix-ui+react-hover-card@1.1.15_@types+react-dom@19.2.3_@types+react@19.2.14__@types+_081338041582530572736f67d743d0d0/@radix-ui/react-hover-card": {
+      "name": "@radix-ui/react-hover-card",
+      "version": "1.1.15",
+      "manifestSha256": "33924f82185b737086d0eeffe8d4f1e4527eda39a400f14c83e02e71769f26e2"
+    },
+    "@radix-ui+react-id@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-id": {
+      "name": "@radix-ui/react-id",
+      "version": "1.1.1",
+      "manifestSha256": "7f478427006dd8e521ac26a963bd63de2237b5cc4cb592ca936881a68eccb365"
+    },
+    "@radix-ui+react-label@2.1.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react@_7a02415076c489810640db721696f007/@radix-ui/react-label": {
+      "name": "@radix-ui/react-label",
+      "version": "2.1.8",
+      "manifestSha256": "1021a4fa4cf3fe3221a57ce1aa4561bd0b036d1fc6cba6127af2a55ec84c86ce"
+    },
+    "@radix-ui+react-menu@2.1.16_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react@_9f46f7217a5797054b3fff79ed9d4cc9/@radix-ui/react-menu": {
+      "name": "@radix-ui/react-menu",
+      "version": "2.1.16",
+      "manifestSha256": "ce4b3e9aec8712c1e56107f1e6572263674d41b87990b9efe4441014a3707715"
+    },
+    "@radix-ui+react-menubar@1.1.16_@types+react-dom@19.2.3_@types+react@19.2.14__@types+rea_93d0f5708d043bcab2b93a2d92bb0422/@radix-ui/react-menubar": {
+      "name": "@radix-ui/react-menubar",
+      "version": "1.1.16",
+      "manifestSha256": "57ab6c89257c0b9ecdbe8e83924c378d2d4d83241ac1e752cde448ee98a71083"
+    },
+    "@radix-ui+react-navigation-menu@1.2.14_@types+react-dom@19.2.3_@types+react@19.2.14__@t_10dc22f5840c6662658a8a2cd749ad7f/@radix-ui/react-navigation-menu": {
+      "name": "@radix-ui/react-navigation-menu",
+      "version": "1.2.14",
+      "manifestSha256": "30b2969e3646e5978fb498497315ce66e6dac915c051d9e1cb401cfd0f8c1897"
+    },
+    "@radix-ui+react-popover@1.1.15_@types+react-dom@19.2.3_@types+react@19.2.14__@types+rea_ee0cd3efa3ab04a20b7d7f85f0f96920/@radix-ui/react-popover": {
+      "name": "@radix-ui/react-popover",
+      "version": "1.1.15",
+      "manifestSha256": "9f591393dcd442b461114634e1e580357e7f9a78fe46bfb3f5f3a5c000791954"
+    },
+    "@radix-ui+react-popper@1.2.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react_8586b73dd48fcc5e3398eba76a92271f/@radix-ui/react-popper": {
+      "name": "@radix-ui/react-popper",
+      "version": "1.2.8",
+      "manifestSha256": "78eca197cc3c88a2d9681f1eb31dfdc203e4219a199098b4e18ce35053bd1713"
+    },
+    "@radix-ui+react-portal@1.1.9_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react_07cab11bf901f9677d738ea79913cccd/@radix-ui/react-portal": {
+      "name": "@radix-ui/react-portal",
+      "version": "1.1.9",
+      "manifestSha256": "99031571624338fcdf5fcacbdfac408ab509de925fe004f1cbf614e8f2c0bcc4"
+    },
+    "@radix-ui+react-presence@1.1.5_@types+react-dom@19.2.3_@types+react@19.2.14__@types+rea_b7372a6a4c3688be8a5cd1f201df5832/@radix-ui/react-presence": {
+      "name": "@radix-ui/react-presence",
+      "version": "1.1.5",
+      "manifestSha256": "34e264d083b47f877d31fe4db1a4ced5c897f40e857362a2e65562b91a4d3c1b"
+    },
+    "@radix-ui+react-primitive@2.1.3_@types+react-dom@19.2.3_@types+react@19.2.14__@types+re_942dc95da45a8d26a65e8b93069343a1/@radix-ui/react-primitive": {
+      "name": "@radix-ui/react-primitive",
+      "version": "2.1.3",
+      "manifestSha256": "89cb98626bf0287526618c882fe614f6330695e7b794ae517c8b43be480664fa"
+    },
+    "@radix-ui+react-primitive@2.1.4_@types+react-dom@19.2.3_@types+react@19.2.14__@types+re_31968672578c38bb0d2d7d0e9bfe46f1/@radix-ui/react-primitive": {
+      "name": "@radix-ui/react-primitive",
+      "version": "2.1.4",
+      "manifestSha256": "4d403f48ebfb16284d93b5dc2f9841bbe24955d54bcc81ba5cc1204fa658e287"
+    },
+    "@radix-ui+react-progress@1.1.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types+rea_7903d5e635bd02e47af334e2382bdae0/@radix-ui/react-progress": {
+      "name": "@radix-ui/react-progress",
+      "version": "1.1.8",
+      "manifestSha256": "0259238b19d636ddb0abeed298dc66635999ca7d998641f2a00da040b7cd1bc3"
+    },
+    "@radix-ui+react-radio-group@1.3.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types+_38e42583e7e26f4d31f381baa4d9d8a1/@radix-ui/react-radio-group": {
+      "name": "@radix-ui/react-radio-group",
+      "version": "1.3.8",
+      "manifestSha256": "86906c8bf72e7697ecc4710299d3b2c307a983bb0644b134558c5876ba5ca080"
+    },
+    "@radix-ui+react-roving-focus@1.1.11_@types+react-dom@19.2.3_@types+react@19.2.14__@type_8c031b70c74b193e73544bcf7ed7aa8e/@radix-ui/react-roving-focus": {
+      "name": "@radix-ui/react-roving-focus",
+      "version": "1.1.11",
+      "manifestSha256": "de56ee3a413f97b6833c44c5d28c73c96a94e3ef0bacc132ae7451af9ce83816"
+    },
+    "@radix-ui+react-scroll-area@1.2.10_@types+react-dom@19.2.3_@types+react@19.2.14__@types_09f9b637bd6a4b10b94167c58c52d7bf/@radix-ui/react-scroll-area": {
+      "name": "@radix-ui/react-scroll-area",
+      "version": "1.2.10",
+      "manifestSha256": "371f14e9057fafd0950230a1cba27bfdaa598f62ab1b7840b96a321c0ebca49e"
+    },
+    "@radix-ui+react-select@2.2.6_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react_1efa2f1d2a9a98ca996d4eb7d69d540a/@radix-ui/react-select": {
+      "name": "@radix-ui/react-select",
+      "version": "2.2.6",
+      "manifestSha256": "1b1fce2854f1d5d6551308d6ba4d723cb013be1a6bbe412c17eff37e5fe5b898"
+    },
+    "@radix-ui+react-separator@1.1.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types+re_a2c196c34258294bb6ecfe721161e1be/@radix-ui/react-separator": {
+      "name": "@radix-ui/react-separator",
+      "version": "1.1.8",
+      "manifestSha256": "48bd711512a03d99a0fc10ea6080c4a1f873d1412563e86e723ad94590141f1e"
+    },
+    "@radix-ui+react-slider@1.3.6_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react_a594c5f18a300246d2ae10f8f48f00c3/@radix-ui/react-slider": {
+      "name": "@radix-ui/react-slider",
+      "version": "1.3.6",
+      "manifestSha256": "6620dfc2e667b465dadfee5ca4690137aeda8836ca2cf16e23199ec4c9796b80"
+    },
+    "@radix-ui+react-slot@1.2.3_@types+react@19.2.14_react@19.1.0/@radix-ui/react-slot": {
+      "name": "@radix-ui/react-slot",
+      "version": "1.2.3",
+      "manifestSha256": "a1b3cccb9e9af05cdb84147a9c54d5b83b63994bd2ed0d744613ea3c9066255e"
+    },
+    "@radix-ui+react-slot@1.2.4_@types+react@19.2.14_react@19.1.0/@radix-ui/react-slot": {
+      "name": "@radix-ui/react-slot",
+      "version": "1.2.4",
+      "manifestSha256": "e0172952ed89c2f84377b9cdd7dd521909277a3f4b314edb895250992cff51a4"
+    },
+    "@radix-ui+react-switch@1.2.6_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react_dba81b3e1544b6029c727b2cf8d015e1/@radix-ui/react-switch": {
+      "name": "@radix-ui/react-switch",
+      "version": "1.2.6",
+      "manifestSha256": "ee28f170ea11cabc8acdd3847cb618a9fc4e2476537c6acb8b4fe5e3c24b5ac1"
+    },
+    "@radix-ui+react-tabs@1.1.13_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react@_2c68d2459518dd69315c4ccdc1caf433/@radix-ui/react-tabs": {
+      "name": "@radix-ui/react-tabs",
+      "version": "1.1.13",
+      "manifestSha256": "75e77f1aa8bf92ba7af9bfc5677e2d9ced63316a173981d368a5252799e338e8"
+    },
+    "@radix-ui+react-toast@1.2.15_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react_0687500628884f4aa08bba9824428f59/@radix-ui/react-toast": {
+      "name": "@radix-ui/react-toast",
+      "version": "1.2.15",
+      "manifestSha256": "a3086a23b9558ba2c40bf5e0c553a2f646b2d29314bcbc9b7d8bef72b0d82d5c"
+    },
+    "@radix-ui+react-toggle-group@1.1.11_@types+react-dom@19.2.3_@types+react@19.2.14__@type_78ac2b7e2597ad3f1fc3dca51c937fb9/@radix-ui/react-toggle-group": {
+      "name": "@radix-ui/react-toggle-group",
+      "version": "1.1.11",
+      "manifestSha256": "00068b0b9344f7371b437f4d568d6f2556d7dd1586ea84670f4255caceb35fe6"
+    },
+    "@radix-ui+react-toggle@1.1.10_@types+react-dom@19.2.3_@types+react@19.2.14__@types+reac_90d1ac9845c0df5f7c4bdca6065023ff/@radix-ui/react-toggle": {
+      "name": "@radix-ui/react-toggle",
+      "version": "1.1.10",
+      "manifestSha256": "bbcfd8851e24e060a11e32b566e49cedbf51dd5ae6170569f065bc4c39b54717"
+    },
+    "@radix-ui+react-tooltip@1.2.8_@types+react-dom@19.2.3_@types+react@19.2.14__@types+reac_ab0d0da4ee6b1f28831a19c3e4e15a95/@radix-ui/react-tooltip": {
+      "name": "@radix-ui/react-tooltip",
+      "version": "1.2.8",
+      "manifestSha256": "5d31f581e8951612e2e86c00c707c8eac657b4e08af1c48b2830a733661ddcd9"
+    },
+    "@radix-ui+react-use-callback-ref@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-callback-ref": {
+      "name": "@radix-ui/react-use-callback-ref",
+      "version": "1.1.1",
+      "manifestSha256": "5440709ff10a782eed7151b71e5ad1d0e76de5c14e38502b45d22de8a3400ea4"
+    },
+    "@radix-ui+react-use-controllable-state@1.2.2_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-controllable-state": {
+      "name": "@radix-ui/react-use-controllable-state",
+      "version": "1.2.2",
+      "manifestSha256": "6e8b8718cf762f58bd0e2b0de53bfb9649232854c38622a6e180cb27383cf1fd"
+    },
+    "@radix-ui+react-use-effect-event@0.0.2_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-effect-event": {
+      "name": "@radix-ui/react-use-effect-event",
+      "version": "0.0.2",
+      "manifestSha256": "877a9238b09fb41d4ac26e80c2e54b042d9567fa4206217e929c802c8b509ec5"
+    },
+    "@radix-ui+react-use-escape-keydown@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-escape-keydown": {
+      "name": "@radix-ui/react-use-escape-keydown",
+      "version": "1.1.1",
+      "manifestSha256": "a1706f4010a2ed8309b0c109d2b884cf13aa02d27765b27ba755e7eb2a495d35"
+    },
+    "@radix-ui+react-use-is-hydrated@0.1.0_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-is-hydrated": {
+      "name": "@radix-ui/react-use-is-hydrated",
+      "version": "0.1.0",
+      "manifestSha256": "b8137c51b67ec6f0f0efc6912dcd441b52dcd48a6bc45bb7145725ddde7460be"
+    },
+    "@radix-ui+react-use-layout-effect@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-layout-effect": {
+      "name": "@radix-ui/react-use-layout-effect",
+      "version": "1.1.1",
+      "manifestSha256": "b18e430ab5bbaf53945f55b495838dd71582f4203193747a939e2a7593f76744"
+    },
+    "@radix-ui+react-use-previous@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-previous": {
+      "name": "@radix-ui/react-use-previous",
+      "version": "1.1.1",
+      "manifestSha256": "ca657d76c2581244474df4988dca5727fc3187f4a947c52c252a8be6dc0d735a"
+    },
+    "@radix-ui+react-use-rect@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-rect": {
+      "name": "@radix-ui/react-use-rect",
+      "version": "1.1.1",
+      "manifestSha256": "9c977de80b701b018e1240e6f750544deda622233dc0d73094b2cfae28801e7a"
+    },
+    "@radix-ui+react-use-size@1.1.1_@types+react@19.2.14_react@19.1.0/@radix-ui/react-use-size": {
+      "name": "@radix-ui/react-use-size",
+      "version": "1.1.1",
+      "manifestSha256": "eb31b5e5e1220a8c0a1657937e24d9f639d73521bce8e9ec9522f28c46b989e0"
+    },
+    "@radix-ui+react-visually-hidden@1.2.3_@types+react-dom@19.2.3_@types+react@19.2.14__@ty_ca625f13fd38e967507e17e463f201d6/@radix-ui/react-visually-hidden": {
+      "name": "@radix-ui/react-visually-hidden",
+      "version": "1.2.3",
+      "manifestSha256": "9c3bf95803fa2c0a35cb1efe32001997268643cfa7827ca0581d29e8c0d0fae5"
+    },
+    "@radix-ui+rect@1.1.1/@radix-ui/rect": {
+      "name": "@radix-ui/rect",
+      "version": "1.1.1",
+      "manifestSha256": "d59c3d6bd0117489e3de453a2f858e4614bf1903c7a394bf4f4460e81fb4b7b1"
+    },
+    "@remix-run+router@1.23.2/@remix-run/router": {
+      "name": "@remix-run/router",
+      "version": "1.23.2",
+      "manifestSha256": "7e7308a36230ef6ad81f18b99ddbeeb616b48e9bde568fa3060918a7031056a0"
+    },
+    "@replit+connectors-sdk@0.4.1/@replit/connectors-sdk": {
+      "name": "@replit/connectors-sdk",
+      "version": "0.4.1",
+      "manifestSha256": "46fc0ede9df0c4eb1d60e744e6b8a2670752d57687c99aafe1fca828b1e81ba4"
+    },
+    "@replit+vite-plugin-cartographer@0.5.1/@replit/vite-plugin-cartographer": {
+      "name": "@replit/vite-plugin-cartographer",
+      "version": "0.5.1",
+      "manifestSha256": "b4442c0a1e8299e2c835cc27e9631aabd29ad09d301f499280ba1eb7e08806eb"
+    },
+    "@replit+vite-plugin-dev-banner@0.1.2/@replit/vite-plugin-dev-banner": {
+      "name": "@replit/vite-plugin-dev-banner",
+      "version": "0.1.2",
+      "manifestSha256": "6f0d4b19ae87848dd14b66dbe6c5a59a0f6dd7e134873805db33e8f6f7521315"
+    },
+    "@replit+vite-plugin-runtime-error-modal@0.0.6/@replit/vite-plugin-runtime-error-modal": {
+      "name": "@replit/vite-plugin-runtime-error-modal",
+      "version": "0.0.6",
+      "manifestSha256": "212467ac2864aba66a54a979697180f3692271c265f6a988ac1162c1d152421c"
+    },
+    "@rolldown+pluginutils@1.0.0-rc.3/@rolldown/pluginutils": {
+      "name": "@rolldown/pluginutils",
+      "version": "1.0.0-rc.3",
+      "manifestSha256": "2320744207cfee1f528f924895cd19c842fb8c4d79062597c39ea252a343f29c"
+    },
+    "@rollup+rollup-linux-x64-gnu@4.59.0/@rollup/rollup-linux-x64-gnu": {
+      "name": "@rollup/rollup-linux-x64-gnu",
+      "version": "4.59.0",
+      "manifestSha256": "119bf5922da37602ead3a4c40f2b6279a1501388d6fe944c0be18b16e95a35af"
+    },
+    "@swc+helpers@0.5.23/@swc/helpers": {
+      "name": "@swc/helpers",
+      "version": "0.5.23",
+      "manifestSha256": "10ee79b75759afbf8cfa2b8e5a2eff946c487143e935fc31b2433aa68be84596"
+    },
+    "@tabby_ai+hijri-converter@1.0.5/@tabby_ai/hijri-converter": {
+      "name": "@tabby_ai/hijri-converter",
+      "version": "1.0.5",
+      "manifestSha256": "b31a531cfaa963976d3e5de332597a7af15c05dbd2fa7a4f15a833ab44c8262c"
+    },
+    "@tailwindcss+node@4.2.1/@tailwindcss/node": {
+      "name": "@tailwindcss/node",
+      "version": "4.2.1",
+      "manifestSha256": "54e2a25fe9d8b16d6252a4427ccb67b4e71c28f72019d69772aad7378d75755a"
+    },
+    "@tailwindcss+oxide-linux-x64-gnu@4.2.1/@tailwindcss/oxide-linux-x64-gnu": {
+      "name": "@tailwindcss/oxide-linux-x64-gnu",
+      "version": "4.2.1",
+      "manifestSha256": "809b365b9bf5032fcef1186a1e84f1640ad782ac649871c2ca212dcaa1c6f7c5"
+    },
+    "@tailwindcss+oxide@4.2.1/@tailwindcss/oxide": {
+      "name": "@tailwindcss/oxide",
+      "version": "4.2.1",
+      "manifestSha256": "e3acde5c64d919d7affec0d7fa877ba282fad0cf39980c64f2301b0d7e123bd5"
+    },
+    "@tailwindcss+typography@0.5.19_tailwindcss@4.2.1/@tailwindcss/typography": {
+      "name": "@tailwindcss/typography",
+      "version": "0.5.19",
+      "manifestSha256": "e7c7f9107b38aa6b9e6400fc52b6443c1be7849ea0941d4b1c8b91f7755711c8"
+    },
+    "@tailwindcss+vite@4.2.1_vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2_/@tailwindcss/vite": {
+      "name": "@tailwindcss/vite",
+      "version": "4.2.1",
+      "manifestSha256": "d04492e942d5be1a0c964be4c9197fc9f13c55bb0fa45d31f1ac7e7b80dc317c"
+    },
+    "@tanstack+query-core@5.90.20/@tanstack/query-core": {
+      "name": "@tanstack/query-core",
+      "version": "5.90.20",
+      "manifestSha256": "b1873c254b19d21a717c047a580c483e053b3233a123ca04a03eacf1b5b58beb"
+    },
+    "@tanstack+react-query@5.90.21_react@19.1.0/@tanstack/react-query": {
+      "name": "@tanstack/react-query",
+      "version": "5.90.21",
+      "manifestSha256": "64d1d5bb7c841906c9d6c6ff0706765acb4d7713f5a8b68c985e54bb4d81c764"
+    },
+    "@types+babel__core@7.20.5/@types/babel__core": {
+      "name": "@types/babel__core",
+      "version": "7.20.5",
+      "manifestSha256": "0787d557e5f4f1dcd57b43e2ec1a6cb955e768801bab5cad3c5c36e2d13eca0b"
+    },
+    "@types+babel__generator@7.27.0/@types/babel__generator": {
+      "name": "@types/babel__generator",
+      "version": "7.27.0",
+      "manifestSha256": "40436b147f93a5e56e69c5c0473e805ff17474c763875bdda598a977a6b824f4"
+    },
+    "@types+babel__template@7.4.4/@types/babel__template": {
+      "name": "@types/babel__template",
+      "version": "7.4.4",
+      "manifestSha256": "51293405049986b206d68e5b08181710934be70a05ecbd5384adb4eabde2ab82"
+    },
+    "@types+babel__traverse@7.28.0/@types/babel__traverse": {
+      "name": "@types/babel__traverse",
+      "version": "7.28.0",
+      "manifestSha256": "44eeb69b60d092b2b6294defb488b61f754b36cf5dc4057af127a32a311c774d"
+    },
+    "@types+better-sqlite3@7.6.13/@types/better-sqlite3": {
+      "name": "@types/better-sqlite3",
+      "version": "7.6.13",
+      "manifestSha256": "03d1c9b0af3c616a84c4025d11888e9cf4dbd3db2c3d689ed52509793da4b22e"
+    },
+    "@types+d3-array@3.2.2/@types/d3-array": {
+      "name": "@types/d3-array",
+      "version": "3.2.2",
+      "manifestSha256": "5ca42ef98f3a66be59b30c9e414338e8d36d96a2690e716a02b4c02366aa1dfb"
+    },
+    "@types+d3-color@3.1.3/@types/d3-color": {
+      "name": "@types/d3-color",
+      "version": "3.1.3",
+      "manifestSha256": "409ac013405caa33f42ed394d92b357fde96b950ee4d5bbfb7de8d6dbebe6f37"
+    },
+    "@types+d3-ease@3.0.2/@types/d3-ease": {
+      "name": "@types/d3-ease",
+      "version": "3.0.2",
+      "manifestSha256": "7ba99c6eb0a18cfb6dd35693feed30f23cf992d73e60c346840a5acb35ce1e50"
+    },
+    "@types+d3-interpolate@3.0.4/@types/d3-interpolate": {
+      "name": "@types/d3-interpolate",
+      "version": "3.0.4",
+      "manifestSha256": "751bcbf0a81dc0b5e507e535e29d9c27b7132b74b3b950594391f9eea0b46a76"
+    },
+    "@types+d3-path@3.1.1/@types/d3-path": {
+      "name": "@types/d3-path",
+      "version": "3.1.1",
+      "manifestSha256": "c59e734c59ae49aba1a5ec160abd11d7f7b6af728751aede04a2e1bce9b9627c"
+    },
+    "@types+d3-scale@4.0.9/@types/d3-scale": {
+      "name": "@types/d3-scale",
+      "version": "4.0.9",
+      "manifestSha256": "190c9e78aa278d267bed85d1a67e3d88d9bc98e27002dc2fa7d7b8d5254f6261"
+    },
+    "@types+d3-shape@3.1.8/@types/d3-shape": {
+      "name": "@types/d3-shape",
+      "version": "3.1.8",
+      "manifestSha256": "71b56a4fd6a49860b5556b718df5b745d07cd439079e96907e654c8e834c5802"
+    },
+    "@types+d3-time@3.0.4/@types/d3-time": {
+      "name": "@types/d3-time",
+      "version": "3.0.4",
+      "manifestSha256": "11b8e23aeea3f0024c293deb135e8d84c4b6013874b11eb8f2659d2db1d53432"
+    },
+    "@types+d3-timer@3.0.2/@types/d3-timer": {
+      "name": "@types/d3-timer",
+      "version": "3.0.2",
+      "manifestSha256": "3be7bbce108834ebe5b901437fd40e87fa57a7c1d52c4aaa33152b71f87f3314"
+    },
+    "@types+debug@4.1.13/@types/debug": {
+      "name": "@types/debug",
+      "version": "4.1.13",
+      "manifestSha256": "3593dbd35512e263c1a4ed9e30545e7f8ffb2f7efabc4e536dddc0868be4e872"
+    },
+    "@types+estree-jsx@1.0.5/@types/estree-jsx": {
+      "name": "@types/estree-jsx",
+      "version": "1.0.5",
+      "manifestSha256": "ba60d7c597e351e26bf117d99b6e25981ad8ea4d4f7fae5f936ebb16396fa972"
+    },
+    "@types+estree@1.0.8/@types/estree": {
+      "name": "@types/estree",
+      "version": "1.0.8",
+      "manifestSha256": "c8bdebabdfbe5b0819119f45da4066c48d4a6334002b7343bbcefb17322dec6c"
+    },
+    "@types+hast@3.0.4/@types/hast": {
+      "name": "@types/hast",
+      "version": "3.0.4",
+      "manifestSha256": "4d62c54549de772d08426aed9dadeea9cc57e538e2de2bb3882782d6eaed3cf2"
+    },
+    "@types+lodash@4.17.24/@types/lodash": {
+      "name": "@types/lodash",
+      "version": "4.17.24",
+      "manifestSha256": "cee04fa406c62e7987832d9267fe95abe464d7d723f030d9a5ef6b8c737bc035"
+    },
+    "@types+mdast@4.0.4/@types/mdast": {
+      "name": "@types/mdast",
+      "version": "4.0.4",
+      "manifestSha256": "5a41865d64d4cedba58313fad775cf56bd0474d724343172bcea9f8ad24db563"
+    },
+    "@types+ms@2.1.0/@types/ms": {
+      "name": "@types/ms",
+      "version": "2.1.0",
+      "manifestSha256": "bbd8f5322ea82216e826e522a6a4ec2ed3086b57a25234d0044673eb374b8e2d"
+    },
+    "@types+node@25.3.5/@types/node": {
+      "name": "@types/node",
+      "version": "25.3.5",
+      "manifestSha256": "7fc5a8d547c822b79546512ecf060163ade98ffdc90120a0a4b987dcf5330991"
+    },
+    "@types+pg@8.18.0/@types/pg": {
+      "name": "@types/pg",
+      "version": "8.18.0",
+      "manifestSha256": "1137081ebb228493e9c81dd699d0d79b7ba0019be75a10272b05399de8cb49e6"
+    },
+    "@types+react-dom@19.2.3_@types+react@19.2.14/@types/react-dom": {
+      "name": "@types/react-dom",
+      "version": "19.2.3",
+      "manifestSha256": "bf90986beaec5f757c164bf1d374f3038dc41b0b06673de4a55fd975d1e5deca"
+    },
+    "@types+react@19.2.14/@types/react": {
+      "name": "@types/react",
+      "version": "19.2.14",
+      "manifestSha256": "e8beff67b2575112eff5757dc8e9310a78fc6e7d2d44d9d7a8204026f4ab81b7"
+    },
+    "@types+unist@2.0.11/@types/unist": {
+      "name": "@types/unist",
+      "version": "2.0.11",
+      "manifestSha256": "018b88713444b719834f13ab3ee85076205adb88d9c351a955458d6112cae2ec"
+    },
+    "@types+unist@3.0.3/@types/unist": {
+      "name": "@types/unist",
+      "version": "3.0.3",
+      "manifestSha256": "9aaa6fc2ba9d3eacf1888c727b8b0bf47e4cd9e8e39908a6c91683c39a9bdcd7"
+    },
+    "@types+use-sync-external-store@0.0.6/@types/use-sync-external-store": {
+      "name": "@types/use-sync-external-store",
+      "version": "0.0.6",
+      "manifestSha256": "2f810fd3c676283d0498be7fbd9a171ef15fb1e492346a9ec027136e25638c9d"
+    },
+    "@ungap+structured-clone@1.3.0/@ungap/structured-clone": {
+      "name": "@ungap/structured-clone",
+      "version": "1.3.0",
+      "manifestSha256": "d4549d78e3008edb04ec8bdf66170f9d159ee50451d05752e27e849d8f6d15b2"
+    },
+    "@vitejs+plugin-react@5.1.4_vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2_/@vitejs/plugin-react": {
+      "name": "@vitejs/plugin-react",
+      "version": "5.1.4",
+      "manifestSha256": "615eb460f5f8896a9fceae31e161bc2524aa0df5dd4ae2b07c560cbd1f941d1f"
+    },
+    "aria-hidden@1.2.6/aria-hidden": {
+      "name": "aria-hidden",
+      "version": "1.2.6",
+      "manifestSha256": "46d066afef535db19d7ba05d8e38ac50662b17a515845deb3ca70613f9623933"
+    },
+    "bail@2.0.2/bail": {
+      "name": "bail",
+      "version": "2.0.2",
+      "manifestSha256": "337981479ea353a473e2b8126adf545c299e368cf7fa31f21d92fd9b40cb029f"
+    },
+    "base64-js@0.0.8/base64-js": {
+      "name": "base64-js",
+      "version": "0.0.8",
+      "manifestSha256": "c02b020c7ee58e1dd08812e7fe2808881433a4aaa4331b0a440961e8ce853e3e"
+    },
+    "base64-js@1.5.1/base64-js": {
+      "name": "base64-js",
+      "version": "1.5.1",
+      "manifestSha256": "9758f3ab8c45e07bb9a368e32f9a8b3729623bbf47cbbb205b32d674ab2a91f0"
+    },
+    "baseline-browser-mapping@2.10.0/baseline-browser-mapping": {
+      "name": "baseline-browser-mapping",
+      "version": "2.10.0",
+      "manifestSha256": "3d2ec76a578fbca01b0b5073901ebfa55433753f43805cedbd0cb5dfb751670a"
+    },
+    "before-after-hook@4.0.0/before-after-hook": {
+      "name": "before-after-hook",
+      "version": "4.0.0",
+      "manifestSha256": "7f06c48f315901d20eb0696f522374123b304c239b70f0df7bfd1c10dc84ea16"
+    },
+    "better-sqlite3@12.8.0/better-sqlite3": {
+      "name": "better-sqlite3",
+      "version": "12.8.0",
+      "manifestSha256": "d94a653fe1c54b480fdbf185c807a80e7c1b80b04e16d2bf21777e40e607f6d9"
+    },
+    "bindings@1.5.0/bindings": {
+      "name": "bindings",
+      "version": "1.5.0",
+      "manifestSha256": "a87721fe406e1f1798fef44d697b46ea1efe346fda118010334713346ee4207c"
+    },
+    "bl@4.1.0/bl": {
+      "name": "bl",
+      "version": "4.1.0",
+      "manifestSha256": "fea66d3b8671e46f77e83db040837cf72da180b8d390d53c43d882fd553659df"
+    },
+    "brotli@1.3.3/brotli": {
+      "name": "brotli",
+      "version": "1.3.3",
+      "manifestSha256": "387b47d00ea96cab9b4c521629fbcdc7621053ac061812526f3c69700924cef5"
+    },
+    "browserify-zlib@0.2.0/browserify-zlib": {
+      "name": "browserify-zlib",
+      "version": "0.2.0",
+      "manifestSha256": "85034e889a63cb57e947d2ed81a87ffcb32831f7854a2e2648eb96ff56b10b91"
+    },
+    "browserslist@4.28.1/browserslist": {
+      "name": "browserslist",
+      "version": "4.28.1",
+      "manifestSha256": "b948456fcce294458fda424faea8826b88c07aae7512f91016a8873b6a412504"
+    },
+    "buffer@5.7.1/buffer": {
+      "name": "buffer",
+      "version": "5.7.1",
+      "manifestSha256": "5af7b62dbf5575a301cd13e8616f1d7d9cff3c90f9fab7bc3d6a1f4fbfee94eb"
+    },
+    "caniuse-lite@1.0.30001777/caniuse-lite": {
+      "name": "caniuse-lite",
+      "version": "1.0.30001777",
+      "manifestSha256": "0d6d13c0a71bc8135770e502beaf0ade239757d32f39c94faa5893ecb0998326"
+    },
+    "ccount@2.0.1/ccount": {
+      "name": "ccount",
+      "version": "2.0.1",
+      "manifestSha256": "007abbcac7038e503a221330fac2515793aa0dfba231b2d54734d2af76b32ed9"
+    },
+    "character-entities-html4@2.1.0/character-entities-html4": {
+      "name": "character-entities-html4",
+      "version": "2.1.0",
+      "manifestSha256": "20b0c6f32ba0c1a0152d4fa5f6650f7345ac7ac36c1e115f7c50bc7f85178aa6"
+    },
+    "character-entities-legacy@3.0.0/character-entities-legacy": {
+      "name": "character-entities-legacy",
+      "version": "3.0.0",
+      "manifestSha256": "51e40ca4e6f95c4bc6f2141f8dbb262ffcc33580c40742702f3579cb3bdf2a64"
+    },
+    "character-entities@2.0.2/character-entities": {
+      "name": "character-entities",
+      "version": "2.0.2",
+      "manifestSha256": "3eaa974f1a9ede7187797d85eb1c799616144cd5ff75d094d30a44bec7d07d88"
+    },
+    "character-reference-invalid@2.0.1/character-reference-invalid": {
+      "name": "character-reference-invalid",
+      "version": "2.0.1",
+      "manifestSha256": "e66c10112582a0daee6dc8e1f97db4206ce1920b7f8d65141d7b924762c1384c"
+    },
+    "chownr@1.1.4/chownr": {
+      "name": "chownr",
+      "version": "1.1.4",
+      "manifestSha256": "7c18e85ac9eff99dc6cb6c5626e11ebea658e69119e0bc8cb4bd799c2b48125a"
+    },
+    "class-variance-authority@0.7.1/class-variance-authority": {
+      "name": "class-variance-authority",
+      "version": "0.7.1",
+      "manifestSha256": "f487885eb010b36aec829ab8fb5fc845918006c4633e3c88c750e73bd35c6381"
+    },
+    "clone@2.1.2/clone": {
+      "name": "clone",
+      "version": "2.1.2",
+      "manifestSha256": "07e9c7efd55a99cbe2909d1fd46b032b67cba6b493d1fbc974fddf4f2adebc83"
+    },
+    "clsx@2.1.1/clsx": {
+      "name": "clsx",
+      "version": "2.1.1",
+      "manifestSha256": "a5e616b9883177fb47c1fca22b6a4ab42be1c3ed6ffae8595a5c7d88630eeec2"
+    },
+    "cmdk@1.1.1_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react@19.2.14_react-dom_dd530bdfe39910342c9fdf9a876e79cc/cmdk": {
+      "name": "cmdk",
+      "version": "1.1.1",
+      "manifestSha256": "00bb6d53974c8b1e4ae42c04fef75b07a94a69fae2fdb1095dd92a834cd6db71"
+    },
+    "comma-separated-tokens@2.0.3/comma-separated-tokens": {
+      "name": "comma-separated-tokens",
+      "version": "2.0.3",
+      "manifestSha256": "c474231549263b0173a3d66f4fc1c4bac2c7517390b2a8e3f09ea1a1f401726b"
+    },
+    "convert-source-map@2.0.0/convert-source-map": {
+      "name": "convert-source-map",
+      "version": "2.0.0",
+      "manifestSha256": "e6bf802e6ee220d66321808ce3d619fbb85ff4d5729ea4f649bd65dfe9ee8956"
+    },
+    "css-box-model@1.2.1/css-box-model": {
+      "name": "css-box-model",
+      "version": "1.2.1",
+      "manifestSha256": "3e3ccbbc08a443be1b82e372a059559db3199fb42f0d1ab3ca9f9e799da7d1e0"
+    },
+    "cssesc@3.0.0/cssesc": {
+      "name": "cssesc",
+      "version": "3.0.0",
+      "manifestSha256": "23f134be44f2877c298ca56c5464ebbe190ddb49c3ce9b82be3c73a64512d014"
+    },
+    "csstype@3.2.3/csstype": {
+      "name": "csstype",
+      "version": "3.2.3",
+      "manifestSha256": "c818b74a9bc1556488b7ec2a65399224738f6619228f9a6491c5c02ca91f849e"
+    },
+    "d3-array@3.2.4/d3-array": {
+      "name": "d3-array",
+      "version": "3.2.4",
+      "manifestSha256": "f9e9dc28e2a9bfe32a0a80dda5c9f8bb49758ee112f4418e2b5662787f1bf500"
+    },
+    "d3-color@3.1.0/d3-color": {
+      "name": "d3-color",
+      "version": "3.1.0",
+      "manifestSha256": "3de1c3c467f09ffc0372c8b765f8981535c22e1d9f944d17a35ee37df1033516"
+    },
+    "d3-ease@3.0.1/d3-ease": {
+      "name": "d3-ease",
+      "version": "3.0.1",
+      "manifestSha256": "393518c7886852c8cdeae42a54065c3ba54eddb701dd2da98c6d048f92cbc91c"
+    },
+    "d3-format@3.1.2/d3-format": {
+      "name": "d3-format",
+      "version": "3.1.2",
+      "manifestSha256": "0227cabd3bc479f158f6a7435cafdbdeaed76d35b8917cf3fcfe2c367e46e37e"
+    },
+    "d3-interpolate@3.0.1/d3-interpolate": {
+      "name": "d3-interpolate",
+      "version": "3.0.1",
+      "manifestSha256": "3e2ce33f9d7072b6bfedbae949c1df546e187994e44b6f4b3795abeb63914613"
+    },
+    "d3-path@3.1.0/d3-path": {
+      "name": "d3-path",
+      "version": "3.1.0",
+      "manifestSha256": "1aae497436309c84e7db7e5a2a11b1cc78bbba98f26088e4e71079cd725bdc89"
+    },
+    "d3-scale@4.0.2/d3-scale": {
+      "name": "d3-scale",
+      "version": "4.0.2",
+      "manifestSha256": "75f7dfe869b2e6d1cbecd380f939f218ca046a26313c4e623aa52d6352a9b51b"
+    },
+    "d3-shape@3.2.0/d3-shape": {
+      "name": "d3-shape",
+      "version": "3.2.0",
+      "manifestSha256": "c3d084a64bc3c85c407db4282be588a42484c4dc2639bb0a21424fe29ff38335"
+    },
+    "d3-time-format@4.1.0/d3-time-format": {
+      "name": "d3-time-format",
+      "version": "4.1.0",
+      "manifestSha256": "98ffed8c2cf40a4d279b4346b73c09e38cbce40a96fa11caa69a174dea7cbf55"
+    },
+    "d3-time@3.1.0/d3-time": {
+      "name": "d3-time",
+      "version": "3.1.0",
+      "manifestSha256": "f145cd8f545cc98527d75c3717be9159616680fe5ba312c350828b44857e1ee6"
+    },
+    "d3-timer@3.0.1/d3-timer": {
+      "name": "d3-timer",
+      "version": "3.0.1",
+      "manifestSha256": "d2b6cb2200728b60982aa30c4caf787f0bda2c066ef9176282ab54ba656403cb"
+    },
+    "date-fns-jalali@4.1.0-0/date-fns-jalali": {
+      "name": "date-fns-jalali",
+      "version": "4.1.0-0",
+      "manifestSha256": "ef3faabbd652f16ea0b2559a9ac338f88bddd084fcb356551859ea911628616f"
+    },
+    "date-fns@3.6.0/date-fns": {
+      "name": "date-fns",
+      "version": "3.6.0",
+      "manifestSha256": "63a331c8f500a99e5a6f23882d2eb58da4865e4d9c3ed9b121c3b8b0e6e09335"
+    },
+    "date-fns@4.1.0/date-fns": {
+      "name": "date-fns",
+      "version": "4.1.0",
+      "manifestSha256": "4569c5b08a8bc61281236014c2a43490142579e1f47550cf51297607feba4b9b"
+    },
+    "debug@4.4.3/debug": {
+      "name": "debug",
+      "version": "4.4.3",
+      "manifestSha256": "ea8e33d63fe5f3a4c36609b6c3df8e2ef1f8b8ba2fc3a2e1e53cb27291f384af"
+    },
+    "decimal.js-light@2.5.1/decimal.js-light": {
+      "name": "decimal.js-light",
+      "version": "2.5.1",
+      "manifestSha256": "d20b9fb64b091a9bb3f06d9aba27a1aa8b2e391aac84082b37875255b1989975"
+    },
+    "decode-named-character-reference@1.3.0/decode-named-character-reference": {
+      "name": "decode-named-character-reference",
+      "version": "1.3.0",
+      "manifestSha256": "b034b006d03650d0995148196898eac08012de40712cb984e968c7b99d96b55e"
+    },
+    "decompress-response@6.0.0/decompress-response": {
+      "name": "decompress-response",
+      "version": "6.0.0",
+      "manifestSha256": "8fb6b0b19d09cc1c5b2caad128ae39b2fd693a35bb3d440c4e1143bfb9d10080"
+    },
+    "deep-extend@0.6.0/deep-extend": {
+      "name": "deep-extend",
+      "version": "0.6.0",
+      "manifestSha256": "21b307891704eb34e9be621d7563d13734f75f41d8f97825862b05ca5bc2d217"
+    },
+    "dequal@2.0.3/dequal": {
+      "name": "dequal",
+      "version": "2.0.3",
+      "manifestSha256": "a41e430cd3d990700f1544c5ffece552449ab758d778fa34ad5458cf6ec35d6b"
+    },
+    "detect-libc@2.1.2/detect-libc": {
+      "name": "detect-libc",
+      "version": "2.1.2",
+      "manifestSha256": "ee88e5b954fdf3a8480b1d01ef767d68d8ca2c6da269f58c5cf1c5550e9aa2a7"
+    },
+    "detect-node-es@1.1.0/detect-node-es": {
+      "name": "detect-node-es",
+      "version": "1.1.0",
+      "manifestSha256": "06f9cfd73b6c401019dfa5cbdf4b4a5b346b1b15c4fca2d6f3ecc1a830528b06"
+    },
+    "devlop@1.1.0/devlop": {
+      "name": "devlop",
+      "version": "1.1.0",
+      "manifestSha256": "fbb56102cf3bd0e07a8075bfda80825b3ccd78a37642c92cef54a55fbed709dd"
+    },
+    "dfa@1.2.0/dfa": {
+      "name": "dfa",
+      "version": "1.2.0",
+      "manifestSha256": "96c0ce3cc17b34aabd58fd442157766d9e244cba735e54ee4fe10d7841f0460c"
+    },
+    "dom-helpers@5.2.1/dom-helpers": {
+      "name": "dom-helpers",
+      "version": "5.2.1",
+      "manifestSha256": "efce7444ae9b3409183abbf4f09fdb5207217a38ad504c87ace88e1975a1d083"
+    },
+    "drizzle-kit@0.31.9/drizzle-kit": {
+      "name": "drizzle-kit",
+      "version": "0.31.9",
+      "manifestSha256": "58e91585a45d2f28654004064b58ff77f4d9b2d5f0aeb6e087f50e69692d922b"
+    },
+    "drizzle-orm@0.45.1_@types+better-sqlite3@7.6.13_@types+pg@8.18.0_better-sqlite3@12.8.0_pg@8.20.0/drizzle-orm": {
+      "name": "drizzle-orm",
+      "version": "0.45.1",
+      "manifestSha256": "44bb256b7067eaf87ac41917383e42fe15ded61c915063c5bddce55516f322c0"
+    },
+    "drizzle-zod@0.8.3_drizzle-orm@0.45.1_@types+better-sqlite3@7.6.13_@types+pg@8.18.0_bett_547cf919b2bf47dd5bc64616cb136de8/drizzle-zod": {
+      "name": "drizzle-zod",
+      "version": "0.8.3",
+      "manifestSha256": "b7232124e0f916f0d89e243abaf89c548157c32077e84b7faa5dcd31da29dd9b"
+    },
+    "electron-to-chromium@1.5.307/electron-to-chromium": {
+      "name": "electron-to-chromium",
+      "version": "1.5.307",
+      "manifestSha256": "56404ab80842b80bbca0b5d8aac925959d39626438a49c038a00406ea31900b6"
+    },
+    "embla-carousel-react@8.6.0_react@19.1.0/embla-carousel-react": {
+      "name": "embla-carousel-react",
+      "version": "8.6.0",
+      "manifestSha256": "c3b98c1f6ab7f079cee036c666d9b9d761ab1ff2ca328e0d139b19bf89b014ee"
+    },
+    "embla-carousel-reactive-utils@8.6.0_embla-carousel@8.6.0/embla-carousel-reactive-utils": {
+      "name": "embla-carousel-reactive-utils",
+      "version": "8.6.0",
+      "manifestSha256": "3fd96f05014a38ef57e5f4ad7c7081778769b0f6bfa85761d925a6de8af5c3ab"
+    },
+    "embla-carousel@8.6.0/embla-carousel": {
+      "name": "embla-carousel",
+      "version": "8.6.0",
+      "manifestSha256": "25a173f262cefcb739f4b11268e866cff088976e0f0e79059f75811ddab8e77c"
+    },
+    "end-of-stream@1.4.5/end-of-stream": {
+      "name": "end-of-stream",
+      "version": "1.4.5",
+      "manifestSha256": "da504d0bef5a5974590b62f58df0003b448eccde6b5fbeb044506b7e43368eb5"
+    },
+    "enhanced-resolve@5.20.0/enhanced-resolve": {
+      "name": "enhanced-resolve",
+      "version": "5.20.0",
+      "manifestSha256": "d267873beea4757d449da471c741ac22d6b25fb2b2670bc3587a12b514f9b0b4"
+    },
+    "esbuild-register@3.6.0_esbuild@0.27.3/esbuild-register": {
+      "name": "esbuild-register",
+      "version": "3.6.0",
+      "manifestSha256": "ea03585483850563c8d7d9c51b8451654b6559221987bfc3dd3467701f2aca22"
+    },
+    "esbuild@0.27.3/esbuild": {
+      "name": "esbuild",
+      "version": "0.27.3",
+      "manifestSha256": "24655ca1d9c91fe7517a99ec27bf1125b46efae71b54a55125d2a930b6ad61f9"
+    },
+    "escalade@3.2.0/escalade": {
+      "name": "escalade",
+      "version": "3.2.0",
+      "manifestSha256": "acd22b264ecbea162e320a360dab0ad0f3e5438fa4382288df844fa08b484e73"
+    },
+    "estree-util-is-identifier-name@3.0.0/estree-util-is-identifier-name": {
+      "name": "estree-util-is-identifier-name",
+      "version": "3.0.0",
+      "manifestSha256": "d0f734156695c70baee2e43c094adde322839ddc23a517ea0039b3ff6a6567f9"
+    },
+    "eventemitter3@4.0.7/eventemitter3": {
+      "name": "eventemitter3",
+      "version": "4.0.7",
+      "manifestSha256": "2e9612fd0b3b723d4e27dbd741752f84ad840f3151973250820be782650cb7e1"
+    },
+    "expand-template@2.0.3/expand-template": {
+      "name": "expand-template",
+      "version": "2.0.3",
+      "manifestSha256": "90f652967155275d9fab2887a845454ee797340b28cc0c1b00f1889aaa65f771"
+    },
+    "extend@3.0.2/extend": {
+      "name": "extend",
+      "version": "3.0.2",
+      "manifestSha256": "8d891b3f00bead114c4741d8a594e7aaa59114f53782ec9a9319a619709dc14f"
+    },
+    "fast-content-type-parse@3.0.0/fast-content-type-parse": {
+      "name": "fast-content-type-parse",
+      "version": "3.0.0",
+      "manifestSha256": "bfc6bf55f3d391ba948e568113993b046fb24d7f5bcd3be6d57e80331e530ff2"
+    },
+    "fast-deep-equal@3.1.3/fast-deep-equal": {
+      "name": "fast-deep-equal",
+      "version": "3.1.3",
+      "manifestSha256": "a5c63940db0260739be9e2ac67f3aac268df4db5770420ee4e34e493152f97d2"
+    },
+    "fast-equals@5.4.0/fast-equals": {
+      "name": "fast-equals",
+      "version": "5.4.0",
+      "manifestSha256": "74dfe5885edc129eac3fdb57ee9362a4ee05a13b94f86c54206fc8dddf72ce40"
+    },
+    "fdir@6.5.0_picomatch@4.0.3/fdir": {
+      "name": "fdir",
+      "version": "6.5.0",
+      "manifestSha256": "aca49395d61ef383a09f74555c66ed45817ca2b5724e710a4dc9e0471b83d8f5"
+    },
+    "file-uri-to-path@1.0.0/file-uri-to-path": {
+      "name": "file-uri-to-path",
+      "version": "1.0.0",
+      "manifestSha256": "71eb1e24bb9694f89c613fa0aa307f977dd43f41d11794c7b48fabf6c55f66b0"
+    },
+    "fontkit@2.0.4/fontkit": {
+      "name": "fontkit",
+      "version": "2.0.4",
+      "manifestSha256": "49c60605b92316a5d5fe57b9a3bca8950ad9a8beab1cb633d6f29862d1bd163d"
+    },
+    "framer-motion@12.35.1_react-dom@19.1.0_react@19.1.0__react@19.1.0/framer-motion": {
+      "name": "framer-motion",
+      "version": "12.35.1",
+      "manifestSha256": "d76b4864edfb2f02bae2c2f0cff5ce8b9e6d9ebc6bf64d64407a4e38ba9f6fe8"
+    },
+    "fs-constants@1.0.0/fs-constants": {
+      "name": "fs-constants",
+      "version": "1.0.0",
+      "manifestSha256": "9cefec768b4f8c52591b840367d077a46a5a2b72ea2778dcf037afd96b234671"
+    },
+    "gensync@1.0.0-beta.2/gensync": {
+      "name": "gensync",
+      "version": "1.0.0-beta.2",
+      "manifestSha256": "80cddca71baa1ba0cf44f65585e1c1ed7576abdb759ed391007925c961ca6334"
+    },
+    "get-nonce@1.0.1/get-nonce": {
+      "name": "get-nonce",
+      "version": "1.0.1",
+      "manifestSha256": "cd0262ed52e44beb166ba0ed31081587074d48602bd057d1d438103ec169ef8b"
+    },
+    "get-tsconfig@4.13.6/get-tsconfig": {
+      "name": "get-tsconfig",
+      "version": "4.13.6",
+      "manifestSha256": "456bb5c6f81bab2db264e81a4cc85e80e133c86fd0b03bfa120649ba47a4fdc8"
+    },
+    "github-from-package@0.0.0/github-from-package": {
+      "name": "github-from-package",
+      "version": "0.0.0",
+      "manifestSha256": "67742aa2b856e3523c2f89132e41cc5026c49ffe7df58bd3ea906caaa217bd79"
+    },
+    "graceful-fs@4.2.11/graceful-fs": {
+      "name": "graceful-fs",
+      "version": "4.2.11",
+      "manifestSha256": "5747d4ba6b17165c6ecac30ab3a331715f41c7ad546e1f1574dab1bdcb116181"
+    },
+    "hast-util-to-jsx-runtime@2.3.6/hast-util-to-jsx-runtime": {
+      "name": "hast-util-to-jsx-runtime",
+      "version": "2.3.6",
+      "manifestSha256": "30dc325d26a45aed9ca3c9c686249cc40f9e234019d220dd954dad488d9fab49"
+    },
+    "hast-util-whitespace@3.0.0/hast-util-whitespace": {
+      "name": "hast-util-whitespace",
+      "version": "3.0.0",
+      "manifestSha256": "50a1eeeab4c354912b9f61e5b7aad22762dcbd96f740e58146f303bc4826f0b4"
+    },
+    "html-url-attributes@3.0.1/html-url-attributes": {
+      "name": "html-url-attributes",
+      "version": "3.0.1",
+      "manifestSha256": "0bd29e79398437b88c9647434c40c48168d87b22f7448f5f083f4f2d8ab063d8"
+    },
+    "ieee754@1.2.1/ieee754": {
+      "name": "ieee754",
+      "version": "1.2.1",
+      "manifestSha256": "a8004b9c8dffe2e1b01a058ecf968a5d50beabcabc43cc98c655184ba6afc050"
+    },
+    "inherits@2.0.4/inherits": {
+      "name": "inherits",
+      "version": "2.0.4",
+      "manifestSha256": "be645800bc94fd8de29c8ae91690549b316cc437100108aeea7b2f347693cc80"
+    },
+    "ini@1.3.8/ini": {
+      "name": "ini",
+      "version": "1.3.8",
+      "manifestSha256": "8cfafc3521292bd7434d2f40762984f36eb12f03bde92b42a9df2ea17552f4a4"
+    },
+    "inline-style-parser@0.2.7/inline-style-parser": {
+      "name": "inline-style-parser",
+      "version": "0.2.7",
+      "manifestSha256": "905dabd170bc0374e32e35b8c5d02068b5ffb797120dd7de0f6bc172a7ae8abd"
+    },
+    "input-otp@1.4.2_react-dom@19.1.0_react@19.1.0__react@19.1.0/input-otp": {
+      "name": "input-otp",
+      "version": "1.4.2",
+      "manifestSha256": "9590df2c15b05beccf02c5cffcfb4d90fdfe21debd191fade385cdd1e9821ed4"
+    },
+    "internmap@2.0.3/internmap": {
+      "name": "internmap",
+      "version": "2.0.3",
+      "manifestSha256": "b94bd846fb96743a86d527a3d0a3ad1bd5b1ffd3cd1109e6b115ebaef59dd195"
+    },
+    "is-alphabetical@2.0.1/is-alphabetical": {
+      "name": "is-alphabetical",
+      "version": "2.0.1",
+      "manifestSha256": "764861182abad511ee66eea255053304c637a9ff1928f52a5800ac7043ba6a3b"
+    },
+    "is-alphanumerical@2.0.1/is-alphanumerical": {
+      "name": "is-alphanumerical",
+      "version": "2.0.1",
+      "manifestSha256": "e6ac8f7e567d2c8079b7c0954e3cb64ceb7834e64f2a4568996935e1f3d58c6b"
+    },
+    "is-decimal@2.0.1/is-decimal": {
+      "name": "is-decimal",
+      "version": "2.0.1",
+      "manifestSha256": "aa18d6561f45c1aa9fa982727a9b315719296572287268314e866a2bbb50e684"
+    },
+    "is-hexadecimal@2.0.1/is-hexadecimal": {
+      "name": "is-hexadecimal",
+      "version": "2.0.1",
+      "manifestSha256": "cf249c4bb356b19911930acfaf501dbf59df1f4ecb39f007afe7fb32b5555350"
+    },
+    "is-plain-obj@4.1.0/is-plain-obj": {
+      "name": "is-plain-obj",
+      "version": "4.1.0",
+      "manifestSha256": "ac84142050cd4d1854c489a3d61e0c991550195ae5ae37d9347b736424b09c59"
+    },
+    "jiti@2.6.1/jiti": {
+      "name": "jiti",
+      "version": "2.6.1",
+      "manifestSha256": "13e7d0b597ca819d62b991e8dc5ede1dc1e8d343dedce3f47f7a3c2c2d277f08"
+    },
+    "js-md5@0.8.3/js-md5": {
+      "name": "js-md5",
+      "version": "0.8.3",
+      "manifestSha256": "60cbb158a08d01e7a1d5eb83e7a7be256f38ea3461f894c07130dd7398783e59"
+    },
+    "js-tokens@4.0.0/js-tokens": {
+      "name": "js-tokens",
+      "version": "4.0.0",
+      "manifestSha256": "47345931827b3e26db9fe690abb81f856a0d040cbca8af1e69711a64cd58ce0d"
+    },
+    "jsesc@3.1.0/jsesc": {
+      "name": "jsesc",
+      "version": "3.1.0",
+      "manifestSha256": "6127ab2ccfbf576671dcfedcf2a8d97c9bbb3e5e4cff1274b3210b86a97a287c"
+    },
+    "json-with-bigint@3.5.8/json-with-bigint": {
+      "name": "json-with-bigint",
+      "version": "3.5.8",
+      "manifestSha256": "cdc0699b890995da602e66af8625ddb2f170a6a57350b43766e921e7f5ab9bd4"
+    },
+    "json5@2.2.3/json5": {
+      "name": "json5",
+      "version": "2.2.3",
+      "manifestSha256": "1927c4592e3811cf9b8c86e568df1c41a373b628b4b322f88872395ef87e2ba5"
+    },
+    "lightningcss-linux-x64-gnu@1.31.1/lightningcss-linux-x64-gnu": {
+      "name": "lightningcss-linux-x64-gnu",
+      "version": "1.31.1",
+      "manifestSha256": "bc8976cf638afc4d2e45b5c57e683e6af27eb4e318dd9a260aa0232baa9096c1"
+    },
+    "lightningcss@1.31.1/lightningcss": {
+      "name": "lightningcss",
+      "version": "1.31.1",
+      "manifestSha256": "65d48ab9113cfcc2fc447734ade2e9f59e33efb0243650c9c5c0261fd9a7372b"
+    },
+    "linebreak@1.1.0/linebreak": {
+      "name": "linebreak",
+      "version": "1.1.0",
+      "manifestSha256": "53f67b29d3d0c3bc43501bf17d658aa611a668128eeba39ae9eabeb1cdb505d0"
+    },
+    "lodash@4.17.23/lodash": {
+      "name": "lodash",
+      "version": "4.17.23",
+      "manifestSha256": "cbdbb6796a36727ab08e8fb599aa51d0348b83d878e62b8831c15b5694b2b6c6"
+    },
+    "longest-streak@3.1.0/longest-streak": {
+      "name": "longest-streak",
+      "version": "3.1.0",
+      "manifestSha256": "fe48cd537de554b59fcb057d28c4b10cfef569817040ae61beb8a9b323bf82df"
+    },
+    "loose-envify@1.4.0/loose-envify": {
+      "name": "loose-envify",
+      "version": "1.4.0",
+      "manifestSha256": "8c2e27dae366396ced36fe0f7c6d35d71a1440fd8e82df5f2005a5297888a0d4"
+    },
+    "lru-cache@5.1.1/lru-cache": {
+      "name": "lru-cache",
+      "version": "5.1.1",
+      "manifestSha256": "f5a3379f52a453412f5d8551bf11fa0bef4316cc88645c9d190a017e1c58a4c2"
+    },
+    "lucide-react@0.545.0_react@19.1.0/lucide-react": {
+      "name": "lucide-react",
+      "version": "0.545.0",
+      "manifestSha256": "aeb1945a9ff9e78f63c137b09194668d53bc3700abb6db14f6659b3ed3f89be5"
+    },
+    "magic-string@0.30.21/magic-string": {
+      "name": "magic-string",
+      "version": "0.30.21",
+      "manifestSha256": "86814aaf7dacba9d31fbf361c3285981f1cbbda0a87108caa4131d297bd9eba2"
+    },
+    "mdast-util-from-markdown@2.0.3/mdast-util-from-markdown": {
+      "name": "mdast-util-from-markdown",
+      "version": "2.0.3",
+      "manifestSha256": "4f7c4700c78d6781af46eb12b2f908b0503d8beefa8b2cea0fbfe9de8444e438"
+    },
+    "mdast-util-mdx-expression@2.0.1/mdast-util-mdx-expression": {
+      "name": "mdast-util-mdx-expression",
+      "version": "2.0.1",
+      "manifestSha256": "bdc0c68b4eca52b0ffc6e50ce48fb8366d994d2065d99200a081191d05294985"
+    },
+    "mdast-util-mdx-jsx@3.2.0/mdast-util-mdx-jsx": {
+      "name": "mdast-util-mdx-jsx",
+      "version": "3.2.0",
+      "manifestSha256": "6bbb6d4cb8876c914de97eaa11c5ef99550e9f93056d8a5d2c3297864135d2f9"
+    },
+    "mdast-util-mdxjs-esm@2.0.1/mdast-util-mdxjs-esm": {
+      "name": "mdast-util-mdxjs-esm",
+      "version": "2.0.1",
+      "manifestSha256": "e1b80111851201ba096f838cae4f534a22791bc8f3ab46c10596b31c34f1c52e"
+    },
+    "mdast-util-phrasing@4.1.0/mdast-util-phrasing": {
+      "name": "mdast-util-phrasing",
+      "version": "4.1.0",
+      "manifestSha256": "c020a54303d9d422c9def6ba5416db74c0f30b2783f2a84b7248b0d61c2ac113"
+    },
+    "mdast-util-to-hast@13.2.1/mdast-util-to-hast": {
+      "name": "mdast-util-to-hast",
+      "version": "13.2.1",
+      "manifestSha256": "aa1e17fedf46914534ba0c67016734edc6d0fc919057556eb1034160f795b596"
+    },
+    "mdast-util-to-markdown@2.1.2/mdast-util-to-markdown": {
+      "name": "mdast-util-to-markdown",
+      "version": "2.1.2",
+      "manifestSha256": "79a01b2e7f0c1bdf3f3b1a2a9ba40d8d9d3378eba98b2909bddda41a90d870d1"
+    },
+    "mdast-util-to-string@4.0.0/mdast-util-to-string": {
+      "name": "mdast-util-to-string",
+      "version": "4.0.0",
+      "manifestSha256": "0acb725dee2ee1c9d374b240c7a972da04cc94d13663b58fa52be009c3271a13"
+    },
+    "memoize-one@6.0.0/memoize-one": {
+      "name": "memoize-one",
+      "version": "6.0.0",
+      "manifestSha256": "9941ebd5b052013e100b477c272a8e20d63c1bc7c57646da077a895c0b483e2f"
+    },
+    "micromark-core-commonmark@2.0.3/micromark-core-commonmark": {
+      "name": "micromark-core-commonmark",
+      "version": "2.0.3",
+      "manifestSha256": "f6b039e198e40c6ede380cc41da4c840555c18fd5f2be43a559fb5c4221c034d"
+    },
+    "micromark-factory-destination@2.0.1/micromark-factory-destination": {
+      "name": "micromark-factory-destination",
+      "version": "2.0.1",
+      "manifestSha256": "71e61f23d5e171525c8934e9a8ac51e649107e4658082938d19dab172533b483"
+    },
+    "micromark-factory-label@2.0.1/micromark-factory-label": {
+      "name": "micromark-factory-label",
+      "version": "2.0.1",
+      "manifestSha256": "2c1c73d0087a1195a34bff62b47d5119a49f210636b3759c6d459886b559ee5e"
+    },
+    "micromark-factory-space@2.0.1/micromark-factory-space": {
+      "name": "micromark-factory-space",
+      "version": "2.0.1",
+      "manifestSha256": "26349d7f4aa3c2a4eb91fca569e2b5f70cfc8df1517d360542f8b99ab61a6961"
+    },
+    "micromark-factory-title@2.0.1/micromark-factory-title": {
+      "name": "micromark-factory-title",
+      "version": "2.0.1",
+      "manifestSha256": "5b7d184aeb5ff4fa8b63a338800e80400a631ee594ff0d698a5a4668eddc9a16"
+    },
+    "micromark-factory-whitespace@2.0.1/micromark-factory-whitespace": {
+      "name": "micromark-factory-whitespace",
+      "version": "2.0.1",
+      "manifestSha256": "ea0cbec4d722111585387048046a248ce272e3c587e228cc3cf98fe4919e48c6"
+    },
+    "micromark-util-character@2.1.1/micromark-util-character": {
+      "name": "micromark-util-character",
+      "version": "2.1.1",
+      "manifestSha256": "bf43c5df782cf1cf985d89a8f01fd1a7b7b4bae9bf2b9c07e633c2379b1dbd7f"
+    },
+    "micromark-util-chunked@2.0.1/micromark-util-chunked": {
+      "name": "micromark-util-chunked",
+      "version": "2.0.1",
+      "manifestSha256": "20e4e68a94fb62188c9139721be97740ec32f77464b23c40677a89aee72584f6"
+    },
+    "micromark-util-classify-character@2.0.1/micromark-util-classify-character": {
+      "name": "micromark-util-classify-character",
+      "version": "2.0.1",
+      "manifestSha256": "f84c7e2b5f54a05fa725645d31810ad8531c278901d661c714d114ad978e634d"
+    },
+    "micromark-util-combine-extensions@2.0.1/micromark-util-combine-extensions": {
+      "name": "micromark-util-combine-extensions",
+      "version": "2.0.1",
+      "manifestSha256": "43686ee41cc83e2460aaa49821d7f36b0b7fd525e88b253e10b1556520196554"
+    },
+    "micromark-util-decode-numeric-character-reference@2.0.2/micromark-util-decode-numeric-character-reference": {
+      "name": "micromark-util-decode-numeric-character-reference",
+      "version": "2.0.2",
+      "manifestSha256": "b4eda7dc69734392cf0c79313423b21dacfe03ae43002e5fc18151613f37f532"
+    },
+    "micromark-util-decode-string@2.0.1/micromark-util-decode-string": {
+      "name": "micromark-util-decode-string",
+      "version": "2.0.1",
+      "manifestSha256": "3fde5acb664658ceef73bd64e17041e9762819a06ccee998d058d04e8ec34a2e"
+    },
+    "micromark-util-encode@2.0.1/micromark-util-encode": {
+      "name": "micromark-util-encode",
+      "version": "2.0.1",
+      "manifestSha256": "1758618d3101cb94280c1ddb827bb329790f7d95058cdc616d50352811c7d5ba"
+    },
+    "micromark-util-html-tag-name@2.0.1/micromark-util-html-tag-name": {
+      "name": "micromark-util-html-tag-name",
+      "version": "2.0.1",
+      "manifestSha256": "d541066042522d8c5247964225d3a9f08f7b902b75682ab57ceecfeee45ed90c"
+    },
+    "micromark-util-normalize-identifier@2.0.1/micromark-util-normalize-identifier": {
+      "name": "micromark-util-normalize-identifier",
+      "version": "2.0.1",
+      "manifestSha256": "b22a2066064ff412b8f9ded011a14d3fac87c37c696da2d8e8a57a0c9c88dea0"
+    },
+    "micromark-util-resolve-all@2.0.1/micromark-util-resolve-all": {
+      "name": "micromark-util-resolve-all",
+      "version": "2.0.1",
+      "manifestSha256": "f786149ff20e6ab653b42ddf8109d4f14e839b80800513698f7de790b3819628"
+    },
+    "micromark-util-sanitize-uri@2.0.1/micromark-util-sanitize-uri": {
+      "name": "micromark-util-sanitize-uri",
+      "version": "2.0.1",
+      "manifestSha256": "a694d9800a68d5d52916675f9231c16bf7e764658a9045d86b74c29736b59dd6"
+    },
+    "micromark-util-subtokenize@2.1.0/micromark-util-subtokenize": {
+      "name": "micromark-util-subtokenize",
+      "version": "2.1.0",
+      "manifestSha256": "8dd7a96c44ac602941d16b0078cef059821871b047a6f6309ffd61bb470cd420"
+    },
+    "micromark-util-symbol@2.0.1/micromark-util-symbol": {
+      "name": "micromark-util-symbol",
+      "version": "2.0.1",
+      "manifestSha256": "713151401c413cbfd443283e5e721f914b06b8f3a372e9821139bde73e3c909d"
+    },
+    "micromark-util-types@2.0.2/micromark-util-types": {
+      "name": "micromark-util-types",
+      "version": "2.0.2",
+      "manifestSha256": "4bf761498edc00e674903db57fc6a8cf478677363adc776b8ac115771e791cd3"
+    },
+    "micromark@4.0.2/micromark": {
+      "name": "micromark",
+      "version": "4.0.2",
+      "manifestSha256": "e2423e9665ea6d21d78cb520e812249cdbce2428bd6a6e9b38438a2569b05f2d"
+    },
+    "mimic-response@3.1.0/mimic-response": {
+      "name": "mimic-response",
+      "version": "3.1.0",
+      "manifestSha256": "ff358428a418a46fb2431a2c48b396fb01c8291fec9e1f14434ade01196c8e9c"
+    },
+    "minimist@1.2.8/minimist": {
+      "name": "minimist",
+      "version": "1.2.8",
+      "manifestSha256": "252881f6a068a3e70386706d88a694b5e8e9e053b6d9f309fd9a329e651bbf81"
+    },
+    "mkdirp-classic@0.5.3/mkdirp-classic": {
+      "name": "mkdirp-classic",
+      "version": "0.5.3",
+      "manifestSha256": "dd81e4703dc7005247e7c2dc056c67c936923a40b4dc9b266cf8acf3442ba89c"
+    },
+    "modern-screenshot@4.6.8/modern-screenshot": {
+      "name": "modern-screenshot",
+      "version": "4.6.8",
+      "manifestSha256": "708ce8629bddd0c3fcc810cb1b301aef7edd5b9beff41cfbe606b666da29e3dc"
+    },
+    "motion-dom@12.35.1/motion-dom": {
+      "name": "motion-dom",
+      "version": "12.35.1",
+      "manifestSha256": "ab77292c76850d01bd35e4ee576cf0ffdbf44ebb5750992ae3e15ccea70e6c9f"
+    },
+    "motion-utils@12.29.2/motion-utils": {
+      "name": "motion-utils",
+      "version": "12.29.2",
+      "manifestSha256": "50e5af11a4f9d3a4da226f66e3b09ea84e60a1027a1e5b896a8a801b7b262ba1"
+    },
+    "ms@2.1.3/ms": {
+      "name": "ms",
+      "version": "2.1.3",
+      "manifestSha256": "1a6b4d9739790c0b94ab96c8cc0507e281c164c311ff4fbf5e57fb8d26290b40"
+    },
+    "nanoid@3.3.11/nanoid": {
+      "name": "nanoid",
+      "version": "3.3.11",
+      "manifestSha256": "7897d2afc6239c090b3f2063cb628dfdcad4a62b160eb2cd583cbc68191b1877"
+    },
+    "napi-build-utils@2.0.0/napi-build-utils": {
+      "name": "napi-build-utils",
+      "version": "2.0.0",
+      "manifestSha256": "001ba5640df99785e76b7d407ae35a24c490f145737cf3f194408fb17dfec411"
+    },
+    "next-themes@0.4.6_react-dom@19.1.0_react@19.1.0__react@19.1.0/next-themes": {
+      "name": "next-themes",
+      "version": "0.4.6",
+      "manifestSha256": "e44cdac8c8fa4048a883f41dcdda2eb200e917ccbad68467b79418fb67df9ec4"
+    },
+    "node-abi@3.89.0/node-abi": {
+      "name": "node-abi",
+      "version": "3.89.0",
+      "manifestSha256": "b46af1d7f0cd1e5e7c779bd138bc25d2e398d5176c283104bd464dd443cc2035"
+    },
+    "node-releases@2.0.36/node-releases": {
+      "name": "node-releases",
+      "version": "2.0.36",
+      "manifestSha256": "846c37d6e4b32ec69467a4e2bb94a1ac7bdc3afaee76ec323f6a98385cf75e21"
+    },
+    "object-assign@4.1.1/object-assign": {
+      "name": "object-assign",
+      "version": "4.1.1",
+      "manifestSha256": "5990bbffa235fc675debd925d50f6c3f48a2b4526d8c9f7555cadec9029d0d7f"
+    },
+    "once@1.4.0/once": {
+      "name": "once",
+      "version": "1.4.0",
+      "manifestSha256": "33840d74c14c94bfb75c76374765b635531b1eacb88d7f1f2f380c94d0ea1328"
+    },
+    "pako@0.2.9/pako": {
+      "name": "pako",
+      "version": "0.2.9",
+      "manifestSha256": "dc1090fc2228e15fb13cc8aa81f3c99c9c0a4237f99a42d1c7ffda1b137cf1cf"
+    },
+    "pako@1.0.11/pako": {
+      "name": "pako",
+      "version": "1.0.11",
+      "manifestSha256": "0014f350a6834ed6a2d1211e0a2e3aa471cb426edf63379c785f9647ea2b4e01"
+    },
+    "parse-entities@4.0.2/parse-entities": {
+      "name": "parse-entities",
+      "version": "4.0.2",
+      "manifestSha256": "7af95256ec23ae6e1095852c4e8a85f836ed4ea1cbaffe5a34ab2cef817ebabb"
+    },
+    "pdfkit@0.19.1/pdfkit": {
+      "name": "pdfkit",
+      "version": "0.19.1",
+      "manifestSha256": "10637ff85324976432b313177e86013288d98d312e9b57c41548f82ea4ee8b2e"
+    },
+    "pg-cloudflare@1.3.0/pg-cloudflare": {
+      "name": "pg-cloudflare",
+      "version": "1.3.0",
+      "manifestSha256": "01c4f045ed8f8a010fc3c8d74b97206d780b1b3d97d5e6b3a12385f3d3066c38"
+    },
+    "pg-connection-string@2.12.0/pg-connection-string": {
+      "name": "pg-connection-string",
+      "version": "2.12.0",
+      "manifestSha256": "b4bb600d392debbef01b428d3331e7fe2dfd0eef5eb142b49d9d77121e8aeaca"
+    },
+    "pg-int8@1.0.1/pg-int8": {
+      "name": "pg-int8",
+      "version": "1.0.1",
+      "manifestSha256": "147155887a41bb6f69ff98b3dde827b7e6a8214c3a71938da4babf8e12adff2e"
+    },
+    "pg-pool@3.13.0_pg@8.20.0/pg-pool": {
+      "name": "pg-pool",
+      "version": "3.13.0",
+      "manifestSha256": "0ff81e8fc6484d1ad96847d73e361ea16589006a94ecedeed1cf30543a05be75"
+    },
+    "pg-protocol@1.13.0/pg-protocol": {
+      "name": "pg-protocol",
+      "version": "1.13.0",
+      "manifestSha256": "c6725277ca8fa076a8fd065bf56dda9df4d83960b4bfe88b9b234a3273e44f09"
+    },
+    "pg-types@2.2.0/pg-types": {
+      "name": "pg-types",
+      "version": "2.2.0",
+      "manifestSha256": "3ec0293cb38cc8d9475e3eb32ac5f19d195bf9fccc8b19a0714e6ecd6e7c2cf0"
+    },
+    "pg@8.20.0/pg": {
+      "name": "pg",
+      "version": "8.20.0",
+      "manifestSha256": "c7b791217b7b495bf56de329320cd5450d1bcebb6a3475e9d20dedcb37e0edb4"
+    },
+    "pgpass@1.0.5/pgpass": {
+      "name": "pgpass",
+      "version": "1.0.5",
+      "manifestSha256": "d75240eb4fe759c10db9f903838275348676a8bdc1f329e20a833713cd7c99bd"
+    },
+    "picocolors@1.1.1/picocolors": {
+      "name": "picocolors",
+      "version": "1.1.1",
+      "manifestSha256": "ef2ac226c4811d312e12c64214c453878653e834482125ae475f27cea60de737"
+    },
+    "picomatch@4.0.3/picomatch": {
+      "name": "picomatch",
+      "version": "4.0.3",
+      "manifestSha256": "ef0245814fbc6d3cee835c9a9c43f31daab1825cebcd6d005723aabea0f9136f"
+    },
+    "png-js@1.1.0/png-js": {
+      "name": "png-js",
+      "version": "1.1.0",
+      "manifestSha256": "afd3a9e519b30e7197605822ce772f1702014c74577bf536176419e0e7492667"
+    },
+    "postcss-selector-parser@6.0.10/postcss-selector-parser": {
+      "name": "postcss-selector-parser",
+      "version": "6.0.10",
+      "manifestSha256": "d693abe0f0819c690759141be53a9b2a44f9713ec924b1e3ac78bf88ef11efe8"
+    },
+    "postcss@8.5.8/postcss": {
+      "name": "postcss",
+      "version": "8.5.8",
+      "manifestSha256": "057caa4908714fc394fba2430c85ab29fab3e841392753ec64ae15cb0bba6aa5"
+    },
+    "postgres-array@2.0.0/postgres-array": {
+      "name": "postgres-array",
+      "version": "2.0.0",
+      "manifestSha256": "dcd6a505fcbc032b409ee2838ab2c776dea3a9cfe02b736364b6cb82a946665f"
+    },
+    "postgres-bytea@1.0.1/postgres-bytea": {
+      "name": "postgres-bytea",
+      "version": "1.0.1",
+      "manifestSha256": "9125568c5fb51a65b8f11adb0080c2775b99ee82822d73bff8b56b2a9d47d7aa"
+    },
+    "postgres-date@1.0.7/postgres-date": {
+      "name": "postgres-date",
+      "version": "1.0.7",
+      "manifestSha256": "03f9edefa96697072075e02df045cc61ed4ca2f8dfffb1ff87f4070bc3404151"
+    },
+    "postgres-interval@1.2.0/postgres-interval": {
+      "name": "postgres-interval",
+      "version": "1.2.0",
+      "manifestSha256": "cc3056db105e66c9128cb8a387cda782d5f1ae9281be90de0b8d26a90af89c57"
+    },
+    "prebuild-install@7.1.3/prebuild-install": {
+      "name": "prebuild-install",
+      "version": "7.1.3",
+      "manifestSha256": "d8502f5ce977ea10cc7e91e95b595ce845e838cf412801230e9a2f211ad68039"
+    },
+    "prettier@3.8.1/prettier": {
+      "name": "prettier",
+      "version": "3.8.1",
+      "manifestSha256": "b73c6d16f392858c9bad2b4b4d2357c96773676d5769c5e6b700a32be7609f2e"
+    },
+    "prop-types@15.8.1/prop-types": {
+      "name": "prop-types",
+      "version": "15.8.1",
+      "manifestSha256": "96aa387585c686397a80616d6a563759576e9b9fac1f80d57874aa4ee4730a2c"
+    },
+    "property-information@7.1.0/property-information": {
+      "name": "property-information",
+      "version": "7.1.0",
+      "manifestSha256": "57ba088ef9c148e405f18feffab23750704de09f095de74d20d0475e71b08948"
+    },
+    "pump@3.0.4/pump": {
+      "name": "pump",
+      "version": "3.0.4",
+      "manifestSha256": "d369a9c97d4aaca4a637af77b6ead9169146809ff3c27268e62151b613cae016"
+    },
+    "raf-schd@4.0.3/raf-schd": {
+      "name": "raf-schd",
+      "version": "4.0.3",
+      "manifestSha256": "aa3fc40657ece3bf000cf33f6bdf7e041f145afc1b36d2645f690c3f1da6dce9"
+    },
+    "rc@1.2.8/rc": {
+      "name": "rc",
+      "version": "1.2.8",
+      "manifestSha256": "96f035349a8e6034d380348ec3d454ed8ea3a602c7a5700eb36ff48310bdbe9f"
+    },
+    "react-day-picker@9.14.0_react@19.1.0/react-day-picker": {
+      "name": "react-day-picker",
+      "version": "9.14.0",
+      "manifestSha256": "d8b4fe77fb030eb6a68f88bf569a4411396251089cf0751a1ea60f55bebb3d34"
+    },
+    "react-dom@19.1.0_react@19.1.0/react-dom": {
+      "name": "react-dom",
+      "version": "19.1.0",
+      "manifestSha256": "adf6bb7b4bf078406a677e0bb0123d002a5b706945c213e7abba2381fa1e991c"
+    },
+    "react-hook-form@7.71.2_react@19.1.0/react-hook-form": {
+      "name": "react-hook-form",
+      "version": "7.71.2",
+      "manifestSha256": "e3eeb0c1e75cf46c24815a508d14f6aa69e246938b657188fbbc04db00ab3ac8"
+    },
+    "react-icons@5.6.0_react@19.1.0/react-icons": {
+      "name": "react-icons",
+      "version": "5.6.0",
+      "manifestSha256": "901d8317668f710a8d2a8ffef4a511da21bc03cc70ef0215f20e4c83b575ee3d"
+    },
+    "react-is@16.13.1/react-is": {
+      "name": "react-is",
+      "version": "16.13.1",
+      "manifestSha256": "06784c4340af9853928c519791684487b83076b3c84e8de6ba5f240e33700b71"
+    },
+    "react-is@18.3.1/react-is": {
+      "name": "react-is",
+      "version": "18.3.1",
+      "manifestSha256": "8d8b7b3d6df8fa36fcd2fbee3561faea9bfa488c2318dabef4cfeaf275aee7f3"
+    },
+    "react-markdown@9.1.0_@types+react@19.2.14_react@19.1.0/react-markdown": {
+      "name": "react-markdown",
+      "version": "9.1.0",
+      "manifestSha256": "a0679e19e3563d144bae1c9e7fbdbd66501792b5ba27cf10e6396ba78f01fe36"
+    },
+    "react-redux@9.2.0_@types+react@19.2.14_react@19.1.0_redux@5.0.1/react-redux": {
+      "name": "react-redux",
+      "version": "9.2.0",
+      "manifestSha256": "564f6b5dcd228c192ea78745c87898c3fa7393768341d20714b7862b55860782"
+    },
+    "react-refresh@0.18.0/react-refresh": {
+      "name": "react-refresh",
+      "version": "0.18.0",
+      "manifestSha256": "d18a5eec19ba65c280a463b629d9b4da4ba7165c2bc31e96edc3819bdd365cc8"
+    },
+    "react-remove-scroll-bar@2.3.8_@types+react@19.2.14_react@19.1.0/react-remove-scroll-bar": {
+      "name": "react-remove-scroll-bar",
+      "version": "2.3.8",
+      "manifestSha256": "e372f857ce05f266137c65293436b5380fec42ac311e6acb9378ed78b98d75d0"
+    },
+    "react-remove-scroll@2.7.2_@types+react@19.2.14_react@19.1.0/react-remove-scroll": {
+      "name": "react-remove-scroll",
+      "version": "2.7.2",
+      "manifestSha256": "35db8a2ffa5161d98795cff1b1f56dc775c94fea5f80eda128f083db59b40ab2"
+    },
+    "react-resizable-panels@2.1.9_react-dom@19.1.0_react@19.1.0__react@19.1.0/react-resizable-panels": {
+      "name": "react-resizable-panels",
+      "version": "2.1.9",
+      "manifestSha256": "6d1f54d4601e5bfeda4a992ca4705d67eef6d1ae4d443a5061573077df6dbdfb"
+    },
+    "react-router-dom@6.30.3_react-dom@19.1.0_react@19.1.0__react@19.1.0/react-router-dom": {
+      "name": "react-router-dom",
+      "version": "6.30.3",
+      "manifestSha256": "508c7aa48afb50071ccc1e88d3cbe9ebed04f89bf6e1821c4b25fe3e41a5d563"
+    },
+    "react-router@6.30.3_react@19.1.0/react-router": {
+      "name": "react-router",
+      "version": "6.30.3",
+      "manifestSha256": "d2b793b38c620e70669a69e905a50e0e798c955f63e817ea12800c7a8077e24e"
+    },
+    "react-simple-keyboard@3.8.186_react-dom@19.1.0_react@19.1.0__react@19.1.0/react-simple-keyboard": {
+      "name": "react-simple-keyboard",
+      "version": "3.8.186",
+      "manifestSha256": "6cd2d4aae8d5e299702a435a859e463eb79cd55759bed382915a767606bde555"
+    },
+    "react-smooth@4.0.4_react-dom@19.1.0_react@19.1.0__react@19.1.0/react-smooth": {
+      "name": "react-smooth",
+      "version": "4.0.4",
+      "manifestSha256": "550a6e4daa68b7809a679285de528c04ae3423e4a26210e5f93c0a9753f13f14"
+    },
+    "react-style-singleton@2.2.3_@types+react@19.2.14_react@19.1.0/react-style-singleton": {
+      "name": "react-style-singleton",
+      "version": "2.2.3",
+      "manifestSha256": "c6d832faf8d9d54cd854d47f23b5b747928fe7554f548b093a7faaf239185d08"
+    },
+    "react-transition-group@4.4.5_react-dom@19.1.0_react@19.1.0__react@19.1.0/react-transition-group": {
+      "name": "react-transition-group",
+      "version": "4.4.5",
+      "manifestSha256": "2c6a5bfbbe8f65366df04ef7ea28a32fe6d8a8e582f3d68afb84ff3d3c86436a"
+    },
+    "react@19.1.0/react": {
+      "name": "react",
+      "version": "19.1.0",
+      "manifestSha256": "8f3eb41d5562d73fd0b367319a8b7f03b36740f2dbd58214581307e0b5aa7a04"
+    },
+    "readable-stream@3.6.2/readable-stream": {
+      "name": "readable-stream",
+      "version": "3.6.2",
+      "manifestSha256": "469ea81f64037d1f179bcd46412217903a2924dd2e7d7d9b728659b6f12c3e69"
+    },
+    "recharts-scale@0.4.5/recharts-scale": {
+      "name": "recharts-scale",
+      "version": "0.4.5",
+      "manifestSha256": "9e776d8c82fce431cc1f506d0985b67f0c5d9c096dcef13df5598b3eea864d38"
+    },
+    "recharts@2.15.4_react-dom@19.1.0_react@19.1.0__react@19.1.0/recharts": {
+      "name": "recharts",
+      "version": "2.15.4",
+      "manifestSha256": "91ad4851d8a34ed86c60a003e372b9aa2756ad1d300b8b4d8ae21ce40dd2d20c"
+    },
+    "redux@5.0.1/redux": {
+      "name": "redux",
+      "version": "5.0.1",
+      "manifestSha256": "90578eb24fb0205ed82405282ecb69322a95b11d1e3ce6a7a6fd9e9fd9ce9aca"
+    },
+    "remark-parse@11.0.0/remark-parse": {
+      "name": "remark-parse",
+      "version": "11.0.0",
+      "manifestSha256": "47be70916ff853a6c35d8d858844c7b104d100f70999d579884859cf8d88a50c"
+    },
+    "remark-rehype@11.1.2/remark-rehype": {
+      "name": "remark-rehype",
+      "version": "11.1.2",
+      "manifestSha256": "f9886f99f9f38652d56ca256aa713e359e085ed42f7d89fd66671b49f4b83b64"
+    },
+    "resolve-pkg-maps@1.0.0/resolve-pkg-maps": {
+      "name": "resolve-pkg-maps",
+      "version": "1.0.0",
+      "manifestSha256": "e372f809865bc3fc6ad75be76a90b031eece36e9d12d283de9955aca6be8537d"
+    },
+    "restructure@3.0.2/restructure": {
+      "name": "restructure",
+      "version": "3.0.2",
+      "manifestSha256": "f28780f515208c0fc417a2e49340b0cd1c146ff20ce6bfeee3593e64a8f74d14"
+    },
+    "rollup@4.59.0/rollup": {
+      "name": "rollup",
+      "version": "4.59.0",
+      "manifestSha256": "d2b8a7290987a7989c993f4f9adb2939de7d4030e7eb9ec252bc505fcb0b90f3"
+    },
+    "safe-buffer@5.2.1/safe-buffer": {
+      "name": "safe-buffer",
+      "version": "5.2.1",
+      "manifestSha256": "e4018fdbfe625433371f48274fee26f520bbe865e0d8c85bf3aa07424134b90c"
+    },
+    "scheduler@0.26.0/scheduler": {
+      "name": "scheduler",
+      "version": "0.26.0",
+      "manifestSha256": "c0d1b0e56374984658d63a933781c7d7a12a6fc7de8ec7b1e6e2e4d4203d6f5b"
+    },
+    "semver@6.3.1/semver": {
+      "name": "semver",
+      "version": "6.3.1",
+      "manifestSha256": "aa906c5bf8a2fa68683cae07d18553ae2538ed0d5a567911980b2ef25ee8b9ba"
+    },
+    "semver@7.7.4/semver": {
+      "name": "semver",
+      "version": "7.7.4",
+      "manifestSha256": "ba0d1b548512e65c15b1cddbcd6caa16cc9070e8af8987d02ba929a1f06c0177"
+    },
+    "simple-concat@1.0.1/simple-concat": {
+      "name": "simple-concat",
+      "version": "1.0.1",
+      "manifestSha256": "d6ae2e35a0c64b4469f1e531a3244efd50be7c115ef42d1422e54d14d9359e99"
+    },
+    "simple-get@4.0.1/simple-get": {
+      "name": "simple-get",
+      "version": "4.0.1",
+      "manifestSha256": "8337ba9774d6d8199a5861c6dfa57058f162bfb6210362c01db38f0a593f96d6"
+    },
+    "sonner@2.0.7_react-dom@19.1.0_react@19.1.0__react@19.1.0/sonner": {
+      "name": "sonner",
+      "version": "2.0.7",
+      "manifestSha256": "dec51c786328f55cd227b1266fac7ada3d2ed5376fe2b71a34a8aea2e2174a30"
+    },
+    "source-map-js@1.2.1/source-map-js": {
+      "name": "source-map-js",
+      "version": "1.2.1",
+      "manifestSha256": "58f8e94a461a5e461e0cb2bb2be681cbd89b9181989fd26fceb858e67711469a"
+    },
+    "space-separated-tokens@2.0.2/space-separated-tokens": {
+      "name": "space-separated-tokens",
+      "version": "2.0.2",
+      "manifestSha256": "ca188b0d34a0cfcfa025597058c3302401155788219f78682243a34f8e5092f1"
+    },
+    "split2@4.2.0/split2": {
+      "name": "split2",
+      "version": "4.2.0",
+      "manifestSha256": "87b734c3087c8d9ed5d76d1bff00db30f960831ba8705dd18d73b180d08d2140"
+    },
+    "string_decoder@1.3.0/string_decoder": {
+      "name": "string_decoder",
+      "version": "1.3.0",
+      "manifestSha256": "31984c85cd4f3df0aa75075acdec98c25961496897d1f46d04ed4a701f129c54"
+    },
+    "stringify-entities@4.0.4/stringify-entities": {
+      "name": "stringify-entities",
+      "version": "4.0.4",
+      "manifestSha256": "76ab255c4aa582d55d726e40a16910d1cef0d5fc4cf47018d4c957c695d2d341"
+    },
+    "strip-json-comments@2.0.1/strip-json-comments": {
+      "name": "strip-json-comments",
+      "version": "2.0.1",
+      "manifestSha256": "52fba89a1d2724dfeafa21ec58f8c4a8a210103cc6b65b4468ab3fb973ad1753"
+    },
+    "style-to-js@1.1.21/style-to-js": {
+      "name": "style-to-js",
+      "version": "1.1.21",
+      "manifestSha256": "ef8bc5b200a5a0e06ffea8b5ebb4bb596a3dbc9821a7144a5f3244d5f4b2231b"
+    },
+    "style-to-object@1.0.14/style-to-object": {
+      "name": "style-to-object",
+      "version": "1.0.14",
+      "manifestSha256": "54ea1a1438b9cb9a02e9f62339d1f4d17c6d896224fe431495605f7e5a4972f3"
+    },
+    "tailwind-merge@3.5.0/tailwind-merge": {
+      "name": "tailwind-merge",
+      "version": "3.5.0",
+      "manifestSha256": "1358964098a2e5c2d23ff14d01db747b852a0a368ada191fc223de7c456101da"
+    },
+    "tailwindcss@4.2.1/tailwindcss": {
+      "name": "tailwindcss",
+      "version": "4.2.1",
+      "manifestSha256": "ac2d41af33338d2d0a96190ab84b5419187da9f1fc6d2c91fb5b83238e746b46"
+    },
+    "tapable@2.3.0/tapable": {
+      "name": "tapable",
+      "version": "2.3.0",
+      "manifestSha256": "da15c616866d1951eae55c8d13debacca7619cf25d04b77b1e37f02acf87eb9a"
+    },
+    "tar-fs@2.1.4/tar-fs": {
+      "name": "tar-fs",
+      "version": "2.1.4",
+      "manifestSha256": "ba35bcca6e868b872346f2905b3ff58fed8c99d475f9b3124afbf5de37514443"
+    },
+    "tar-stream@2.2.0/tar-stream": {
+      "name": "tar-stream",
+      "version": "2.2.0",
+      "manifestSha256": "bf26c92d0b2d3b865681bac5cf3bca4cd405e33fcb47f45216899aaed4f81010"
+    },
+    "tiny-inflate@1.0.3/tiny-inflate": {
+      "name": "tiny-inflate",
+      "version": "1.0.3",
+      "manifestSha256": "7a97c9567b054c9294036537d42a112f4bd4263892fbfe2714e6acdf25816c6d"
+    },
+    "tiny-invariant@1.3.3/tiny-invariant": {
+      "name": "tiny-invariant",
+      "version": "1.3.3",
+      "manifestSha256": "27d6815b2577f3e7184f5c69af817377a2e6a0390a68acdfd852402f81d8ba2c"
+    },
+    "tinyglobby@0.2.15/tinyglobby": {
+      "name": "tinyglobby",
+      "version": "0.2.15",
+      "manifestSha256": "473bd5e2e8708e7c5700b2196c4225b42418c310d29893d4043aece3d5dea51d"
+    },
+    "trim-lines@3.0.1/trim-lines": {
+      "name": "trim-lines",
+      "version": "3.0.1",
+      "manifestSha256": "c279da1994b06098ed6f7fde2755c78c017e91e245c35bb4770232f116597c21"
+    },
+    "trough@2.2.0/trough": {
+      "name": "trough",
+      "version": "2.2.0",
+      "manifestSha256": "ced4e1e0914cb51aac812dee30936fa47b15286927180dd97c0e257f05f07e1e"
+    },
+    "tslib@2.8.1/tslib": {
+      "name": "tslib",
+      "version": "2.8.1",
+      "manifestSha256": "f02b4851df316f29bdfcd404aa1eb41e4e216b5859015f81fcd3e91caf8be931"
+    },
+    "tsx@4.21.0/tsx": {
+      "name": "tsx",
+      "version": "4.21.0",
+      "manifestSha256": "6e764b21991c21595441f82387c1451ccd10a3e7a3f0973cc5e3649a12dea7d2"
+    },
+    "tunnel-agent@0.6.0/tunnel-agent": {
+      "name": "tunnel-agent",
+      "version": "0.6.0",
+      "manifestSha256": "08a8560b650b49370af44148a8645c11675ba97d21ee7f347d8d434b13c51074"
+    },
+    "tw-animate-css@1.4.0/tw-animate-css": {
+      "name": "tw-animate-css",
+      "version": "1.4.0",
+      "manifestSha256": "66849c41b809ccca55c6484bf102044c73847b21a7d3bc3fd95df133c0a578e1"
+    },
+    "tweetnacl@1.0.3/tweetnacl": {
+      "name": "tweetnacl",
+      "version": "1.0.3",
+      "manifestSha256": "929dc634f6c254c5881612db9a4c52e2ef16cc1b3e3da3343b9e31e6cf037448"
+    },
+    "typescript@5.9.3/typescript": {
+      "name": "typescript",
+      "version": "5.9.3",
+      "manifestSha256": "822ef7ca6452205657b6288b066481ecf508bfbf43455d715cf7d3ec457561e6"
+    },
+    "undici-types@7.18.2/undici-types": {
+      "name": "undici-types",
+      "version": "7.18.2",
+      "manifestSha256": "01701286a0441eddf1cd47d488047d363ce7d75466e7b6c89f1c605fba1c3957"
+    },
+    "unicode-properties@1.4.1/unicode-properties": {
+      "name": "unicode-properties",
+      "version": "1.4.1",
+      "manifestSha256": "4dba3776474dc9f928749684eeaeabacb40fd0e58ef704b2c2a976201830183b"
+    },
+    "unicode-trie@2.0.0/unicode-trie": {
+      "name": "unicode-trie",
+      "version": "2.0.0",
+      "manifestSha256": "11742ae162c45a0f55a4d85ae1c6dc7dd380e203173d3bca04e72ca3b68729b6"
+    },
+    "unified@11.0.5/unified": {
+      "name": "unified",
+      "version": "11.0.5",
+      "manifestSha256": "f91a44220f8b7c4a4de6ebaab6fc23b92d29a95cb7e5e6a7f0f24d199779fbad"
+    },
+    "unist-util-is@6.0.1/unist-util-is": {
+      "name": "unist-util-is",
+      "version": "6.0.1",
+      "manifestSha256": "0838fa706c4cbda37f47ac4c915fab0b6be3c99aeeb81060d22ec6532fae6272"
+    },
+    "unist-util-position@5.0.0/unist-util-position": {
+      "name": "unist-util-position",
+      "version": "5.0.0",
+      "manifestSha256": "dc3ad29ef3bd19907cbeeda81cf6ea872f15cfff319b4663c7206d16a2a1cf40"
+    },
+    "unist-util-stringify-position@4.0.0/unist-util-stringify-position": {
+      "name": "unist-util-stringify-position",
+      "version": "4.0.0",
+      "manifestSha256": "2fb7e8fcbf4e701e62f07887bd9f16e699e29c87a19acd128c11788fb9e27c0e"
+    },
+    "unist-util-visit-parents@6.0.2/unist-util-visit-parents": {
+      "name": "unist-util-visit-parents",
+      "version": "6.0.2",
+      "manifestSha256": "6b00f27056337866d9206719b72a62c299a11903cdf622f307c92059723845e1"
+    },
+    "unist-util-visit@5.1.0/unist-util-visit": {
+      "name": "unist-util-visit",
+      "version": "5.1.0",
+      "manifestSha256": "98bf89a2331cae3cb26b4ad27a1cc78cb0f00edb9a7534491b111a34423e9a8a"
+    },
+    "universal-user-agent@7.0.3/universal-user-agent": {
+      "name": "universal-user-agent",
+      "version": "7.0.3",
+      "manifestSha256": "711a4829395621bf08f9bf4b1c1bbcda6e926bdcddbeb5b9f1b9bf7b2f04909e"
+    },
+    "update-browserslist-db@1.2.3_browserslist@4.28.1/update-browserslist-db": {
+      "name": "update-browserslist-db",
+      "version": "1.2.3",
+      "manifestSha256": "c8bce7050b48895e9d926a4fd61b252a2bf9a99cf624dc607397e5f168a6bb87"
+    },
+    "use-callback-ref@1.3.3_@types+react@19.2.14_react@19.1.0/use-callback-ref": {
+      "name": "use-callback-ref",
+      "version": "1.3.3",
+      "manifestSha256": "1fb8f0b34573d1d4057710e559488dbfdff0436cd01d318e20bf66e4cd165318"
+    },
+    "use-memo-one@1.1.3_react@19.1.0/use-memo-one": {
+      "name": "use-memo-one",
+      "version": "1.1.3",
+      "manifestSha256": "ca36af65795ace448bb9577b612a6c7323b8f93541b7c0da057142b44afa8593"
+    },
+    "use-sidecar@1.1.3_@types+react@19.2.14_react@19.1.0/use-sidecar": {
+      "name": "use-sidecar",
+      "version": "1.1.3",
+      "manifestSha256": "a8703897c0caeb8ddfa35ef4b622bd7ebd677ea3fc6c97a0264574552e9404e1"
+    },
+    "use-sync-external-store@1.6.0_react@19.1.0/use-sync-external-store": {
+      "name": "use-sync-external-store",
+      "version": "1.6.0",
+      "manifestSha256": "dfdead719ce161e1c5edbf0fca0ce0e7d70ba87c8a8f249856c0afde81595f24"
+    },
+    "util-deprecate@1.0.2/util-deprecate": {
+      "name": "util-deprecate",
+      "version": "1.0.2",
+      "manifestSha256": "7bba467f049074957e693fc06672848b040c38fa071b6eed8690f5fbe090a8b2"
+    },
+    "vaul@1.1.2_@types+react-dom@19.2.3_@types+react@19.2.14__@types+react@19.2.14_react-dom_2e22e060654e8c27168982fa81f27caf/vaul": {
+      "name": "vaul",
+      "version": "1.1.2",
+      "manifestSha256": "23fe9f23330b97e7c4f8a692cba70b9b0390532c589943f854a2f0aa7b0e0eca"
+    },
+    "vfile-message@4.0.3/vfile-message": {
+      "name": "vfile-message",
+      "version": "4.0.3",
+      "manifestSha256": "407fa964ad59ce6c07cd50f0e6c77366744b952910a5bbb64def63a55bf6a82d"
+    },
+    "vfile@6.0.3/vfile": {
+      "name": "vfile",
+      "version": "6.0.3",
+      "manifestSha256": "359ca117da48c3c42c73b9032369a412c5ad3462549d85aba090461e35227745"
+    },
+    "victory-vendor@36.9.2/victory-vendor": {
+      "name": "victory-vendor",
+      "version": "36.9.2",
+      "manifestSha256": "d1b66abeb4072c2c5137b5a82ec7b24b63966c4580cec8592bb504f7fa608a83"
+    },
+    "vite@7.3.1_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/vite": {
+      "name": "vite",
+      "version": "7.3.1",
+      "manifestSha256": "116af0821317eea464b9e69afda7c68b70b1caf51abe3218001b0e2175d3bed6"
+    },
+    "wrappy@1.0.2/wrappy": {
+      "name": "wrappy",
+      "version": "1.0.2",
+      "manifestSha256": "712ac9c4c3cef8bc79f42cf6075ff18551f4cb768f35158214fd643853ad7abc"
+    },
+    "xtend@4.0.2/xtend": {
+      "name": "xtend",
+      "version": "4.0.2",
+      "manifestSha256": "b02ffef8cda96c5c3ee00a00390e63f608362c2ddfb3ed754e181d013a45d48a"
+    },
+    "yallist@3.1.1/yallist": {
+      "name": "yallist",
+      "version": "3.1.1",
+      "manifestSha256": "27699a6415a43f128c0e8ddcd5bf6e265f6cf3a581a9d959c11b977244fadc34"
+    },
+    "yaml@2.8.2/yaml": {
+      "name": "yaml",
+      "version": "2.8.2",
+      "manifestSha256": "1a541263c65ace454cc9ddaa9157c335855a4ce1617b0c562b67373049e395d7"
+    },
+    "zod@3.25.76/zod": {
+      "name": "zod",
+      "version": "3.25.76",
+      "manifestSha256": "70eedbe34fd52385a4ae2f3e5759b19682189f0118ea73a6e7c32c677f61668e"
+    },
+    "zwitch@2.0.4/zwitch": {
+      "name": "zwitch",
+      "version": "2.0.4",
+      "manifestSha256": "01d215553746b3bd19ae5b31cab656830d38e40b6edea656b9b18256916cda0a"
+    }
+  },
+  "inputs": {
+    ".gitignore": "1e1a8afd704e173b2fa6e14a7c41fcdb7b1a581c2ea0f372fd893efeae1d5d42",
+    ".npmrc": "1ded4f26f4851b35dae702edd5719d1be5ff31db6983858d088d5e6593ea7c99",
+    ".replitignore": "e445c6d406c24ac13e77ae1e2f8e1477f81a8ac8047a34770c5f029c035cce61",
+    "artifacts/api-server/server/frontend-producer-auth.js": "32fabe41bad9ac88140196638b885e07af1aed35a69bea2b0383db65dd84c1a2",
+    "artifacts/dj-booth/homebase-vite.config.js": "6188c3ac6b1649f8663d4af0986e763b4c3cd98ccadc547ed1c965400487d3d9",
+    "artifacts/dj-booth/index.html": "9178266126770b288599b3bcb07e43ebb459e76b79825a096036bd4277b6a890",
+    "artifacts/dj-booth/package.json": "abd160b9f573bbe0ae416c721be61edeffee41525a57bbb5eeec7f710d01e257",
+    "artifacts/dj-booth/public/favicon.svg": "8ffbde9092b1fa4de97c9481b76f518b131268c82e7c555041925225b1dab6e0",
+    "artifacts/dj-booth/public/opengraph.jpg": "d63d2f364cff746d184fb5036f1bd047a161f2deb2d37125bed3b562468a839b",
+    "artifacts/dj-booth/public/public/download.html": "3ee16379a6c0bc1c8b05c96a0e0e661b043026b803d29491624407599fd4917b",
+    "artifacts/dj-booth/public/public/fleet-dashboard.html": "83200cc31ad2671479b909f1c3e8ef1ecf9a430586504e791cd2fc54dfd6a899",
+    "artifacts/dj-booth/public/public/fleet-monitor-standalone.js": "5d4404829e21db841545c081c1f1b0ca055c10ff942075cf25030bf7f2059df5",
+    "artifacts/dj-booth/public/public/manifest.json": "fee523c2c7a544b145312cae4cc442945c48e775b4948e7bc4010f73aa391f6f",
+    "artifacts/dj-booth/public/public/neon-ai-dj-logo.jpeg": "994d03a690d28c29be6a5efeb2d2a7613d7e3833e916b88997cb5855bed24645",
+    "artifacts/dj-booth/public/public/neonaidj-icon.svg": "9bf5c8b7ce2154da823e2aada60fc4e799fd57764e9d8f030da5a5765929dea2",
+    "artifacts/dj-booth/public/public/runtime-lock.mjs": "e41e746f2c10d0d3914a37060aee3a64a7d2089c5f5f0845ba04722a050d2c39",
+    "artifacts/dj-booth/public/public/sfx/air-horn.wav": "a9b96e593b03c587cb69d9afa09d746aa5b52e7f051ea700cc14ccac53242c0a",
+    "artifacts/dj-booth/public/public/sfx/bass-drop.wav": "813bd6b256690da06c4ec8af203e1d4e190abf91a22706d668578224589a42e3",
+    "artifacts/dj-booth/public/public/sfx/cinematic-hit.wav": "b087005a15ffa6e1bb857e34c0673a5d87d5a8cffc3e3aa475d059afc4535f6b",
+    "artifacts/dj-booth/public/public/sfx/deep-impact.wav": "14db8d014c6a9d6482843ac84e7094f0e710d0fd259eb36255acfa025cea88ac",
+    "artifacts/dj-booth/public/public/sfx/dj-scratch.wav": "a5031bb654536f96cbe0e0a71cbafedc08714a68785a7d2809714114c20a9cb8",
+    "artifacts/dj-booth/public/public/sfx/laser-sweep.wav": "fe304bb445ac95564798923c0dfea9b6e431d731e5c2dda53e7735ce5d3aba3a",
+    "artifacts/dj-booth/public/public/sfx/power-down.wav": "a2b0b532447e9accfa4f30deeea234805fafe70afb985679a645484731f5953c",
+    "artifacts/dj-booth/public/public/sfx/reverse-cymbal.wav": "d34b41dbf42bdf7195a04ee2128e834972e0c059046932b0a645b91985f329e5",
+    "artifacts/dj-booth/public/public/sfx/whoosh-fall.wav": "bbb76903dc6d17603eb2b317e187c3ba839b65c1890ea74b37177b344439009c",
+    "artifacts/dj-booth/public/public/sfx/whoosh-rise.wav": "1c4a852aee2cf0e4233ad52a688d41e964b3f41f5e6fd2ee127bbc6fe7b334e9",
+    "artifacts/dj-booth/src/App.jsx": "f420c52780ecb95438755a903c1f51102993d5930c9b034684ef11936f79bf74",
+    "artifacts/dj-booth/src/Layout.jsx": "0f2fbe67a88ea0bfaeb01f9462d52f878949250cb20cd33029c6ffed80b4949a",
+    "artifacts/dj-booth/src/api/fleetApi.js": "826e2be620450f449bef4a5edb2e87e1d1e00397d85ee53faf93498daff45ee7",
+    "artifacts/dj-booth/src/api/localEntities.js": "02c5077a5a8bbd6029ef98c12d166fab80a31b142e33f74612390b83feb875a4",
+    "artifacts/dj-booth/src/api/serverApi.js": "1903664454ad68e26ab7e4d6e3605ab5c3a6ea09ee5bd359fa07bc9b97356402",
+    "artifacts/dj-booth/src/components/BootScreen.jsx": "daf9ab498d4fecf87cebaa958c571e9528534875be477f6219c551b757eff086",
+    "artifacts/dj-booth/src/components/LicenseSuspended.jsx": "ba4260ea9f664abe0d3e422d697416a1249103e39bd8eef5ecfbc2e67175815b",
+    "artifacts/dj-booth/src/components/UserNotRegisteredError.jsx": "5cecb11fe2fb3a03a73e5845b5ee9d26c9255e80feda689b3dfc70822ba288f1",
+    "artifacts/dj-booth/src/components/VirtualKeyboard.jsx": "110047adc4eb9357cd60bb3850a871f49c7bf09a8e378b42c8ed07c369a1ecf6",
+    "artifacts/dj-booth/src/components/apiConfig.jsx": "f63748537ea49f51b6bfe8055310b6d54b28d5f8f1273e8458015d94a1839996",
+    "artifacts/dj-booth/src/components/dj/AnnouncementSystem.jsx": "dd3817c5533b74de049e757ab60c93b060a8be038a8acc279fb9f7a25d80db2b",
+    "artifacts/dj-booth/src/components/dj/AudioEngine.jsx": "b5e8f770629ed4e191d1ad05de0e1dd6097f9558d28f5e49f65f8744aafa7f73",
+    "artifacts/dj-booth/src/components/dj/CommandStatus.jsx": "d18dfa48acddce6233a8c83fc594f053f8788c9ba3658680ab71fc2858c224e9",
+    "artifacts/dj-booth/src/components/dj/CustomSoundboard.jsx": "49b0cf8561b0e0cbc99e9bd533d013684516047b2fd5d81e4faebe8ed64daea2",
+    "artifacts/dj-booth/src/components/dj/DJOptions.jsx": "5184b86fc1f3bd72cf1b0423ebe0a3b14f1a9e64f8eae828c13542169645a4cc",
+    "artifacts/dj-booth/src/components/dj/DancerRoster.jsx": "9271d778ad7cd10ba19986ee22b1cee4799d38e19761999fd8145d3f9133faf9",
+    "artifacts/dj-booth/src/components/dj/FeatureEntertainerPanel.jsx": "cf61e300150da9efa4c080300fe60735fe52c26fc6e619dfb92c42c1664c7324",
+    "artifacts/dj-booth/src/components/dj/HouseAnnouncementPanel.jsx": "ca199a2ddba2a55eaf0b5ee0a4f39d4ec9d8067d823fc4b2e956e3cbc85440a3",
+    "artifacts/dj-booth/src/components/dj/ManualAnnouncementPlayer.jsx": "c931ada87cb43a2ceef2f91cb7a00cac9ad408badb83b70ab3a6ef5aaca08fc3",
+    "artifacts/dj-booth/src/components/dj/MusicLibrary.jsx": "c955221031993b9b707c853f518341e552b1c2a60de1d6a637838a8e949f6f4c",
+    "artifacts/dj-booth/src/components/dj/NowPlaying.jsx": "b50e8d139eaca54c1111c3a1d254db792e7519d708804df39614da0c57114f53",
+    "artifacts/dj-booth/src/components/dj/PlaylistEditor.jsx": "7c61c92a505cd288f156a0bd35da99daa5004854bb2cf8669f61c3b655f82d77",
+    "artifacts/dj-booth/src/components/dj/PressAndHoldDuckButton.jsx": "978bd7402c8f7756f1661cc4518ea043aa1798f04526d991a6fb838e5d109362",
+    "artifacts/dj-booth/src/components/dj/RemoteView.jsx": "3e063272def2ac82ae5a80ed47fd162ac287b9de60dfd032ce7ee76e45cace35",
+    "artifacts/dj-booth/src/components/dj/RotationBuilder.jsx": "fcad82bb5a797292de4a84eb78b5531bec989907e51a755d84430f2eb6692d38",
+    "artifacts/dj-booth/src/components/dj/RotationPlaylistManager.jsx": "9ad1e3c6c0525dbf09ed5928600499a6d2b2caca9a4b69c49af9dc0c0bb5dbb1",
+    "artifacts/dj-booth/src/components/dj/StaffLoginManager.jsx": "4e055e56dadaba523c9903ed5ed4b73bca35fb89c6643da70adfceee76d63ff0",
+    "artifacts/dj-booth/src/components/dj/StageRotation.jsx": "015ce12e4dadb40d773bf7f6fef9f771054522f5c2d09eec34336fe9b63b64ee",
+    "artifacts/dj-booth/src/components/dj/ZoneProDailyControls.jsx": "6904aaa8805fc5ab04014ce7fedd38c5a30f121a3eec0a701dce507db076fcf6",
+    "artifacts/dj-booth/src/components/dj/ZoneProWorkspace.jsx": "54088f68e9b8c45f3ae0fa9a153df192c5fc670df4944fc72efdaa76d2f112e1",
+    "artifacts/dj-booth/src/components/ui/accordion.jsx": "b47533b3783b8149550b8481e4ae93d54bdcbc51d434793c176b0aec5558ee1c",
+    "artifacts/dj-booth/src/components/ui/accordion.tsx": "dcbfb3243a26096fc3e5f54039ccb5c4c23d9bb79a4d5846b4be75bf912f07d9",
+    "artifacts/dj-booth/src/components/ui/alert-dialog.jsx": "23f978a2555e09a1bf0708c8b852135ddfd8aab00d917f40f3d6de3dcaafab75",
+    "artifacts/dj-booth/src/components/ui/alert-dialog.tsx": "8f5a717fb2861332e5553b920949fc418553e3cad0000795d4e9d5a1fb852abd",
+    "artifacts/dj-booth/src/components/ui/alert.jsx": "c5baf27fb6a4bf130236fa0f336c21084fee192e8215bb6b20c87436c27f3b38",
+    "artifacts/dj-booth/src/components/ui/alert.tsx": "5950ac01377e7eedc94b00eb3fee678745e4cc1a72b5343867f0733d07db6660",
+    "artifacts/dj-booth/src/components/ui/aspect-ratio.jsx": "08b0aa0b05efc573c7d63363c03e83d4b101bfeb54140764e96ddea30659cfcc",
+    "artifacts/dj-booth/src/components/ui/aspect-ratio.tsx": "08b0aa0b05efc573c7d63363c03e83d4b101bfeb54140764e96ddea30659cfcc",
+    "artifacts/dj-booth/src/components/ui/avatar.jsx": "703fb6852952bd039b68dc494c004eee1d835fa12647b851722ab9b6b3058b32",
+    "artifacts/dj-booth/src/components/ui/avatar.tsx": "e78b35ed76c67d8ff50603fbe0dfa4fe600097bd860d89e65beea3e16683dad8",
+    "artifacts/dj-booth/src/components/ui/badge.jsx": "380dcda78ff8fdd80c82b89cb7dd38ffd84c355735fc8f16300ff647e15988aa",
+    "artifacts/dj-booth/src/components/ui/badge.tsx": "3c339f439797dba9b3872a9d89db42420ffd900504b4e0b27e9dad51e87bc41c",
+    "artifacts/dj-booth/src/components/ui/breadcrumb.jsx": "4c0972765dc0212c5101446cb931db44b7db68a21ef9d7bc8a75c46f9bb96e42",
+    "artifacts/dj-booth/src/components/ui/breadcrumb.tsx": "c3d3dcb0d82fc5e91d8830bac7fead905686fe876f1f42c3ed872bb0a6b6584e",
+    "artifacts/dj-booth/src/components/ui/button-group.tsx": "e3716d270e9ef6457b5cd29464ae00194abc8093c08ebf726c9204d7a69231d9",
+    "artifacts/dj-booth/src/components/ui/button.jsx": "33481560c740cfc156250ca152dcb566d8a1da027a181e3123fe3d3b93f7963a",
+    "artifacts/dj-booth/src/components/ui/button.tsx": "9a9edf4fda319623ee228d5cb26ac31dd008dcfd5c57dbafe3b7d768e59e50ca",
+    "artifacts/dj-booth/src/components/ui/calendar.jsx": "06e0c81497bda70ac24855b54fddd385557cbc3be8d8066a345bedbec551b3ee",
+    "artifacts/dj-booth/src/components/ui/calendar.tsx": "787a19c855cf2b826942d25440b63150c45094154c6a40e95abdb4109298b8b4",
+    "artifacts/dj-booth/src/components/ui/card.jsx": "8ab6f42e722e9c51752ce2f14aabb2696bddc0b6818041fb8f313f670955c2c4",
+    "artifacts/dj-booth/src/components/ui/card.tsx": "525c4bb2c051987be64df0e92e1d90174912b219bf541e24ffbc4a3406de49e8",
+    "artifacts/dj-booth/src/components/ui/carousel.jsx": "55eb9456609f96f5c28c1fa35fe79554fc0ffab12883e3aceb041ff10e347e83",
+    "artifacts/dj-booth/src/components/ui/carousel.tsx": "5a4ff73c804e86c873382da80c453f1399006326ef042fb984c24162ec86666e",
+    "artifacts/dj-booth/src/components/ui/chart.jsx": "c4684b470cae53b857a08e5fe006d4406450a442a103858beb179ec810aba2b3",
+    "artifacts/dj-booth/src/components/ui/chart.tsx": "b40d1236f168c746b228adec6bc4e9d196ea362a7910878f161d3c359a013b89",
+    "artifacts/dj-booth/src/components/ui/checkbox.jsx": "b0260cb7767493d8273f5def1b7d32e844d068db5f5760258d333ae6ad88f0d8",
+    "artifacts/dj-booth/src/components/ui/checkbox.tsx": "ac389a574651c8bedffc10f80674c5fc2f02ab81291a5f4ad9c587d1f775fdce",
+    "artifacts/dj-booth/src/components/ui/collapsible.jsx": "f4cdd104de29928bfcd40b865c7d08eed9157a537fbb8b5e6d0921f02b63cc04",
+    "artifacts/dj-booth/src/components/ui/collapsible.tsx": "f4cdd104de29928bfcd40b865c7d08eed9157a537fbb8b5e6d0921f02b63cc04",
+    "artifacts/dj-booth/src/components/ui/command.jsx": "e7cea37aff49e211ffea1bf3ed67add6ce1ab29862e902aff739fcd11014f06f",
+    "artifacts/dj-booth/src/components/ui/command.tsx": "5a57ebc119f2357b097098d22865d45de8fda623ee88fe98b99999838c13633b",
+    "artifacts/dj-booth/src/components/ui/context-menu.jsx": "5fe320cad9ee1833e9528f86e340f83f419f77790549f4cff083fad329e8dc4c",
+    "artifacts/dj-booth/src/components/ui/context-menu.tsx": "5369fc82c51df067aec2934f5e711aaf9e3f745ed7baadd7ba4b77397dee2a1b",
+    "artifacts/dj-booth/src/components/ui/dialog.jsx": "903400f2533aa40dbeab9801a41b62c85134c6169184f50adf0c97f35ae89182",
+    "artifacts/dj-booth/src/components/ui/dialog.tsx": "71fdaf03b3cb3b3fef632c7ab59c25e48d5f5c1df8c1c40913720d7f0defaf23",
+    "artifacts/dj-booth/src/components/ui/drawer.jsx": "d4c11bb5aaaa82702dce69c0b17d7d85a6cae7dfcba69f6148099fe55acc3611",
+    "artifacts/dj-booth/src/components/ui/drawer.tsx": "407d572032876be1f3f667048cc8c6fe6368858510551247c38d7cd06a9c33e8",
+    "artifacts/dj-booth/src/components/ui/dropdown-menu.jsx": "d36cd67e71781bbb03059b057b6f686445477a4275120359178729574398c465",
+    "artifacts/dj-booth/src/components/ui/dropdown-menu.tsx": "dc109123ecd59af01d07aa9f3a8e8a7085bd3f337388c5369799ab1ce6c2d45f",
+    "artifacts/dj-booth/src/components/ui/empty.tsx": "9f975582a0290dbc7ce6efa3b36b376a4c3f07863026c3b74c1e73cb0023acb8",
+    "artifacts/dj-booth/src/components/ui/field.tsx": "e463611ab049c5e9b1c61691d239e05970ead7b577a191b3f80aa6f8ffccada9",
+    "artifacts/dj-booth/src/components/ui/form.jsx": "d899b071230c321acdb2996cbe02d84a46dd9825f81af1015f7e54c6b9ee211c",
+    "artifacts/dj-booth/src/components/ui/form.tsx": "d50adf86568f76246f0f319c9e1e858627475563f6c1e38f5df7d4ee23958559",
+    "artifacts/dj-booth/src/components/ui/hover-card.jsx": "3b49e533ad60995767a3419351642037438e8f27b62132115fc71115cf1fd0ad",
+    "artifacts/dj-booth/src/components/ui/hover-card.tsx": "00f9086b1412843e04e01d31d2fab00a25d65d789d1a382e41f01b1f3c167c3b",
+    "artifacts/dj-booth/src/components/ui/input-group.tsx": "e9dad28bc940ca29714312d6c75d83bfe63f0cf7f9a384d2a2969a00a1d79700",
+    "artifacts/dj-booth/src/components/ui/input-otp.jsx": "78a437a82203c1d9d22d47db830bdc67d49d6473c5c28ad77634eeb8c399a649",
+    "artifacts/dj-booth/src/components/ui/input-otp.tsx": "7c4799e3597f2780c09a39a1391b921fa16eaedd0476457492af734f58e2ec98",
+    "artifacts/dj-booth/src/components/ui/input.jsx": "4455aea152904f128df0ecd82047bbceb23e06ffcc9ccc7cbb3bcc87df5bcc4f",
+    "artifacts/dj-booth/src/components/ui/input.tsx": "6299a6a387dc55e528aec4342deaea0b83f1ea3a365c135a31a18ee55334f441",
+    "artifacts/dj-booth/src/components/ui/item.tsx": "90983640aa7cfef8217422347d8e14825cf55137c76369decacf440767f03188",
+    "artifacts/dj-booth/src/components/ui/kbd.tsx": "0c025e7736d435f563bfb44105e562629672799eb1f35cbf194148d06cd1a9f7",
+    "artifacts/dj-booth/src/components/ui/label.jsx": "37c6425d2a5c798ade4e60f89f86054d703433a8977e12d796de2b5bb4e3d0b7",
+    "artifacts/dj-booth/src/components/ui/label.tsx": "2eac8fbb04002c42b0fbc4062d20d131e421796eaf65c37d2049e29e42ecbc5a",
+    "artifacts/dj-booth/src/components/ui/menubar.jsx": "5411f1b8221d9a34fc9b58f830642cfa3a33c776d0072014690e2f024515391d",
+    "artifacts/dj-booth/src/components/ui/menubar.tsx": "def61eb2c47c9ec319423471f4ca20045e99549958211cacf832e4ede769e484",
+    "artifacts/dj-booth/src/components/ui/navigation-menu.jsx": "a1f789747cb750329a33ee04c54209b044239a15ba200fb9d7da1f2ce6b73403",
+    "artifacts/dj-booth/src/components/ui/navigation-menu.tsx": "a06d96a582ac207ffcd38445d773c05e841d646efb185b5e9b65f73e5bd388c7",
+    "artifacts/dj-booth/src/components/ui/pagination.jsx": "1d519fc3ba1c8c6cf7f2d30c98739ecba2fa7af35cbc024d6793785e7a6d65c8",
+    "artifacts/dj-booth/src/components/ui/pagination.tsx": "9506dbd19ddd0c2810d1c9668a3f01606e39d9bf33ddc43329523c03bf629012",
+    "artifacts/dj-booth/src/components/ui/popover.jsx": "0c1ae6d415ebdb533b19a1976ee60fe5fabf8059f8fdb8fb89e9c85bbd6cdfe9",
+    "artifacts/dj-booth/src/components/ui/popover.tsx": "f896c92808269762449c11696666a18a5767ffc6b20bad91852d3f5fd5dc05a2",
+    "artifacts/dj-booth/src/components/ui/progress.jsx": "1ad2808d51c365f04f23a4e985b03274dcc30735d74db68e1f78332a6533859c",
+    "artifacts/dj-booth/src/components/ui/progress.tsx": "6b3b4b69a1cb361076174892e9a96e1a09020307616965ef89f2f7e2495b57a9",
+    "artifacts/dj-booth/src/components/ui/radio-group.jsx": "10ced1e6932e4fe53d6c18201f50b8bb4b334b4372f01ce5f0993aa2a6bb9110",
+    "artifacts/dj-booth/src/components/ui/radio-group.tsx": "9ba7808b7404cdf2159c81883a39290033bc4308f2978eb80797c92b87421301",
+    "artifacts/dj-booth/src/components/ui/resizable.jsx": "4e74fb31b8321012570554dc8c55a58aacf1adcced2fdc43085c67ff96ce9773",
+    "artifacts/dj-booth/src/components/ui/resizable.tsx": "70d1e35a5fb0897af7063cdd841d8ed636e1c332ef7ea6469f0f175a5a93dddf",
+    "artifacts/dj-booth/src/components/ui/scroll-area.jsx": "3de4bed34be51a940243b0fbf8c6d9324ecb416a91a919d65ca18d15a7ba32a1",
+    "artifacts/dj-booth/src/components/ui/scroll-area.tsx": "d7d02600effca55d0dcadce8c09c97ebddda3a19c5fa1d52dc9f6f727b26c6b1",
+    "artifacts/dj-booth/src/components/ui/select.jsx": "15c7a0e4c45b655ffa8d3f3be8bdaab727a19fd6baa95b34056bf02c7254243e",
+    "artifacts/dj-booth/src/components/ui/select.tsx": "3d93ae07a8f3fe121ba60f4439e26bd7859f247eb8bfcafcf4b4a8a069888eec",
+    "artifacts/dj-booth/src/components/ui/separator.jsx": "2c82247abd573d0f4a93eb259166e3b778365b58c0d18921b4739d5ba4b29e7e",
+    "artifacts/dj-booth/src/components/ui/separator.tsx": "c956c4cca4b8442fa9314d6079b9f975e1ee39d5804aaf2966990f6258ac342a",
+    "artifacts/dj-booth/src/components/ui/sheet.jsx": "7575c364f93d38a1190fee8ccb0fca733016c019159cace33cf081f4ee58c885",
+    "artifacts/dj-booth/src/components/ui/sheet.tsx": "2c681ad1ab266f31a79149d295e3a54d90861c5265d5f1ec649c48abe586514e",
+    "artifacts/dj-booth/src/components/ui/sidebar.jsx": "828bec5ac1ec715fe50deebae08a7da23f01e9b0dcb221b110e37de63eb22d3c",
+    "artifacts/dj-booth/src/components/ui/sidebar.tsx": "b023ff6245be1930e152a18c6aaa2b6dd1a11df7b05fcf41bbe483968bfb1c39",
+    "artifacts/dj-booth/src/components/ui/skeleton.jsx": "c5f32316d9f8feeba529bac6321766424067185afee5f29a15bb18145adaf1bc",
+    "artifacts/dj-booth/src/components/ui/skeleton.tsx": "87608e7cc815ad3d88e0b9de6c402bb37b58ea1b38636cf69709da1baff6e334",
+    "artifacts/dj-booth/src/components/ui/slider.jsx": "8ab04a9e13a5f2f79c4eb0e5275ebe90b06dc91055356869b771932ce78e507c",
+    "artifacts/dj-booth/src/components/ui/slider.tsx": "234e38fef59169bd02d8f5b56ca02e5ec13a0bd6846c328927b924e1299f7fb0",
+    "artifacts/dj-booth/src/components/ui/sonner.jsx": "f1309f953467d583202225d08414161fc3183758ac38c997249eb63686a27ba8",
+    "artifacts/dj-booth/src/components/ui/sonner.tsx": "771ab8637d27384c3ed030ba3be01a07b90c791c294eae06646250f8e81bc49e",
+    "artifacts/dj-booth/src/components/ui/spinner.tsx": "3e6e6e8d37fb4069f8e43e55318f8db06fbc36e6c8be0096da3c9337c1c798b9",
+    "artifacts/dj-booth/src/components/ui/switch.jsx": "880e95637cc1d90ef4476f79114afd2fa7b5f6e5da1f49a70e0efc1f84aa0c8a",
+    "artifacts/dj-booth/src/components/ui/switch.tsx": "ba5867cd3145af1290edd80bb56d4b6d61c6331aa8ef96ae0b85487f4499feaf",
+    "artifacts/dj-booth/src/components/ui/table.jsx": "301509bb8337184f1b299cb15b8d4f8ec8f0d3bbc17a2ffdf33ff58f7eaa444e",
+    "artifacts/dj-booth/src/components/ui/table.tsx": "a4a6972c2d47d465d7f02c1dc4a6cbfeda7a97e46479c1b0cebdaf26bf9b497a",
+    "artifacts/dj-booth/src/components/ui/tabs.jsx": "2515feacf81fa57e143c13699dbd39b60111034ec77ba01ffe4009a3a2c25161",
+    "artifacts/dj-booth/src/components/ui/tabs.tsx": "6f74706bc6b53f9e4bcebb5e7ab8743b616aef181edc7758b8ee905f9b2fdcd7",
+    "artifacts/dj-booth/src/components/ui/textarea.jsx": "b64a8fabf495dd59dbfd23914334ffbdfa695f506a133370603a49eca1243f62",
+    "artifacts/dj-booth/src/components/ui/textarea.tsx": "ec7c92aaed80f6923a7caa4bfe4eead395b50a7001504fd7fbb0b9381804dae9",
+    "artifacts/dj-booth/src/components/ui/toast.jsx": "8a98ef70908fd33627d09f6a5c715417b243502836539acda857843dd4817070",
+    "artifacts/dj-booth/src/components/ui/toast.tsx": "99f9f4a3e897f71d89b01c6772b2f5db51b888cecb2c8214fb2c2dbb2b3e6356",
+    "artifacts/dj-booth/src/components/ui/toaster.jsx": "fc1bce32d9a45f5be28c67b486962b90eed76742f3c0995f5fb908ffc6bde3cd",
+    "artifacts/dj-booth/src/components/ui/toaster.tsx": "1348f1a1f9820e2f1394b93cecc156a7e22f03636ab9270753985549aae2be74",
+    "artifacts/dj-booth/src/components/ui/toggle-group.jsx": "1c7566b9f2aa00f0afdf161527be90588a11386158dca55425ea0d8c0e3883e4",
+    "artifacts/dj-booth/src/components/ui/toggle-group.tsx": "dba95ead40d163af6959198ded9853a2cc9282b2cb534980f99937a65edf4e2d",
+    "artifacts/dj-booth/src/components/ui/toggle.jsx": "e8fe6de52ef73d6fa868229ae7a21e681fb3088975847d6ee65a8387731c1c79",
+    "artifacts/dj-booth/src/components/ui/toggle.tsx": "955fa1bb97505b7a8bba3f7cff1991035a9afa0e1113f5d598147e6369dbf44b",
+    "artifacts/dj-booth/src/components/ui/tooltip.jsx": "73e47a5dde6c55aca2e32e429ba95d8746ce2cca02cc718613f337b5bc9f5f19",
+    "artifacts/dj-booth/src/components/ui/tooltip.tsx": "ce6afa34fb9dae51053a863b4c3f7c6e55f3da23b00149f31a8e4402bc963be0",
+    "artifacts/dj-booth/src/components/ui/use-toast.jsx": "40f2839736597a3f7d54e4359a375c5991ce58eb341d8abb944874ac0dce9bbc",
+    "artifacts/dj-booth/src/hooks/use-mobile.jsx": "a136217739e79f9d02440e711b9bd1abb6adf60f1a83b45a39a009a09568ad1c",
+    "artifacts/dj-booth/src/hooks/use-mobile.tsx": "ad0936f84f1df79d3697bfbff9c18f8ad58431c1cbaf2359c6a853b0fcc9f28b",
+    "artifacts/dj-booth/src/hooks/use-toast.ts": "5aab0623ee24bddf9420c259a23a06996292e38ea70eccbac2715516f6d01a0b",
+    "artifacts/dj-booth/src/index.css": "789d6a91db42d6971deeae456b2a9ecafd510df4be9906efb629e606b7dd39d3",
+    "artifacts/dj-booth/src/lib/AuthContext.jsx": "6b305b94ba2df11a9785010d06ac0a6cb107a5b875c287ffed883f366ae9c8af",
+    "artifacts/dj-booth/src/lib/NavigationTracker.jsx": "c7097dba48583da334978092ba43a23ece78091b5f47e52fd04b5a9295686170",
+    "artifacts/dj-booth/src/lib/PageNotFound.jsx": "9dc1de9cdb9958ea189263c456fab9b9144b75c7cc225d4cc832486f1c6ea577",
+    "artifacts/dj-booth/src/lib/errorCapture.js": "973e5053145b3f390c825d8788591d1a344a93597561be48ab0ed6bfc5a9f887",
+    "artifacts/dj-booth/src/lib/license.js": "c515702b2da95642b1bfc06a51af4943a0b7c100fb53dc2401ce10283855457f",
+    "artifacts/dj-booth/src/lib/query-client.js": "0a080b6d9a1ed9f5f32150d9e3faa928f955d2b8d6206831e2b1658e84612c92",
+    "artifacts/dj-booth/src/lib/systemHealth.js": "3ec3c7fd9fd65e2220f6d0a331ff6f7026544c3fe5f85b5d3f3c5860150f8746",
+    "artifacts/dj-booth/src/lib/utils.js": "4f592359765d69c32c3617700fa111af9a6a9cac8f18cb1987c25503a343c203",
+    "artifacts/dj-booth/src/lib/utils.ts": "7c8c3dfc0cdd370d44932828eb067ef771c8fe7996693221d5d4b90af6d54f2d",
+    "artifacts/dj-booth/src/lib/vkbd.d.ts": "ba9c2e282f0f2258d6408be1cd533a3c78bfbcfd7a68e6ad60b299060ad98511",
+    "artifacts/dj-booth/src/lib/vkbd.js": "f1f05a2897ca65120aadd9f646280c14b827533fae631b8f51b7b57cbc40558c",
+    "artifacts/dj-booth/src/main.jsx": "ec595cfe7d1410dabf4fef248809f01fd2d5d9c192653ecf8b00e7cd65302007",
+    "artifacts/dj-booth/src/pages.config.js": "633905fc882d1e88a7602267f57f40c4788645ce45e9a0bd3e16cb653885d960",
+    "artifacts/dj-booth/src/pages/Configuration.jsx": "9c8a6cd211550af797f86c3042198ce50c4239a4635ab971dc516f9286fbe0d6",
+    "artifacts/dj-booth/src/pages/DJBooth.jsx": "546b570ed31302d0d3f2934ce08c51bfa7477abb4aeb18f2a33344f4023c8737",
+    "artifacts/dj-booth/src/pages/DancerView.jsx": "9fe48aa062a2b613702c3045ac69d76ed037c758a921f450214a0e87304ed10b",
+    "artifacts/dj-booth/src/pages/FleetDashboard.jsx": "53e56c8fbec5b229dc6c57f42cd9a0dfd98ce42ccd5f8455fa44adca0b991eb4",
+    "artifacts/dj-booth/src/pages/Help.jsx": "6e37e43ab8177b1955adf4f019efef9fcf65f45d876c9f3675fdaa99bcfd9344",
+    "artifacts/dj-booth/src/pages/Landing.jsx": "caa7f49e982d34bcdc685b3ca5cccee9f01bcf30ec08c24f7542bd99795be450",
+    "artifacts/dj-booth/src/pages/RotationDisplay.jsx": "fada8fedc2efebf785526c0f5c1ce07781c228f079fec6c0768c1027d4310c99",
+    "artifacts/dj-booth/src/pages/VoiceStudio.jsx": "40f7b2986cfa502f815a4ce56dc1bba22aa9bf75193a1d7fb2ef334711276107",
+    "artifacts/dj-booth/src/pages/not-found.tsx": "718a41bd05a163d1db32480aba013f5fe754894e656b6542a8e4b302275b172e",
+    "artifacts/dj-booth/src/utils/activeSetCursor.js": "c22a0cb23a13bf3a9909639972f6ee9f353c35d8bc5521f917131a65236f3a46",
+    "artifacts/dj-booth/src/utils/activeSetCursor.test.js": "79b76804b7ca842757825c64eee5b6d4cf75bd667f7c4063d2ea8018dd259d9b",
+    "artifacts/dj-booth/src/utils/announcementLifecycle.js": "aaceb0a79f8f7cd9a79beb2615ee9253adb8d394e02fafebb71bd13831882b83",
+    "artifacts/dj-booth/src/utils/apiCostTracker.js": "029ba77c3054a5b592834c01ad927216d0a0250e24ca53c915eb326e72f97337",
+    "artifacts/dj-booth/src/utils/audioMixer.js": "0881815921d79fd17904e54c31d967eebe87641ec2e54230949a80d8bdf0bff2",
+    "artifacts/dj-booth/src/utils/audioPlayback.js": "5e3356baefe88f922820e23bea8e51cbc7b26854db409f7b31ab7176463543b7",
+    "artifacts/dj-booth/src/utils/audioPlayback.test.js": "d56ec9a2cec198b0c7013d3e03df232d9ac6046cb8765f6be63ec361ba05a75d",
+    "artifacts/dj-booth/src/utils/audioStartup.js": "72a30366141324aaeb657c575b2af30b7ed39de41f369ff1f3796d64c429e4ba",
+    "artifacts/dj-booth/src/utils/audioStartup.test.js": "e4827011b260649c085f48d3ad7f08526a83858ec6b2bb86c3c9a7f8f2330ed1",
+    "artifacts/dj-booth/src/utils/automaticTrackSelection.js": "95900bca3657d60f11292240854fe61ec118853f8cacc3f1955e6131c9ae5d2f",
+    "artifacts/dj-booth/src/utils/automaticTrackSelection.test.js": "82e7b00bdeb97a3ae1ec9ab16a91ae594c9714ddb572d0e75801b700c9052cc4",
+    "artifacts/dj-booth/src/utils/boothCommandFlow.js": "08830fac10fdd8c1213434961d9a8633a0c651891b3e7ded58b04708aa535674",
+    "artifacts/dj-booth/src/utils/boothCommandFlow.test.js": "b55937833b4202a8b53ad7217175ecd12792daf9814b971ca16a4070c8533123",
+    "artifacts/dj-booth/src/utils/boothCommandRuntime.js": "bb23b073bdddf6460b1e00dcc7936215179971144aa6fc09d59e31e8064100fe",
+    "artifacts/dj-booth/src/utils/boothCommandRuntime.test.js": "b0f1c237bce7e4ca1758ea75210da146eae70a93ffd58696d9d5b58fb56f77c2",
+    "artifacts/dj-booth/src/utils/boothStateSnapshot.js": "607ac8eba5c21b3e4779846cc47a6314ad0ca8ff87cb2bd8a083f620ab1483cc",
+    "artifacts/dj-booth/src/utils/boothStateSnapshot.test.js": "33b01285df574b0c8df6bb4ef3bee35a19ba706eefb4dd928d8d1c93a52d53e0",
+    "artifacts/dj-booth/src/utils/commandFeedback.js": "1f6c6ccfeea14c7c50e84705ca435db78a1e9652a840ecd97fb6ec36a6d00ba9",
+    "artifacts/dj-booth/src/utils/commandFeedback.test.js": "437a9953874f969c16410daf855fe3e40e73acb8fb00946667f9788cece76eb0",
+    "artifacts/dj-booth/src/utils/commandOutcome.js": "024312284127e4b322283c0c4bda9402f198aa10fe4a6bccbf6fd9d8f76b9a0e",
+    "artifacts/dj-booth/src/utils/commandOutcome.test.js": "9ae9d9ca1a303db88d9288090f356fb5d5dc5cfe9550df1da0539119a2d0ea75",
+    "artifacts/dj-booth/src/utils/commandReconcile.js": "c83597cb78557ade9d4b18a946ea34eaa0223363eb0112e560cb842b20498db4",
+    "artifacts/dj-booth/src/utils/commandReconcile.test.js": "4081633ec2bff8ecfa47713bc9206e9f3e7af98b0f5759869762f396829c5743",
+    "artifacts/dj-booth/src/utils/commercialCadence.js": "43c9914cef01c9857def23e2e4b6b945f26484d4f6fbc53853e964d71edbc7b1",
+    "artifacts/dj-booth/src/utils/commercialCadence.test.js": "d1cc8cb4489c07f854c543dbfa5d85114c9788133c2739d7fd10794c6bfab2da",
+    "artifacts/dj-booth/src/utils/commercialPlayback.js": "d989ecfd227288dc7b4ff814eb54e5338fdac181116de8eab832c3c86b3af3bc",
+    "artifacts/dj-booth/src/utils/commercialPlayback.test.js": "c3382d31521aea821a6c2276e47099f61972a9e734af72b2798ecd4f115ad76f",
+    "artifacts/dj-booth/src/utils/deactivationSet.js": "5e093e87aa274cdd6539c7c48a4a5b9dd959c357348e931135c3f3fb41771559",
+    "artifacts/dj-booth/src/utils/deactivationSet.test.js": "7b9ae51af9be8193e25426e24178593a38b57814039e01e17cd72879a8cb84e5",
+    "artifacts/dj-booth/src/utils/duckHoldGuard.js": "81051e7f85819c882e7310a4c05ff660e2857a9395c7c0279e9e014e2638c4a1",
+    "artifacts/dj-booth/src/utils/duckHoldGuard.test.js": "cafab35419684022ad464ea5d1ee1a2bfedfd369e69553e7f7aaa4caa1d63a94",
+    "artifacts/dj-booth/src/utils/duckLease.js": "8da4a8dbdd3af0b10bdd62068a62b54b0dff6d66508772502e11105f5e8d4764",
+    "artifacts/dj-booth/src/utils/ducking.js": "7bf9ec8d018955454047ee766b8d1c53433163d6f6f7c3915840b350f3f0e06e",
+    "artifacts/dj-booth/src/utils/ducking.test.js": "72bb9c6164717dfb386e2f64491b26da07d744b934db0b29ae8fa210ff8720fd",
+    "artifacts/dj-booth/src/utils/elevenLabsKeyState.js": "c60e1d1ebabc285d0456a9742bd315d5bc5891f6b86e852c63fb6a89a6c3c8aa",
+    "artifacts/dj-booth/src/utils/elevenLabsKeyState.test.js": "c418f6a7c076641408e88ccedf9553c871656ac514bea78700707d11db865779",
+    "artifacts/dj-booth/src/utils/energyLevels.js": "7969dabfe31fc8bfa5464580a1d33375c0059eabbe25e772e1d0f65b78bde08a",
+    "artifacts/dj-booth/src/utils/idleAutoplayRecovery.js": "c737d868e479f17ac260c0272c84fee2c2c3b1ea18af083606b2a20eb6671a4a",
+    "artifacts/dj-booth/src/utils/idleAutoplayRecovery.test.js": "f5ac54074de12bfc048d0c8b330183e5b3eba47bc21823c11cc6968ec1606d7d",
+    "artifacts/dj-booth/src/utils/incomingTrackAuthority.js": "1deeb7ecdd7eea507023549343775272b04c6245b6eb1e3a424aba6e1d1f2bb5",
+    "artifacts/dj-booth/src/utils/incomingTrackAuthority.test.js": "fc1460b2eb5a24ffd9648deb1941ce16edd72fe85f79dbe8c9b650b212e0dd6b",
+    "artifacts/dj-booth/src/utils/index.ts": "1bd31d3e8630b19dcb1d92878a2501d5e29fc935eab48ec5d90e66c410cf7e1a",
+    "artifacts/dj-booth/src/utils/interstitialWorkspace.js": "0831d6cf0125b3ad34700af9d52b9fe27e37ed9bd9717232bf84decf7e519518",
+    "artifacts/dj-booth/src/utils/interstitialWorkspace.test.js": "83503e6ed885e60c7763e5f8c004cff81b0594618705a9804cf231aa26b53a28",
+    "artifacts/dj-booth/src/utils/kioskBugfixCallers.test.js": "56bd6d31d55975edd49b405eb544554000fa99d20879b17e346d0d50dabce2c3",
+    "artifacts/dj-booth/src/utils/liveAssignmentCursor.test.js": "e466985de4bc25858ca6d5d79ba01dde6369aa4dc52fbfcbd2de322a24ab1060",
+    "artifacts/dj-booth/src/utils/manualEditorAutomaticGuard.test.js": "3c5f60c2644a2343ce8499d58f2e3f74f9412e2341b93dcfb9ae4cc990b10238",
+    "artifacts/dj-booth/src/utils/musicAvailability.js": "046faf7044bc67c87579a77f8f9418e324e26f38ebfb71973d583676749d31e5",
+    "artifacts/dj-booth/src/utils/musicAvailability.test.js": "14cdcd3fbdac6d74144ec145d107d007fbabcc5463ac90d15a058a3f56603530",
+    "artifacts/dj-booth/src/utils/ownedDeckFade.js": "054b99c20a19fb9a66331e2ba5736462787aff6baf9f164e00c79e0a9165265a",
+    "artifacts/dj-booth/src/utils/ownedDeckFade.test.js": "a6950f7232a0f5111f3a912102d360fa52c340eb946e4fca072dcef36743f563",
+    "artifacts/dj-booth/src/utils/playbackOwnership.js": "e65683f3e498af948cd101e842b3113b4edd7ea453d710c3b4dbbbffd72ec558",
+    "artifacts/dj-booth/src/utils/playbackOwnership.test.js": "19ba983638865520874dac374ad8dc86839a52c4dbcf63db17d406c07dc29230",
+    "artifacts/dj-booth/src/utils/playlistAvailabilitySync.js": "e04d128773434f807dd36ffeb2bdb0d64a9b62282a3fdac3fd00ca1b9c60ded5",
+    "artifacts/dj-booth/src/utils/playlistAvailabilitySync.test.js": "7423666dac17707adf6bc397b7db14230f112d150df923d896bf02526d946f4d",
+    "artifacts/dj-booth/src/utils/postInterstitialHandoff.js": "40246971c35d758799109f0739022a194eb4a3412b4938c28bbba91753754edb",
+    "artifacts/dj-booth/src/utils/postInterstitialHandoff.test.js": "8ffdae84a87bb0c6ed38fe042632697f97834725742bff36baf86e90beb92624",
+    "artifacts/dj-booth/src/utils/preparedDeck.js": "a58418297441534cf8f120e8b94ca746b9571524b76cb1da16f83f4501f94724",
+    "artifacts/dj-booth/src/utils/preparedDeck.test.js": "defb25b21cc3fc373fd14424373ec820e6771f30920df51e41e3a4bf6d0d0ba9",
+    "artifacts/dj-booth/src/utils/regularRotationScripts.js": "2a10b479d207027429979ce86f8c1f3e04364e92510bae9e219484e723e35602",
+    "artifacts/dj-booth/src/utils/regularRotationScripts.test.js": "1bf4e9a51c0f11e6b88a352116463cda740a1622e4d6a7b33ecb3b2d24ff9f98",
+    "artifacts/dj-booth/src/utils/remoteEditingQueue.js": "e3c170da73453570822211929984fddd57e5da5c1239874c4221635c898e2eb6",
+    "artifacts/dj-booth/src/utils/remoteEditingQueue.test.js": "f381d47ebd4f53a5cf1d18ea39adef151ab1acf67c54b080e5035965a3152d1c",
+    "artifacts/dj-booth/src/utils/remoteTelemetry.js": "af4a279e1c01de02618eae5acc951b16655fb2f69ef2428d1b86b24e8cef3d00",
+    "artifacts/dj-booth/src/utils/requestDeadline.js": "dd03d61e0c6ad5c60737deb393d023fa86c091ebf50ada810d5e39cc7b9dc77f",
+    "artifacts/dj-booth/src/utils/requestDeadline.test.js": "b6dc95c999ab9dd418cb072cbabee819667f8b64b433864e92cb996213aaef0a",
+    "artifacts/dj-booth/src/utils/rotationAssignmentShift.test.js": "f87bcf7c91b96f2a187c67ac3d5e4e8aa64dc6f4e5071678077e1014ac896225",
+    "artifacts/dj-booth/src/utils/rotationAssignments.js": "07aba786d5cfa885900f0be7d6a687ab581eeb2f410faceb51dff7a2c8449b59",
+    "artifacts/dj-booth/src/utils/rotationAssignments.test.js": "eaf066eef5aa5b2a3000bc15dd1707c26aee9bb8b1ef4821e8b61102cf2653c3",
+    "artifacts/dj-booth/src/utils/rotationEditorSync.js": "390689ce117cf9e78ae58465498b79e6d0d755be9c80b9f8b86b770d6950c6b2",
+    "artifacts/dj-booth/src/utils/rotationEditorSync.test.js": "a99daa3c04ab147fb0d96618f579ab55c3592a9ff6fa38d26ede38f576d95ddf",
+    "artifacts/dj-booth/src/utils/rotationStartState.js": "507ce48f94e28df4572faa7cae7200eb42f089e701f879a7b66a95962715ce2e",
+    "artifacts/dj-booth/src/utils/rotationStartState.test.js": "a75734628e793347dd987949e7d5a709de4b4c73b769e9b2b5c93a3d34dd0ca8",
+    "artifacts/dj-booth/src/utils/safeRotationReorder.js": "e996498badd8af66dab986c6d3a7a0971c30e0ab92505ecf515dc70b654b607e",
+    "artifacts/dj-booth/src/utils/safeRotationReorder.test.js": "48080234fc0b7a16ddfc9a244be9813b5189ed3e92c39af60e99d13aacd0142a",
+    "artifacts/dj-booth/src/utils/savedSetCandidateCallers.test.js": "45d9e2a54f43df1728c58112f2c98021504e71ce02108e9423f5275265d22af1",
+    "artifacts/dj-booth/src/utils/scriptFallbackAlert.js": "d5ea5d2d315fd1d5c4e97bfb018009ccad8b938f13c5b85e6571c69c92197e20",
+    "artifacts/dj-booth/src/utils/shiftMusicOptions.js": "fe1b34da683449d3da71816643cb86fc7911ba3a651aef648bb7e2518aa8489a",
+    "artifacts/dj-booth/src/utils/shiftMusicOptions.test.js": "a76ec53a3e18f3618a614966601b3094833dff6c3a211858fc892736144c3c9a",
+    "artifacts/dj-booth/src/utils/skipPlayback.js": "8d6fb616d77e731ae4267c4aeb386f536e01dad4345c14c98c06d1e38936c27d",
+    "artifacts/dj-booth/src/utils/skipPlayback.test.js": "d820cc94b0a580b8dcfb3b1edb28470cea178ddcb17342d0583b94004f0e03b2",
+    "artifacts/dj-booth/src/utils/soundboard.js": "63dfb14a3fae8a33044ea93829b4e1ec6a6661efab64c4c05ddcbe2acd672022",
+    "artifacts/dj-booth/src/utils/staffLoginTransport.test.js": "eb5173d965e0e06be9b9d1abceebf922249b4a361d5826e047f4f27e32c338f1",
+    "artifacts/dj-booth/src/utils/ttsText.js": "f4e82a7fb20fd4b54b7cc0ab93344f08824d160ed1d1e5f57caf0c421e50bed5",
+    "artifacts/dj-booth/src/utils/vipCountdown.js": "fd4653417cea9d8bc3429726c36de67314c06dea9d916f40f6f360acaa7a3f2d",
+    "artifacts/dj-booth/src/utils/vipCountdown.test.js": "c5297c359c83966a5ae048a2a614e712f1d52edfde5aaed4d0301c47a8eaa02a",
+    "artifacts/dj-booth/src/utils/vipCountdownClock.test.js": "a86b6f1c49de37407341244aa59825b61c1d5fa6f4b60765e03686f472cda2fc",
+    "artifacts/dj-booth/src/utils/vipDurations.js": "3d014b78bc33a52d512193d996719e73c643bdc70738ad147a51c68bf1771d22",
+    "artifacts/dj-booth/src/utils/vipDurations.test.js": "a183292375430396cbcb9dff875702cb0d6f4ebd8714639ac95ea05c6ed8999f",
+    "artifacts/dj-booth/src/utils/voiceProcessor.js": "2612e82f472decfc410b4ccb9e470abbf3af47aab26703153268232668b58bf0",
+    "artifacts/dj-booth/tsconfig.json": "e0a2fd8a7f3bfc860ccab5623b1881e754eb02336612708ff8b59215e8c256c9",
+    "lib/api-client-react/package.json": "ae70f97a12d1f7e7cbb291b5ffd1d6893f0d7a0ff7721a21e615d47bccfad789",
+    "lib/api-client-react/src/custom-fetch.ts": "3a5605ea89571cca7ea9412a230a40954e3a3f1d94d7a566271480165bf5e03c",
+    "lib/api-client-react/src/generated/api.schemas.ts": "a52ae133825c10e00d9b695aecc789b6636e774d4097ff810acfd19e83969a4e",
+    "lib/api-client-react/src/generated/api.ts": "9d7cf1d5de5bdaac99b9587f788e2c506a5617a99a0447d0f5649fc34635f194",
+    "lib/api-client-react/src/index.ts": "7974b36e3973a8d0c403589bcf8d8aca7547c5c42c4b73924d05f49de18809e5",
+    "lib/api-client-react/tsconfig.json": "7e9d09ae244912d5d1add40373fc8dfb98200e903c0994aba4faee4a5afc3489",
+    "lib/api-zod/package.json": "07009861b2ba8decccb4e9d78d743cb7273bd91915231b5eb1463b296efca13e",
+    "lib/api-zod/src/generated/api.ts": "4696b75da77dd165611a2028629bf55e23b00318b4fcde83d7cd54bc75b8c8ea",
+    "lib/api-zod/src/generated/types/healthStatus.ts": "ca592aaa48679661e10b65327a0f9f6c6dd42ecb8172a2efe1c8231d56009f4f",
+    "lib/api-zod/src/generated/types/index.ts": "7cbe6a236b9ffe48267955aa52bda2bf776a8cda224da13d63a7ba372651b845",
+    "lib/api-zod/src/index.ts": "effb7d33b5df99004c9b1a840944516ca3ad65cbcd3ae2fcc717c505814ce039",
+    "lib/api-zod/tsconfig.json": "bb52c0e8b13e658570a208d946cb874fdf2b8d990f7c228f96fb24254c9c5a95",
+    "lib/db/package.json": "1cfceaccbb0a88fdf38ea70836fca47ba7632d66db4f8f37de7d57b743201322",
+    "lib/db/src/index.ts": "fc285bc83108137ba57c4c2774a35053e3c25fda1292c3d7a16a57d43dd9679c",
+    "lib/db/src/schema/index.ts": "459c09e0be1c1e28c794ee70e838f55d0c3d225fa6614fe2d4182a86fbf5e115",
+    "lib/db/tsconfig.json": "69c976d11de35f0ac391934625beeccdd1b2689ba5d0f14c54b5384d4c30a9c9",
+    "package.json": "a2ce2c09d39da49a1be08cfcee2fb49a1788b11a6c87ecff869d33cf607ebb7a",
+    "pnpm-lock.yaml": "9df79bb003ff484fb4d160d1cf9dac1615d92bcc93906c4ef797d4d5cffcf032",
+    "pnpm-workspace.yaml": "0ffc43cbd38b185a0934e1636e56f97b437ff1f31e11321b580e68cc4a9b71b8",
+    "scripts/src/frontend-producer.mjs": "ccd6cac1e9a341207e1352d7b10493299ee9d1d0e450b8eaf40f4e697f80e527",
+    "scripts/src/workspace-release-order.mjs": "f2193d2f9f02c12deed9cd5b5d5a252b8ec0e79e502cbb670d6836149549a0aa",
+    "tsconfig.base.json": "71a4e86fb157f7bd574845c30877f4328c7f2fb1bdc3037890aac4cc4649b819",
+    "tsconfig.json": "8883c5dbf9e073ef0c7e91769b3e4abccca022df69b62fa7518d73e1512b37ef"
+  },
+  "bootAssets": {
+    "assets/index-C6Y7xRl3.css": "533eb20364c8f769f784bf23f2103390a5e35d0f2ec356b80e52f9353f54c451",
+    "assets/index-F969LiTg.js": "fcc406b40f3723c9ee424f50c30b30d30879d42d634a8b9b004c24b71088e9b3",
+    "assets/lamejs-Do3B6Rdb.js": "f8a5c9ca8583cc3b9d66d5459616c6f15d5b7a7864d7817a1ccbd13798290430",
+    "index.html": "13fe8d064fa0908d32a7bbcec2bcc887bbec9f3550dea8776abbc0b6ce3db447"
+  }
+}

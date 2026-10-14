@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import bcrypt from 'bcryptjs';
+import { filterBlockedMusicNames, musicNameKey } from './musicAvailability.js';
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 
@@ -430,19 +431,19 @@ export function createDancer(name, color, pin, opts = {}) {
 export function getDancer(id) {
   const row = db.prepare('SELECT * FROM dancers WHERE id = ?').get(id);
   if (!row) return null;
-  return { ...row, playlist: JSON.parse(row.playlist), is_active: !!row.is_active };
+  return { ...row, playlist: filterDeactivatedFromNames(JSON.parse(row.playlist)), is_active: !!row.is_active };
 }
 
 export function getDancerByPin(pin) {
   const fast = db.prepare('SELECT * FROM dancers WHERE pin_plain = ? LIMIT 1').get(pin);
   if (fast) {
-    return { ...fast, playlist: JSON.parse(fast.playlist), is_active: !!fast.is_active };
+    return { ...fast, playlist: filterDeactivatedFromNames(JSON.parse(fast.playlist)), is_active: !!fast.is_active };
   }
   const rows = db.prepare('SELECT * FROM dancers WHERE pin_plain IS NULL').all();
   for (const row of rows) {
     if (verifyPin(pin, row.pin_hash)) {
       try { db.prepare('UPDATE dancers SET pin_plain = ? WHERE id = ?').run(pin, row.id); } catch {}
-      return { ...row, playlist: JSON.parse(row.playlist), is_active: !!row.is_active, pin_plain: pin };
+      return { ...row, playlist: filterDeactivatedFromNames(JSON.parse(row.playlist)), is_active: !!row.is_active, pin_plain: pin };
     }
   }
   return null;
@@ -450,7 +451,8 @@ export function getDancerByPin(pin) {
 
 export function listDancers() {
   const rows = db.prepare('SELECT * FROM dancers ORDER BY created_date ASC').all();
-  return rows.map(r => ({ ...r, playlist: JSON.parse(r.playlist), is_active: !!r.is_active }));
+  const blocked = readDb.prepare('SELECT DISTINCT name FROM music_tracks WHERE blocked = 1').all().map(row => row.name);
+  return rows.map(r => ({ ...r, playlist: filterBlockedMusicNames(JSON.parse(r.playlist), blocked), is_active: !!r.is_active }));
 }
 
 export function updateDancer(id, data) {
@@ -716,11 +718,26 @@ export function bulkUpsertTracks(tracksArray) {
 }
 
 export function blockTrack(trackName) {
-  db.prepare("UPDATE music_tracks SET blocked = 1, blocked_at = datetime('now', 'localtime') WHERE name = ?").run(trackName);
+  const key = musicNameKey(trackName);
+  const matches = db.prepare('SELECT DISTINCT name FROM music_tracks').all().filter(row => musicNameKey(row.name) === key);
+  db.transaction(() => {
+    const update = db.prepare("UPDATE music_tracks SET blocked = 1, blocked_at = datetime('now', 'localtime') WHERE name = ?");
+    for (const row of matches) update.run(row.name);
+  })();
 }
 
 export function unblockTrack(trackName) {
-  db.prepare("UPDATE music_tracks SET blocked = 0, blocked_at = NULL WHERE name = ?").run(trackName);
+  const key = musicNameKey(trackName);
+  const matches = db.prepare('SELECT DISTINCT name FROM music_tracks').all().filter(row => musicNameKey(row.name) === key);
+  db.transaction(() => {
+    const update = db.prepare('UPDATE music_tracks SET blocked = 0, blocked_at = NULL WHERE name = ?');
+    for (const row of matches) update.run(row.name);
+  })();
+}
+
+export function filterDeactivatedFromNames(names) {
+  const blocked = readDb.prepare('SELECT DISTINCT name FROM music_tracks WHERE blocked = 1').all();
+  return filterBlockedMusicNames(names, blocked.map(row => row.name));
 }
 
 export function getBlockedTracks() {
@@ -809,29 +826,35 @@ export function scrubDjOnlyFromAllPlaylists() {
   return changed;
 }
 
-export function getMusicTrackById(id) {
+export function getMusicTrackById(id, { includeBlocked = false } = {}) {
   const track = readDb.prepare('SELECT * FROM music_tracks WHERE id = ?').get(id);
-  return track && isPlayableMusicTrack(track) ? track : null;
+  return track && (includeBlocked || (!track.blocked && filterDeactivatedFromNames([track.name]).length > 0)) && isPlayableMusicTrack(track) ? track : null;
 }
 
-export function getMusicTrackByName(name) {
+export function getMusicTrackByName(name, { includeBlocked = false } = {}) {
+  // Explicit management-only lookup (e.g. permanent deletion from the blocked
+  // list). All normal resolution defaults to playable tracks only.
+  if (includeBlocked) {
+    return readDb.prepare('SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE').get(name) || null;
+  }
+  if (!name || filterDeactivatedFromNames([name]).length === 0) return null;
   // Exact match first; then case-insensitive; then with/without a trailing
   // extension. Feature-show set resolution goes through here — a miss used to
   // cascade into a RANDOM library track under the feature intro, so be forgiving.
-  let row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(name);
+  let row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? AND blocked = 0 AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(name);
   if (row && isPlayableMusicTrack(row)) return row;
-  row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(name);
+  row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE AND blocked = 0 AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(name);
   if (row && isPlayableMusicTrack(row)) return row;
   const noExt = name.replace(/\.[a-z0-9]{2,4}$/i, '');
   if (noExt !== name) {
-    row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(noExt);
+    row = readDb.prepare("SELECT * FROM music_tracks WHERE name = ? COLLATE NOCASE AND blocked = 0 AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma'").get(noExt);
     if (row && isPlayableMusicTrack(row)) return row;
   }
   // LIKE metacharacters in the track name must be escaped or a name containing
   // % / _ could match an unrelated row.
   const likeSafe = noExt.replace(/([\\%_])/g, '\\$1');
   row = readDb.prepare(
-    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' ESCAPE '\\' COLLATE NOCASE AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma' ORDER BY LENGTH(name) ASC"
+    "SELECT * FROM music_tracks WHERE name LIKE ? || '.%' ESCAPE '\\' COLLATE NOCASE AND blocked = 0 AND LOWER(path) NOT LIKE '%.wma' AND LOWER(name) NOT LIKE '%.wma' ORDER BY LENGTH(name) ASC"
   ).get(likeSafe);
   return row && isPlayableMusicTrack(row) ? row : null;
 }
@@ -1124,7 +1147,10 @@ export function selectTracksForSet({
   }
   const usedNames = new Set(excludeNames);
   let filler = getRandomTracks(count, [...usedNames], genres, automatic);
-  if (filler.length < count && genres.length > 0) {
+  // Automatic shift music stays in that shift's chosen folders. Exhaustion
+  // must not silently pull Night Shift (or other unselected) music into Day.
+  // Empty genres already means ALL; explicit manual/library behavior is unchanged.
+  if (!automatic && filler.length < count && genres.length > 0) {
     const stillExcluded = [...usedNames, ...filler.map(t => t.name)];
     const more = getRandomTracks(count - filler.length, stillExcluded, [], automatic);
     filler = [...filler, ...more];
@@ -1439,9 +1465,21 @@ export function getStaffAccountByPin(pin) {
   return null;
 }
 
-export function isStaffPinTaken(pin) {
-  const rows = db.prepare('SELECT pin_hash FROM staff_accounts').all();
+export function isStaffPinTaken(pin, excludeId = null) {
+  const rows = db.prepare('SELECT id, pin_hash FROM staff_accounts').all()
+    .filter(row => row.id !== excludeId);
   return rows.some(r => verifyPin(pin, r.pin_hash));
+}
+
+export function updateStaffAccount(id, name, role, pin = null) {
+  if (pin) {
+    db.prepare('UPDATE staff_accounts SET name = ?, role = ?, pin_hash = ? WHERE id = ?')
+      .run(name, role, hashPin(pin), id);
+  } else {
+    db.prepare('UPDATE staff_accounts SET name = ?, role = ? WHERE id = ?').run(name, role, id);
+  }
+  // Do not revoke or rewrite any existing sessions when changing a staff code.
+  return db.prepare('SELECT id, name, role, created_at FROM staff_accounts WHERE id = ?').get(id);
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────

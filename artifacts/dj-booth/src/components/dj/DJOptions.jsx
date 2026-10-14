@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { djOptionsApi, musicApi } from '@/api/serverApi';
 import { Settings, FolderOpen, Check, ChevronDown, Music, Radio, Monitor, Clock, Sun, Link2, Copy, RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import StaffLoginManager from './StaffLoginManager';
 import { getApiConfig, saveApiConfig } from '@/components/apiConfig';
 
 export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, onCommercialFreqChange, externalCommercialFreq, onAudioCommand }) {
@@ -110,8 +111,8 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
     setSaving(true);
     try {
       const newOptions = { ...djOptions, ...updates };
-      await djOptionsApi.update(updates);
-      onOptionsChange(newOptions);
+      const savedOptions = await djOptionsApi.update(updates);
+      onOptionsChange({ ...newOptions, ...savedOptions });
     } catch (err) {
       console.error('Failed to save DJ options:', err);
     }
@@ -177,6 +178,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
   return (
     <div className="h-full overflow-auto">
       <div className="max-w-2xl mx-auto space-y-6">
+        <StaffLoginManager />
         <div className="bg-[#0d0d1f] rounded-xl border border-[#1e293b] p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -271,7 +273,9 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
           const dayShiftStart = dayShift.startTime || '12:00';
           const dayShiftEnd = dayShift.endTime || '20:00';
           const dayShiftGenres = dayShift.genres || [];
-          const saveDayShift = (updates) => saveOptions({ dayShift: { ...dayShift, enabled: true, ...updates } });
+          const saveDayShift = (updates) => saveOptions({
+            dayShift: { ...dayShift, startTime: dayShiftStart, endTime: dayShiftEnd, enabled: true, ...updates },
+          });
           const toggleDsGenre = (name) => {
             const next = dayShiftGenres.includes(name)
               ? dayShiftGenres.filter(g => g !== name)
@@ -313,7 +317,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                   {/* Genre picker */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs text-gray-400">Day Shift genres (break songs + dancers without playlists)</p>
+                      <p className="text-xs text-gray-400">Day Shift folders for break songs and personal-song fallback</p>
                       <div className="flex gap-2">
                         <button onClick={() => saveDayShift({ genres: genres.map(g => g.name) })} className="text-xs text-[#fbbf24]/70 hover:text-[#fbbf24]">All</button>
                         <span className="text-gray-600 text-xs">·</span>
@@ -327,7 +331,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                       >
                         <span className="text-gray-300 truncate">
                           {dayShiftGenres.length === 0
-                            ? 'Select genres…'
+                            ? 'All genres'
                             : dayShiftGenres.length === genres.length
                             ? 'All genres'
                             : dayShiftGenres.join(', ')}
@@ -357,7 +361,7 @@ export default function DJOptions({ djOptions, onOptionsChange, audioEngineRef, 
                   </div>
 
                   <p className="text-xs text-gray-500">
-                    During the active window, break songs and entertainers without personal playlists will pull from the Day Shift genres above. Outside the window, Music Selection Mode applies as normal.
+                    During this window, automatic break songs and personal-song fallback use Day Shift folders. Personal songs stay first; when they run out or are on the six-hour cooldown, Day Shift supplies the remaining songs. Outside this window, Night Shift folders apply. No folders selected means all normal music folders.
                   </p>
                 </div>
             </div>

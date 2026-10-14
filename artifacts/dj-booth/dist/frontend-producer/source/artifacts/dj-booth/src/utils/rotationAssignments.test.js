@@ -1,0 +1,345 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  capSongAssignments,
+  capSongAssignmentsPreservingManual,
+  capSongList,
+  buildAutomaticRepickExcludes,
+  canCommitAutomaticBottomPick,
+  currentRotationDancerId,
+  filterManualAssignments,
+  fillSongListToLimit,
+  getSongName,
+  applyManualAssignments,
+  normalizeSongAssignments,
+  normalizeDisplayedAssignments,
+  normalizeSongsPerSet,
+  queueLatestManualAssignment,
+  reconcileAuthoritativeAssignments,
+  resolveManualSetLength,
+} from './rotationAssignments.js';
+
+test('caps stale assignments to the configured set length', () => {
+  const assignments = {
+    rylei: ['one.mp3', 'two.mp3', 'three.mp3'],
+    lydia: ['four.mp3', 'five.mp3'],
+  };
+
+  assert.deepEqual(capSongAssignments(assignments, 2), {
+    rylei: ['one.mp3', 'two.mp3'],
+    lydia: ['four.mp3', 'five.mp3'],
+  });
+});
+
+test('keeps the leading tracks and never mutates the original list', () => {
+  const songs = [{ name: 'one' }, { name: 'two' }, { name: 'three' }];
+  const capped = capSongList(songs, 2);
+
+  assert.deepEqual(capped, songs.slice(0, 2));
+  assert.equal(songs.length, 3);
+});
+
+test('preserves references when assignments already fit', () => {
+  const assignments = { cash: ['one.mp3', 'two.mp3'] };
+  assert.equal(capSongAssignments(assignments, 2), assignments);
+  assert.equal(capSongList(assignments.cash, 2), assignments.cash);
+});
+
+test('display normalization converges without replacing an unchanged assignment map', () => {
+  const assignments = { cash: ['one.mp3', 'two.mp3'] };
+  const first = normalizeDisplayedAssignments(assignments, 2);
+  const second = normalizeDisplayedAssignments(first, 2);
+  assert.equal(first, assignments);
+  assert.equal(second, first);
+});
+
+test('display normalization caps once and reuses the converged map', () => {
+  const assignments = { cash: ['one.mp3', 'two.mp3', 'three.mp3'] };
+  const first = normalizeDisplayedAssignments(assignments, 2);
+  const second = normalizeDisplayedAssignments(first, 2);
+  assert.deepEqual(first, { cash: ['one.mp3', 'two.mp3'] });
+  assert.equal(second, first);
+});
+
+test('display normalization preserves manual set length and stabilizes after conversion', () => {
+  const assignments = {
+    cash: [{ name: 'one.mp3' }, { name: 'two.mp3' }, { name: 'three.mp3' }],
+  };
+  const first = normalizeDisplayedAssignments(assignments, 2, ['cash']);
+  const second = normalizeDisplayedAssignments(first, 2, ['cash']);
+  assert.deepEqual(first, { cash: ['one.mp3', 'two.mp3', 'three.mp3'] });
+  assert.equal(second, first);
+});
+
+test('manual-aware assignment capping does not replace an already stable map', () => {
+  const assignments = {
+    automatic: ['one.mp3', 'two.mp3'],
+    manual: [{ name: 'one.mp3' }, { name: 'two.mp3' }, { name: 'three.mp3' }],
+  };
+  const stable = capSongAssignmentsPreservingManual(assignments, 2, ['manual']);
+  assert.equal(stable, assignments);
+  assert.equal(stable.manual, assignments.manual);
+
+  const cappedInput = {
+    ...assignments,
+    automatic: [...assignments.automatic, 'three.mp3'],
+  };
+  const capped = capSongAssignmentsPreservingManual(cappedInput, 2, ['manual']);
+  assert.notEqual(capped, cappedInput);
+  assert.equal(capped.manual, cappedInput.manual);
+  assert.deepEqual(capped.automatic, ['one.mp3', 'two.mp3']);
+});
+
+test('filters automatic assignments out of the DJ override ledger', () => {
+  const autoAndManual = {
+    mira: [{ name: 'auto-one' }],
+    rose: [{ name: 'dj-repeat' }],
+  };
+
+  assert.deepEqual(filterManualAssignments(autoAndManual, { rose: true }), {
+    rose: [{ name: 'dj-repeat' }],
+  });
+});
+
+test('normalizes remote string and legacy file-name track shapes', () => {
+  assert.equal(getSongName({ file_name: 'Tove Lo Habits.mp3' }), 'Tove Lo Habits.mp3');
+  assert.equal(getSongName({ filename: 'Hinder Lips Of An Angel.mp3' }), 'Hinder Lips Of An Angel.mp3');
+  assert.equal(getSongName({ path: '/music/fallback.mp3' }), 'fallback.mp3');
+  assert.deepEqual(normalizeSongAssignments({
+    scarlett: [
+      { file_name: 'Tove Lo Habits.mp3' },
+      { name: 'Hinder Lips Of An Angel.mp3' },
+      {},
+    ],
+  }, 3), {
+    scarlett: ['Tove Lo Habits.mp3', 'Hinder Lips Of An Angel.mp3'],
+  });
+});
+
+test('unchanged authoritative snapshots preserve the assignment object reference', () => {
+  const current = { rose: ['full8.mp3'] };
+  const next = reconcileAuthoritativeAssignments(
+    current,
+    { rose: [{ name: 'full8.mp3' }] },
+    2,
+  );
+  assert.equal(next, current);
+});
+
+test('an explicit empty authoritative assignment clears stale display picks', () => {
+  const current = { rose: ['full8.mp3'] };
+  assert.deepEqual(reconcileAuthoritativeAssignments(current, {}, 2), {});
+  assert.deepEqual(reconcileAuthoritativeAssignments(current, { rose: [] }, 2), { rose: [] });
+});
+
+test('dirty local assignment edits survive until the authoritative command is acknowledged', () => {
+  const current = { rose: ['remote-edit.mp3'], lane: ['old.mp3'] };
+  assert.deepEqual(
+    reconcileAuthoritativeAssignments(current, { rose: ['kiosk-pick.mp3'], lane: ['new.mp3'] }, 2, ['rose']),
+    { rose: ['remote-edit.mp3'], lane: ['new.mp3'] },
+  );
+});
+
+test('explicit empty updates clear only that dancer and preserve duplicate picks', () => {
+  assert.deepEqual(applyManualAssignments(
+    { mira: ['auto-pick'], lane: ['keep-me'] },
+    { mira: ['same', 'same'], lane: ['same', 'same'] },
+    ['mira'],
+  ), {
+    mira: ['same', 'same'],
+    lane: ['keep-me'],
+  });
+  assert.deepEqual(
+    applyManualAssignments({ mira: ['stale'] }, {}, ['mira']),
+    { mira: [] },
+  );
+});
+
+test('allows a larger set length without adding or removing tracks', () => {
+  const assignments = { rose: ['one.mp3', 'two.mp3'] };
+  assert.equal(capSongAssignments(assignments, 3), assignments);
+});
+
+test('growing a set adds exactly the missing number and preserves DJ picks', () => {
+  const existing = [{ name: 'picked-one.mp3' }, { name: 'picked-two.mp3' }];
+  const candidates = [
+    { name: 'picked-two.mp3' },
+    { name: 'new-three.mp3' },
+    { name: 'unused-four.mp3' },
+  ];
+
+  assert.deepEqual(fillSongListToLimit(existing, candidates, 3), [
+    { name: 'picked-one.mp3' },
+    { name: 'picked-two.mp3' },
+    { name: 'new-three.mp3' },
+  ]);
+});
+
+test('fills short name-only and legacy-shaped queues without duplicate additions', () => {
+  const existing = ['picked-one.mp3', { file_name: 'picked-two.mp3' }];
+  const candidates = [
+    { name: 'picked-two.mp3' },
+    { name: 'new-three.mp3' },
+  ];
+
+  assert.deepEqual(fillSongListToLimit(existing, candidates, 3), [
+    'picked-one.mp3',
+    { file_name: 'picked-two.mp3' },
+    { name: 'new-three.mp3' },
+  ]);
+});
+
+test('a late async result is capped against the latest set length at commit time', async () => {
+  let currentSetLength = 3;
+  let releaseResult;
+  const delayedResult = new Promise(resolve => {
+    releaseResult = resolve;
+  });
+  let committed;
+
+  const pendingWriter = (async () => {
+    const result = await delayedResult;
+    committed = capSongAssignments(result, currentSetLength);
+  })();
+
+  currentSetLength = 2;
+  releaseResult({ rylei: ['one.mp3', 'two.mp3', 'late-three.mp3'] });
+  await pendingWriter;
+
+  assert.deepEqual(committed, { rylei: ['one.mp3', 'two.mp3'] });
+});
+
+test('a late automatic result cannot replace a newer DJ assignment', async () => {
+  let assignmentVersion = 0;
+  let rotationSongs = {};
+  let releaseAutomaticPick;
+  const automaticPick = new Promise(resolve => {
+    releaseAutomaticPick = resolve;
+  });
+
+  const capturedVersion = assignmentVersion;
+  const pendingAutomaticWriter = (async () => {
+    const result = await automaticPick;
+    if (capturedVersion !== assignmentVersion) return;
+    rotationSongs = capSongAssignments(result, 2);
+  })();
+
+  assignmentVersion += 1;
+  rotationSongs = { rylei: ['dj-one.mp3', 'dj-two.mp3'] };
+  releaseAutomaticPick({ rylei: ['auto-one.mp3', 'auto-two.mp3', 'auto-three.mp3'] });
+  await pendingAutomaticWriter;
+
+  assert.deepEqual(rotationSongs, { rylei: ['dj-one.mp3', 'dj-two.mp3'] });
+});
+
+test('automatic repicks exclude the entire completed set and current track', () => {
+  assert.deepEqual(buildAutomaticRepickExcludes(
+    [{ name: 'first.mp3' }, 'second.mp3'],
+    { name: 'second.mp3' },
+  ), ['first.mp3', 'second.mp3']);
+});
+
+test('automatic bottom picks require current ownership of an empty bottom slot', () => {
+  const base = {
+    capturedVersion: 8,
+    currentVersion: 8,
+    dancerId: 'finished',
+    rotation: ['next', 'finished'],
+    currentAssignment: undefined,
+  };
+  assert.equal(canCommitAutomaticBottomPick(base), true);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, currentVersion: 9 }), false);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, rotation: ['finished', 'next'] }), false);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, currentAssignment: ['newer.mp3'] }), false);
+  assert.equal(canCommitAutomaticBottomPick({ ...base, hasManualOwnership: true }), false);
+});
+
+test('every flip-to-bottom caller excludes the completed set and guards async ownership', () => {
+  const source = readFileSync(new URL('../pages/DJBooth.jsx', import.meta.url), 'utf8');
+  const branchStarts = [...source.matchAll(/const finishedDancerForRepick =/g)].map(match => match.index);
+  assert.equal(branchStarts.length, 2, 'expected skip-break and natural-break repick callers');
+
+  for (const start of branchStarts) {
+    const branch = source.slice(start, start + 2600);
+    assert.match(branch, /buildAutomaticRepickExcludes\(\s*finishedPreviousSongs,\s*currentTrackRef\.current,/);
+    assert.match(branch, /getDancerTracks\(finishedDancerForRepick, repickExcludes, true, 5000\)/);
+    assert.match(branch, /canCommitAutomaticBottomPick\(\{/);
+    assert.doesNotMatch(branch, /getDancerTracks\(finishedDancerForRepick, \[\], true, 5000\)/);
+  }
+});
+
+test('transition handoffs claim once and guard completion writes by generation', () => {
+  const source = readFileSync(new URL('../pages/DJBooth.jsx', import.meta.url), 'utf8');
+  assert.match(source, /beginOwnedSet\(cleanRotation\[0\]/);
+  assert.match(source, /restoreActiveSet\(/);
+  assert.match(source, /writeOwnedIndex\(incomingGeneration, nextDancer\.id/);
+  assert.match(source, /writeOwnedSong\(incomingGeneration, nextDancer\.id, 1\)/);
+  assert.doesNotMatch(source, /beginOwnedSet\(nextDancer\.id, effectiveSongsPerSet\(nextDancer\.id\)\);[\s\S]{0,4000}beginOwnedSet\(nextDancer\.id, effectiveSongsPerSet\(nextDancer\.id\)\);/);
+  assert.doesNotMatch(source, /currentDancerIndexRef\.current = resolvedIdx;\s*currentSongNumberRef\.current = 1/);
+  assert.doesNotMatch(source, /setCurrentDancerIndex\(resolvedIdx\);\s*setCurrentSongNumber\(1\)/);
+  assert.doesNotMatch(source, /currentDancerIndexRef\.current = newIdx;\s*currentSongNumberRef\.current = 1/);
+  assert.doesNotMatch(source, /\{ dancerId: nextDancer\.id \},\s*\{ dancerId: nextDancer\.id \}/);
+  assert.doesNotMatch(source, /nextDancer\.id\s*\},\s*\{[^}]*nextDancer\.id/);
+  assert.doesNotMatch(source, /nextTrack\.genre,\s*\{[^}]+\},\s*\{[^}]+\}/);
+  assert.match(source, /nextTrack\.genre,\s*\{ allowFallback: true, rotationSongNumber: 1, dancerId: nextDancer\.id \}/);
+  assert.match(source, /playbackRestoreDoneRef\.current = true;\s*\}/);
+  assert.match(source, /if \(indexOwned && songOwned\) await updateStageState/);
+  assert.match(source, /if \(ownsActiveSet\(activeSetCursorRef\.current,[\s\S]{0,180}incomingGeneration[\s\S]{0,80}\)\) \{\s*updateStageState/);
+  assert.match(source, /const pendingPlaybackStateRef = useRef/);
+  assert.match(source, /pendingPlaybackStateRef\.current = null;\s*playbackRestoreDoneRef\.current = true/);
+  assert.doesNotMatch(source, /const raw = localStorage\.getItem\('djbooth_playback_state'\)/);
+  assert.match(source, /if \(!playbackRestoreDoneRef\.current\) return;\s*localStorage\.setItem\('djbooth_playback_state'/);
+  assert.match(source, /dancerId: cleanRotation\[0\],[\s\S]{0,100}generation: incomingGeneration[\s\S]{0,100}updateStageState\(0\)/);
+  assert.match(source, /dancerId: dancer\.id,[\s\S]{0,100}generation: transitionGeneration[\s\S]{0,100}updateStageState\(idx, rot\)/);
+  assert.match(source, /updateStageState\(idx, rot\);[\s\S]{0,350}fetch\(['"]\/api\/stage\/sync/);
+  assert.doesNotMatch(source, /updateStageState\(idx, rot\);\s*\}\s*fetch\(['"]\/api\/stage\/sync/);
+  assert.match(source, /const restoredSetLength = Number\.isInteger\(persistedSetLength\)[\s\S]{0,500}restoredSongNumber <= restoredSetLength/);
+  assert.match(source, /restoreActiveSet\(\s*restoredDancerId,\s*safeSongNumber,\s*restoredSetLength/);
+});
+
+test('normalizes invalid set lengths safely', () => {
+  assert.equal(normalizeSongsPerSet('2'), 2);
+  assert.equal(normalizeSongsPerSet(0), 1);
+  assert.deepEqual(capSongList(['one', 'two'], 0), ['one']);
+});
+
+test('uses the actual current rotation index when identifying the active dancer', () => {
+  assert.equal(currentRotationDancerId(['pending', 'on-stage', 'next'], 1), 'on-stage');
+  assert.equal(currentRotationDancerId(['first'], 99), 'first');
+});
+
+test('manual metadata owns empty and oversized set lengths across reload/default changes', () => {
+  const assignments = {
+    dancer20: Array.from({ length: 20 }, (_, index) => `song-${index}`),
+    cleared: [],
+  };
+  const manualLengths = { dancer20: 20, cleared: 0 };
+  assert.equal(resolveManualSetLength(assignments, manualLengths, 'dancer20', 2), 20);
+  assert.equal(resolveManualSetLength(assignments, manualLengths, 'cleared', 2), 0);
+  assert.deepEqual(
+    reconcileAuthoritativeAssignments(
+      assignments,
+      {},
+      2,
+      [],
+      ['dancer20', 'cleared'],
+    ),
+    assignments,
+  );
+});
+
+test('a rapid edit sequence resolves to the latest manual assignment', () => {
+  let queued = {};
+  queued = queueLatestManualAssignment(queued, 'dancer', ['one.mp3']);
+  queued = queueLatestManualAssignment(queued, 'dancer', ['one.mp3', 'two.mp3']);
+  queued = queueLatestManualAssignment(queued, 'dancer', ['final.mp3']);
+  assert.deepEqual(queued, { dancer: ['final.mp3'] });
+});
+
+test('editor normalization accepts the live Set of manual ids and converges', () => {
+  const assignments = { dancer: Array.from({ length: 20 }, (_, i) => `song-${i}`) };
+  const ids = new Set(['dancer']);
+  assert.equal(normalizeDisplayedAssignments(assignments, 1, ids), assignments);
+  assert.equal(normalizeDisplayedAssignments({}, 1, new Set()).constructor, Object);
+});

@@ -36,7 +36,9 @@ export async function runBoothCommand({
   try {
     submitted = await submit();
   } catch (error) {
-    classifyCommandError(error, identity, { stage: 'submit' });
+    if (classifyCommandError(error, identity, { stage: 'submit' }) === 'rejected') {
+      error.rejectedByServer = true;
+    }
     throw error;
   }
 

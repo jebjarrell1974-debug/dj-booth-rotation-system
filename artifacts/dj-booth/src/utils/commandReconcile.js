@@ -5,14 +5,18 @@
 // it must never be re-sent under a new requestId: that would defeat the server's
 // de-duplication and could apply an operator action twice.
 
+import { classifyCommandResponse } from './commandOutcome.js';
+
 export const DEDUPE_WINDOW_MS = 5 * 60 * 1000;   // server: dedupeTtlMs
 
 // What a receipt tells us. `queued` covers both 'pending' and 'processing'.
 export function interpretReceipt(receipt) {
   if (!receipt) return { outcome: 'unknown', reason: 'no-receipt' };
-  if (receipt.queued) return { outcome: 'pending', commandId: receipt.commandId ?? receipt.command?.id };
+  const classification = classifyCommandResponse(receipt, { stage: 'receipt' });
+  if (classification === 'malformed') return { outcome: 'unknown', reason: 'malformed-receipt' };
+  if (classification === 'queued') return { outcome: 'pending', commandId: receipt.commandId ?? receipt.command?.id };
   return {
-    outcome: receipt.ok ? 'applied' : 'failed',
+    outcome: classification,
     commandId: receipt.commandId ?? receipt.command?.id,
     status: receipt.command?.status,
     error: receipt.command?.error,
@@ -77,7 +81,7 @@ export async function reconcileCommandOutcome(deps, context) {
     if (receipt && believable(receipt)) {
       sawRecord = true;
       const seen = interpretReceipt(receipt);
-      if (seen.outcome !== 'pending') return { ...seen, resolved: true };
+      if (seen.outcome === 'applied' || seen.outcome === 'failed') return { ...seen, resolved: true };
     } else if (receipt && !believable(receipt)) {
       // A record exists but it is not ours - numeric ids were reused after a restart.
       return { outcome: 'unknown', reason: 'identity-mismatch', resolved: false };

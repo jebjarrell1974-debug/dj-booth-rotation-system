@@ -11,6 +11,11 @@ UNIT_HOME=$(eval echo ~$UNIT_USER)
 APP_DIR="$UNIT_HOME/djbooth"
 GITHUB_REPO="jebjarrell1974-debug/dj-booth-rotation-system"
 
+if [ -e "$APP_DIR" ]; then
+  echo "ERROR: Existing installation — use the authenticated fleet updater, not bootstrap setup" >&2
+  exit 42
+fi
+
 echo "User: $UNIT_USER"
 echo "Home: $UNIT_HOME"
 echo "App:  $APP_DIR"
@@ -215,8 +220,13 @@ if [ -n "$WIFI_CONN" ]; then
     echo "WiFi static IP: could not apply (connect to venue WiFi first)"
 fi
 
-echo "[12/12] Downloading update script..."
-curl -o "$UNIT_HOME/djbooth-update.sh" "https://raw.githubusercontent.com/$GITHUB_REPO/main/public/djbooth-update-github.sh" && chmod +x "$UNIT_HOME/djbooth-update.sh"
+echo "[12/12] Installing bundled update script..."
+UPDATE_SCRIPT_SRC="$APP_DIR/artifacts/dj-booth/public/public/djbooth-update-github.sh"
+if [ ! -f "$UPDATE_SCRIPT_SRC" ]; then UPDATE_SCRIPT_SRC="$APP_DIR/public/djbooth-update-github.sh"; fi
+cp "$UPDATE_SCRIPT_SRC" "$UNIT_HOME/djbooth-update.sh.new"
+chmod +x "$UNIT_HOME/djbooth-update.sh.new"
+mv -f "$UNIT_HOME/djbooth-update.sh.new" "$UNIT_HOME/djbooth-update.sh"
+echo "Independent installer provisioning is required before this updater can update"
 
 echo ""
 echo "================================================"

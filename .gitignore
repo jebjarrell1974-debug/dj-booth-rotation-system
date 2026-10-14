@@ -67,6 +67,7 @@ artifacts/api-server/soundboard/
 
 # Build artifacts
 artifacts/*/dist/
+artifacts/*/dist.producer-*/
 
 # Attached assets (screenshots, uploads)
 attached_assets/
@@ -75,3 +76,4 @@ attached_assets/
 .env
 .env.*
 *.local
+/generated-artifacts/

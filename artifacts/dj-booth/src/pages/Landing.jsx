@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Music2, Users, Delete, ArrowLeft, Wifi, Server } from 'lucide-react';
-import { setBoothIp, getBoothIp, setPhoneRemoteMode } from '@/api/serverApi';
+import { setBoothIp, getBoothIp, setPhoneRemoteMode, isRemoteMode } from '@/api/serverApi';
 
 function PinPad({ onSubmit, onBack, label, error, loading }) {
   const [pin, setPin] = useState('');

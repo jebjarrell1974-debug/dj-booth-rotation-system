@@ -1,0 +1,1793 @@
+import React, { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
+import {
+  createDuckOwnerStore,
+  VOICE_DUCK_GAIN,
+  DUCK_LEASE_MS,
+} from '@/utils/ducking';
+import {
+  getTrackEndTriggerPoint,
+  ownsDeckCrossfade,
+  ownsDeckStartup,
+} from '@/utils/audioPlayback';
+import { createAnnouncementLifecycle } from '@/utils/announcementLifecycle';
+import { createOwnedDeckFadeController } from '@/utils/ownedDeckFade';
+import {
+  ANALYSIS_BODY_TIMEOUT_MS,
+  ANALYSIS_DECODE_TIMEOUT_MS,
+  ANALYSIS_RENDER_TIMEOUT_MS,
+  MEDIA_READY_TIMEOUT_MS,
+  TRACK_START_TIMEOUT_MS,
+  createBackgroundAnalysisQueue,
+  normalizeAudioCacheKey,
+  playMediaWithDeadline,
+  withStartupDeadline,
+  withAnalysisDeadline,
+  waitForMediaReady,
+} from '@/utils/audioStartup';
+import { createPreparedDeckController } from '@/utils/preparedDeck';
+
+const MAX_SONG_DURATION = 190;
+const MAX_FEATURE_DURATION = 3600;
+const TRANSITION_LEAD_TIME = 15;
+const CROSSFADE_DURATION = 5;
+const SAFETY_FADE_SECONDS = 5;
+const MICRO_CROSSFADE_DURATION = 1.2;
+
+const DUCK_ATTACK_MS = 200;
+const DUCK_RELEASE_MS = 600;
+const VOICE_DUCK_OWNER = 'voiceover';
+
+const NEAR_END_SECONDS = 3;
+
+const AUTO_GAIN_TARGET_LUFS = -10;
+const AUTO_GAIN_ANALYSIS_SECONDS = 10;
+const AUTO_GAIN_MIN = 0.3;
+const AUTO_GAIN_MAX = 2.5;
+const ANNOUNCEMENT_READY_TIMEOUT_MS = 5000;
+const ANALYSIS_GAIN_RAMP_MS = 750;
+
+const AudioEngine = forwardRef(({ 
+  onTrackEnd, 
+  onTimeUpdate, 
+  onTrackChange,
+  musicFolder 
+}, ref) => {
+  const audioCtxRef = useRef(null);
+  const deckARef = useRef(null);
+  const deckBRef = useRef(null);
+  const deckASourceRef = useRef(null);
+  const deckBSourceRef = useRef(null);
+  const deckAGainRef = useRef(null);
+  const deckBGainRef = useRef(null);
+  const musicBusGainRef = useRef(null);
+  const limiterRef = useRef(null);
+  const masterGainRef = useRef(null);
+  const voiceElRef = useRef(null);
+  const voiceGainRef = useRef(null);
+  const voiceSourceRef = useRef(null);
+  const voiceSourceElRef = useRef(null);
+  const voiceGainLevel = useRef(1.5);
+  const announcementLifecycleRef = useRef(null);
+  if (!announcementLifecycleRef.current) {
+    announcementLifecycleRef.current = createAnnouncementLifecycle({
+      ownerPrefix: VOICE_DUCK_OWNER,
+    });
+  }
+  const autoGainEnabledRef = useRef(true);
+  const autoGainCacheRef = useRef(new Map());
+  const trackAnalysisQueueRef = useRef(null);
+  const analysisGainRampRef = useRef(null);
+
+  const beatMatchEnabledRef = useRef((() => {
+    try { return localStorage.getItem('neonaidj_beat_match') === 'true'; } catch { return false; }
+  })());
+  const bpmCacheRef = useRef(new Map());
+  const activeDeckBpmRef = useRef(null);
+
+  const musicEqBassRef = useRef(null);
+  const musicEqMidRef = useRef(null);
+  const musicEqTrebleRef = useRef(null);
+  const musicEqAirRef = useRef(null);
+  const voiceEqBassRef = useRef(null);
+  const voiceEqMidRef = useRef(null);
+  const voiceEqTrebleRef = useRef(null);
+
+  const activeDeck = useRef('A');
+  const masterVolume = useRef(0.8);
+  const isPlayingRef = useRef(false);
+  const applyDuckGainRef = useRef(() => {});
+  const duckOwnersRef = useRef(null);
+  if (!duckOwnersRef.current) {
+    duckOwnersRef.current = createDuckOwnerStore({
+      onChange: change => applyDuckGainRef.current(change),
+    });
+  }
+  useEffect(() => () => {
+    duckOwnersRef.current?.clear();
+  }, []);
+  const crossfadeInProgressRef = useRef(false);
+  const playTrackLockRef = useRef(null);
+  const pendingTrackStartRef = useRef(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const fadeAnimationRef = useRef(null);
+  const crossfadeOwnerRef = useRef(0);
+  const safetyFadeRef = useRef(null);
+  const safetyFadeHandleRef = useRef(null);
+  const lastTimeUpdateRef = useRef(0);
+
+  const deckAUrl = useRef(null);
+  const deckBUrl = useRef(null);
+  const deckGenerationRef = useRef({ A: 0, B: 0 });
+  const ownedDeckFadeControllerRef = useRef(null);
+  const preparedDeckControllerRef = useRef(null);
+
+  const maxDurationOverrideRef = useRef(null);
+
+  if (!ownedDeckFadeControllerRef.current) {
+    ownedDeckFadeControllerRef.current = createOwnedDeckFadeController({
+      getDeck: deck => deck === 'A' ? deckARef.current : deckBRef.current,
+      getGain: deck => deck === 'A' ? deckAGainRef.current : deckBGainRef.current,
+      isCurrent: handle => (
+        !!handle
+        && deckGenerationRef.current[handle.deck] === handle.generation
+        && !!(handle.deck === 'A' ? deckARef.current : deckBRef.current)?.src
+      ),
+      audioTime: () => audioCtxRef.current?.currentTime || 0,
+    });
+  }
+
+  if (!preparedDeckControllerRef.current) {
+    preparedDeckControllerRef.current = createPreparedDeckController({
+      getTarget: () => {
+        const deckName = activeDeck.current === 'A' ? 'B' : 'A';
+        const deck = deckName === 'A' ? deckARef.current : deckBRef.current;
+        const active = activeDeck.current === 'A' ? deckARef.current : deckBRef.current;
+        return {
+          deck,
+          deckName,
+          generation: deckGenerationRef.current[deckName] || 0,
+          // A preparation is deliberately refused during a fade or before an
+          // audible owner exists. This keeps an outgoing/crossfading deck out
+          // of the preparation path.
+          unsafe: crossfadeInProgressRef.current || !active?.src || !deck?.paused,
+        };
+      },
+      claimTarget: () => {
+        const deckName = activeDeck.current === 'A' ? 'B' : 'A';
+        const deck = deckName === 'A' ? deckARef.current : deckBRef.current;
+        const active = activeDeck.current === 'A' ? deckARef.current : deckBRef.current;
+        const generation = (deckGenerationRef.current[deckName] || 0) + 1;
+        deckGenerationRef.current[deckName] = generation;
+        return {
+          deck,
+          deckName,
+          generation,
+          unsafe: crossfadeInProgressRef.current || !active?.src || !deck?.paused,
+        };
+      },
+      waitForReady: (deck, { isCurrent }) => waitForMediaReady(deck, {
+        timeoutMs: MEDIA_READY_TIMEOUT_MS,
+        isCurrent,
+      }),
+      onInvalidate: candidate => {
+        const urlRef = candidate.deck === deckARef.current ? deckAUrl : deckBUrl;
+        if (urlRef.current === candidate.url && candidate.url.startsWith('blob:')) {
+          URL.revokeObjectURL(candidate.url);
+          urlRef.current = null;
+        }
+      },
+    });
+  }
+
+  const onTrackEndRef = useRef(onTrackEnd);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onTrackChangeRef = useRef(onTrackChange);
+  useEffect(() => { onTrackEndRef.current = onTrackEnd; }, [onTrackEnd]);
+  useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
+  useEffect(() => { onTrackChangeRef.current = onTrackChange; }, [onTrackChange]);
+
+  const deckASourceElRef = useRef(null);
+  const deckBSourceElRef = useRef(null);
+
+  const ensureAudioContext = useCallback(() => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new AudioContext();
+
+      masterGainRef.current = audioCtxRef.current.createGain();
+      masterGainRef.current.gain.value = masterVolume.current;
+      masterGainRef.current.connect(audioCtxRef.current.destination);
+
+      limiterRef.current = audioCtxRef.current.createDynamicsCompressor();
+      limiterRef.current.threshold.value = -6;
+      limiterRef.current.knee.value = 3;
+      limiterRef.current.ratio.value = 20;
+      limiterRef.current.attack.value = 0.002;
+      limiterRef.current.release.value = 0.1;
+      limiterRef.current.connect(masterGainRef.current);
+
+      const savedMusicEq = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":1.5,"mid":-1.0,"treble":-1.0}');
+      const savedVoiceEq = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
+
+      musicEqBassRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqBassRef.current.type = 'lowshelf';
+      musicEqBassRef.current.frequency.value = 200;
+      musicEqBassRef.current.gain.value = savedMusicEq.bass;
+
+      musicEqMidRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqMidRef.current.type = 'peaking';
+      musicEqMidRef.current.frequency.value = 1000;
+      musicEqMidRef.current.Q.value = 1.0;
+      musicEqMidRef.current.gain.value = savedMusicEq.mid;
+
+      musicEqTrebleRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqTrebleRef.current.type = 'highshelf';
+      musicEqTrebleRef.current.frequency.value = 4000;
+      musicEqTrebleRef.current.gain.value = savedMusicEq.treble;
+
+      musicEqAirRef.current = audioCtxRef.current.createBiquadFilter();
+      musicEqAirRef.current.type = 'highshelf';
+      musicEqAirRef.current.frequency.value = 12000;
+      musicEqAirRef.current.gain.value = 1.5;
+
+      musicBusGainRef.current = audioCtxRef.current.createGain();
+      musicBusGainRef.current.gain.value = 1.0;
+      musicBusGainRef.current.connect(musicEqBassRef.current);
+      musicEqBassRef.current.connect(musicEqMidRef.current);
+      musicEqMidRef.current.connect(musicEqTrebleRef.current);
+      musicEqTrebleRef.current.connect(musicEqAirRef.current);
+      musicEqAirRef.current.connect(limiterRef.current);
+
+      deckAGainRef.current = audioCtxRef.current.createGain();
+      deckAGainRef.current.gain.value = 1.0;
+      deckAGainRef.current.connect(musicBusGainRef.current);
+
+      deckBGainRef.current = audioCtxRef.current.createGain();
+      deckBGainRef.current.gain.value = 0;
+      deckBGainRef.current.connect(musicBusGainRef.current);
+
+      deckASourceElRef.current = null;
+      deckBSourceElRef.current = null;
+
+      voiceEqBassRef.current = audioCtxRef.current.createBiquadFilter();
+      voiceEqBassRef.current.type = 'lowshelf';
+      voiceEqBassRef.current.frequency.value = 200;
+      voiceEqBassRef.current.gain.value = savedVoiceEq.bass;
+
+      voiceEqMidRef.current = audioCtxRef.current.createBiquadFilter();
+      voiceEqMidRef.current.type = 'peaking';
+      voiceEqMidRef.current.frequency.value = 1000;
+      voiceEqMidRef.current.Q.value = 1.0;
+      voiceEqMidRef.current.gain.value = savedVoiceEq.mid;
+
+      voiceEqTrebleRef.current = audioCtxRef.current.createBiquadFilter();
+      voiceEqTrebleRef.current.type = 'highshelf';
+      voiceEqTrebleRef.current.frequency.value = 4000;
+      voiceEqTrebleRef.current.gain.value = savedVoiceEq.treble;
+
+      voiceGainRef.current = audioCtxRef.current.createGain();
+      voiceGainRef.current.gain.value = voiceGainLevel.current;
+      voiceGainRef.current.connect(voiceEqBassRef.current);
+      voiceEqBassRef.current.connect(voiceEqMidRef.current);
+      voiceEqMidRef.current.connect(voiceEqTrebleRef.current);
+      voiceEqTrebleRef.current.connect(audioCtxRef.current.destination);
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const connectDeckSource = useCallback((deckEl, gainNode, sourceRef, sourceElRef) => {
+    if (sourceElRef.current === deckEl && sourceRef.current) {
+      sourceRef.current.disconnect();
+      sourceRef.current.connect(gainNode);
+      return;
+    }
+    if (sourceRef.current) {
+      try { sourceRef.current.disconnect(); } catch {}
+    }
+    const ctx = ensureAudioContext();
+    const source = ctx.createMediaElementSource(deckEl);
+    source.connect(gainNode);
+    sourceRef.current = source;
+    sourceElRef.current = deckEl;
+  }, [ensureAudioContext]);
+
+  useEffect(() => {
+    const deckA = new Audio();
+    const deckB = new Audio();
+    const voice = new Audio();
+
+    deckA.crossOrigin = 'anonymous';
+    deckB.crossOrigin = 'anonymous';
+    voice.crossOrigin = 'anonymous';
+
+    deckA.volume = 1.0;
+    deckB.volume = 1.0;
+    voice.volume = 1.0;
+
+    deckARef.current = deckA;
+    deckBRef.current = deckB;
+    voiceElRef.current = voice;
+
+    const dualDeckMonitor = setInterval(() => {
+      const a = deckARef.current;
+      const b = deckBRef.current;
+      if (a && b && !a.paused && !b.paused && a.src && b.src && !crossfadeInProgressRef.current) {
+        const active = activeDeck.current;
+        const stale = active === 'A' ? b : a;
+        const staleName = active === 'A' ? 'B' : 'A';
+        console.error(`🚨 DUAL-DECK FIX: Both decks playing outside crossfade! Force-pausing deck ${staleName}. A.src=${a.src.substring(0, 60)}, B.src=${b.src.substring(0, 60)}`);
+        stale.pause();
+        stale.src = '';
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(dualDeckMonitor);
+      pendingTrackStartRef.current?.controller.abort('unmount');
+      ownedDeckFadeControllerRef.current?.cancel('unmount');
+      preparedDeckControllerRef.current?.dispose();
+      if (analysisGainRampRef.current?.frameId != null) {
+        cancelAnimationFrame(analysisGainRampRef.current.frameId);
+      }
+      analysisGainRampRef.current = null;
+      deckA.pause();
+      deckA.src = '';
+      deckB.pause();
+      deckB.src = '';
+      trackAnalysisQueueRef.current?.clear();
+      announcementLifecycleRef.current?.cancelActive('unmount');
+      voice.pause();
+      voice.src = '';
+      if (fadeAnimationRef.current) cancelAnimationFrame(fadeAnimationRef.current);
+      if (safetyFadeRef.current) cancelAnimationFrame(safetyFadeRef.current);
+      safetyFadeRef.current = null;
+      safetyFadeHandleRef.current = null;
+      if (deckASourceRef.current) { try { deckASourceRef.current.disconnect(); } catch {} }
+      if (deckBSourceRef.current) { try { deckBSourceRef.current.disconnect(); } catch {} }
+      if (voiceSourceRef.current) { try { voiceSourceRef.current.disconnect(); } catch {} }
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
+
+  const getActiveDeck = () => activeDeck.current === 'A' ? deckARef.current : deckBRef.current;
+  const getInactiveDeck = () => activeDeck.current === 'A' ? deckBRef.current : deckARef.current;
+  const getActiveDeckGain = () => activeDeck.current === 'A' ? deckAGainRef.current : deckBGainRef.current;
+  const getInactiveDeckGain = () => activeDeck.current === 'A' ? deckBGainRef.current : deckAGainRef.current;
+  const getInactiveSourceRef = () => activeDeck.current === 'A' ? deckBSourceRef : deckASourceRef;
+  const getInactiveSourceElRef = () => activeDeck.current === 'A' ? deckBSourceElRef : deckASourceElRef;
+
+  const prepareNextTrack = useCallback((fileHandle, { owner = null } = {}) => {
+    if (
+      crossfadeInProgressRef.current
+      || !getActiveDeck()?.src
+      || !preparedDeckControllerRef.current
+    ) {
+      return Promise.resolve(null);
+    }
+    return preparedDeckControllerRef.current.prepare(fileHandle, { owner });
+  }, []);
+
+  const invalidatePreparedTrack = useCallback((criteria = {}) => (
+    preparedDeckControllerRef.current?.invalidate(criteria) || false
+  ), []);
+
+  const equalPowerIn = (progress) => Math.sin(progress * Math.PI * 0.5);
+  const equalPowerOut = (progress) => Math.cos(progress * Math.PI * 0.5);
+  const clampVol = (v) => Math.max(0, Math.min(1, v));
+
+  const captureDeck = useCallback((deck = activeDeck.current) => ({
+    deck,
+    generation: deckGenerationRef.current[deck] || 0,
+  }), []);
+
+  const fadeOwnedDeck = useCallback((handle, options = {}) => (
+    ownedDeckFadeControllerRef.current?.fade(handle, options)
+      || Promise.resolve({ status: 'stale' })
+  ), []);
+
+  const cancelOwnedDeckFade = useCallback((reason = 'cancelled') => {
+    ownedDeckFadeControllerRef.current?.cancel(reason);
+  }, []);
+
+  const cleanupDeck = useCallback((deckEl) => {
+    const urlRef = deckEl === deckARef.current ? deckAUrl : deckBUrl;
+    if (urlRef.current) {
+      if (urlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(urlRef.current);
+      }
+      urlRef.current = null;
+    }
+  }, []);
+
+  const isCurrentDeckHandle = useCallback((handle) => {
+    if (!handle || (handle.deck !== 'A' && handle.deck !== 'B')) return false;
+    const deck = handle.deck === 'A' ? deckARef.current : deckBRef.current;
+    return deckGenerationRef.current[handle.deck] === handle.generation
+      && !!deck?.src;
+  }, []);
+
+  const cancelAnalysisGainRamp = useCallback(() => {
+    if (analysisGainRampRef.current?.frameId != null) {
+      cancelAnimationFrame(analysisGainRampRef.current.frameId);
+    }
+    analysisGainRampRef.current = null;
+  }, []);
+
+  const applyAnalyzedGain = useCallback(({
+    handle,
+    sourceUrl,
+    gain,
+  } = {}) => {
+    if (!autoGainEnabledRef.current
+        || !Number.isFinite(gain)
+        || !isCurrentDeckHandle(handle)
+        || activeDeck.current !== handle.deck
+        || crossfadeInProgressRef.current
+        || !isPlayingRef.current) {
+      return false;
+    }
+
+    const deck = handle.deck === 'A' ? deckARef.current : deckBRef.current;
+    const gainNode = handle.deck === 'A' ? deckAGainRef.current : deckBGainRef.current;
+    if (!deck || deck.src !== sourceUrl || deck.paused || !gainNode?.gain) return false;
+
+    cancelAnalysisGainRamp();
+    const targetGain = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, gain));
+    const startGain = Number.isFinite(gainNode.gain.value) ? gainNode.gain.value : 1;
+    if (Math.abs(targetGain - startGain) < 0.001) return true;
+
+    const entry = {
+      handle,
+      sourceUrl,
+      deck,
+      gainNode,
+      startGain,
+      targetGain,
+      startedAt: performance.now(),
+      frameId: null,
+    };
+    const animate = now => {
+      const stillOwned = analysisGainRampRef.current === entry
+        && isCurrentDeckHandle(handle)
+        && activeDeck.current === handle.deck
+        && isPlayingRef.current
+        && !crossfadeInProgressRef.current
+        && deck.src === sourceUrl
+        && !deck.paused;
+      if (!stillOwned) {
+        if (analysisGainRampRef.current === entry) analysisGainRampRef.current = null;
+        return;
+      }
+
+      const progress = Math.min(1, Math.max(0, (now - entry.startedAt) / ANALYSIS_GAIN_RAMP_MS));
+      try {
+        entry.gainNode.gain.setValueAtTime(
+          entry.startGain + (entry.targetGain - entry.startGain) * progress,
+          audioCtxRef.current?.currentTime || 0,
+        );
+      } catch {
+        if (analysisGainRampRef.current === entry) analysisGainRampRef.current = null;
+        return;
+      }
+
+      if (progress >= 1) {
+        analysisGainRampRef.current = null;
+      } else {
+        entry.frameId = requestAnimationFrame(animate);
+      }
+    };
+
+    analysisGainRampRef.current = entry;
+    entry.frameId = requestAnimationFrame(animate);
+    return true;
+  }, [cancelAnalysisGainRamp, isCurrentDeckHandle]);
+
+  const stopOwnedDeck = useCallback((handle) => {
+    if (!isCurrentDeckHandle(handle)) return false;
+
+    if (safetyFadeHandleRef.current?.deck === handle.deck
+        && safetyFadeHandleRef.current?.generation === handle.generation) {
+      if (safetyFadeRef.current) cancelAnimationFrame(safetyFadeRef.current);
+      safetyFadeRef.current = null;
+      safetyFadeHandleRef.current = null;
+    }
+
+    const deck = handle.deck === 'A' ? deckARef.current : deckBRef.current;
+    if (!ownedDeckFadeControllerRef.current?.stopOwnedDeck(handle)) return false;
+    deck.src = '';
+    cleanupDeck(deck);
+
+    if (activeDeck.current === handle.deck) {
+      const replacement = handle.deck === 'A' ? deckBRef.current : deckARef.current;
+      if (!replacement || replacement.paused || !replacement.src) {
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+      }
+    }
+    return true;
+  }, [cleanupDeck, isCurrentDeckHandle]);
+
+  const detectBPMFromBuffer = useCallback((audioBuffer) => {
+    try {
+      const channelData = audioBuffer.getChannelData(0);
+      const sampleRate = audioBuffer.sampleRate;
+      const bufLen = channelData.length;
+      const analysisLen = Math.min(bufLen, sampleRate * 30);
+
+      const filtered = new Float32Array(analysisLen);
+      for (let i = 0; i < analysisLen; i++) {
+        filtered[i] = Math.abs(channelData[i]);
+      }
+      for (let i = 1; i < analysisLen; i++) {
+        filtered[i] = filtered[i] * 0.1 + filtered[i - 1] * 0.9;
+      }
+
+      const peaks = [];
+      const windowSize = Math.floor(sampleRate * 0.3);
+      let threshold = 0;
+      for (let i = 0; i < analysisLen; i++) {
+        threshold = Math.max(threshold * 0.9999, filtered[i]);
+      }
+      threshold *= 0.5;
+
+      let lastPeak = -windowSize;
+      for (let i = 1; i < analysisLen - 1; i++) {
+        if (filtered[i] > filtered[i - 1] && filtered[i] > filtered[i + 1] && filtered[i] > threshold && (i - lastPeak) > windowSize) {
+          peaks.push(i);
+          lastPeak = i;
+        }
+      }
+
+      if (peaks.length < 4) return null;
+
+      const intervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push((peaks[i] - peaks[i - 1]) / sampleRate);
+      }
+
+      const bpmCounts = {};
+      for (const interval of intervals) {
+        let bpm = 60 / interval;
+        while (bpm < 70) bpm *= 2;
+        while (bpm > 180) bpm /= 2;
+        const rounded = Math.round(bpm);
+        bpmCounts[rounded] = (bpmCounts[rounded] || 0) + 1;
+      }
+
+      let bestBpm = null;
+      let bestCount = 0;
+      for (const [bpm, count] of Object.entries(bpmCounts)) {
+        const nearby = Object.entries(bpmCounts)
+          .filter(([b]) => Math.abs(parseInt(b) - parseInt(bpm)) <= 2)
+          .reduce((sum, [, c]) => sum + c, 0);
+        if (nearby > bestCount) {
+          bestCount = nearby;
+          bestBpm = parseInt(bpm);
+        }
+      }
+
+      if (bestBpm && bestCount >= 3) {
+        console.log(`🎵 BPM detected: ${bestBpm} (confidence: ${bestCount} peaks)`);
+        return bestBpm;
+      }
+      return null;
+    } catch (err) {
+      console.warn('⚠️ BPM detection failed:', err.message);
+      return null;
+    }
+  }, []);
+
+  const analyzeTrackLoudness = useCallback(async (deckEl, {
+    sourceUrl: sourceUrlOverride = null,
+    duration: durationOverride = null,
+    signal = null,
+  } = {}) => {
+    if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) {
+      console.log('🔊 AutoGain: disabled, skipping');
+      return { gain: 1.0, bpm: null };
+    }
+    try {
+      const ctx = audioCtxRef.current;
+      const srcUrl = sourceUrlOverride || deckEl?.src;
+      if (!ctx || !srcUrl) {
+        console.warn('🔊 AutoGain: no AudioContext or src, skipping');
+        return { gain: 1.0, bpm: null, analysisFailed: true };
+      }
+
+      if (signal?.aborted) {
+        const error = new Error('Audio analysis was cancelled');
+        error.name = 'AbortError';
+        throw error;
+      }
+      const cacheKey = normalizeAudioCacheKey(srcUrl);
+      const cachedGain = autoGainCacheRef.current.get(cacheKey);
+      const cachedBpm = bpmCacheRef.current.get(cacheKey);
+      const gainReady = !autoGainEnabledRef.current || cachedGain !== undefined;
+      const bpmReady = !beatMatchEnabledRef.current || cachedBpm !== undefined;
+      if (gainReady && bpmReady) {
+        console.log(`🔊 AutoGain: cached gain=${(cachedGain ?? 1).toFixed(2)}x, bpm=${cachedBpm || '?'}`);
+        return { gain: cachedGain ?? 1.0, bpm: cachedBpm ?? null };
+      }
+
+      let dur = Number.isFinite(durationOverride) && durationOverride > 0
+        ? durationOverride
+        : deckEl?.duration;
+      if (!dur || !isFinite(dur) || dur <= 0) {
+        await new Promise((resolve) => {
+          const onMeta = () => { deckEl?.removeEventListener('loadedmetadata', onMeta); resolve(); };
+          deckEl?.addEventListener('loadedmetadata', onMeta);
+          setTimeout(() => { deckEl?.removeEventListener('loadedmetadata', onMeta); resolve(); }, 3000);
+        });
+        dur = deckEl?.duration;
+      }
+      if (!dur || !isFinite(dur) || dur <= 0) {
+        console.warn('🔊 AutoGain: duration unavailable after wait, skipping');
+        return { gain: 1.0, bpm: null, analysisFailed: true };
+      }
+
+      const sampleRate = ctx.sampleRate || 44100;
+      const analysisDur = Math.min(dur, AUTO_GAIN_ANALYSIS_SECONDS);
+      const bpmDur = Math.min(dur, 30);
+      const maxDur = Math.max(analysisDur, bpmDur);
+      const frameCount = Math.floor(maxDur * sampleRate);
+      if (frameCount <= 0) return { gain: 1.0, bpm: null, analysisFailed: true };
+
+      const controller = new AbortController();
+      const abortRequest = () => {
+        try { controller.abort(); } catch {}
+      };
+      const removeAbortForwarder = () => {
+        signal?.removeEventListener?.('abort', abortRequest);
+      };
+      signal?.addEventListener?.('abort', abortRequest, { once: true });
+
+      let response;
+      let arrayBuffer;
+      try {
+        response = await withAnalysisDeadline(
+          () => fetch(srcUrl, { signal: controller.signal }),
+          {
+            signal,
+            timeoutMs: ANALYSIS_BODY_TIMEOUT_MS,
+            label: 'Audio analysis response',
+            onTimeout: abortRequest,
+          },
+        );
+        arrayBuffer = await withAnalysisDeadline(
+          () => response.arrayBuffer(),
+          {
+            signal,
+            timeoutMs: ANALYSIS_BODY_TIMEOUT_MS,
+            label: 'Audio analysis body',
+            onTimeout: abortRequest,
+          },
+        );
+      } finally {
+        removeAbortForwarder();
+      }
+      if (response?.ok === false) {
+        throw new Error(`Audio analysis fetch failed (${response.status})`);
+      }
+
+      const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+      const audioBuffer = await withAnalysisDeadline(
+        () => offlineCtx.decodeAudioData(arrayBuffer),
+        {
+          signal,
+          timeoutMs: ANALYSIS_DECODE_TIMEOUT_MS,
+          label: 'Audio analysis decode',
+        },
+      );
+
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offlineCtx.destination);
+      source.start(0, 0, maxDur);
+
+      const rendered = await withAnalysisDeadline(
+        () => offlineCtx.startRendering(),
+        {
+          signal,
+          timeoutMs: ANALYSIS_RENDER_TIMEOUT_MS,
+          label: 'Audio analysis render',
+        },
+      );
+
+      let gainValue = 1.0;
+      if (autoGainEnabledRef.current) {
+        let sumSquares = 0;
+        let sampleCount = 0;
+        const gainFrames = Math.floor(analysisDur * sampleRate);
+        for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+          const data = rendered.getChannelData(ch);
+          const len = Math.min(data.length, gainFrames);
+          for (let i = 0; i < len; i++) {
+            sumSquares += data[i] * data[i];
+            sampleCount++;
+          }
+        }
+        if (sampleCount > 0) {
+          const rms = Math.sqrt(sumSquares / sampleCount);
+          const lufs = 20 * Math.log10(Math.max(rms, 1e-10));
+          const diff = AUTO_GAIN_TARGET_LUFS - lufs;
+          const gain = Math.pow(10, diff / 20);
+          gainValue = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, gain));
+          console.log(`🔊 AutoGain: LUFS=${lufs.toFixed(1)}dB, target=${AUTO_GAIN_TARGET_LUFS}dB, gain=${gainValue.toFixed(2)}x`);
+        }
+      }
+
+      let detectedBpm = null;
+      if (beatMatchEnabledRef.current) {
+        detectedBpm = detectBPMFromBuffer(rendered);
+      }
+
+      autoGainCacheRef.current.set(cacheKey, gainValue);
+      bpmCacheRef.current.set(cacheKey, detectedBpm);
+      if (autoGainCacheRef.current.size > 200) {
+        const firstKey = autoGainCacheRef.current.keys().next().value;
+        autoGainCacheRef.current.delete(firstKey);
+        bpmCacheRef.current.delete(firstKey);
+      }
+
+      return { gain: gainValue, bpm: detectedBpm };
+    } catch (err) {
+      if (err?.name === 'AbortError' || err?.name === 'TimeoutError') throw err;
+      console.warn('⚠️ AutoGain: Analysis failed, using 1.0:', err.message);
+      return { gain: 1.0, bpm: null, analysisFailed: true };
+    }
+  }, [detectBPMFromBuffer]);
+
+  const getCachedTrackAnalysis = useCallback((sourceUrl) => {
+    if (!sourceUrl) return null;
+    if (!autoGainEnabledRef.current && !beatMatchEnabledRef.current) {
+      return { gain: 1.0, bpm: null, complete: true };
+    }
+
+    const cacheKey = normalizeAudioCacheKey(sourceUrl);
+    const cachedGain = autoGainCacheRef.current.get(cacheKey);
+    const cachedBpm = bpmCacheRef.current.get(cacheKey);
+    const gainReady = !autoGainEnabledRef.current || cachedGain !== undefined;
+    const bpmReady = !beatMatchEnabledRef.current || cachedBpm !== undefined;
+    if (!gainReady) return null;
+    // A server-provided promo gain is usable even when BPM is unknown. Keep
+    // that first-play gain; `complete` only controls whether BPM analysis is
+    // queued, and no late BPM result changes playback rate mid-song.
+    return {
+      gain: cachedGain ?? 1.0,
+      bpm: cachedBpm ?? null,
+      complete: bpmReady,
+    };
+  }, []);
+
+  const scheduleTrackAnalysis = useCallback(({
+    sourceUrl,
+    deckEl,
+    duration,
+    handle,
+  }) => {
+    if (!sourceUrl || (!autoGainEnabledRef.current && !beatMatchEnabledRef.current)) return;
+    if (getCachedTrackAnalysis(sourceUrl)?.complete) return;
+
+    if (!trackAnalysisQueueRef.current) {
+      trackAnalysisQueueRef.current = createBackgroundAnalysisQueue({
+        onError: (error, key) => {
+          console.warn(`⚠️ AutoGain: background analysis failed for ${key}:`, error?.message || error);
+        },
+      });
+    }
+
+    const cacheKey = normalizeAudioCacheKey(sourceUrl);
+    const scheduled = trackAnalysisQueueRef.current.schedule(
+      cacheKey,
+      signal => analyzeTrackLoudness(deckEl, { sourceUrl, duration, signal }),
+      {
+        onResult: result => applyAnalyzedGain({
+          handle,
+          sourceUrl,
+          gain: result?.analysisFailed ? null : result?.gain,
+        }),
+      },
+    );
+    if (!scheduled && !trackAnalysisQueueRef.current.has(cacheKey)) {
+      console.warn(`⚠️ AutoGain: background analysis queue is full; deferred analysis skipped for ${cacheKey}`);
+    }
+  }, [analyzeTrackLoudness, applyAnalyzedGain, getCachedTrackAnalysis]);
+
+  const loadTrack = useCallback(async (input, { signal = null } = {}) => {
+    if (!input) return null;
+
+    if (typeof input === 'object' && input.url) {
+      const url = input.url;
+      const name = input.name || url.split('/').pop();
+      if (input.auto_gain != null && autoGainCacheRef.current) {
+        const cacheKey = normalizeAudioCacheKey(url);
+        const gain = Math.max(AUTO_GAIN_MIN, Math.min(AUTO_GAIN_MAX, input.auto_gain));
+        autoGainCacheRef.current.set(cacheKey, gain);
+        console.log(`🔊 AutoGain: pre-loaded server gain=${gain.toFixed(2)}x for ${name}`);
+      }
+      if (input.bpm != null && bpmCacheRef.current) {
+        const cacheKey = normalizeAudioCacheKey(url);
+        bpmCacheRef.current.set(cacheKey, input.bpm);
+        console.log(`🎵 BPM: pre-loaded server bpm=${input.bpm} for ${name}`);
+      }
+      return { url, name, file: null };
+    }
+
+    if (typeof input === 'string') {
+      const name = decodeURIComponent(input.split('/').pop().split('?')[0]);
+      return { url: input, name, file: null };
+    }
+
+    try {
+      const file = await withStartupDeadline(
+        () => input.getFile(),
+        {
+          signal,
+          timeoutMs: TRACK_START_TIMEOUT_MS,
+          label: 'Track file read',
+        },
+      );
+      const url = URL.createObjectURL(file);
+      return { url, name: file.name, file };
+    } catch (err) {
+      console.error('❌ LoadTrack: Failed to read file:', err?.message || err);
+      return null;
+    }
+  }, []);
+
+  const playTrack = useCallback(async (
+    fileHandle,
+    crossfade = true,
+    {
+      triggerAtMediaEnd = false,
+      onTrackReady = null,
+      preparedOwner = null,
+      startupSignal = null,
+    } = {},
+  ) => {
+    if (playTrackLockRef.current) {
+      console.log('🚫 PlayTrack: BLOCKED — another track is already loading, skipping this call');
+      return false;
+    }
+
+    let releaseLock;
+    let lockReleased = false;
+    const lock = new Promise(resolve => { releaseLock = resolve; });
+    playTrackLockRef.current = lock;
+    const releasePlayTrackLock = () => {
+      if (lockReleased) return;
+      lockReleased = true;
+      if (playTrackLockRef.current === lock) {
+        playTrackLockRef.current = null;
+      }
+      releaseLock();
+    };
+    const startupController = new AbortController();
+    const pendingStart = {
+      controller: startupController,
+      lock,
+    };
+    pendingTrackStartRef.current = pendingStart;
+    const forwardExternalAbort = () => {
+      if (!startupController.signal.aborted) {
+        startupController.abort(startupSignal?.reason);
+      }
+    };
+    if (startupSignal?.aborted) {
+      forwardExternalAbort();
+    } else {
+      startupSignal?.addEventListener?.('abort', forwardExternalAbort, { once: true });
+    }
+    let incomingDeckForCleanup = null;
+    let incomingDeckNameForCleanup = null;
+    let incomingPlaybackStarted = false;
+    const cleanupIncomingDeck = () => {
+      if (!incomingDeckForCleanup) return;
+      if (incomingDeckNameForCleanup === activeDeck.current) return;
+      incomingDeckForCleanup.pause();
+      incomingDeckForCleanup.onended = null;
+      incomingDeckForCleanup.ontimeupdate = null;
+      incomingDeckForCleanup.src = '';
+      cleanupDeck(incomingDeckForCleanup);
+    };
+
+    try {
+    const deckA = deckARef.current;
+    const deckB = deckBRef.current;
+
+    const trackData = await loadTrack(fileHandle, {
+      signal: startupController.signal,
+    });
+    if (!trackData || startupController.signal.aborted) {
+      console.error('❌ PlayTrack: loadTrack returned null — file unreadable');
+      return false;
+    }
+
+    // Codec check — bail out early for formats the browser definitely cannot play
+    // (e.g. WMA on Chromium/Linux).  canPlayType returns '' when support is absent.
+    const CODEC_MAP = {
+      mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+      flac: 'audio/flac', m4a: 'audio/mp4', aac: 'audio/aac',
+      wma: 'audio/x-ms-wma', opus: 'audio/ogg; codecs=opus',
+    };
+    const urlExt = (trackData.url.split('?')[0].split('.').pop() || '').toLowerCase();
+    const codecMime = CODEC_MAP[urlExt];
+    if (codecMime) {
+      const probe = new Audio();
+      if (probe.canPlayType(codecMime) === '') {
+        console.error(`❌ PlayTrack: Browser cannot play ${urlExt.toUpperCase()} (${trackData.name}) — skipping`);
+        return false;
+      }
+    }
+
+    // Never choose a deck pair while an earlier crossfade can still flip the
+    // active pointer. Let audible overlap finish first, then capture ownership
+    // atomically before preparing the inactive deck.
+    const crossfadeWaitDeadline = performance.now() + (CROSSFADE_DURATION * 1000) + 1500;
+    while (crossfadeInProgressRef.current
+        && !startupController.signal.aborted
+        && performance.now() < crossfadeWaitDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (startupController.signal.aborted || crossfadeInProgressRef.current) {
+      console.warn('⚠️ PlayTrack: prior crossfade did not settle before startup deadline');
+      return false;
+    }
+
+    const ctx = ensureAudioContext();
+
+    const outgoingDeckName = activeDeck.current;
+    const inactiveDeck = getInactiveDeck();
+    const activeDeckEl = getActiveDeck();
+    const inactiveGain = getInactiveDeckGain();
+    const activeGain = getActiveDeckGain();
+    const inactiveSourceRef = getInactiveSourceRef();
+    const inactiveDeckName = inactiveDeck === deckARef.current ? 'A' : 'B';
+    console.log(`🔍 PlayTrack: DECK STATE before load — active=${outgoingDeckName}, A.paused=${deckA?.paused}, A.src=${deckA?.src ? 'set' : 'empty'}, B.paused=${deckB?.paused}, B.src=${deckB?.src ? 'set' : 'empty'}`);
+    incomingDeckForCleanup = inactiveDeck;
+    incomingDeckNameForCleanup = inactiveDeckName;
+    const ownsStartup = () => ownsDeckStartup({
+      capturedActiveDeck: outgoingDeckName,
+      currentActiveDeck: activeDeck.current,
+      crossfadeInProgress: crossfadeInProgressRef.current,
+    });
+    const preparedHandle = preparedDeckControllerRef.current?.adopt({
+      url: trackData.url,
+      owner: preparedOwner,
+    });
+    if (!preparedHandle) {
+      // A changed/failed/cancelled target must not survive into a later
+      // playback request. Invalidation is identity guarded by the helper.
+      preparedDeckControllerRef.current?.invalidate({
+        deck: inactiveDeck,
+        deckName: inactiveDeckName,
+      });
+    }
+    const deckGeneration = preparedHandle?.generation
+      || ((deckGenerationRef.current[inactiveDeckName] || 0) + 1);
+    const trackHandle = { deck: inactiveDeckName, generation: deckGeneration };
+
+    const inactiveUrlRef = inactiveDeck === deckARef.current ? deckAUrl : deckBUrl;
+    if (!preparedHandle) {
+      if (inactiveUrlRef.current && inactiveUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(inactiveUrlRef.current);
+      }
+      inactiveUrlRef.current = trackData.url;
+
+      inactiveDeck.currentTime = 0;
+      inactiveDeck.src = '';
+      inactiveDeck.src = trackData.url;
+
+      try {
+        inactiveDeck.load();
+        await waitForMediaReady(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        if (!ownsStartup()) {
+          console.warn('⚠️ PlayTrack: deck ownership changed while media was loading');
+          cleanupIncomingDeck();
+          return false;
+        }
+      } catch (loadErr) {
+        console.error('❌ PlayTrack: Audio load failed:', loadErr.message);
+        cleanupIncomingDeck();
+        return false;
+      }
+    } else {
+      // The preparation already assigned and loaded this exact URL. Do not
+      // reset src/currentTime or call load a second time.
+      inactiveUrlRef.current = trackData.url;
+    }
+
+    const inactiveSourceElRef = getInactiveSourceElRef();
+    if (!inactiveSourceRef.current || inactiveSourceElRef.current !== inactiveDeck) {
+      connectDeckSource(inactiveDeck, inactiveGain, inactiveSourceRef, inactiveSourceElRef);
+    }
+
+    // Loudness/BPM analysis can fetch, decode, and render several seconds of
+    // audio. Cached values are safe to use now; an uncached result must never
+    // hold the deck before play starts.
+    const analysisSourceUrl = inactiveDeck.src;
+    const loadedDuration = Number.isFinite(inactiveDeck.duration) && inactiveDeck.duration > 0
+      ? inactiveDeck.duration
+      : (beatMatchEnabledRef.current ? 30 : AUTO_GAIN_ANALYSIS_SECONDS);
+    const analysisResult = getCachedTrackAnalysis(analysisSourceUrl) || {
+      gain: 1.0,
+      bpm: null,
+    };
+    const autoGainValue = analysisResult.gain;
+    const incomingBpm = analysisResult.bpm;
+    inactiveGain.gain.value = autoGainValue;
+
+    const maxDur = maxDurationOverrideRef.current || MAX_SONG_DURATION;
+    const effectiveDuration = Math.min(inactiveDeck.duration || maxDur, maxDur);
+
+    const outgoingBpm = activeDeckBpmRef.current;
+    const doBeatMatch = beatMatchEnabledRef.current && outgoingBpm && incomingBpm && Math.abs(outgoingBpm - incomingBpm) > 1;
+    const beatMatchRate = doBeatMatch ? outgoingBpm / incomingBpm : 1.0;
+    const beatMatchMaxDiff = 0.12;
+    const clampedRate = doBeatMatch ? Math.max(1 - beatMatchMaxDiff, Math.min(1 + beatMatchMaxDiff, beatMatchRate)) : 1.0;
+
+    if (doBeatMatch) {
+      console.log(`🎵 Beat Match: ${outgoingBpm} → ${incomingBpm} BPM, rate=${clampedRate.toFixed(3)}`);
+      inactiveDeck.playbackRate = clampedRate;
+    }
+
+    const commitIncomingStart = () => {
+      // This is intentionally called only after playMediaWithDeadline has
+      // settled successfully. A failed/aborted start must not disturb the
+      // current fade, handlers, deck generation, or published track state.
+      cancelAnalysisGainRamp();
+      cancelOwnedDeckFade('new-track');
+      const crossfadeOwner = ++crossfadeOwnerRef.current;
+      if (fadeAnimationRef.current) {
+        cancelAnimationFrame(fadeAnimationRef.current);
+        fadeAnimationRef.current = null;
+      }
+      if (safetyFadeRef.current) {
+        cancelAnimationFrame(safetyFadeRef.current);
+        safetyFadeRef.current = null;
+      }
+      safetyFadeHandleRef.current = null;
+      deckGenerationRef.current[inactiveDeckName] = deckGeneration;
+      inactiveDeck.onended = null;
+      inactiveDeck.ontimeupdate = null;
+      activeDeckEl.onended = null;
+      activeDeckEl.ontimeupdate = null;
+
+      maxDurationOverrideRef.current = null;
+      setDuration(effectiveDuration);
+      setCurrentTrack(trackData.name);
+      setCurrentTime(0);
+      lastTimeUpdateRef.current = 0;
+      onTrackChangeRef.current?.(trackData.name);
+      return crossfadeOwner;
+    };
+
+    const ownsCrossfade = (crossfadeOwner) => ownsDeckCrossfade({
+      owner: crossfadeOwner,
+      currentOwner: crossfadeOwnerRef.current,
+      outgoingDeck: outgoingDeckName,
+      activeDeck: activeDeck.current,
+      incomingDeck: inactiveDeckName,
+      incomingGeneration: deckGeneration,
+      deckGenerations: deckGenerationRef.current,
+    });
+
+    try {
+      if (crossfade && isPlayingRef.current) {
+        inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
+        await playMediaWithDeadline(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        incomingPlaybackStarted = true;
+        if (!ownsStartup()) {
+          console.warn('⚠️ PlayTrack: deck ownership changed while playback was starting');
+          cleanupIncomingDeck();
+          return false;
+        }
+        const crossfadeOwner = commitIncomingStart();
+        crossfadeInProgressRef.current = true;
+
+        const targetVolume = autoGainValue;
+        const oldStartVolume = activeGain.gain.value;
+        const startTime = performance.now();
+        const fadeDuration = CROSSFADE_DURATION * 1000;
+
+        const animateFade = (now) => {
+          if (!ownsCrossfade(crossfadeOwner)) return;
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / fadeDuration, 1);
+
+          inactiveGain.gain.setValueAtTime(clampVol(equalPowerIn(progress) * targetVolume), ctx.currentTime);
+          activeGain.gain.setValueAtTime(clampVol(equalPowerOut(progress) * oldStartVolume), ctx.currentTime);
+
+          if (doBeatMatch) {
+            const rateProgress = Math.min(progress * 1.5, 1);
+            inactiveDeck.playbackRate = clampedRate + (1.0 - clampedRate) * rateProgress;
+          }
+
+          if (progress < 1) {
+            fadeAnimationRef.current = requestAnimationFrame(animateFade);
+          } else {
+            fadeAnimationRef.current = null;
+            crossfadeInProgressRef.current = false;
+            if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
+            activeDeckBpmRef.current = incomingBpm;
+            activeDeckEl.pause();
+            activeDeckEl.src = '';
+            cleanupDeck(activeDeckEl);
+            activeDeck.current = inactiveDeckName;
+          }
+        };
+
+        fadeAnimationRef.current = requestAnimationFrame(animateFade);
+      } else if (isPlayingRef.current) {
+        const targetVolume = autoGainValue;
+        const oldStartVolume = activeGain.gain.value;
+        inactiveGain.gain.setValueAtTime(0, ctx.currentTime);
+        if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
+        await playMediaWithDeadline(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        incomingPlaybackStarted = true;
+        if (!ownsStartup()) {
+          console.warn('⚠️ PlayTrack: deck ownership changed while playback was starting');
+          cleanupIncomingDeck();
+          return false;
+        }
+        const crossfadeOwner = commitIncomingStart();
+        crossfadeInProgressRef.current = true;
+
+        const startTime = performance.now();
+        const fadeDuration = MICRO_CROSSFADE_DURATION * 1000;
+
+        const animateMicroFade = (now) => {
+          if (!ownsCrossfade(crossfadeOwner)) return;
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / fadeDuration, 1);
+
+          inactiveGain.gain.setValueAtTime(clampVol(equalPowerIn(progress) * targetVolume), ctx.currentTime);
+          activeGain.gain.setValueAtTime(clampVol(equalPowerOut(progress) * oldStartVolume), ctx.currentTime);
+
+          if (progress < 1) {
+            fadeAnimationRef.current = requestAnimationFrame(animateMicroFade);
+          } else {
+            fadeAnimationRef.current = null;
+            crossfadeInProgressRef.current = false;
+            activeDeckBpmRef.current = incomingBpm;
+            activeDeckEl.pause();
+            activeDeckEl.src = '';
+            cleanupDeck(activeDeckEl);
+            activeDeck.current = inactiveDeckName;
+          }
+        };
+
+        fadeAnimationRef.current = requestAnimationFrame(animateMicroFade);
+      } else {
+        inactiveGain.gain.setValueAtTime(autoGainValue, ctx.currentTime);
+        inactiveDeck.currentTime = 0;
+        if (doBeatMatch) inactiveDeck.playbackRate = 1.0;
+        await playMediaWithDeadline(inactiveDeck, {
+          timeoutMs: MEDIA_READY_TIMEOUT_MS,
+          signal: startupController.signal,
+        });
+        incomingPlaybackStarted = true;
+        if (!ownsStartup()) {
+          console.warn('⚠️ PlayTrack: deck ownership changed while playback was starting');
+          cleanupIncomingDeck();
+          return false;
+        }
+        commitIncomingStart();
+        crossfadeInProgressRef.current = false;
+        // Keep the outgoing deck intact until the replacement has actually
+        // started. A rejected/stalled play must not interrupt audible audio.
+        activeDeckEl.pause();
+        activeDeckEl.src = '';
+        cleanupDeck(activeDeckEl);
+        activeDeckBpmRef.current = incomingBpm;
+        activeDeck.current = inactiveDeckName;
+      }
+    } catch (playErr) {
+      console.error('❌ PlayTrack: play() failed:', playErr?.message || playErr);
+      if (!incomingPlaybackStarted && incomingDeckForCleanup) {
+        cleanupIncomingDeck();
+      }
+      return false;
+    }
+
+    // A late result fills the cache for future starts. It may also ramp the
+    // same still-owned active deck; applyAnalyzedGain refuses stale or
+    // crossfading replacements and never changes playback rate.
+    scheduleTrackAnalysis({
+      sourceUrl: analysisSourceUrl,
+      deckEl: inactiveDeck,
+      duration: loadedDuration,
+      handle: trackHandle,
+    });
+
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+    try { onTrackReady?.(trackHandle); } catch (error) {
+      console.warn('⚠️ PlayTrack: onTrackReady callback failed:', error?.message || error);
+    }
+
+    console.log(`🔍 PlayTrack: DECK STATE after play — active=${activeDeck.current}, A.paused=${deckARef.current?.paused}, B.paused=${deckBRef.current?.paused}`);
+
+    const newDeck = inactiveDeck;
+    const newDeckGain = inactiveGain;
+    let transitionTriggered = false;
+    let safetyFading = false;
+
+    const startSafetyFade = () => {
+      if (safetyFading || crossfadeInProgressRef.current) return;
+      safetyFading = true;
+      safetyFadeHandleRef.current = trackHandle;
+      const fadeStartVolume = newDeckGain.gain.value;
+      const fadeStart = performance.now();
+      const shortTrack = resolvedDuration < 60;
+      const fadeSecs = shortTrack ? Math.min(2, resolvedDuration * 0.15) : SAFETY_FADE_SECONDS;
+      const fadeDur = fadeSecs * 1000;
+
+      const animateOut = (now) => {
+        if (!isCurrentDeckHandle(trackHandle)) {
+          if (safetyFadeHandleRef.current === trackHandle) {
+            safetyFadeRef.current = null;
+            safetyFadeHandleRef.current = null;
+          }
+          return;
+        }
+        const elapsed = now - fadeStart;
+        const progress = Math.min(elapsed / fadeDur, 1);
+        newDeckGain.gain.setValueAtTime(clampVol(equalPowerOut(progress) * fadeStartVolume), ctx.currentTime);
+
+        if (progress < 1) {
+          safetyFadeRef.current = requestAnimationFrame(animateOut);
+        } else {
+          safetyFadeRef.current = null;
+          if (safetyFadeHandleRef.current === trackHandle) {
+            safetyFadeHandleRef.current = null;
+          }
+          newDeck.pause();
+        }
+      };
+
+      safetyFadeRef.current = requestAnimationFrame(animateOut);
+    };
+
+    let resolvedDuration = effectiveDuration;
+
+    const timeUpdateHandler = () => {
+      const time = newDeck.currentTime;
+      const now = performance.now();
+
+      const realDur = newDeck.duration;
+      if (realDur && isFinite(realDur) && realDur > 0) {
+        const capped = Math.min(realDur, maxDur);
+        if (Math.abs(capped - resolvedDuration) > 1) {
+          resolvedDuration = capped;
+          setDuration(resolvedDuration);
+        }
+      }
+
+      if (!triggerAtMediaEnd && time >= resolvedDuration) {
+        if (!safetyFading) startSafetyFade();
+        if (!transitionTriggered) {
+          transitionTriggered = true;
+          onTrackEndRef.current?.();
+        }
+        return;
+      }
+
+      const isShortTrack = resolvedDuration < 60;
+      if (!triggerAtMediaEnd) {
+        const effectiveSafetyFade = isShortTrack ? Math.min(2, resolvedDuration * 0.15) : SAFETY_FADE_SECONDS;
+        const safetyFadePoint = resolvedDuration - effectiveSafetyFade;
+        if (time >= safetyFadePoint && !safetyFading) {
+          startSafetyFade();
+        }
+      }
+
+      if (now - lastTimeUpdateRef.current > 1000) {
+        lastTimeUpdateRef.current = now;
+        setCurrentTime(time);
+        onTimeUpdateRef.current?.(time, resolvedDuration);
+      }
+
+      const triggerPoint = getTrackEndTriggerPoint({
+        duration: resolvedDuration,
+        isShortTrack,
+        triggerAtMediaEnd,
+        transitionLeadSeconds: TRANSITION_LEAD_TIME,
+      });
+      if (!triggerAtMediaEnd && time >= triggerPoint && !transitionTriggered) {
+        transitionTriggered = true;
+        onTrackEndRef.current?.();
+      }
+    };
+
+    const endedHandler = () => {
+      if (!transitionTriggered) {
+        transitionTriggered = true;
+        onTrackEndRef.current?.();
+      }
+    };
+
+    newDeck.ontimeupdate = timeUpdateHandler;
+    newDeck.onended = endedHandler;
+
+    return true;
+    } catch (outerErr) {
+      console.error('❌ PlayTrack: Unexpected error:', outerErr?.message || outerErr);
+      if (!incomingPlaybackStarted && incomingDeckForCleanup) {
+        cleanupIncomingDeck();
+      }
+      return false;
+    } finally {
+      startupSignal?.removeEventListener?.('abort', forwardExternalAbort);
+      if (pendingTrackStartRef.current === pendingStart) {
+        pendingTrackStartRef.current = null;
+      }
+      releasePlayTrackLock();
+    }
+  }, [
+    loadTrack,
+    cleanupDeck,
+    ensureAudioContext,
+    connectDeckSource,
+    getCachedTrackAnalysis,
+    playMediaWithDeadline,
+    scheduleTrackAnalysis,
+    cancelOwnedDeckFade,
+    cancelAnalysisGainRamp,
+    isCurrentDeckHandle,
+  ]);
+
+  const cancelPendingTrackStart = useCallback(async (reason = 'cancelled') => {
+    const pending = pendingTrackStartRef.current;
+    if (!pending) return false;
+    if (!pending.controller.signal.aborted) {
+      pending.controller.abort(reason);
+    }
+    await pending.lock;
+    return true;
+  }, []);
+
+  const applyDuckGain = useCallback((change = {}) => {
+    const ctx = ensureAudioContext();
+    const busGain = musicBusGainRef.current;
+    if (!busGain) return;
+    const target = duckOwnersRef.current.getTargetGain(1.0);
+    const current = Math.max(busGain.gain.value, 0.001);
+    busGain.gain.cancelScheduledValues(ctx.currentTime);
+    busGain.gain.setValueAtTime(current, ctx.currentTime);
+    if (Math.abs(target - current) < 0.0001) return;
+    if (change.immediate) {
+      busGain.gain.setValueAtTime(target, ctx.currentTime);
+      return;
+    }
+    const durationMs = target < current
+      ? (change.attackMs ?? DUCK_ATTACK_MS)
+      : (change.releaseMs ?? DUCK_RELEASE_MS);
+    busGain.gain.exponentialRampToValueAtTime(
+      Math.max(target, 0.001),
+      ctx.currentTime + Math.max(0, durationMs) / 1000,
+    );
+  }, [ensureAudioContext]);
+  applyDuckGainRef.current = applyDuckGain;
+
+  // The voice element is a single shared voiceover owner. Manual and remote
+  // owners live beside it in the registry, so releasing either one cannot
+  // cancel the other.
+  const duck = useCallback(() => {
+    ensureAudioContext();
+    duckOwnersRef.current.acquire(VOICE_DUCK_OWNER, {
+      gain: VOICE_DUCK_GAIN,
+      attackMs: DUCK_ATTACK_MS,
+    });
+    return VOICE_DUCK_OWNER;
+  }, [ensureAudioContext]);
+
+  const unduck = useCallback(() => {
+    duckOwnersRef.current.release(VOICE_DUCK_OWNER);
+  }, []);
+
+  const acquireDuck = useCallback((ownerId, {
+    gain = VOICE_DUCK_GAIN,
+    leaseMs = null,
+    immediate = true,
+  } = {}) => {
+    ensureAudioContext();
+    const id = duckOwnersRef.current.acquire(ownerId, { gain, leaseMs, immediate });
+    // The store callback carries the transition metadata. Keeping this
+    // explicit return value lets remote leases renew/release by owner key.
+    return id;
+  }, [ensureAudioContext]);
+
+  const renewDuck = useCallback((ownerId, { leaseMs = DUCK_LEASE_MS } = {}) => (
+    duckOwnersRef.current.renew(ownerId, { leaseMs })
+  ), []);
+
+  const releaseDuck = useCallback((ownerId, options = {}) => (
+    duckOwnersRef.current.release(ownerId, options)
+  ), []);
+
+  const playAnnouncement = useCallback((audioUrl, {
+    autoDuck = true,
+    onNearEnd = null,
+    waitForEnd = true,
+    onStarted = null,
+    onPlaybackStarted = null,
+  } = {}) => {
+    // The voice element is shared, but each invocation owns a distinct
+    // generation and duck token. Starting a new announcement must settle the
+    // old promise before replacing its event handlers.
+    let session;
+    const token = announcementLifecycleRef.current.start(reason => session?.cancel(reason));
+    const { generation, ownerId } = token;
+    const voice = voiceElRef.current;
+    try { onStarted?.(token); } catch (error) {
+      console.warn('⚠️ PlayAnnouncement: onStarted callback failed:', error?.message || error);
+    }
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let cleaned = false;
+      let nearEndFired = false;
+      let duckAcquired = false;
+      let readyAbortController = null;
+      const isCurrent = () => (
+        announcementLifecycleRef.current.isCurrent(token)
+      );
+      const settle = (error = null) => {
+        if (settled) return;
+        settled = true;
+        if (error) reject(error);
+        else resolve();
+      };
+      const cleanup = ({ cancelled = false, abortReady = true } = {}) => {
+        if (cleaned) return;
+        cleaned = true;
+        if (abortReady) readyAbortController?.abort();
+        readyAbortController = null;
+        if (voice) {
+          if (voice.onended === onEnded) voice.onended = null;
+          if (voice.onerror === onError) voice.onerror = null;
+          if (voice.ontimeupdate === onTimeUpdate) voice.ontimeupdate = null;
+        }
+        if (audioUrl?.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
+        if (!cancelled && !nearEndFired && onNearEnd) {
+          nearEndFired = true;
+          onNearEnd();
+        }
+        if (duckAcquired) {
+          duckOwnersRef.current.release(ownerId);
+          duckAcquired = false;
+        }
+        announcementLifecycleRef.current.finish(token);
+      };
+      const cancel = (reason = 'cancelled') => {
+        if (cleaned) {
+          settle();
+          return;
+        }
+        readyAbortController?.abort();
+        if (voice && isCurrent()) {
+          voice.onended = null;
+          voice.onerror = null;
+          voice.ontimeupdate = null;
+          voice.pause();
+          try { voice.currentTime = 0; } catch {}
+          // Clearing src prevents a delayed canplay/play continuation from
+          // reviving cancelled audio after a newer announcement starts.
+          voice.removeAttribute('src');
+          try { voice.load(); } catch {}
+        }
+        cleanup({ cancelled: true });
+        settle();
+        console.log(`🎤 Announcement ${generation} ${reason}`);
+      };
+      const onTimeUpdate = () => {
+        if (!isCurrent() || nearEndFired || !onNearEnd) return;
+        if (voice && voice.duration && voice.duration > NEAR_END_SECONDS
+            && voice.currentTime >= voice.duration - NEAR_END_SECONDS) {
+          nearEndFired = true;
+          onNearEnd();
+        }
+      };
+      const onEnded = () => {
+        cleanup();
+        settle();
+      };
+      const onError = (event) => {
+        const message = event?.target?.error?.message || 'Announcement audio playback failed';
+        console.error('❌ Announcement audio error:', message);
+        // Let waitForMediaReady receive the media error as well; aborting its
+        // signal here would replace the useful decode error with a generic
+        // ownership abort.
+        cleanup({ cancelled: true, abortReady: false });
+        settle(new Error(message));
+      };
+      session = { cancel };
+      announcementLifecycleRef.current.setCancel(token, cancel);
+
+      if (!audioUrl) {
+        console.warn('⚠️ PlayAnnouncement: No audio URL provided');
+        cleanup();
+        settle(new Error('No announcement audio URL was provided'));
+        return;
+      }
+      if (!voice) {
+        cleanup();
+        settle(new Error('Announcement audio element is unavailable'));
+        return;
+      }
+
+      voice.src = audioUrl;
+      voice.volume = 1.0;
+      voice.loop = false;
+
+      if (voiceGainRef.current && audioCtxRef.current) {
+        if (voiceSourceElRef.current !== voice) {
+          if (voiceSourceRef.current) {
+            try { voiceSourceRef.current.disconnect(); } catch {}
+          }
+          const ctx = ensureAudioContext();
+          const src = ctx.createMediaElementSource(voice);
+          src.connect(voiceGainRef.current);
+          voiceSourceRef.current = src;
+          voiceSourceElRef.current = voice;
+        }
+        voiceGainRef.current.gain.setValueAtTime(voiceGainLevel.current, audioCtxRef.current.currentTime);
+      }
+
+      voice.ontimeupdate = onTimeUpdate;
+      voice.onended = onEnded;
+      voice.onerror = onError;
+
+      readyAbortController = new AbortController();
+      const ready = waitForMediaReady(voice, {
+        timeoutMs: ANNOUNCEMENT_READY_TIMEOUT_MS,
+        signal: readyAbortController.signal,
+        isCurrent,
+      });
+      // Install the bounded readiness listeners before load so a synchronous
+      // media failure cannot leave this owner waiting forever.
+      voice.load();
+
+      ready.then(async () => {
+        if (!isCurrent() || cleaned) {
+          settle();
+          return;
+        }
+        if (autoDuck) {
+          ensureAudioContext();
+          duckOwnersRef.current.acquire(ownerId, {
+            gain: VOICE_DUCK_GAIN,
+            attackMs: DUCK_ATTACK_MS,
+          });
+          duckAcquired = true;
+        }
+        try {
+          await voice.play();
+          if (!isCurrent() || cleaned) {
+            settle();
+            return;
+          }
+          try { onPlaybackStarted?.(token); } catch (error) {
+            console.warn('⚠️ PlayAnnouncement: onPlaybackStarted callback failed:', error?.message || error);
+          }
+          // Remote command receipts describe successful playback startup, not
+          // the duration of the media. Event handlers remain installed so
+          // normal end/error cleanup and unducking still occur later.
+          if (!waitForEnd) settle();
+        } catch (error) {
+          console.error('Failed to play announcement:', error);
+          cleanup();
+          settle(error);
+        }
+      }).catch(error => {
+        cleanup({ cancelled: true });
+        settle(error);
+      });
+    });
+  }, [ensureAudioContext]);
+
+  const pause = useCallback(() => {
+    cancelOwnedDeckFade('pause');
+    preparedDeckControllerRef.current?.invalidate();
+    getActiveDeck().pause();
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+  }, [cancelOwnedDeckFade]);
+
+  const pauseAll = useCallback(() => {
+    cancelOwnedDeckFade('pause-all');
+    preparedDeckControllerRef.current?.invalidate();
+    if (fadeAnimationRef.current) {
+      cancelAnimationFrame(fadeAnimationRef.current);
+      fadeAnimationRef.current = null;
+    }
+    if (safetyFadeRef.current) {
+      cancelAnimationFrame(safetyFadeRef.current);
+      safetyFadeRef.current = null;
+    }
+    safetyFadeHandleRef.current = null;
+    crossfadeInProgressRef.current = false;
+    if (deckARef.current) {
+      deckARef.current.pause();
+      deckARef.current.onended = null;
+      deckARef.current.ontimeupdate = null;
+    }
+    if (deckBRef.current) {
+      deckBRef.current.pause();
+      deckBRef.current.onended = null;
+      deckBRef.current.ontimeupdate = null;
+    }
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+  }, [cancelOwnedDeckFade]);
+
+  const resume = useCallback(() => {
+    ensureAudioContext();
+    try {
+      getActiveDeck().play().catch(err => {
+        console.error('❌ Resume play failed:', err.message);
+      });
+    } catch (err) {
+      console.error('❌ Resume failed:', err.message);
+    }
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+  }, [ensureAudioContext]);
+
+  const setVolume = useCallback((vol) => {
+    const v = clampVol(vol);
+    masterVolume.current = v;
+    if (masterGainRef.current && audioCtxRef.current) {
+      masterGainRef.current.gain.setValueAtTime(v, audioCtxRef.current.currentTime);
+    }
+  }, []);
+
+  const setVoiceGain = useCallback((gain) => {
+    const g = Math.max(0, Math.min(3, gain));
+    voiceGainLevel.current = g;
+    if (voiceGainRef.current && audioCtxRef.current) {
+      voiceGainRef.current.gain.setValueAtTime(g, audioCtxRef.current.currentTime);
+    }
+  }, []);
+
+  const seek = useCallback((time) => {
+    const deck = getActiveDeck();
+    deck.currentTime = Math.min(time, MAX_SONG_DURATION);
+  }, []);
+
+  const setMusicEq = useCallback((band, value) => {
+    const v = Math.max(-12, Math.min(12, value));
+    const ref_map = { bass: musicEqBassRef, mid: musicEqMidRef, treble: musicEqTrebleRef };
+    const filterRef = ref_map[band];
+    if (filterRef && filterRef.current && audioCtxRef.current) {
+      filterRef.current.gain.setValueAtTime(v, audioCtxRef.current.currentTime);
+    }
+    const saved = JSON.parse(localStorage.getItem('neonaidj_music_eq') || '{"bass":0,"mid":0,"treble":0}');
+    saved[band] = v;
+    localStorage.setItem('neonaidj_music_eq', JSON.stringify(saved));
+    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_music_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
+  }, []);
+
+  const stopVoice = useCallback(() => {
+    announcementLifecycleRef.current?.cancelActive('stopped');
+    const voice = voiceElRef.current;
+    if (voice) {
+      voice.pause();
+      voice.currentTime = 0;
+      voice.removeAttribute('src');
+      try { voice.load(); } catch {}
+      voice.onended = null;
+      voice.onerror = null;
+      voice.ontimeupdate = null;
+    }
+    unduck();
+  }, [unduck]);
+
+  const stopOwnedVoice = useCallback((handle) => {
+    if (!handle || !announcementLifecycleRef.current?.isCurrent(handle)) return false;
+    announcementLifecycleRef.current.cancelActive('stopped');
+    return true;
+  }, []);
+
+  const setVoiceEq = useCallback((band, value) => {
+    const v = Math.max(-12, Math.min(12, value));
+    const ref_map = { bass: voiceEqBassRef, mid: voiceEqMidRef, treble: voiceEqTrebleRef };
+    const filterRef = ref_map[band];
+    if (filterRef && filterRef.current && audioCtxRef.current) {
+      filterRef.current.gain.setValueAtTime(v, audioCtxRef.current.currentTime);
+    }
+    const saved = JSON.parse(localStorage.getItem('neonaidj_voice_eq') || '{"bass":0,"mid":0,"treble":0}');
+    saved[band] = v;
+    localStorage.setItem('neonaidj_voice_eq', JSON.stringify(saved));
+    try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_voice_eq: JSON.stringify(saved) }) }).catch(() => {}); } catch {}
+  }, []);
+
+  const getPlaybackHealth = useCallback(() => {
+    const describeDeck = (deckName, deck, gainRef) => ({
+      generation: deckGenerationRef.current[deckName] || 0,
+      paused: deck?.paused ?? true,
+      ended: deck?.ended ?? false,
+      currentTime: Number.isFinite(deck?.currentTime) ? deck.currentTime : null,
+      duration: Number.isFinite(deck?.duration) ? deck.duration : null,
+      readyState: deck?.readyState ?? 0,
+      srcSet: !!deck?.src,
+      gain: Number.isFinite(gainRef.current?.gain?.value)
+        ? gainRef.current.gain.value
+        : null,
+    });
+    return {
+      activeDeck: activeDeck.current,
+      crossfadeInProgress: crossfadeInProgressRef.current,
+      audioContextState: audioCtxRef.current?.state || 'missing',
+      decks: {
+        A: describeDeck('A', deckARef.current, deckAGainRef),
+        B: describeDeck('B', deckBRef.current, deckBGainRef),
+      },
+    };
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    playTrack,
+    cancelPendingTrackStart,
+    prepareNextTrack,
+    invalidatePreparedTrack,
+    captureDeck,
+    fadeOwnedDeck,
+    stopOwnedDeck,
+    pause,
+    pauseAll,
+    resume,
+    duck,
+    unduck,
+    acquireDuck,
+    renewDuck,
+    releaseDuck,
+    playAnnouncement,
+    stopVoice,
+    stopOwnedVoice,
+    setVolume,
+    setVoiceGain,
+    seek,
+    setMusicEq,
+    setVoiceEq,
+    setMaxDuration: (seconds) => { maxDurationOverrideRef.current = seconds; },
+    setAutoGain: (enabled) => { autoGainEnabledRef.current = enabled; },
+    setBeatMatch: (enabled) => {
+      beatMatchEnabledRef.current = enabled;
+      try { localStorage.setItem('neonaidj_beat_match', enabled ? 'true' : 'false'); } catch {}
+      try { fetch('/api/config/save-to-server', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('djbooth_token') || ''}` }, body: JSON.stringify({ neonaidj_beat_match: enabled ? 'true' : 'false' }) }).catch(() => {}); } catch {}
+    },
+    getBeatMatchEnabled: () => beatMatchEnabledRef.current,
+    getPlaybackHealth,
+    isPlaying,
+    currentTrack,
+    currentTime,
+    duration
+  }));
+
+  return null;
+});
+
+AudioEngine.displayName = 'AudioEngine';
+
+export default AudioEngine;

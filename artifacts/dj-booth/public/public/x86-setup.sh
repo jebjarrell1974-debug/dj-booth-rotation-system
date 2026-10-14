@@ -12,6 +12,13 @@ UNIT_HOME=$(eval echo ~$UNIT_USER)
 APP_DIR="$UNIT_HOME/djbooth"
 GITHUB_REPO="jebjarrell1974-debug/dj-booth-rotation-system"
 
+# Bootstrap is not an alternate updater. Never overwrite an operating unit via
+# an unauthenticated clone or replace its independently gated installed updater.
+if [ -e "$APP_DIR" ]; then
+  echo "ERROR: Existing installation — use the authenticated fleet updater, not bootstrap setup" >&2
+  exit 42
+fi
+
 echo "User: $UNIT_USER"
 echo "Home: $UNIT_HOME"
 echo "App:  $APP_DIR"
@@ -542,15 +549,14 @@ TWEOF
   echo "Touch watchdog installed (cycles every 180s)"
 fi
 
-echo "[12/12] Setting daily reboot and downloading update script..."
+echo "[12/12] Setting daily reboot and installing bundled update script..."
 echo "0 8 * * * root /sbin/reboot" | sudo tee /etc/cron.d/daily-reboot > /dev/null
-# -f = fail on 404 (an error page must NEVER be saved as the updater); validate shebang.
-curl -fsSL -o /tmp/djbooth-update-dl.sh "https://raw.githubusercontent.com/$GITHUB_REPO/main/artifacts/dj-booth/public/public/djbooth-update-github.sh" \
-  && head -1 /tmp/djbooth-update-dl.sh | grep -q '^#!/bin/bash' \
-  && mv /tmp/djbooth-update-dl.sh "$UNIT_HOME/djbooth-update.sh" \
-  && chmod +x "$UNIT_HOME/djbooth-update.sh" \
-  && echo "Update script installed" \
-  || echo "WARNING: update script download FAILED — run the curl from the runbook manually"
+# Initial bootstrap trust remains separately scoped. Do not introduce a second
+# raw-network executable in addition to that initial source checkout.
+cp "$APP_DIR/public/public/djbooth-update-github.sh" "$UNIT_HOME/djbooth-update.sh.new"
+chmod +x "$UNIT_HOME/djbooth-update.sh.new"
+mv -f "$UNIT_HOME/djbooth-update.sh.new" "$UNIT_HOME/djbooth-update.sh"
+echo "Bundled updater installed; independent installer provisioning is required before it can update"
 
 echo ""
 echo "================================================"

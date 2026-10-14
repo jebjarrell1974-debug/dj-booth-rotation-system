@@ -145,11 +145,11 @@ export const AuthProvider = ({ children }) => {
   const initDjPin = useCallback(async (pin) => {
     const data = await auth.initDjPin(pin);
     setSessionInfo(data);
-    setUser({ name: 'Staff' });
+    setUser({ name: data.staffName || 'GM' });
     setRole('dj');
-    setStaffName('Staff');
-    setStaffRole('dj');
-    setIsMaster(false);
+    setStaffName(data.staffName || 'GM');
+    setStaffRole(data.staffRole || 'gm');
+    setIsMaster(!!data.isMaster);
     setIsAuthenticated(true);
     return data;
   }, []);

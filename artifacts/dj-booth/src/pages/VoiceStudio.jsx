@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { toast } from 'sonner';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -224,25 +225,27 @@ export default function VoiceStudio() {
   const handlePromoToggle = useCallback(async (track) => {
     setTogglingPromo(track.id);
     try {
-      await fetch(`/api/promos/${track.id}/blocked`, {
+      const response = await fetch(`/api/promos/${track.id}/blocked`, {
         method: 'PUT',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ blocked: !track.blocked }),
       });
+      if (!response.ok) throw new Error('Could not change ad status. Please retry.');
       await loadPromoTracks();
-    } catch {}
+    } catch (error) { toast.error(error.message); }
     setTogglingPromo(null);
   }, [loadPromoTracks]);
 
   const handlePromoDelete = useCallback(async (track) => {
     if (!window.confirm(`Delete promo "${track.name}"? This cannot be undone.`)) return;
     try {
-      await fetch(`/api/promos/${track.id}`, {
+      const response = await fetch(`/api/promos/${track.id}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
+      if (!response.ok) throw new Error('Could not delete ad. Please retry.');
       await loadPromoTracks();
-    } catch {}
+    } catch (error) { toast.error(error.message); }
   }, [loadPromoTracks]);
 
   useEffect(() => {

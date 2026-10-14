@@ -1,0 +1,260 @@
+export function normalizeSongsPerSet(value, fallback = 1) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
+}
+
+export function currentRotationDancerId(rotation, currentDancerIndex = 0) {
+  if (!Array.isArray(rotation) || rotation.length === 0) return null;
+  return rotation[currentDancerIndex] ?? rotation[0] ?? null;
+}
+
+export function resolveManualSetLength(assignments, manualSetLengths, dancerId, automaticDefault = 1) {
+  const key = String(dancerId);
+  if (manualSetLengths && Object.prototype.hasOwnProperty.call(manualSetLengths, key)) {
+    const explicit = Number(manualSetLengths[key]);
+    if (Number.isFinite(explicit)) return Math.max(0, explicit);
+  }
+  const assigned = assignments?.[dancerId] ?? assignments?.[key];
+  if (Array.isArray(assigned)) return assigned.length;
+  return normalizeSongsPerSet(automaticDefault, 1);
+}
+
+export function capSongList(songs, songsPerSet) {
+  if (!Array.isArray(songs)) return [];
+  const limit = normalizeSongsPerSet(songsPerSet);
+  return songs.length > limit ? songs.slice(0, limit) : songs;
+}
+
+// The global songs-per-set value is an automatic-pick default, not a limit on
+// an explicit DJ set.  Keep the old capped helpers for automatic assignments
+// and use these helpers at every manual persistence/transport boundary.
+export function normalizeManualSongList(songs) {
+  if (!Array.isArray(songs)) return [];
+  return songs.map(getSongName).filter(Boolean);
+}
+
+export function normalizeManualSongAssignments(assignments) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+  return Object.fromEntries(
+    Object.entries(assignments).map(([dancerId, songs]) => [
+      dancerId,
+      normalizeManualSongList(songs),
+    ]),
+  );
+}
+
+export function queueLatestManualAssignment(queue, dancerId, songs) {
+  const next = queue && typeof queue === 'object' && !Array.isArray(queue) ? { ...queue } : {};
+  next[String(dancerId)] = normalizeManualSongList(songs);
+  return next;
+}
+
+export function capSongAssignments(assignments, songsPerSet) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+
+  let changed = false;
+  const capped = {};
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    const limited = capSongList(songs, songsPerSet);
+    capped[dancerId] = limited;
+    if (limited !== songs) changed = true;
+  }
+  return changed ? capped : assignments;
+}
+
+function sameSongNameList(left, right) {
+  return Array.isArray(left) && Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((song, index) => song === right[index]);
+}
+
+// Normalize the assignment map used by the rotation editor without allocating
+// a new object when the displayed values are already stable. This is important
+// for the editor's layout effect: returning a fresh object for an unchanged
+// snapshot causes React to render forever while trying to "normalize" it.
+// Manual ids intentionally bypass the automatic set-length cap, but still
+// receive the same name normalization as remote/manual transport payloads.
+export function normalizeDisplayedAssignments(assignments, songsPerSet, manualIds = []) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+
+  const manualSet = new Set(Array.from(manualIds || [], id => String(id)));
+  let next = assignments;
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    const normalized = manualSet.has(String(dancerId))
+      ? normalizeManualSongList(songs)
+      : capSongList(songs, songsPerSet);
+    if (normalized === songs || sameSongNameList(songs, normalized)) continue;
+    if (next === assignments) next = { ...assignments };
+    next[dancerId] = normalized;
+  }
+
+  return next;
+}
+
+// Cap automatic assignments while leaving explicit DJ-set entries untouched.
+// Like the display normalizer above, return the original map when no value
+// changed so callers can safely compare by reference before setting state.
+export function capSongAssignmentsPreservingManual(assignments, songsPerSet, manualIds = []) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+
+  const manualSet = new Set(Array.from(manualIds || [], id => String(id)));
+  let next = assignments;
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    const normalized = manualSet.has(String(dancerId))
+      ? (Array.isArray(songs) ? songs : [])
+      : capSongList(songs, songsPerSet);
+    if (normalized === songs) continue;
+    if (next === assignments) next = { ...assignments };
+    next[dancerId] = normalized;
+  }
+  return next;
+}
+
+// Workspace state can contain either the browser's track objects or the
+// compact names sent by a remote editor. Older scanner payloads used
+// file_name/filename instead of name, so never let that shape reach a React
+// text node or a draggable key as undefined.
+export function getSongName(song) {
+  if (typeof song === 'string') {
+    const value = song.trim();
+    return value || null;
+  }
+  if (!song || typeof song !== 'object') return null;
+  for (const field of ['name', 'file_name', 'filename', 'trackName', 'title', 'path']) {
+    if (typeof song[field] !== 'string') continue;
+    const value = song[field].trim();
+    if (!value) continue;
+    if (field === 'path') return value.split(/[\\/]/).pop() || value;
+    return value;
+  }
+  return null;
+}
+
+// A completed automatic set must not be eligible for its own next-cycle
+// pre-pick. The server's play-history cooldown is still authoritative, but
+// these explicit excludes close the gap while play history is being recorded
+// and make background pre-picks safe before the final track has ended.
+export function buildAutomaticRepickExcludes(previousSongs, currentTrack) {
+  const names = [
+    ...(Array.isArray(previousSongs) ? previousSongs : []),
+    currentTrack,
+  ].map(getSongName).filter(Boolean);
+  return [...new Set(names)];
+}
+
+// Async automatic picks may finish after a DJ edit, another transition, or a
+// reload reconciliation. Commit only while the exact transition still owns an
+// empty bottom slot for this dancer. Manual/DJ-saved ownership always wins.
+export function canCommitAutomaticBottomPick({
+  capturedVersion,
+  currentVersion,
+  dancerId,
+  rotation,
+  currentAssignment,
+  hasManualOwnership = false,
+}) {
+  if (capturedVersion !== currentVersion || hasManualOwnership) return false;
+  if (!Array.isArray(rotation) || rotation.length === 0) return false;
+  if (String(rotation[rotation.length - 1]) !== String(dancerId)) return false;
+  return !Array.isArray(currentAssignment) || currentAssignment.length === 0;
+}
+
+export function normalizeSongList(songs, songsPerSet) {
+  if (!Array.isArray(songs)) return [];
+  return capSongList(songs.map(getSongName).filter(Boolean), songsPerSet);
+}
+
+export function normalizeSongAssignments(assignments, songsPerSet) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+  return Object.fromEntries(
+    Object.entries(assignments).map(([dancerId, songs]) => [
+      dancerId,
+      normalizeSongList(songs, songsPerSet),
+    ]),
+  );
+}
+
+// Reconcile the display-layer assignment map with a kiosk snapshot without
+// allocating a new object for an unchanged snapshot. Dirty editor entries are
+// intentionally retained until the command is acknowledged.
+export function reconcileAuthoritativeAssignments(current, authoritative, songsPerSet, dirtyIds = [], manualIds = []) {
+  const previous = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
+  const next = normalizeSongAssignments(authoritative, songsPerSet);
+  const manualSet = new Set((manualIds || []).map(id => String(id)));
+  for (const dancerId of manualSet) {
+    if (Object.prototype.hasOwnProperty.call(authoritative || {}, dancerId)) {
+      next[dancerId] = normalizeManualSongList(authoritative[dancerId]);
+    } else if (Object.prototype.hasOwnProperty.call(previous, dancerId)) {
+      // A consumed one-shot ledger may omit the assignment even though the
+      // persisted manual-length marker still owns it. Keep the last
+      // authoritative local value instead of capping/removing it.
+      next[dancerId] = previous[dancerId];
+    }
+  }
+  for (const rawId of dirtyIds || []) {
+    const dancerId = String(rawId);
+    if (Object.prototype.hasOwnProperty.call(previous, dancerId)) {
+      next[dancerId] = previous[dancerId];
+    }
+  }
+
+  const ids = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  const unchanged = [...ids].every(dancerId => {
+    const before = previous[dancerId];
+    const after = next[dancerId];
+    return Array.isArray(before) && Array.isArray(after) &&
+      before.length === after.length && before.every((song, index) => song === after[index]);
+  });
+  return unchanged ? current : next;
+}
+
+// Apply only explicit DJ updates to the live queue. An explicit empty list is
+// meaningful (the DJ removed the final song), while dancers omitted from both
+// the update map and override list must remain untouched.
+export function applyManualAssignments(assignments, updates, manualOverrides = []) {
+  const next = assignments && typeof assignments === 'object' && !Array.isArray(assignments)
+    ? { ...assignments }
+    : {};
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) return next;
+
+  for (const rawId of manualOverrides || []) {
+    const dancerId = String(rawId);
+    next[dancerId] = Object.prototype.hasOwnProperty.call(updates, dancerId)
+      ? updates[dancerId]
+      : [];
+  }
+  return next;
+}
+
+// Keep the one-shot DJ override ledger separate from automatic queue picks.
+// Explicit empty lists remain meaningful (the DJ removed the final song), so
+// the kiosk broadcasts the marker even when its assignment is empty.
+export function filterManualAssignments(assignments, manualFlags) {
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) return {};
+  if (!manualFlags || typeof manualFlags !== 'object' || Array.isArray(manualFlags)) return {};
+
+  const filtered = {};
+  for (const [dancerId, songs] of Object.entries(assignments)) {
+    if (!manualFlags[dancerId]) continue;
+    filtered[dancerId] = songs;
+  }
+  return filtered;
+}
+
+export function fillSongListToLimit(existingSongs, candidateSongs, songsPerSet) {
+  const limit = normalizeSongsPerSet(songsPerSet);
+  const existing = capSongList(existingSongs, limit);
+  if (existing.length >= limit || !Array.isArray(candidateSongs)) return existing;
+
+  const songKey = getSongName;
+  const seen = new Set(existing.map(songKey).filter(Boolean));
+  const additions = [];
+  for (const song of candidateSongs) {
+    const key = songKey(song);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    additions.push(song);
+    if (existing.length + additions.length >= limit) break;
+  }
+  return additions.length > 0 ? [...existing, ...additions] : existing;
+}

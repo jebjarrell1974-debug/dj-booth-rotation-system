@@ -10,6 +10,31 @@ COMMIT_SHA=""
 SHORT_SHA=""
 STAMP_FILE="$HOME/.djbooth-last-update"
 
+# Fixed, independently provisioned trust root. No environment override and no
+# candidate may replace it. Refusals are terminal, never fallback triggers.
+INSTALLER_VERIFIER=/usr/local/lib/neon-installer/verify-release.mjs
+check_installer_root() {
+  local path="$INSTALLER_VERIFIER" mode
+  while :; do
+    mode=$(stat -c '%a' "$path") || exit 42
+    if [ -L "$path" ] || [ "$(stat -c '%u' "$path")" != "0" ] || (( (8#$mode & 022) != 0 )); then
+      echo "ERROR: Installer verifier path is not independently protected" >&2
+      exit 42
+    fi
+    [ "$path" = "/" ] && break
+    path=$(dirname "$path")
+  done
+  env -i PATH=/usr/bin:/bin /usr/bin/node "$INSTALLER_VERIFIER" preflight || exit 42
+}
+verify_candidate() {
+  INSTALLER_RECEIPT=$(env -i PATH=/usr/bin:/bin /usr/bin/node "$INSTALLER_VERIFIER" verify "$TMPFILE" "$SIGNATURE_FILE" "$1" "$APP_DIR") || {
+    echo "ERROR: Release rejected; no fallback source will be tried" >&2
+    exit 42
+  }
+  echo "$INSTALLER_RECEIPT"
+}
+check_installer_root
+
 echo "================================================"
 echo "  DJ Booth Auto-Updater (GitHub)"
 echo "================================================"
@@ -61,7 +86,11 @@ fi
 set -e
 
 echo "[2/8] Fetching latest code..."
-TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
+DOWNLOAD_DIR=$(mktemp -d /tmp/djbooth-download-XXXXXX)
+RUNTIME_STAGE=""
+trap 'rm -rf "$DOWNLOAD_DIR"; if [ -n "$RUNTIME_STAGE" ]; then rm -rf "$RUNTIME_STAGE"; fi' EXIT
+TMPFILE="$DOWNLOAD_DIR/bundle.tar.gz"
+SIGNATURE_FILE="$DOWNLOAD_DIR/signature.json"
 USE_HOMEBASE_BUNDLE=false
 
 LOCAL_IS_HOMEBASE=$(grep "^IS_HOMEBASE=" "$APP_DIR/.env" 2>/dev/null | cut -d'=' -f2- || echo "")
@@ -88,15 +117,24 @@ if [ "$LOCAL_IS_HOMEBASE" != "true" ] && [ "$DJBOOTH_SKIP_HOMEBASE" != "1" ]; th
         -D /tmp/djbooth-bundle-headers.txt \
         -o "$TMPFILE" "$HOMEBASE_URL/api/update/bundle" 2>/dev/null || echo "000")
       if [ "$HTTP_CODE" = "200" ]; then
+        curl -fsSL --max-time 30 "$HOMEBASE_URL/api/update/bundle.signature" -o "$SIGNATURE_FILE" || {
+          echo "ERROR: Downloaded homebase release lacks installer evidence; refusing fallback" >&2
+          exit 42
+        }
+        verify_candidate flat
         COMMIT_SHA=$(grep -i "^x-djbooth-sha:" /tmp/djbooth-bundle-headers.txt 2>/dev/null | cut -d' ' -f2 | tr -d '\r' || echo "$HB_SHA")
         SHORT_SHA="${COMMIT_SHA:0:7}"
         FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
         echo "  Downloaded from homebase: ${FILESIZE} bytes (SHA: ${SHORT_SHA:-unknown})"
         USE_HOMEBASE_BUNDLE=true
       else
+        if grep -q 'INSTALLER_AUTH_FAILED' "$TMPFILE" 2>/dev/null; then
+          echo "ERROR: Homebase refused release authentication; refusing fallback" >&2
+          exit 42
+        fi
         echo "  Homebase bundle failed (HTTP $HTTP_CODE) — falling back to GitHub..."
         rm -f "$TMPFILE"
-        TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
+        rm -f "$SIGNATURE_FILE"
       fi
     else
       echo "  Homebase has no pre-built dist/ — falling back to GitHub..."
@@ -120,18 +158,27 @@ if [ "$USE_HOMEBASE_BUNDLE" = "false" ] && [ "$DJBOOTH_SKIP_R2" != "1" ] && [ "$
      && [ -f "$APP_DIR/server/r2update-fetch.js" ] \
      && [ -d "$APP_DIR/node_modules/@aws-sdk/client-s3" ]; then
     echo "  Trying R2 update bundle..."
+    R2_STATUS=0
     R2_RESULT=$( (set -a; . "$APP_DIR/.env"; set +a; \
-      node "$APP_DIR/server/r2update-fetch.js" bundle "$TMPFILE") 2>/tmp/djbooth-r2-fetch.err || echo "" )
+      node "$APP_DIR/server/r2update-fetch.js" bundle "$TMPFILE") 2>"$DOWNLOAD_DIR/r2-fetch.err" ) || R2_STATUS=$?
+    if [ "$R2_STATUS" = "42" ]; then
+      cat "$DOWNLOAD_DIR/r2-fetch.err" >&2
+      echo "ERROR: R2 authentication rejected; refusing fallback" >&2
+      exit 42
+    fi
     if [ -n "$R2_RESULT" ] && [ -s "$TMPFILE" ]; then
+      # The app helper is only a transport, never the independent trust root.
+      SIGNATURE_FILE="${TMPFILE}.signature.json"
+      verify_candidate flat
       COMMIT_SHA=$(echo "$R2_RESULT" | grep -o '"commit":"[^"]*"' | cut -d'"' -f4 || echo "")
       SHORT_SHA="${COMMIT_SHA:0:7}"
       FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
       echo "  Downloaded from R2: ${FILESIZE} bytes (SHA: ${SHORT_SHA:-unknown}, sha256 verified)"
       USE_HOMEBASE_BUNDLE=true
     else
-      echo "  R2 bundle unavailable ($(tail -1 /tmp/djbooth-r2-fetch.err 2>/dev/null || echo 'no details')) — falling back to GitHub..."
+      echo "  R2 bundle unavailable ($(tail -1 "$DOWNLOAD_DIR/r2-fetch.err" 2>/dev/null || echo 'no details')) — falling back to GitHub..."
       rm -f "$TMPFILE"
-      TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
+      rm -f "$SIGNATURE_FILE" "${TMPFILE}.signature.json"
     fi
   else
     echo "  R2 update source not available on this unit (missing creds, helper, or aws-sdk) — using GitHub..."
@@ -140,7 +187,7 @@ fi
 
 if [ "$USE_HOMEBASE_BUNDLE" = "false" ]; then
   echo "  Downloading from GitHub..."
-  HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMPFILE" "https://github.com/${GITHUB_REPO}/archive/refs/heads/${BRANCH}.tar.gz" 2>/dev/null || echo "000")
+  HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMPFILE" "https://github.com/${GITHUB_REPO}/releases/download/${BRANCH}/djbooth-release.tar.gz" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" != "200" ]; then
     echo "ERROR: Download failed from both homebase and GitHub (HTTP $HTTP_CODE)"
     rm -f "$TMPFILE"
@@ -148,10 +195,28 @@ if [ "$USE_HOMEBASE_BUNDLE" = "false" ]; then
   fi
   FILESIZE=$(stat -c%s "$TMPFILE" 2>/dev/null || stat -f%z "$TMPFILE" 2>/dev/null)
   echo "  Downloaded from GitHub: ${FILESIZE} bytes"
-  COMMIT_SHA=$(curl -sf --max-time 8 "https://api.github.com/repos/${GITHUB_REPO}/commits/${BRANCH}" 2>/dev/null | grep -o '"sha":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-  SHORT_SHA="${COMMIT_SHA:0:7}"
-  [ -n "$SHORT_SHA" ] && echo "  Commit SHA: $SHORT_SHA" || echo "  Commit SHA: (unavailable)"
+  # Release assets avoid self-referential evidence committed inside the archive.
+  # No fallback to unsigned codeload/branch archives is permitted.
+  SIGNATURE_FILE="$DOWNLOAD_DIR/signature.json"
+  curl -fsSL --max-time 30 \
+    "https://github.com/${GITHUB_REPO}/releases/download/${BRANCH}/djbooth-release.signature.json" \
+    -o "$SIGNATURE_FILE" || {
+      echo "ERROR: GitHub archive lacks whole-release evidence" >&2
+      exit 42
+    }
+  verify_candidate github
 fi
+
+# Keep existing stamp/reporting mechanics, but a running homebase or moving
+# branch head cannot identify a separately staged release. Non-commit release
+# identifiers remain explicitly unknown; this is not installed-byte evidence.
+ARCHIVE_RELEASE_ID=$(echo "$INSTALLER_RECEIPT" | grep -o '"releaseId":"[^"]*"' | cut -d'"' -f4 || true)
+if [[ "$ARCHIVE_RELEASE_ID" =~ ^[a-f0-9]{40}$ ]]; then
+  COMMIT_SHA="$ARCHIVE_RELEASE_ID"
+else
+  COMMIT_SHA=unknown
+fi
+SHORT_SHA="${COMMIT_SHA:0:7}"
 
 echo "[3/8] Backing up current installation..."
 if [ -f "$APP_DIR/package.json" ]; then
@@ -166,7 +231,7 @@ fi
 
 echo "[4/8] Extracting update..."
 TMPDIR=$(mktemp -d /tmp/djbooth-extract-XXXXXX)
-tar xzf "$TMPFILE" -C "$TMPDIR"
+tar xzf "$TMPFILE" --no-same-owner --no-same-permissions -C "$TMPDIR"
 rm -f "$TMPFILE"
 
 if [ "$USE_HOMEBASE_BUNDLE" = "true" ]; then
@@ -181,6 +246,18 @@ if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
 fi
 
 echo "[5/8] Copying server and config files..."
+# Refuse missing locks, helpers or matching OS headers BEFORE changing live code.
+if [ -d "${EXTRACTED_DIR}artifacts/api-server/server" ]; then
+  CANDIDATE_PACKAGE="${EXTRACTED_DIR}artifacts/api-server/homebase-package.json"
+  CANDIDATE_LOCK="${EXTRACTED_DIR}artifacts/api-server/homebase-package-lock.json"
+  CANDIDATE_LOCK_HELPER="${EXTRACTED_DIR}artifacts/dj-booth/public/public/runtime-lock.mjs"
+else
+  CANDIDATE_PACKAGE="${EXTRACTED_DIR}package.json"
+  CANDIDATE_LOCK="${EXTRACTED_DIR}package-lock.json"
+  CANDIDATE_LOCK_HELPER="${EXTRACTED_DIR}public/public/runtime-lock.mjs"
+fi
+node "$CANDIDATE_LOCK_HELPER" verify "$CANDIDATE_PACKAGE" "$CANDIDATE_LOCK"
+NODE_HEADER_DIR=$(node "$CANDIDATE_LOCK_HELPER" headers)
 # Detect monorepo layout (artifacts/api-server/server) vs flat layout (server/)
 if [ -d "${EXTRACTED_DIR}artifacts/api-server/server" ]; then
   echo "  Detected monorepo layout — copying from artifacts/api-server/"
@@ -193,7 +270,7 @@ if [ -d "${EXTRACTED_DIR}artifacts/api-server/server" ]; then
   else
     cp "${API_SRC}/package.json" "$APP_DIR/"
   fi
-  rm -f "$APP_DIR/package-lock.json"
+  cp "${API_SRC}/homebase-package-lock.json" "$APP_DIR/package-lock.json"
   # Public scripts (update, watchdog, etc.) live in dj-booth/public/public/
   DJ_SRC="${EXTRACTED_DIR}artifacts/dj-booth"
   cp -r "${DJ_SRC}/public" "$APP_DIR/" 2>/dev/null || true
@@ -212,7 +289,7 @@ else
   cp -r "${EXTRACTED_DIR}server" "$APP_DIR/"
   cp -r "${EXTRACTED_DIR}public" "$APP_DIR/" 2>/dev/null || true
   cp "${EXTRACTED_DIR}package.json" "$APP_DIR/"
-  cp "${EXTRACTED_DIR}package-lock.json" "$APP_DIR/" 2>/dev/null || true
+  cp "${EXTRACTED_DIR}package-lock.json" "$APP_DIR/"
   cp "${EXTRACTED_DIR}vite.config.js" "$APP_DIR/" 2>/dev/null || true
   cp "${EXTRACTED_DIR}tailwind.config.js" "$APP_DIR/" 2>/dev/null || true
   cp "${EXTRACTED_DIR}postcss.config.js" "$APP_DIR/" 2>/dev/null || true
@@ -231,47 +308,34 @@ if [ -n "$PREBUILT_DIST" ]; then
   echo "  Pre-built frontend installed (no vite build required)"
 fi
 
-# Self-update: always try GitHub first so the homebase bundle can never serve a stale script.
-# Fall back to the bundle only if GitHub is unreachable.
-_GH_SCRIPT_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${BRANCH}/artifacts/dj-booth/public/public/djbooth-update-github.sh"
-_GH_SCRIPT_TMP=$(mktemp /tmp/djbooth-self-update-XXXXXX.sh)
-_GH_SELF_OK=false
-if curl -sf --max-time 15 "$_GH_SCRIPT_URL" -o "$_GH_SCRIPT_TMP" 2>/dev/null && [ -s "$_GH_SCRIPT_TMP" ]; then
-  _GH_SELF_OK=true
-  echo "Update script fetched from GitHub (latest)"
-else
-  echo "GitHub unreachable for self-update — falling back to bundle version"
-fi
-
-if [ "$_GH_SELF_OK" = "true" ]; then
-  # ATOMIC replace: never cp over the running script in place — bash reads scripts
-  # incrementally, so an in-place overwrite (same inode, truncate+write) makes the
-  # RUNNING shell read shifted bytes and die with a bogus syntax error mid-update.
-  # Writing a sibling temp file and mv-ing it (same filesystem = atomic rename, new
-  # inode) leaves the running instance reading its original, already-open content.
-  cp "$_GH_SCRIPT_TMP" "$HOME/djbooth-update.sh.new"
-  chmod +x "$HOME/djbooth-update.sh.new"
-  mv -f "$HOME/djbooth-update.sh.new" "$HOME/djbooth-update.sh"
-  rm -f "$_GH_SCRIPT_TMP"
-  echo "Update script self-updated from GitHub"
-else
-  rm -f "$_GH_SCRIPT_TMP"
+# Self-update only from the already whole-release authenticated archive.
+SELF_UPDATED=false
+{
   UPDATE_SCRIPT_SRC=""
   if [ -f "${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh" ]; then
     UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}artifacts/dj-booth/public/public/djbooth-update-github.sh"
+  elif [ -f "${EXTRACTED_DIR}public/public/djbooth-update-github.sh" ]; then
+    UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}public/public/djbooth-update-github.sh"
   elif [ -f "${EXTRACTED_DIR}public/djbooth-update-github.sh" ]; then
     UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}public/djbooth-update-github.sh"
+  elif [ -f "${EXTRACTED_DIR}dist/public/djbooth-update-github.sh" ]; then
+    UPDATE_SCRIPT_SRC="${EXTRACTED_DIR}dist/public/djbooth-update-github.sh"
   fi
   if [ -n "$UPDATE_SCRIPT_SRC" ]; then
+    RUNNING_SCRIPT_DIFFERENT=false
+    if ! cmp -s "$UPDATE_SCRIPT_SRC" "${BASH_SOURCE[0]}"; then RUNNING_SCRIPT_DIFFERENT=true; fi
     # Same atomic-rename rule as above: never overwrite the running script in place.
     cp "$UPDATE_SCRIPT_SRC" "$HOME/djbooth-update.sh.new"
     chmod +x "$HOME/djbooth-update.sh.new"
     mv -f "$HOME/djbooth-update.sh.new" "$HOME/djbooth-update.sh"
-    echo "Update script self-updated from bundle (GitHub was unreachable)"
+    # An already-running candidate must not take a second backup of newly
+    # copied code. Re-execute only if its actual running bytes were different.
+    if [ "$RUNNING_SCRIPT_DIFFERENT" = "true" ]; then SELF_UPDATED=true; fi
+    echo "Update script self-updated from authenticated bundle"
   fi
-fi
+}
 
-if [ "${DJBOOTH_RESTARTED}" != "1" ]; then
+if [ "$SELF_UPDATED" = "true" ] && [ "${DJBOOTH_RESTARTED}" != "1" ]; then
   echo "Re-executing with new script version..."
   DJBOOTH_RESTARTED=1 /bin/bash "$HOME/djbooth-update.sh"
   exit $?
@@ -316,17 +380,9 @@ else
   grep -q "^FLEET_SERVER_URL=" "$ENV_FILE" || echo "FLEET_SERVER_URL=http://100.64.87.105:3001" >> "$ENV_FILE"
 fi
 
-# -- Operator-authorized key enforcement (Aug 2026) -----------------------------
-# Fleet .env carried a broken placeholder OpenAI key and the operator cannot
-# type/paste on units. Key embedded encoded (reversed+base64) so repo secret
-# scanners do not auto-revoke it. FORCE-overwrites any existing line.
-OK_VAL=$(echo "QW9EYngwdTBRcnYtb3dzSXZ1MzVRMENYRlFJLUE0Q0J2aVIzNnkxbER6UGFjeUhyMXE5X19HellOT2ZTVmUwZmFmRzZfZzkxN3dKRmtibEIzVFFTejBMY3RyYzZtU19PMU81N2lIWHd1RkxWakxaZ1ZoZWFBV0VlU0ZWX3VyYmZ2a1dQc1E5VzZsZW5jY0xfVVFjNndzZjc3SDU5LWpvcnAta3M=" | base64 -d | rev)
-if grep -q "^OPENAI_API_KEY=" "$ENV_FILE" 2>/dev/null; then
-  sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OK_VAL}|" "$ENV_FILE"
-else
-  echo "OPENAI_API_KEY=${OK_VAL}" >> "$ENV_FILE"
-fi
-echo "OpenAI key enforced from updater"
+# Credentials belong to the unit's protected environment/settings, not a public
+# release. Preserve every existing value; missing values use the authorized
+# homebase flow above. Never embed, decode or force-overwrite a credential here.
 
 echo "[6/8] Building frontend..."
 if [ -d "${EXTRACTED_DIR}artifacts/dj-booth/src" ]; then
@@ -336,20 +392,19 @@ elif [ -d "${EXTRACTED_DIR}src" ]; then
 fi
 cd "$APP_DIR"
 
-# Strip any preinstall guard from package.json before npm install.
-# The root pnpm workspace package.json has one — defensive removal ensures it
-# never ends up in APP_DIR/package.json and blocks npm.
-node -e "
-  try {
-    const fs = require('fs');
-    const p = JSON.parse(fs.readFileSync('package.json','utf8'));
-    if (p.scripts && p.scripts.preinstall) {
-      delete p.scripts.preinstall;
-      fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
-      console.log('Removed preinstall guard from package.json');
-    }
-  } catch(e) {}
-" 2>/dev/null || true
+# Keep the signed package bytes unchanged. Never re-resolve dependency ranges,
+# run arbitrary fetched lifecycle hooks, or compile a different frontend.
+RUNTIME_LOCK="$APP_DIR/public/public/runtime-lock.mjs"
+node "$RUNTIME_LOCK" verify "$APP_DIR/package.json" "$APP_DIR/package-lock.json"
+test -f "$APP_DIR/dist/public/index.html" || {
+  echo "ERROR: Approved pre-built frontend is required; no on-unit rebuild" >&2
+  exit 42
+}
+# npm ci must never remove the live modules before a replacement is qualified.
+# A sibling stage is on the same filesystem for subsequent directory renames.
+RUNTIME_STAGE=$(mktemp -d "$(dirname "$APP_DIR")/.djbooth-runtime-XXXXXX")
+cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$RUNTIME_STAGE/"
+cd "$RUNTIME_STAGE"
 
 echo "  Installing node dependencies..."
 # Hardened May 17 2026 after incident on 002: iconv-lite was silently missing
@@ -366,22 +421,28 @@ set +e
 _npm_ok=false
 _missing=""
 for _npm_try in 1 2 3; do
-  echo "  npm install attempt $_npm_try (full log: $NPM_LOG)"
-  # Unset NODE_ENV so npm installs devDependencies (vite, tailwind, etc.)
-  # needed for the frontend build. The service itself sets NODE_ENV=production at runtime.
-  NODE_ENV=development npm install --no-audit --no-fund --legacy-peer-deps > "$NPM_LOG" 2>&1
+  echo "  Locked npm ci attempt $_npm_try (full log: $NPM_LOG)"
+  NODE_ENV=production npm ci --omit=dev --ignore-scripts --no-audit --no-fund --legacy-peer-deps > "$NPM_LOG" 2>&1
   _npm_exit=$?
+  if [ "$_npm_exit" -eq 0 ]; then
+    # Build only the approved sqlite source against matching trusted OS headers.
+    # No downloaded prebuilt native executable or downloaded Node headers.
+    NODE_ENV=production npm_config_build_from_source=true npm_config_nodedir="$NODE_HEADER_DIR" \
+      npm rebuild better-sqlite3 --no-audit --no-fund >> "$NPM_LOG" 2>&1
+    _npm_exit=$?
+  fi
   tail -5 "$NPM_LOG"
   if [ "$_npm_exit" -ne 0 ]; then
     echo "  npm install exited $_npm_exit on attempt $_npm_try"
   fi
   _missing=""
   for _pkg in $CRITICAL_PKGS; do
-    if ! node -e "require('$_pkg')" 2>/dev/null; then
+    if ! node -e "const p=require.resolve('$_pkg'); if(!p.startsWith(process.cwd()+'/node_modules/'))process.exit(1); require(p)" 2>/dev/null; then
       _missing="$_missing $_pkg"
     fi
   done
-  if [ -z "$_missing" ]; then
+  if [ "$_npm_exit" -eq 0 ] && [ -z "$_missing" ] && \
+    node -e "const DB=require('better-sqlite3'); const db=new DB(':memory:'); if(db.prepare('select 1 as ok').get().ok!==1)process.exit(1); db.close()" >> "$NPM_LOG" 2>&1; then
     _npm_ok=true
     echo "  All critical packages verified present:$CRITICAL_PKGS"
     break
@@ -418,17 +479,21 @@ if [ "$_npm_ok" = "false" ]; then
   echo ""
   echo "  Service NOT restarted. Current process keeps running its in-memory version."
   echo "  To recover manually on this unit:"
-  echo "    cd $APP_DIR && npm install --legacy-peer-deps"
+  echo "    Repeat the authenticated locked release install; do not use an unpinned npm install"
   echo "    sudo systemctl restart $SERVICE_NAME"
   exit 1
 fi
 rm -f "$STAMP_FILE.last-error" 2>/dev/null || true
-if [ -d "$APP_DIR/dist" ]; then
-  echo "  Pre-built frontend already in place — skipping vite build"
-else
-  echo "  No pre-built dist found — building from source..."
-  NODE_ENV=development ./node_modules/.bin/vite build 2>&1 | tail -10
+cd "$APP_DIR"
+PREVIOUS_NODE_MODULES="${APP_DIR}.node-modules-before-$(date +%Y%m%d-%H%M%S)-$$"
+test ! -e "$PREVIOUS_NODE_MODULES" || { echo "ERROR: Existing dependency recovery destination"; exit 1; }
+if [ -e "$APP_DIR/node_modules" ]; then mv "$APP_DIR/node_modules" "$PREVIOUS_NODE_MODULES"; fi
+if ! mv "$RUNTIME_STAGE/node_modules" "$APP_DIR/node_modules"; then
+  if [ -d "$PREVIOUS_NODE_MODULES" ]; then mv "$PREVIOUS_NODE_MODULES" "$APP_DIR/node_modules"; fi
+  echo "ERROR: Could not activate qualified dependencies; previous modules retained" >&2
+  exit 1
 fi
+echo "  Approved pre-built frontend in place — no on-unit build"
 rm -rf "$TMPDIR"
 
 for AFILE in /home/$(whoami)/.config/autostart/*.desktop /etc/xdg/lxsession/LXDE-pi/autostart; do
@@ -1233,6 +1298,14 @@ elif systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   else
     echo ""
     echo "WARNING: Service failed to start. Rolling back..."
+    # Restore previously qualified runtime modules before the existing
+    # fail-closed data carry-over. Candidate dependency trees contain no data.
+    if [ -d "${PREVIOUS_NODE_MODULES:-}" ]; then
+      rm -rf "$APP_DIR/node_modules"
+      mv "$PREVIOUS_NODE_MODULES" "$APP_DIR/node_modules" || {
+        echo "ROLLBACK ABORTED: could not restore prior runtime modules"; exit 1;
+      }
+    fi
     # CRITICAL DATA-LOSS FIX: the backup above intentionally SKIPS
     # music/voiceovers/node_modules (far too large to copy). The previous rollback
     # did `rm -rf "$APP_DIR"` then restored that backup — which DELETED the live

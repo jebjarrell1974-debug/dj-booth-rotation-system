@@ -1,0 +1,111 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  advanceActiveSet,
+  beginActiveSet,
+  createActiveSetCursor,
+  locateCursorDancer,
+  ownsActiveSet,
+  planActiveSetTransition,
+  rebaseRotationIndex,
+  remainingVipMs,
+  resizeActiveSet,
+  rewindActiveSetForReplacement,
+} from './activeSetCursor.js';
+import { planSkipAdvance } from './skipPlayback.js';
+
+test('deactivation replays the first slot instead of advancing to round two', () => {
+  const first = beginActiveSet(createActiveSetCursor(), { dancerId: 'girl', setLength: 2 });
+  const rewound = rewindActiveSetForReplacement(first, 'girl', 1, first.generation);
+  assert.equal(rewound.songNumber, 0);
+  assert.deepEqual(planSkipAdvance({
+    currentSongNumber: rewound.songNumber, songsPerSet: rewound.setLength,
+  }), { accepted: true, kind: 'song', trackIndex: 0, songNumber: 1 });
+  assert.equal(rewindActiveSetForReplacement(first, 'other', 1, first.generation), null);
+  assert.equal(rewindActiveSetForReplacement(first, 'girl', 1, first.generation + 1), null);
+});
+
+test('deactivating the second song replays slot two without ending the set', () => {
+  const first = beginActiveSet(createActiveSetCursor(), { dancerId: 'girl', setLength: 2 });
+  const second = advanceActiveSet(first, 2);
+  const rewound = rewindActiveSetForReplacement(second, 'girl', 2, second.generation);
+  assert.deepEqual(planSkipAdvance({
+    currentSongNumber: rewound.songNumber, songsPerSet: rewound.setLength,
+  }), { accepted: true, kind: 'song', trackIndex: 1, songNumber: 2 });
+  assert.equal(rewindActiveSetForReplacement(second, 'girl', 1, second.generation), null);
+});
+
+test('manual two-song set advances without changing ownership', () => {
+  const first = beginActiveSet(createActiveSetCursor(), { dancerId: 'manual', setLength: 2 });
+  const second = advanceActiveSet(first, 2);
+  assert.deepEqual(second, { dancerId: 'manual', songNumber: 2, setLength: 2, generation: 1 });
+  assert.equal(locateCursorDancer(second, ['next', 'manual']), 1);
+});
+
+test('non-current VIP mutations do not change active-set ownership', () => {
+  const cursor = beginActiveSet(createActiveSetCursor(), { dancerId: 'active', setLength: 2 });
+  const changedRotation = ['other', 'active'];
+  assert.equal(locateCursorDancer(cursor, changedRotation), 1);
+  assert.equal(ownsActiveSet(cursor, { dancerId: 'active', generation: cursor.generation }), true);
+});
+
+test('remote reorder keeps the playing set even when the numeric index was already stale', () => {
+  const cursor = beginActiveSet(createActiveSetCursor(), { dancerId: 'playing', setLength: 2 });
+  assert.equal(rebaseRotationIndex(
+    ['playing', 'finished', 'next'], ['next', 'finished', 'playing'], 1, cursor, true,
+  ), 2);
+  assert.equal(rebaseRotationIndex(
+    ['playing', 'finished', 'next'], ['finished', 'playing', 'next'], 0, cursor, true,
+  ), 1);
+});
+
+test('remote save cannot silently remove the playing entertainer', () => {
+  const cursor = beginActiveSet(createActiveSetCursor(), { dancerId: 'playing', setLength: 2 });
+  assert.throws(() => rebaseRotationIndex(['playing', 'next'], ['next'], 0, cursor, true), /active entertainer/);
+  assert.throws(() => rebaseRotationIndex(['next'], ['next'], 0, cursor, true), /active entertainer/);
+  assert.throws(() => rebaseRotationIndex(['playing', 'next'], [], 0, cursor, true), /Stop the rotation/);
+  assert.equal(rebaseRotationIndex(['playing', 'next'], ['next'], 0, cursor, false), 0);
+});
+
+test('stale completion cannot advance a newer dancer cursor', () => {
+  const old = beginActiveSet(createActiveSetCursor(), { dancerId: 'old', setLength: 2 });
+  const current = beginActiveSet(old, { dancerId: 'new', setLength: 2 });
+  assert.equal(advanceActiveSet(current, 2, old.generation), current);
+  assert.equal(current.songNumber, 1);
+});
+
+test('branch decision stays on the active set until its frozen boundary', () => {
+  const cursor = beginActiveSet(createActiveSetCursor(), { dancerId: 'dancer', setLength: 2 });
+  assert.deepEqual(planActiveSetTransition(cursor, {
+    dancerId: 'dancer', generation: cursor.generation, nextSongNumber: 2,
+  }), { kind: 'song', songNumber: 2 });
+  assert.deepEqual(planActiveSetTransition(cursor, {
+    dancerId: 'dancer', generation: cursor.generation, nextSongNumber: 3,
+  }), { kind: 'dancer' });
+  assert.deepEqual(planActiveSetTransition(cursor, {
+    dancerId: 'dancer', generation: cursor.generation + 1, nextSongNumber: 2,
+  }), { kind: 'stale' });
+});
+
+test('resizing the active set changes the next-song boundary without ending the playing song', () => {
+  const first = beginActiveSet(createActiveSetCursor(), { dancerId: 'playing', setLength: 2 });
+  const shortened = resizeActiveSet(first, 1);
+  assert.equal(shortened.generation, first.generation);
+  assert.equal(shortened.dancerId, first.dancerId);
+  assert.equal(shortened.songNumber, 1);
+  assert.deepEqual(planActiveSetTransition(shortened, {
+    dancerId: 'playing', generation: first.generation, nextSongNumber: 2,
+  }), { kind: 'dancer' });
+
+  const second = advanceActiveSet(first, 2);
+  const shortenedDuringSecond = resizeActiveSet(second, 1);
+  assert.equal(shortenedDuringSecond.setLength, 2);
+  assert.equal(shortenedDuringSecond.songNumber, 2);
+  assert.equal(resizeActiveSet(first, 3).setLength, 3);
+  assert.equal(resizeActiveSet(shortened, 1), shortened);
+});
+
+test('remote VIP countdown decays from monotonic receipt time', () => {
+  assert.equal(remainingVipMs({ remainingMs: 60000 }, 1000, 999999, 1600), 59400);
+  assert.equal(remainingVipMs({ remainingMs: 60000 }, 1000, 999999, 70000), 0);
+});

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createCommercialCadenceScheduler,
+  routeDeferredCommercialBoundary,
   routePendingCommercialBoundary,
 } from './commercialCadence.js';
 
@@ -164,4 +165,54 @@ test('song caller stays ordinary when no interstitial boundary is pending', () =
   assert.equal(route.boundary, null);
   assert.equal(consumeCalls, 0);
   assert.equal(scheduler.counter, 1);
+});
+
+test('immediate handoff counts its boundary and defers the due ad until the next normal handoff', () => {
+  const scheduler = createCommercialCadenceScheduler({ getFrequency: () => '2' });
+  let queue = [];
+  scheduler.consumeBoundary({ boundaryKey: 'first', commercialId: 'slot-a' });
+  const manual = routeDeferredCommercialBoundary(
+    scheduler.consumeBoundary({ boundaryKey: 'manual', commercialId: 'slot-b' }),
+    queue, { defer: true },
+  );
+  queue = manual.queued;
+  assert.equal(scheduler.counter, 2);
+  assert.equal(manual.boundary.due, false);
+  assert.deepEqual(queue.map(ad => ad.commercialId), ['slot-b']);
+
+  const normal = routeDeferredCommercialBoundary(
+    scheduler.consumeBoundary({ boundaryKey: 'next', commercialId: 'slot-c' }), queue,
+  );
+  assert.equal(scheduler.counter, 3);
+  assert.equal(normal.boundary.commercialId, 'slot-b');
+  assert.equal(normal.boundary.due, true);
+  assert.deepEqual(normal.queued, []);
+});
+
+test('repeated immediate handoffs keep due ads in order and count every boundary', () => {
+  const scheduler = createCommercialCadenceScheduler({ getFrequency: () => '1' });
+  let queue = [];
+  for (const id of ['a', 'b']) {
+    const routed = routeDeferredCommercialBoundary(
+      scheduler.consumeBoundary({ boundaryKey: id, commercialId: id }),
+      queue, { defer: true },
+    );
+    queue = routed.queued;
+    assert.equal(routed.boundary.due, false);
+  }
+  const normal = routeDeferredCommercialBoundary(
+    scheduler.consumeBoundary({ boundaryKey: 'c', commercialId: 'c' }), queue,
+  );
+  assert.equal(scheduler.counter, 3);
+  assert.equal(normal.boundary.commercialId, 'a');
+  assert.deepEqual(normal.queued.map(ad => ad.commercialId), ['b', 'c']);
+});
+
+test('a pending due boundary is deferred once without counting it twice', () => {
+  const scheduler = createCommercialCadenceScheduler({ getFrequency: () => '1' });
+  const pending = scheduler.consumeBoundary({ boundaryKey: 'break-open', commercialId: 'break-slot' });
+  const forwarded = routeDeferredCommercialBoundary(pending, [], { defer: true, pending: true });
+  assert.equal(scheduler.counter, 1);
+  assert.equal(forwarded.boundary.due, false);
+  assert.deepEqual(forwarded.queued, [pending]);
 });

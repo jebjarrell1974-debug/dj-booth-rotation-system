@@ -29,6 +29,21 @@ function harness({ lookups = [], byId = [], epoch = 'E1', epochAtSend = 'E1', su
 const rec = (over = {}) => ({ ok: false, queued: true, serverEpoch: 'E1', command: { id: 5, requestId: 'R1', status: 'pending' }, ...over });
 const applied = () => ({ ok: true, queued: false, serverEpoch: 'E1', command: { id: 5, requestId: 'R1', status: 'applied' } });
 
+test('malformed reconciliation receipt bodies never prove failure or application', async () => {
+  for (const body of [
+    { command: { id: 5, requestId: 'R1' } },
+    { queued: false, ok: 'false', command: { id: 5, requestId: 'R1' } },
+    { queued: false, command: { id: 5, requestId: 'R1' } },
+  ]) {
+    assert.equal(interpretReceipt(body).outcome, 'unknown');
+    const h = harness({ lookups: [body] });
+    const result = await reconcileCommandOutcome(h.deps, { ...h.ctx, requestId: 'R1' });
+    assert.notEqual(result.outcome, 'failed');
+    assert.notEqual(result.outcome, 'applied');
+    assert.equal(result.resolved, false);
+  }
+});
+
 test('LATE APPLICATION: pending then applied inside the settle window resolves as applied', async () => {
   const h = harness({ lookups: [rec(), rec(), applied()] });
   const r = await reconcileCommandOutcome(h.deps, { ...h.ctx, requestId: 'R1', commandId: 5 });

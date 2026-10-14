@@ -16,9 +16,46 @@ export function advanceActiveSet(cursor, songNumber, generation = cursor?.genera
   return createActiveSetCursor({ ...cursor, songNumber, generation });
 }
 
+export function resizeActiveSet(cursor, setLength) {
+  if (!cursor) return cursor;
+  // Accepted saved-set correction: explicit performer edits resize only the
+  // owned turn. Keep the existing numeric setting-change contract below.
+  if (setLength && typeof setLength === 'object') {
+    if (cursor.dancerId == null || String(cursor.dancerId) !== String(setLength.dancerId)) return cursor;
+    const nextLength = Math.max(0, Number(setLength.setLength) || 0);
+    return nextLength === cursor.setLength ? cursor : createActiveSetCursor({ ...cursor, setLength: nextLength });
+  }
+  // A setting change affects the next boundary, never interrupts the song
+  // already playing (including when song two is already underway).
+  const nextLength = Math.max(cursor.songNumber, Number(setLength) || 0);
+  if (cursor.setLength === nextLength) return cursor;
+  return createActiveSetCursor({ ...cursor, setLength: nextLength });
+}
+
+export function rewindActiveSetForReplacement(cursor, dancerId, songNumber, generation) {
+  if (!ownsActiveSet(cursor, { dancerId, generation }) || cursor.songNumber !== songNumber) return null;
+  return advanceActiveSet(cursor, Math.max(0, songNumber - 1));
+}
+
 export function locateCursorDancer(cursor, rotation) {
   if (!cursor?.dancerId || !Array.isArray(rotation)) return -1;
   return rotation.findIndex(id => String(id) === String(cursor.dancerId));
+}
+
+export function rebaseRotationIndex(previousRotation, nextRotation, currentIndex, cursor, isActive) {
+  if (!Array.isArray(nextRotation) || nextRotation.length === 0) {
+    if (isActive) throw new Error('Stop the rotation before clearing every entertainer');
+    return 0;
+  }
+  const activeId = isActive && cursor?.dancerId != null
+    ? cursor.dancerId
+    : previousRotation?.[currentIndex];
+  if (activeId == null) return Math.max(0, Math.min(currentIndex || 0, nextRotation.length - 1));
+  const nextIndex = nextRotation.findIndex(id => String(id) === String(activeId));
+  if (nextIndex < 0 && isActive) {
+    throw new Error('The active entertainer must remain in the rotation; use Next Entertainer or stop the rotation first');
+  }
+  return nextIndex >= 0 ? nextIndex : Math.max(0, Math.min(currentIndex || 0, nextRotation.length - 1));
 }
 
 export function ownsActiveSet(cursor, { dancerId, generation } = {}) {

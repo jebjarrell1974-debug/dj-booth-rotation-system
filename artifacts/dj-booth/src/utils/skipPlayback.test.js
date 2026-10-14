@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   canCommitAssignmentRefill,
   planSkipAdvance,
+  planImmediateHandoff,
   remoteSkipPayload,
   songNumberAfterPlayback,
 } from './skipPlayback.js';
@@ -73,6 +74,24 @@ test('Next Entertainer explicitly skips the whole set', () => {
 test('remote song and entertainer controls carry distinct intent', () => {
   assert.deepEqual(remoteSkipPayload(false), {});
   assert.deepEqual(remoteSkipPayload(true), { skipBreaks: true });
+});
+
+test('manual first-place drag hands off to the selected entertainer, not song two', () => {
+  const original = ['a', 'b', 'c', 'd'];
+  const prepared = planImmediateHandoff(original, 'a', 'c');
+  assert.deepEqual(prepared, ['a', 'c', 'b', 'd']);
+  const afterHardSkip = [...prepared.slice(1), prepared[0]];
+  assert.deepEqual(afterHardSkip, ['c', 'b', 'd', 'a']);
+  assert.deepEqual(original, ['a', 'b', 'c', 'd']);
+  assert.deepEqual(planSkipAdvance({ skipBreaks: true, currentSongNumber: 1, songsPerSet: 2 }),
+    { accepted: true, kind: 'entertainer' });
+});
+
+test('manual handoff follows the playing entertainer even if its array index is not zero', () => {
+  assert.deepEqual(planImmediateHandoff(['b', 'c', 'a', 'd'], 'a', 'd'), ['a', 'd', 'b', 'c']);
+  assert.equal(planImmediateHandoff(['a', 'b'], 'a', 'a'), null);
+  assert.equal(planImmediateHandoff(['a', 'b'], 'a', 'missing'), null);
+  assert.equal(planImmediateHandoff(['a', 'b'], 'missing', 'b'), null);
 });
 
 test('a locked skip is rejected without changing the song number', () => {

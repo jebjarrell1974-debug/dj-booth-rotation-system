@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { playlistApi, musicApi, auth as authApi, setTokenOverride } from '@/api/serverApi';
+import { playlistApi, musicApi, auth as authApi, setTokenOverride, connectBoothSSE } from '@/api/serverApi';
+import { musicNameKey, musicStreamAvailable } from '@/utils/musicAvailability';
+import { createPlaylistEditGuard, reconcileAvailablePlaylist, samePlaylist } from '@/utils/playlistAvailabilitySync';
 import { Button } from '@/components/ui/button';
 import { Music, Search, Plus, X, GripVertical, LogOut, FolderOpen, Play, Pause } from 'lucide-react';
 
@@ -55,6 +57,7 @@ export default function DancerView() {
   const [previewSong, setPreviewSong] = useState(null);
   const [previewPaused, setPreviewPaused] = useState(false);
   const previewAudioRef = useRef(null);
+  const previewGenerationRef = useRef(0);
   const tapTrackerRef = useRef({ id: null, timer: null });
 
   // Defined early so the inactivity-timeout and beforeunload effects below can
@@ -63,6 +66,7 @@ export default function DancerView() {
   // further down with the playlist mutation helpers because they depend on
   // those.
   const stopPreview = useCallback(() => {
+    previewGenerationRef.current++;
     const a = previewAudioRef.current;
     if (a) {
       try { a.pause(); } catch {}
@@ -101,10 +105,24 @@ export default function DancerView() {
   const itemRefs = useRef([]);
   const playlistRef = useRef(playlist);
   playlistRef.current = playlist;
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
+  const playlistEditGuardRef = useRef(null);
+  if (!playlistEditGuardRef.current) playlistEditGuardRef.current = createPlaylistEditGuard();
+  const saveChainRef = useRef(Promise.resolve());
+  const availabilityGenerationRef = useRef(0);
+  const libraryRequestRef = useRef(0);
+  const viewRef = useRef(null);
+  viewRef.current = { search: searchQuery, genre: selectedGenre, page,
+    key: JSON.stringify([searchQuery, selectedGenre, page]) };
   const saveTimerRef = useRef(null);
 
   const isDancerSession = !!dancerSession;
   const effectiveUser = isDancerSession ? dancerSession.user : user;
+  // Keep pending writes bound to the entertainer even when the override is
+  // cleared by route cleanup; otherwise a quick exit saves with the DJ token.
+  const playlistTokenRef = useRef(dancerSession?.token || localStorage.getItem('djbooth_token'));
+  if (dancerSession?.token) playlistTokenRef.current = dancerSession.token;
 
   useEffect(() => {
     if (isDancerSession) {
@@ -125,6 +143,7 @@ export default function DancerView() {
     const load = async () => {
       try {
         const pl = await playlistApi.get();
+        playlistRef.current = pl.playlist || [];
         setPlaylist(pl.playlist || []);
       } catch {
         navigate('/');
@@ -141,10 +160,92 @@ export default function DancerView() {
     load();
   }, [navigate]);
 
+  useEffect(() => {
+    if (loading) return;
+    let active = true;
+    let inFlight = false;
+    let refreshAgain = false;
+    let controller;
+    const refresh = async () => {
+      if (!active) return;
+      if (inFlight) { refreshAgain = true; return; }
+      inFlight = true;
+      const own = availabilityGenerationRef.current;
+      const editSnapshot = playlistEditGuardRef.current.capture();
+      const view = viewRef.current;
+      const libraryRequest = libraryRequestRef.current;
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const options = { signal: controller.signal, timeoutMs: 4000 };
+      try {
+        // A filtering-only poll cannot rediscover a reactivated song. Re-read
+        // saved preferences AND the current library window, even with no SSE.
+        const [saved, library] = await Promise.all([
+          playlistApi.get(options),
+          musicApi.getTracks({ page: 1, limit: Math.min(5000, view.page * 100),
+            search: view.search, genre: view.search ? '' : view.genre }, options),
+        ]);
+        const savedNames = saved.playlist || [];
+        const libraryTracks = library.tracks || [];
+        const queried = new Set([...playlistRef.current, ...savedNames,
+          ...libraryTracks.map(track => track.name)]);
+        const data = await musicApi.availableNames([...queried], options);
+        if (active && !controller.signal.aborted && own === availabilityGenerationRef.current) {
+          const available = new Set(data.names || []);
+          const next = reconcileAvailablePlaylist(playlistRef.current, savedNames, queried, available,
+            playlistEditGuardRef.current.canRestore(editSnapshot));
+          if (!samePlaylist(playlistRef.current, next)) {
+            playlistRef.current = next;
+            setPlaylist(next);
+          }
+          if (view.key === viewRef.current.key && libraryRequest === libraryRequestRef.current) {
+            const eligibleTracks = libraryTracks.filter(track => available.has(track.name));
+            tracksRef.current = eligibleTracks;
+            setTracks(eligibleTracks);
+            setTotalTracks(library.total || 0);
+          }
+        }
+      } catch { /* Server playback remains fail-closed during disconnection. */ }
+      finally {
+        clearTimeout(timeout);
+        inFlight = false;
+        if (active && refreshAgain) { refreshAgain = false; refresh(); }
+      }
+    };
+    const events = connectBoothSSE(event => {
+      if (event.type === 'musicBlocked') {
+        stopPreview();
+        const keep = name => musicNameKey(name) !== musicNameKey(event.trackName);
+        playlistRef.current = playlistRef.current.filter(keep);
+        setPlaylist(playlistRef.current);
+        setTracks(previous => previous.filter(track => keep(track.name)));
+      }
+      if (['musicBlocked', 'musicUnblocked', 'reconnected', 'connected'].includes(event.type)) {
+        availabilityGenerationRef.current++;
+        controller?.abort();
+        refresh();
+      }
+    });
+    refresh();
+    const interval = setInterval(refresh, 5000);
+    return () => {
+      active = false;
+      availabilityGenerationRef.current++;
+      controller?.abort();
+      events?.close();
+      clearInterval(interval);
+    };
+  }, [loading, stopPreview]);
+
   const fetchTracks = useCallback(async (search, genre, pageNum) => {
+    const own = ++libraryRequestRef.current;
+    const generation = availabilityGenerationRef.current;
+    const viewKey = JSON.stringify([search, genre, pageNum]);
     setTracksLoading(true);
     try {
       const data = await musicApi.getTracks({ page: pageNum, limit: 100, search, genre: search ? '' : genre });
+      if (own !== libraryRequestRef.current || generation !== availabilityGenerationRef.current ||
+          viewKey !== viewRef.current.key) return;
       if (pageNum === 1) {
         setTracks(data.tracks || []);
       } else {
@@ -154,7 +255,7 @@ export default function DancerView() {
     } catch (err) {
       console.error('Failed to fetch tracks:', err);
     }
-    setTracksLoading(false);
+    finally { if (own === libraryRequestRef.current) setTracksLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -191,13 +292,24 @@ export default function DancerView() {
     };
   }, [logout, navigate, isDancerSession, logoutDancerSession, stopPreview]);
 
+  const persistPlaylist = useCallback((names, revision, token) => {
+    // Serialize writes so a slower old PUT cannot overwrite the newest edit.
+    const write = saveChainRef.current.catch(() => {}).then(() => playlistApi.update(names, { token }));
+    saveChainRef.current = write;
+    return write.then(data => {
+      playlistEditGuardRef.current.acknowledge(revision);
+      return data;
+    });
+  }, []);
+
   const flushSave = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
-      playlistApi.update(playlistRef.current).catch(() => {});
+      persistPlaylist([...playlistRef.current], playlistEditGuardRef.current.capture().revision,
+        playlistTokenRef.current).catch(() => {});
     }
-  }, []);
+  }, [persistPlaylist]);
 
   useEffect(() => {
     const clearTapTimer = () => {
@@ -221,20 +333,24 @@ export default function DancerView() {
   const debouncedSave = useCallback((newPlaylist) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveStatus('saving');
+    const token = playlistTokenRef.current;
+    const { revision } = playlistEditGuardRef.current.capture();
     saveTimerRef.current = setTimeout(async () => {
       saveTimerRef.current = null;
       try {
-        await playlistApi.update(newPlaylist);
+        await persistPlaylist([...newPlaylist], revision, token);
+        if (revision !== playlistEditGuardRef.current.capture().revision) return;
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus(prev => prev === 'saved' ? null : prev), 2000);
       } catch (err) {
         console.error('Failed to save playlist:', err);
-        setSaveStatus('error');
+        if (revision === playlistEditGuardRef.current.capture().revision) setSaveStatus('error');
       }
     }, 300);
-  }, []);
+  }, [persistPlaylist]);
 
   const updatePlaylist = useCallback((newPlaylist) => {
+    playlistEditGuardRef.current.edit();
     setPlaylist(newPlaylist);
     playlistRef.current = newPlaylist;
     debouncedSave(newPlaylist);
@@ -262,9 +378,15 @@ export default function DancerView() {
   // by design (the kiosk relies on this), so HTML5 <audio> can hit it directly.
   // Note: stopPreview is defined earlier (above the lifecycle effects that
   // reference it). Only the helpers that depend on addSong/removeSong live here.
-  const playPreview = useCallback((track) => {
+  const playPreview = useCallback(async (track) => {
     if (!previewAllowed) return;
     if (!track || !track.id) return;
+    const generation = ++previewGenerationRef.current;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const available = await musicStreamAvailable(`/api/music/stream/${track.id}`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!available || generation !== previewGenerationRef.current) return;
     const prev = previewAudioRef.current;
     if (prev) {
       try { prev.pause(); } catch {}
@@ -284,10 +406,17 @@ export default function DancerView() {
     setPreviewPaused(false);
   }, [previewAllowed, stopPreview]);
 
-  const togglePreviewPause = useCallback(() => {
+  const togglePreviewPause = useCallback(async () => {
     const a = previewAudioRef.current;
     if (!a) return;
     if (a.paused) {
+      const generation = ++previewGenerationRef.current;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const available = await musicStreamAvailable(a.src, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!available) { stopPreview(); return; }
+      if (generation !== previewGenerationRef.current || previewAudioRef.current !== a) return;
       a.play().catch(() => stopPreview());
       setPreviewPaused(false);
     } else {
@@ -331,13 +460,12 @@ export default function DancerView() {
   const handleDragOver = (e, idx) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === idx) return;
-    setPlaylist(prev => {
-      const updated = [...prev];
-      const [item] = updated.splice(dragIdx, 1);
-      updated.splice(idx, 0, item);
-      playlistRef.current = updated;
-      return updated;
-    });
+    const updated = [...playlistRef.current];
+    const [item] = updated.splice(dragIdx, 1);
+    updated.splice(idx, 0, item);
+    playlistEditGuardRef.current.edit();
+    playlistRef.current = updated;
+    setPlaylist(updated);
     setDragIdx(idx);
   };
   const handleDragEnd = () => {
@@ -346,6 +474,9 @@ export default function DancerView() {
   };
 
   const handleTouchStart = useCallback((e, idx) => {
+    // A delete-button tap must not become a long-press row drag. Touchscreens
+    // often hold longer than LONG_PRESS_MS, suppressing the subsequent click.
+    if (e.target.closest?.('button')) return;
     const touch = e.touches[0];
     const ts = touchState.current;
     ts.startY = touch.clientY;
@@ -375,13 +506,12 @@ export default function DancerView() {
       if (!items[i]) continue;
       const rect = items[i].getBoundingClientRect();
       if (i !== ts.idx && touch.clientY > rect.top && touch.clientY < rect.bottom) {
-        setPlaylist(prev => {
-          const updated = [...prev];
-          const [item] = updated.splice(ts.idx, 1);
-          updated.splice(i, 0, item);
-          playlistRef.current = updated;
-          return updated;
-        });
+        const updated = [...playlistRef.current];
+        const [item] = updated.splice(ts.idx, 1);
+        updated.splice(i, 0, item);
+        playlistEditGuardRef.current.edit();
+        playlistRef.current = updated;
+        setPlaylist(updated);
         ts.idx = i;
         setDragIdx(i);
         break;
@@ -494,8 +624,9 @@ export default function DancerView() {
                     <GripVertical className="w-3.5 h-3.5 text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
                     <span className={`text-[11px] flex-1 truncate leading-tight ${(playedSongs[song] && (Date.now() - playedSongs[song]) < FOUR_HOURS_MS) ? 'text-orange-300' : 'text-gray-200'}`}>{song}</span>
                     <button
-                      onClick={() => removeSong(idx)}
-                      className="p-1 text-red-400/60 active:text-red-400 transition-colors flex-shrink-0"
+                      onClick={(event) => { event.stopPropagation(); removeSong(idx); }}
+                      aria-label={`Remove ${song} from playlist`}
+                      className="w-9 h-9 flex items-center justify-center text-red-400/60 active:text-red-400 transition-colors flex-shrink-0"
                     >
                       <X className="w-4 h-4" />
                     </button>

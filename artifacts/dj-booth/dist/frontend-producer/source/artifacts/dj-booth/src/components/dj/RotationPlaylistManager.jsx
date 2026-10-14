@@ -1,0 +1,2637 @@
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { DragDropContext, Droppable, Draggable, useMouseSensor } from '@hello-pangea/dnd';
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
+import { toast } from 'sonner';
+import { musicApi, boothApi, rotationEditorSessionKey } from '@/api/serverApi';
+import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
+import { decayVipRemaining } from '@/utils/vipCountdown';
+import { rotationStartState } from '@/utils/rotationStartState';
+import { getActiveMusicGenres } from '@/utils/shiftMusicOptions';
+import { reconcileManualEditorAssignments, restoreManualEditorEdits, editorCommandContext,
+  manualEditorStatus, recoverManualEditorEdit } from '@/utils/rotationEditorSync';
+import {
+  capSongList,
+  currentRotationDancerId,
+  fillSongListToLimit,
+  getSongName,
+  normalizeDisplayedAssignments as normalizeDisplayedAssignmentMap,
+  normalizeManualSongList,
+  normalizeSongAssignments,
+  normalizeSongList,
+  reconcileAuthoritativeAssignments,
+} from '@/utils/rotationAssignments';
+import {
+  filterAutomaticTracks,
+  filterUnplayedAutomaticTracks,
+  isRecentlyPlayed,
+} from '@/utils/automaticTrackSelection';
+
+const TRACKS_PER_PAGE = 200;
+const EMPTY_ASSIGNMENTS = Object.freeze({});
+
+function stableAssignmentKey(value) {
+  if (Array.isArray(value)) return `[${value.map(stableAssignmentKey).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableAssignmentKey(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sameSongList(left, right) {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  return left.every((song, index) => song === right[index]);
+}
+
+const fisherYatesShuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+const filterByGenres = (trackList, activeGenres) => {
+  if (!activeGenres || activeGenres.length === 0) return trackList;
+  const filtered = trackList.filter(t => activeGenres.includes(t.genre));
+  return filtered.length > 0 ? filtered : trackList;
+};
+
+const LONG_PRESS_MS = 500;
+const SCROLL_SLOP_PX = 8;
+
+function useLongPressTouchSensor(api) {
+  const phaseRef = useRef({ type: 'IDLE' });
+
+  useEffect(() => {
+    function cleanup() {
+      const phase = phaseRef.current;
+      if (phase.type === 'PENDING') {
+        clearTimeout(phase.timerId);
+        phase.actions.abort();
+      }
+      phaseRef.current = { type: 'IDLE' };
+    }
+
+    function onTouchStart(event) {
+      if (event.defaultPrevented || phaseRef.current.type !== 'IDLE') return;
+      const draggableId = api.findClosestDraggableId(event);
+      if (!draggableId) return;
+      const actions = api.tryGetLock(draggableId, cleanup, { sourceEvent: event });
+      if (!actions) return;
+      const touch = event.touches[0];
+      const startPoint = { x: touch.clientX, y: touch.clientY };
+      const timerId = setTimeout(() => {
+        if (phaseRef.current.type !== 'PENDING') return;
+        const { actions, startPoint } = phaseRef.current;
+        const dragActions = actions.fluidLift(startPoint);
+        phaseRef.current = { type: 'DRAGGING', actions: dragActions };
+      }, LONG_PRESS_MS);
+      phaseRef.current = { type: 'PENDING', actions, startPoint, timerId };
+    }
+
+    function onTouchMove(event) {
+      const phase = phaseRef.current;
+      if (phase.type === 'DRAGGING') {
+        event.preventDefault();
+        const touch = event.touches[0];
+        phase.actions.move({ x: touch.clientX, y: touch.clientY });
+        return;
+      }
+      if (phase.type === 'PENDING') {
+        const touch = event.touches[0];
+        const dx = touch.clientX - phase.startPoint.x;
+        const dy = touch.clientY - phase.startPoint.y;
+        if (Math.sqrt(dx * dx + dy * dy) > SCROLL_SLOP_PX) cleanup();
+      }
+    }
+
+    function onTouchEnd() {
+      const phase = phaseRef.current;
+      if (phase.type === 'DRAGGING') {
+        phase.actions.drop({ shouldBlockNextClick: true });
+        phaseRef.current = { type: 'IDLE' };
+        return;
+      }
+      cleanup();
+    }
+
+    function onTouchCancel() {
+      const phase = phaseRef.current;
+      if (phase.type === 'DRAGGING') phase.actions.cancel({ shouldBlockNextClick: true });
+      cleanup();
+    }
+
+    const opts = { capture: true, passive: false };
+    window.addEventListener('touchstart', onTouchStart, opts);
+    window.addEventListener('touchmove', onTouchMove, opts);
+    window.addEventListener('touchend', onTouchEnd, { capture: true });
+    window.addEventListener('touchcancel', onTouchCancel, { capture: true });
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart, opts);
+      window.removeEventListener('touchmove', onTouchMove, opts);
+      window.removeEventListener('touchend', onTouchEnd, { capture: true });
+      window.removeEventListener('touchcancel', onTouchCancel, { capture: true });
+      cleanup();
+    };
+  }, [api]);
+}
+
+export default function RotationPlaylistManager({ 
+  dancers, 
+  rotation, 
+  tracks,
+  onSaveAll,
+  onAutoSavePlaylist,
+  onCheckPlaylistSnapshot,
+  onAddToRotation,
+  onRemoveFromRotation,
+  onStartRotation,
+  isRotationActive,
+  rotationPending,
+  // Local "sent, not yet acknowledged" flag. Set on press, cleared by authoritative state.
+  rotationStarting = false,
+  onCancelPendingRotation,
+  songsPerSet,
+  onSongsPerSetChange,
+  activeRotationSongs,
+  authoritativeManualAssignments = EMPTY_ASSIGNMENTS,
+  authoritativeManualSetLengths = EMPTY_ASSIGNMENTS,
+  savedInterstitials,
+  authoritativeManualBreaks = EMPTY_ASSIGNMENTS,
+  interstitialRemoteVersion,
+  activeBreakInfo,
+  onRemoveActiveBreakSong,
+  onUpdateActiveBreakSongs,
+  onInterstitialSongsChange,
+  djOptions,
+  announcementsEnabled,
+  onAnnouncementsToggle,
+  onSkipDancer,
+  onSkipCurrentDancer,
+  onSkipEntertainerNow,
+  skipLocked = false,
+  onMoveDancerToTop,
+  onDancerDragReorder,
+  currentDancerIndex,
+  commercialCounter = 0,
+  availablePromos = [],
+  promoQueue = [],
+  onSwapPromo,
+  // Remote only. When set, skipping a commercial is a COMMAND to the kiosk instead of
+  // a write to this browser's own storage, and the skipped list is the kiosk's
+  // authoritative one rather than a local guess.
+  onSkipCommercial,
+  remoteSkippedCommercials,
+  currentSongNumber,
+  breakSongsPerSet,
+  onBreakSongsPerSetChange,
+  onSongAssignmentsChange,
+  autoplayQueue = [],
+  autoplayAutoFillEnabled = true,
+  onAutoplayAutoFillToggle,
+  onAutoplayQueueChange,
+  onAutoplayQueueRemove,
+  songCooldowns = {},
+  // Automatic selection must fail closed until the parent has successfully
+  // hydrated history. The supplied ledger may contain older entries; the
+  // selection helper applies the six-hour eligibility window. Manual library
+  // picks do not use this guard.
+  songCooldownsReady = false,
+  currentTrack = null,
+  dancerVipMap = {},
+  dancerVipRemainingMs = {},
+  pendingVipMap = {},
+  onSendToVip,
+  onReleaseFromVip,
+  placedFeatures = {},
+  onPlaceFeature,
+  onCancelFeature,
+  remoteMode = false
+}) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [activeGenre, setActiveGenre] = useState(null);
+  const [musicSource, setMusicSource] = useState('genres');
+  // Cooldown timestamps remain in the complete ledger supplied by the parent.
+  // Tick the display so a yellow "Recently Played" marker disappears as soon
+  // as its six-hour eligibility window expires, without pruning that ledger.
+  const [cooldownNow, setCooldownNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setCooldownNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  const isOnCooldown = useCallback(
+    name => isRecentlyPlayed(name, songCooldowns, cooldownNow),
+    [songCooldowns, cooldownNow],
+  );
+
+  const activeDancers = useMemo(() =>
+    (dancers || []).filter(d => d.is_active).sort((a, b) => a.name.localeCompare(b.name)),
+    [dancers]
+  );
+
+  const selectedPlaylistDancer = musicSource !== 'genres'
+    ? (dancers || []).find(d => String(d.id) === String(musicSource))
+    : null;
+  const playlistSongs = selectedPlaylistDancer?.playlist || [];
+  const [localRotation, setLocalRotation] = useState(rotation);
+  const [editorStorage] = useState(() => ({
+    remote: remoteMode,
+    key: remoteMode ? rotationEditorSessionKey() : 'djbooth_planned_assignments',
+  }));
+  const [storedEditor] = useState(() => {
+    try {
+      const storage = editorStorage.remote ? sessionStorage : localStorage;
+      return JSON.parse(storage.getItem(editorStorage.key)) || {};
+    } catch { return {}; }
+  });
+  // Restore the manager's displayed song picks across remounts (tab switch) and
+  // full page/kiosk reloads. Without this, the rotation tab unmounts on tab
+  // change and the auto-assign effect re-rolls every dancer's songs — wiping the
+  // DJ's chosen picks. Display-layer only; playback uses the parent's
+  // rotationSongs/djSavedSongsRef which are unaffected.
+  const [songAssignments, setSongAssignments] = useState(() => {
+    try {
+      const saved = JSON.stringify(storedEditor);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
+          const assignments = normalizeSongAssignments(parsed.assignments, songsPerSet);
+          const manualIds = new Set([
+            ...(parsed.overrides || []),
+            ...Object.keys(authoritativeManualAssignments || {}),
+            ...Object.keys(authoritativeManualSetLengths || {}),
+          ]);
+          for (const id of manualIds) {
+            assignments[id] = normalizeManualSongList(parsed.assignments[id]);
+          }
+          return assignments;
+        }
+      }
+    } catch {}
+    return {};
+  });
+  const [interstitialSongs, setInterstitialSongs] = useState(() => {
+    if (savedInterstitials && Object.keys(savedInterstitials).length > 0) return savedInterstitials;
+    if (remoteMode) return {};
+    try {
+      const saved = localStorage.getItem('djbooth_interstitial_songs');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  const [selectedDancerId, setSelectedDancerId] = useState(null);
+  const [selectedBreakKey, setSelectedBreakKey] = useState(null);
+  const [breakReplacement, setBreakReplacement] = useState(null);
+  const [displayLimit, setDisplayLimit] = useState(TRACKS_PER_PAGE);
+  const [commercialFreq, setCommercialFreq] = useState(() => localStorage.getItem('neonaidj_commercial_freq') || 'off');
+  const [skippedCommercials, setSkippedCommercials] = useState(() => {
+    if (remoteMode) return new Set();
+    try {
+      const saved = localStorage.getItem('neonaidj_skipped_commercials');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
+  // On a remote this browser's localStorage is meaningless - the kiosk owns the list
+  // and publishes it in booth state. Track that instead, exactly as RemoteView does.
+  const effectiveSkippedCommercials = (remoteMode && Array.isArray(remoteSkippedCommercials))
+    ? new Set(remoteSkippedCommercials)
+    : skippedCommercials;
+  useEffect(() => {
+    const handleRemoteCommercialFreq = (event) => {
+      setCommercialFreq(String(event.detail || localStorage.getItem('neonaidj_commercial_freq') || 'off'));
+    };
+    const handleRemoteSkippedCommercials = (event) => {
+      const next = Array.isArray(event.detail)
+        ? event.detail
+        : (() => {
+            try { return JSON.parse(localStorage.getItem('neonaidj_skipped_commercials') || '[]'); }
+            catch { return []; }
+          })();
+      setSkippedCommercials(new Set(next));
+    };
+    window.addEventListener('djbooth_commercial_freq_changed', handleRemoteCommercialFreq);
+    window.addEventListener('djbooth_skipped_commercials_changed', handleRemoteSkippedCommercials);
+    return () => {
+      window.removeEventListener('djbooth_commercial_freq_changed', handleRemoteCommercialFreq);
+      window.removeEventListener('djbooth_skipped_commercials_changed', handleRemoteSkippedCommercials);
+    };
+  }, []);
+  // In VIP modal state
+  const [vipModalDancerId, setVipModalDancerId] = useState(null);
+  const [vipAddMs, setVipAddMs] = useState(0);
+  useEffect(() => { setVipAddMs(0); }, [vipModalDancerId]);
+  const [vipCountdowns, setVipCountdowns] = useState({});
+  const vipSnapshotReceiptRef = React.useRef({ at: performance.now(), values: dancerVipRemainingMs });
+  useEffect(() => {
+    vipSnapshotReceiptRef.current = { at: performance.now(), values: dancerVipRemainingMs || {} };
+  }, [dancerVipRemainingMs]);
+
+  // Tick VIP countdowns every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (Object.keys(dancerVipMap).length === 0) return;
+      const now = Date.now();
+      const next = {};
+      for (const [id, entry] of Object.entries(dancerVipMap)) {
+        next[id] = decayVipRemaining(
+          vipSnapshotReceiptRef.current.values?.[id],
+          vipSnapshotReceiptRef.current.at,
+          performance.now(),
+        );
+      }
+      setVipCountdowns(next);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [dancerVipMap]);
+
+  const appliedPlaylistsRef = React.useRef({});
+  const lastAuthoritativeRotationRef = React.useRef(rotation);
+  const lastAuthoritativeInterstitialsRef = React.useRef(savedInterstitials || {});
+  const interstitialSongsRef = React.useRef(interstitialSongs);
+  const manualInterstitialBreaksRef = React.useRef(authoritativeManualBreaks || {});
+  const activeRotationSongsKey = stableAssignmentKey(activeRotationSongs || {});
+  const authoritativeManualAssignmentsKey = stableAssignmentKey(authoritativeManualAssignments || {});
+  const authoritativeManualSetLengthsKey = stableAssignmentKey(authoritativeManualSetLengths || {});
+  const authoritativeManualBreaksKey = stableAssignmentKey(authoritativeManualBreaks || {});
+  const songAssignmentsRef = React.useRef({});
+  const assignmentSongsPerSetRef = React.useRef(songsPerSet);
+  const assignmentGenerationRef = React.useRef(0);
+  const authoritativeManualIdsRef = React.useRef(new Set());
+  const authoritativeManualKeysRef = React.useRef(null);
+  // Restore the "DJ edited these — don't re-roll/clobber them" markers alongside
+  // the displayed picks so a second Save All (after a tab switch) still reports
+  // the DJ's overrides, and the active restore block keeps skipping them.
+  const djOverridesRef = React.useRef((() => {
+    return new Set(storedEditor.overrides || []);
+  })());
+  // Old stored overrides were acknowledged state. New snapshots also retain
+  // unconfirmed edits, so a tab remount cannot reclassify them as acknowledged.
+  // Remote browsers must never borrow this kiosk-only localStorage state.
+  const [restoredManualEdits] = useState(() => {
+    return restoreManualEditorEdits(storedEditor);
+  });
+  const dirtyOverridesRef = React.useRef(restoredManualEdits.dirtyIds);
+  const manualEditRevisionsRef = React.useRef(restoredManualEdits.revisions);
+  const pendingManualEditsRef = React.useRef(restoredManualEdits.pendingEdits);
+  const [manualEditRevision, setManualEditRevision] = useState(0);
+  const editorMountedRef = useRef(true);
+  const recoveryInFlightRef = useRef(new Set());
+  const [checkingEdits, setCheckingEdits] = useState(new Set());
+  const persistEditorLedger = useCallback(() => {
+    try {
+      const storage = editorStorage.remote ? sessionStorage : localStorage;
+      let snapshot = {
+        assignments: songAssignmentsRef.current,
+        overrides: [...djOverridesRef.current],
+        dirtyOverrides: [...dirtyOverridesRef.current],
+        pendingEdits: pendingManualEditsRef.current,
+      };
+      if (!editorMountedRef.current) {
+        // A detached tab's completion may update only its matching revision,
+        // never replace a remounted editor's newer draft or clean metadata.
+        snapshot = JSON.parse(storage.getItem(editorStorage.key)) || {};
+        for (const [id, edit] of Object.entries(pendingManualEditsRef.current)) {
+          if (snapshot.pendingEdits?.[id]?.revision === edit.revision
+              && snapshot.pendingEdits[id].context?.requestId === edit.context?.requestId) {
+            snapshot.pendingEdits[id] = edit;
+          }
+        }
+      }
+      storage.setItem(editorStorage.key, JSON.stringify(snapshot));
+      window.dispatchEvent(new CustomEvent('rotation-editor-ledger', { detail: editorStorage.key }));
+    } catch { /* unavailable browser storage does not discard the in-memory draft */ }
+  }, [editorStorage]);
+  useEffect(() => {
+    editorMountedRef.current = true;
+    const receive = event => {
+      if (event.detail !== editorStorage.key) return;
+      try {
+        const storage = editorStorage.remote ? sessionStorage : localStorage;
+        const saved = JSON.parse(storage.getItem(editorStorage.key));
+        let changed = false;
+        for (const [id, edit] of Object.entries(pendingManualEditsRef.current)) {
+          const incoming = saved?.pendingEdits?.[id];
+          if (incoming?.revision === edit.revision
+              && incoming.context?.requestId === edit.context?.requestId
+              && JSON.stringify(incoming) !== JSON.stringify(edit)) {
+            pendingManualEditsRef.current[id] = incoming;
+            changed = true;
+          }
+        }
+        if (changed) setManualEditRevision(value => value + 1);
+      } catch {}
+    };
+    window.addEventListener('rotation-editor-ledger', receive);
+    return () => {
+      editorMountedRef.current = false;
+      window.removeEventListener('rotation-editor-ledger', receive);
+    };
+  }, [editorStorage]);
+  const isManualAssignment = useCallback(dancerId => {
+    const key = String(dancerId);
+    return dirtyOverridesRef.current.has(key)
+      || djOverridesRef.current.has(key)
+      || djOverridesRef.current.has(dancerId)
+      || authoritativeManualIdsRef.current.has(key);
+  }, []);
+  const markDjOverride = (dancerId) => {
+    const normalizedId = String(dancerId);
+    djOverridesRef.current.add(normalizedId);
+    dirtyOverridesRef.current.add(normalizedId);
+  };
+  // Set edits are live controls, not a Save All-only draft. Publish the
+  // assignment immediately so the kiosk can rebase/cancel any in-flight
+  // automatic pre-pick before the next song is selected.
+  const publishManualAssignment = useCallback((dancerId, songs) => {
+    const normalizedId = String(dancerId);
+    const nextSongs = normalizeManualSongList(songs);
+    markDjOverride(normalizedId);
+    const revision = (manualEditRevisionsRef.current[normalizedId] || 0) + 1;
+    manualEditRevisionsRef.current[normalizedId] = revision;
+    pendingManualEditsRef.current[normalizedId] = {
+      revision, songs: nextSongs, acknowledged: false, phase: 'sending',
+      context: remoteMode ? {
+        requestId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        submittedAt: Date.now(),
+      } : null,
+    };
+    songAssignmentsRef.current = {
+      ...songAssignmentsRef.current,
+      [normalizedId]: nextSongs,
+    };
+    setSongAssignments(previous => ({ ...previous, [normalizedId]: nextSongs }));
+    persistEditorLedger();
+    // Do not let an older completion acknowledge a newer edit. Do not release
+    // dirty protection on a receipt alone: an older poll may still be in flight.
+    const edit = pendingManualEditsRef.current[normalizedId];
+    return Promise.resolve().then(() => onAutoSavePlaylist?.(dancerId, nextSongs, undefined, {
+      requestId: edit.context?.requestId,
+      onIdentity: identity => {
+        if (pendingManualEditsRef.current[normalizedId]?.revision !== revision) return;
+        edit.context = editorCommandContext(identity);
+        persistEditorLedger();
+      },
+    })).then(() => {
+      const pending = pendingManualEditsRef.current[normalizedId];
+      if (pending?.revision !== revision || !onAutoSavePlaylist) return;
+      pending.acknowledged = true;
+      pending.phase = 'awaiting';
+      persistEditorLedger();
+      setManualEditRevision(value => value + 1);
+    }).catch(error => {
+      if (manualEditRevisionsRef.current[normalizedId] === revision) {
+        edit.phase = error?.rejectedByServer === true ? 'rejected' : 'unknown';
+        edit.context = editorCommandContext(error?.requestId ? error : edit.context);
+        persistEditorLedger();
+        setManualEditRevision(value => value + 1);
+        toast.error(edit.phase === 'rejected'
+          ? 'Playlist not applied. Your edit is kept.'
+          : 'Playlist outcome unknown. Your edit is kept; use Check save.');
+      }
+    });
+  }, [onAutoSavePlaylist, remoteMode, persistEditorLedger]);
+
+  const handleRecoverEdit = async dancerId => {
+    const id = String(dancerId);
+    const edit = pendingManualEditsRef.current[id];
+    if (!edit || edit.phase === 'sending' || recoveryInFlightRef.current.has(id)) return;
+    recoveryInFlightRef.current.add(id);
+    setCheckingEdits(new Set(recoveryInFlightRef.current));
+    const isCurrent = () => editorMountedRef.current
+      && pendingManualEditsRef.current[id]?.revision === edit.revision;
+    try {
+      const update = await recoverManualEditorEdit(edit, {
+        remoteMode, isCurrent,
+        reconcile: context => boothApi.reconcileCommand(context),
+        refreshSnapshot: onCheckPlaylistSnapshot,
+        retry: () => publishManualAssignment(dancerId, edit.songs),
+      });
+      if (update && isCurrent()) {
+        Object.assign(edit, update);
+        persistEditorLedger();
+        setManualEditRevision(value => value + 1);
+        if (!edit.acknowledged) toast.error('Save is still unconfirmed. Nothing was resent.');
+      }
+      // Refresh through the parent's ordered snapshot acceptance path, not a
+      // second unversioned assignment writer.
+      if (isCurrent()) await onCheckPlaylistSnapshot?.();
+    } catch {
+      if (isCurrent()) toast.error('Could not refresh confirmation. Your edit is kept.');
+    } finally {
+      recoveryInFlightRef.current.delete(id);
+      if (editorMountedRef.current) setCheckingEdits(new Set(recoveryInFlightRef.current));
+    }
+  };
+  // Break queues are live one-shot edits, not Save All drafts. Keep a ref so
+  // rapid library drops/reorders compose from the newest queue and publish the
+  // complete unlimited list to the kiosk immediately.
+  const publishInterstitialSongs = useCallback((nextSongs, markBreakKey = null) => {
+    const normalized = {};
+    for (const [rawKey, songs] of Object.entries(nextSongs || {})) {
+      const names = (Array.isArray(songs) ? songs : []).map(getSongName).filter(Boolean);
+      if (names.length > 0) normalized[String(rawKey)] = names;
+    }
+    const manualBreaks = { ...(manualInterstitialBreaksRef.current || {}) };
+    if (markBreakKey != null && normalized[String(markBreakKey)]?.length > 0) {
+      manualBreaks[String(markBreakKey)] = true;
+    }
+    Object.keys(manualBreaks).forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(normalized, key)) delete manualBreaks[key];
+    });
+    interstitialSongsRef.current = normalized;
+    manualInterstitialBreaksRef.current = manualBreaks;
+    setInterstitialSongs(normalized);
+    Promise.resolve(onInterstitialSongsChange?.(normalized, manualBreaks)).catch(error => {
+      toast.error(error?.message || 'Could not apply the break queue edit');
+    });
+  }, [onInterstitialSongsChange]);
+  const normalizeDisplayedAssignments = useCallback((assignments) => {
+    const manualIds = new Set([
+      ...djOverridesRef.current,
+      ...dirtyOverridesRef.current,
+      ...Object.keys(authoritativeManualAssignments || {}),
+      ...Object.keys(authoritativeManualSetLengths || {}),
+    ]);
+    return normalizeDisplayedAssignmentMap(assignments, songsPerSet, manualIds);
+  }, [songsPerSet, authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey]);
+  const prevCurrentDancerIdRef = React.useRef(null);
+  const saveGuardRef = React.useRef(0);
+  const libraryPanelRef = useRef(null);
+  const rerollingRef = React.useRef(new Set());
+  const [rerollingKeys, setRerollingKeys] = useState(new Set());
+  const [serverTracks, setServerTracks] = useState([]);
+  const [serverGenres, setServerGenres] = useState([]);
+  const [serverTotalTracks, setServerTotalTracks] = useState(0);
+  const [serverCurrentPage, setServerCurrentPage] = useState(1);
+  const [serverHasMore, setServerHasMore] = useState(false);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const serverMountedRef = useRef(false);
+  const searchTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 150);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setLocalRotation(current => {
+      const wasUnedited = JSON.stringify(current) === JSON.stringify(lastAuthoritativeRotationRef.current);
+      lastAuthoritativeRotationRef.current = rotation;
+      return wasUnedited ? rotation : current;
+    });
+  }, [rotation]);
+
+  useEffect(() => {
+    const checkFreq = () => {
+      const freq = localStorage.getItem('neonaidj_commercial_freq') || 'off';
+      setCommercialFreq(freq);
+    };
+    window.addEventListener('storage', checkFreq);
+    const interval = setInterval(checkFreq, 2000);
+    return () => { window.removeEventListener('storage', checkFreq); clearInterval(interval); };
+  }, []);
+
+  useLayoutEffect(() => {
+    const authorityKey = JSON.stringify([
+      authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey,
+    ]);
+    if (authoritativeManualKeysRef.current !== authorityKey) {
+      authoritativeManualKeysRef.current = authorityKey;
+      authoritativeManualIdsRef.current = new Set([
+        ...Object.keys(authoritativeManualAssignments || {}),
+        ...Object.keys(authoritativeManualSetLengths || {}),
+      ]);
+      // Manual changes supersede automatic requests based on an older snapshot.
+      assignmentGenerationRef.current += 1;
+    }
+    if (assignmentSongsPerSetRef.current !== songsPerSet) {
+      assignmentSongsPerSetRef.current = songsPerSet;
+      assignmentGenerationRef.current += 1;
+    }
+    const capped = normalizeDisplayedAssignments(songAssignments);
+    if (capped !== songAssignments) {
+      setSongAssignments(capped);
+      return;
+    }
+    songAssignmentsRef.current = songAssignments;
+    if (!remoteMode) onSongAssignmentsChange?.(songAssignments);
+    // Persist the displayed picks + DJ-edit markers so a remount (tab switch) or
+    // full reload restores them instead of re-rolling. Cleared by the parent on
+    // Start Rotation / Clear All (djbooth_planned_assignments).
+    persistEditorLedger();
+  }, [songAssignments, songsPerSet, remoteMode, normalizeDisplayedAssignments, manualEditRevision]);
+
+  useEffect(() => {
+    if (musicSource === 'genres') return;
+    const handleClickOutside = (e) => {
+      if (libraryPanelRef.current && !libraryPanelRef.current.contains(e.target)) {
+        setMusicSource('genres');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [musicSource]);
+
+  useEffect(() => {
+    interstitialSongsRef.current = interstitialSongs;
+    if (!remoteMode) {
+      try {
+        localStorage.setItem('djbooth_interstitial_songs', JSON.stringify(interstitialSongs));
+        localStorage.setItem('djbooth_manual_interstitial_breaks', JSON.stringify(manualInterstitialBreaksRef.current || {}));
+      } catch {}
+    }
+  }, [interstitialSongs, remoteMode]);
+
+  useEffect(() => {
+    if (interstitialRemoteVersion > 0) {
+      setInterstitialSongs(current => {
+        const wasUnedited = JSON.stringify(current) === JSON.stringify(lastAuthoritativeInterstitialsRef.current);
+        lastAuthoritativeInterstitialsRef.current = savedInterstitials || {};
+        if (!wasUnedited) return current;
+        interstitialSongsRef.current = savedInterstitials || {};
+        manualInterstitialBreaksRef.current = authoritativeManualBreaks || {};
+        return savedInterstitials || {};
+      });
+    }
+  }, [interstitialRemoteVersion, savedInterstitials, authoritativeManualBreaksKey]);
+
+  useEffect(() => {
+    if (!isRotationActive || !localRotation || localRotation.length === 0) return;
+    const currentId = String(currentRotationDancerId(localRotation, currentDancerIndex));
+    if (prevCurrentDancerIdRef.current && prevCurrentDancerIdRef.current !== currentId) {
+      const finishedId = prevCurrentDancerIdRef.current;
+      // Finishing playback is not evidence that this edit revision was saved.
+      if (dirtyOverridesRef.current.has(String(finishedId))) {
+        prevCurrentDancerIdRef.current = currentId;
+        return;
+      }
+      djOverridesRef.current.delete(finishedId);
+      dirtyOverridesRef.current.delete(String(finishedId));
+      delete pendingManualEditsRef.current[String(finishedId)];
+      setSongAssignments(prev => {
+        const updated = { ...prev };
+        delete updated[finishedId];
+        return updated;
+      });
+    }
+    prevCurrentDancerIdRef.current = currentId;
+  }, [localRotation, currentDancerIndex, isRotationActive]);
+
+  useEffect(() => {
+    const previous = songAssignmentsRef.current;
+    const previousDirtySize = dirtyOverridesRef.current.size;
+    const result = reconcileManualEditorAssignments(previous, {
+      assignments: authoritativeManualAssignments,
+      activeAssignments: activeRotationSongs,
+      manualLengths: authoritativeManualSetLengths,
+      dirtyIds: dirtyOverridesRef.current,
+      pendingEdits: pendingManualEditsRef.current,
+    });
+    dirtyOverridesRef.current = result.dirtyIds;
+    pendingManualEditsRef.current = result.pendingEdits;
+    if (result.assignments !== previous) {
+      songAssignmentsRef.current = result.assignments;
+      setSongAssignments(result.assignments);
+    }
+    // Confirmation can change only the ledger, not the displayed song names.
+    // Persist that cleanup even when reference-stable state skips a rerender.
+    if (previousDirtySize !== result.dirtyIds.size) {
+      persistEditorLedger();
+      setManualEditRevision(value => value + 1);
+    }
+  }, [authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey,
+    activeRotationSongsKey, manualEditRevision, remoteMode]);
+
+  useEffect(() => {
+    const hasRemoteSnapshot = remoteMode && activeRotationSongs != null;
+    if (hasRemoteSnapshot) {
+      setSongAssignments(prev => reconcileAuthoritativeAssignments(
+        prev,
+        activeRotationSongs,
+        songsPerSet,
+        dirtyOverridesRef.current,
+        [
+          ...Object.keys(authoritativeManualAssignments || {}),
+          ...Object.keys(authoritativeManualSetLengths || {}),
+        ],
+      ));
+    } else if (isRotationActive && activeRotationSongs && Object.keys(activeRotationSongs).length > 0) {
+      setSongAssignments(prev => {
+        const fromActive = { ...prev };
+        let changed = false;
+        Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
+          if (dirtyOverridesRef.current.has(String(dancerId))) return;
+          // Manual entries were reconciled from their authoritative ledger
+          // above, including shorter and empty lists. Do not overwrite them
+          // with an older automatic/pre-pick snapshot.
+          if (Object.prototype.hasOwnProperty.call(authoritativeManualAssignments || {}, dancerId)
+              || Object.prototype.hasOwnProperty.call(authoritativeManualSetLengths || {}, dancerId)) return;
+          const mapped = (Object.prototype.hasOwnProperty.call(authoritativeManualAssignments || {}, dancerId)
+            || Object.prototype.hasOwnProperty.call(authoritativeManualSetLengths || {}, dancerId)
+            || djOverridesRef.current.has(dancerId))
+            ? normalizeManualSongList(trackList)
+            : normalizeSongList(trackList, songsPerSet);
+          // Don't downgrade: if the dancer already has the right number of songs assigned
+          // and the incoming pre-pick has fewer (stale from before a songsPerSet change),
+          // keep what we have rather than overwriting with a short array that will then
+          // trigger auto-assign to fill the gap from the genre pool. Invalid legacy
+          // entries are different: clear them so blank rows cannot survive.
+          const existing = prev[dancerId];
+          if (existing && existing.length >= songsPerSet && mapped.length > 0 && mapped.length < songsPerSet) return;
+          if (!sameSongList(existing, mapped)) {
+            fromActive[dancerId] = mapped;
+            changed = true;
+          }
+        });
+        return changed ? fromActive : prev;
+      });
+      // Do NOT return early — dancers absent from activeRotationSongs still need auto-assignment below
+    }
+
+    // A remote editor is command-only. It may display the kiosk's assignments,
+    // but it must never invent a queue from its own local tracks.
+    if (remoteMode) return;
+    if (!songCooldownsReady) return;
+    if (saveGuardRef.current > Date.now()) return;
+
+    const dancersNeedingAssignment = localRotation.filter(dancerId => {
+      if (isManualAssignment(dancerId)) return false;
+      const current = songAssignmentsRef.current[dancerId];
+      return !current || current.length < songsPerSet;
+    });
+    if (dancersNeedingAssignment.length === 0) return;
+
+    const isFoldersOnly = djOptions?.musicMode === 'folders_only';
+    const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
+    const requestGeneration = assignmentGenerationRef.current;
+
+    (async () => {
+      const token = localStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const batchExcludes = [];
+
+      setSongAssignments(prev => {
+        Object.values(prev).forEach(songs => {
+          if (songs) songs.forEach(n => batchExcludes.push(n));
+        });
+        return prev;
+      });
+
+      const newAssignments = {};
+      for (const dancerId of dancersNeedingAssignment) {
+        const dancer = dancers.find(d => d.id === dancerId);
+        if (!dancer) continue;
+
+        const serverPlaylist = dancer?.playlist || [];
+        const serverHash = serverPlaylist.join(',');
+        const lastApplied = appliedPlaylistsRef.current[dancerId];
+        const hasNewServerPlaylist = serverPlaylist.length > 0 && serverHash !== lastApplied;
+
+        const currentSongs = newAssignments[dancerId];
+        if (currentSongs && currentSongs.length >= songsPerSet && !hasNewServerPlaylist) {
+          currentSongs.forEach(n => batchExcludes.push(n));
+          continue;
+        }
+
+        const dancerPlaylist = (!isFoldersOnly && serverPlaylist.length > 0)
+          ? fisherYatesShuffle(serverPlaylist) : [];
+
+        try {
+          const res = await fetch('/api/music/select', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              count: songsPerSet,
+              excludeNames: [...new Set(batchExcludes)],
+              genres: activeGenres,
+              dancerPlaylist,
+              automatic: true
+            }),
+            signal: AbortSignal.timeout(5000)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const selected = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)
+              .map(t => t.name);
+            if (selected.length === 0) {
+              console.warn(`⚠️ RotationPlaylist: automatic selection exhausted for ${dancer.name}`);
+            }
+            newAssignments[dancerId] = selected;
+            selected.forEach(n => batchExcludes.push(n));
+            if (serverPlaylist.length > 0) {
+              appliedPlaylistsRef.current[dancerId] = serverHash;
+            }
+            continue;
+          }
+        } catch (err) {
+          console.warn(`⚠️ RotationPlaylist: Server select failed for ${dancer.name}: ${err.message}`);
+        }
+
+        const excludeSet = new Set(batchExcludes);
+        const fallbackPlaylist = dancer?.playlist || [];
+        let assigned = [];
+        if (!isFoldersOnly && fallbackPlaylist.length > 0) {
+          // PLAYLIST RULE: when dancer has a playlist, use ONLY her unplayed
+          // playlist songs. An exhausted playlist is a real no-eligible result;
+          // never recycle a track that is still inside the six-hour automatic
+          // cooldown in an offline fallback.
+          const playlistSet = new Set(fallbackPlaylist);
+           const playlistTracks = filterAutomaticTracks(tracks)
+             .filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name));
+          const fresh = filterUnplayedAutomaticTracks(playlistTracks, songCooldowns);
+          assigned = fisherYatesShuffle(fresh).slice(0, songsPerSet).map(t => t.name);
+        } else {
+          // No playlist or folders_only mode — random from genre pool is correct
+           const genrePool = filterByGenres(filterAutomaticTracks(tracks), activeGenres);
+          const fresh = filterUnplayedAutomaticTracks(
+            genrePool.filter(t => !excludeSet.has(t.name)),
+            songCooldowns,
+          );
+          assigned = fisherYatesShuffle(fresh).slice(0, songsPerSet).map(t => t.name);
+        }
+        if (assigned.length === 0 && songsPerSet > 0) {
+          console.warn(`⚠️ RotationPlaylist: no eligible unplayed automatic tracks remain for ${dancer.name}`);
+        }
+        newAssignments[dancerId] = assigned;
+        assigned.forEach(n => batchExcludes.push(n));
+      }
+
+      if (requestGeneration === assignmentGenerationRef.current && Object.keys(newAssignments).length > 0) {
+        setSongAssignments(prev => {
+          const updated = { ...prev };
+          for (const [dancerId, songs] of Object.entries(newAssignments)) {
+            if (!isManualAssignment(dancerId)) {
+              updated[dancerId] = capSongList(songs, assignmentSongsPerSetRef.current);
+            }
+          }
+          return updated;
+        });
+      }
+    })();
+  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongsKey,
+    authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey, manualEditRevision,
+    djOptions, remoteMode, songCooldownsReady, isManualAssignment]);
+
+  // The kiosk is authoritative about which one-shot DJ overrides are still
+  // pending. Once a saved set starts, it disappears from that ledger; remove
+  // the stale editor marker so an unrelated remote Save All cannot re-save it
+  // as a fresh manual override. Dirty local edits remain protected until the
+  // save call succeeds.
+  useEffect(() => {
+    const authoritativeIds = new Set(
+      Object.keys(authoritativeManualAssignments || {}).map(id => String(id)),
+    );
+    const activeAssignments = activeRotationSongs || {};
+    let changed = false;
+    setSongAssignments(prev => {
+      const next = { ...prev };
+      for (const dancerId of [...djOverridesRef.current]) {
+        const key = String(dancerId);
+        if (authoritativeIds.has(key) || dirtyOverridesRef.current.has(key)) continue;
+        djOverridesRef.current.delete(dancerId);
+        changed = true;
+        // If playback has already moved on to a fresh automatic queue, remove
+        // the stale display value as well.
+        if (!Object.prototype.hasOwnProperty.call(activeAssignments, dancerId) &&
+            !Object.prototype.hasOwnProperty.call(activeAssignments, key)) {
+          delete next[dancerId];
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey, activeRotationSongsKey]);
+
+  const prevMusicModeRef = useRef(djOptions?.musicMode || 'dancer_first');
+  useEffect(() => {
+    if (remoteMode) return;
+    const currentMode = djOptions?.musicMode || 'dancer_first';
+    if (prevMusicModeRef.current === currentMode) return;
+    prevMusicModeRef.current = currentMode;
+    const nonOverridden = Object.keys(songAssignmentsRef.current).filter(id => !djOverridesRef.current.has(id));
+    if (nonOverridden.length === 0) return;
+    setSongAssignments(prev => {
+      const updated = { ...prev };
+      nonOverridden.forEach(id => { delete updated[id]; });
+      return updated;
+    });
+  }, [djOptions?.musicMode, remoteMode]);
+
+  const prevSongsPerSetRef = useRef(songsPerSet);
+  useEffect(() => {
+    if (remoteMode) return;
+    if (!songCooldownsReady) return;
+    if (prevSongsPerSetRef.current === songsPerSet) return;
+    prevSongsPerSetRef.current = songsPerSet;
+
+    // First handle the SHRINK case synchronously — just trim the list.
+    setSongAssignments(prev => {
+      const updated = { ...prev };
+      let changed = false;
+      Object.keys(updated).forEach(dancerId => {
+        const songs = updated[dancerId];
+        if (songs && songs.length > songsPerSet && !djOverridesRef.current.has(dancerId)) {
+          updated[dancerId] = songs.slice(0, songsPerSet);
+          changed = true;
+        }
+      });
+      return changed ? updated : prev;
+    });
+
+    if (tracks.length === 0) return;
+
+    // GROW case — need to ADD songs. Use the server endpoint so the playlist rule is honored:
+    // "When a dancer has a playlist, pick ONLY from that playlist — never random library."
+    const dancersNeedingMore = Object.keys(songAssignmentsRef.current).filter(dancerId => {
+      const songs = songAssignmentsRef.current[dancerId];
+      return songs && songs.length > 0 && songs.length < songsPerSet;
+    });
+    if (dancersNeedingMore.length === 0) return;
+
+    const isFoldersOnly = djOptions?.musicMode === 'folders_only';
+    const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
+    const requestGeneration = assignmentGenerationRef.current;
+
+    (async () => {
+      const token = localStorage.getItem('djbooth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const allUsed = new Set(Object.values(songAssignmentsRef.current).flat());
+      const additions = {};
+
+      for (const dancerId of dancersNeedingMore) {
+        const dancer = dancers.find(d => d.id === dancerId);
+        if (!dancer) continue;
+        const existingSongs = songAssignmentsRef.current[dancerId] || [];
+        const needed = songsPerSet - existingSongs.length;
+        if (needed <= 0) continue;
+
+        const dancerPlaylist = (!isFoldersOnly && dancer?.playlist?.length > 0)
+          ? fisherYatesShuffle(dancer.playlist) : [];
+
+        try {
+          const res = await fetch('/api/music/select', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              count: needed,
+              excludeNames: [...allUsed],
+              genres: activeGenres,
+              dancerPlaylist,
+              automatic: true
+            }),
+            signal: AbortSignal.timeout(5000)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const selected = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)
+              .map(t => t.name);
+            if (selected.length === 0) {
+              console.warn(`⚠️ songsPerSet grow: automatic selection exhausted for ${dancer.name}`);
+            }
+            additions[dancerId] = selected;
+            selected.forEach(n => allUsed.add(n));
+            continue;
+          }
+        } catch (err) {
+          console.warn(`⚠️ songsPerSet grow: server failed for ${dancer.name}: ${err.message}`);
+        }
+
+        // Local fallback — playlist-strict, NEVER random library when dancer has a playlist
+          const fallbackPlaylist = dancer?.playlist || [];
+        let fillNames = [];
+        if (!isFoldersOnly && fallbackPlaylist.length > 0) {
+          const playlistSet = new Set(fallbackPlaylist);
+           const playlistTracks = filterAutomaticTracks(tracks)
+             .filter(t => playlistSet.has(t.name) && !allUsed.has(t.name));
+          const fresh = filterUnplayedAutomaticTracks(playlistTracks, songCooldowns);
+          fillNames = fisherYatesShuffle(fresh).slice(0, needed).map(t => t.name);
+        } else {
+          // folders_only or no playlist — random from genre pool is correct
+           const genrePool = filterByGenres(filterAutomaticTracks(tracks), activeGenres);
+          const available = filterUnplayedAutomaticTracks(
+            genrePool.filter(t => !allUsed.has(t.name)),
+            songCooldowns,
+          );
+          fillNames = fisherYatesShuffle(available).slice(0, needed).map(t => t.name);
+        }
+        if (fillNames.length === 0) {
+          console.warn(`⚠️ RotationPlaylist: no eligible unplayed tracks remain while growing ${dancer.name}'s set`);
+        }
+        additions[dancerId] = fillNames;
+        fillNames.forEach(n => allUsed.add(n));
+      }
+
+      if (requestGeneration === assignmentGenerationRef.current && Object.keys(additions).length > 0) {
+        setSongAssignments(prev => {
+          const updated = { ...prev };
+          for (const [dancerId, additionalSongs] of Object.entries(additions)) {
+            const existing = updated[dancerId] || [];
+            updated[dancerId] = fillSongListToLimit(
+              existing,
+              additionalSongs,
+              assignmentSongsPerSetRef.current
+            );
+          }
+          return updated;
+        });
+      }
+    })();
+  }, [songsPerSet, tracks, dancers, djOptions, remoteMode, songCooldownsReady]);
+
+  const fetchServerTracks = useCallback(async (page = 1, append = false) => {
+    setServerLoading(true);
+    setServerError('');
+    try {
+      const data = await musicApi.getTracks({
+        page,
+        limit: TRACKS_PER_PAGE,
+        search: debouncedSearch.trim(),
+        genre: debouncedSearch.trim() ? '' : (activeGenre || ''),
+      });
+      const raw = (data.tracks || []).map(t => ({ ...t, url: '/api/music/stream/' + t.id }));
+      const seen = new Set();
+      const fetched = raw.filter(t => {
+        if (seen.has(t.name)) return false;
+        seen.add(t.name);
+        return true;
+      });
+      if (append) {
+        setServerTracks(prev => {
+          const existingNames = new Set(prev.map(t => t.name));
+          return [...prev, ...fetched.filter(t => !existingNames.has(t.name))];
+        });
+      } else {
+        setServerTracks(fetched);
+      }
+      setServerTotalTracks(data.total || 0);
+      setServerCurrentPage(page);
+      setServerHasMore(page < (data.totalPages || 1));
+      if (data.genres && data.genres.length > 0) {
+        setServerGenres(data.genres);
+      }
+    } catch (err) {
+      setServerError(err.message || 'Could not load the music library.');
+      console.error('RotationPlaylistManager: fetch tracks error', err);
+    } finally {
+      setServerLoading(false);
+    }
+  }, [debouncedSearch, activeGenre]);
+
+  useEffect(() => {
+    if (!serverMountedRef.current) {
+      serverMountedRef.current = true;
+      fetchServerTracks(1, false);
+      return;
+    }
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      fetchServerTracks(1, false);
+    }, 300);
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [debouncedSearch, activeGenre]);
+
+
+  const loadMoreServerTracks = useCallback(() => {
+    if (!serverLoading && serverHasMore) {
+      fetchServerTracks(serverCurrentPage + 1, true);
+    }
+  }, [fetchServerTracks, serverCurrentPage, serverLoading, serverHasMore]);
+
+  const genres = serverGenres;
+
+  const rotationDancers = localRotation.map(id => dancers.find(d => d.id === id)).filter(Boolean);
+  const availableDancers = dancers.filter(d => d.is_active && !localRotation.includes(d.id)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const genreFilteredTracks = debouncedSearch.trim() ? serverTracks : filterByGenres(serverTracks, djOptions?.activeGenres);
+  const filteredTracks = genreFilteredTracks;
+  const displayedTracks = genreFilteredTracks;
+
+  const addSongToDancer = useCallback((dancerId, trackName) => {
+    const current = [...(songAssignmentsRef.current[dancerId] || [])];
+    if (current.includes(trackName)) {
+      toast.error('Song already assigned');
+      return;
+    }
+    current.push(trackName);
+    publishManualAssignment(dancerId, current);
+  }, [publishManualAssignment]);
+
+  const handleDragEnd = (result) => {
+    const { source, destination, type } = result;
+    if (!destination) return;
+
+    if (type === 'dancer') {
+      const newRotation = [...localRotation];
+      const [moved] = newRotation.splice(source.index, 1);
+      newRotation.splice(destination.index, 0, moved);
+      if (isRotationActive && localRotation[0] !== newRotation[0]) {
+        const outcome = onDancerDragReorder?.(
+          newRotation, localRotation[0], newRotation[0],
+          resolvedRotation => setLocalRotation(resolvedRotation),
+          moved, destination.index,
+        );
+        if (outcome === false || outcome === 'deferred') return;
+        if (Array.isArray(outcome)) {
+          setLocalRotation(outcome);
+          return;
+        }
+      }
+      setLocalRotation(newRotation);
+      return;
+    }
+
+    const resolveTrackName = () => {
+      if (result.draggableId.startsWith('playlist-')) {
+        const parts = result.draggableId.replace('playlist-', '');
+        return parts.substring(parts.indexOf('-') + 1);
+      }
+      const dragId = result.draggableId.replace('lib-', '');
+      const track = displayedTracks.find(t => String(t.id) === dragId) || displayedTracks[source.index];
+      return track ? track.name : null;
+    };
+
+    if (source.droppableId === 'library' && destination.droppableId.startsWith('songs-')) {
+      const dancerId = destination.droppableId.replace('songs-', '');
+      const trackName = resolveTrackName();
+      if (!trackName) return;
+
+      const current = [...(songAssignmentsRef.current[dancerId] || [])];
+      if (current.includes(trackName)) {
+        toast.error('Song already assigned');
+        return;
+      }
+      current.splice(destination.index, 0, trackName);
+      publishManualAssignment(dancerId, current);
+      return;
+    }
+
+    if (source.droppableId === 'library' && destination.droppableId.startsWith('break-')) {
+      const breakKey = destination.droppableId.replace('break-', '');
+      const trackName = resolveTrackName();
+      if (!trackName) return;
+      const current = [...(interstitialSongsRef.current[breakKey] || [])];
+      if (current.includes(trackName)) {
+        toast.error('Already in this slot');
+        return;
+      }
+      current.splice(destination.index, 0, trackName);
+      publishInterstitialSongs({
+        ...interstitialSongsRef.current,
+        [breakKey]: current,
+      }, breakKey);
+      return;
+    }
+
+    if (source.droppableId === destination.droppableId && source.droppableId.startsWith('songs-')) {
+      const dancerId = source.droppableId.replace('songs-', '');
+      const current = [...(songAssignmentsRef.current[dancerId] || [])];
+      const [removed] = current.splice(source.index, 1);
+      current.splice(destination.index, 0, removed);
+      publishManualAssignment(dancerId, current);
+      return;
+    }
+
+    if (source.droppableId === destination.droppableId && source.droppableId.startsWith('break-')) {
+      const breakKey = source.droppableId.replace('break-', '');
+      const current = [...(interstitialSongsRef.current[breakKey] || [])];
+      const [removed] = current.splice(source.index, 1);
+      if (!removed) return;
+      current.splice(destination.index, 0, removed);
+      publishInterstitialSongs({
+        ...interstitialSongsRef.current,
+        [breakKey]: current,
+      }, breakKey);
+      return;
+    }
+
+    if (source.droppableId === 'library' && destination.droppableId === 'autoplay-queue') {
+      const trackName = resolveTrackName();
+      if (!trackName) return;
+      const track = displayedTracks.find(t => t.name === trackName);
+      if (!track) return;
+      const trackObj = { ...track, url: `/api/music/stream/${track.id}`, autoFilled: false };
+      if (autoplayQueue.some(t => t.name === trackName)) {
+        toast.error('Song already in autoplay queue');
+        return;
+      }
+      const newQueue = [...autoplayQueue];
+      newQueue.splice(destination.index, 0, trackObj);
+      onAutoplayQueueChange?.(newQueue);
+      return;
+    }
+
+    if (source.droppableId === 'autoplay-queue' && destination.droppableId === 'autoplay-queue') {
+      const newQueue = [...autoplayQueue];
+      const [moved] = newQueue.splice(source.index, 1);
+      newQueue.splice(destination.index, 0, moved);
+      onAutoplayQueueChange?.(newQueue);
+      return;
+    }
+  };
+
+  const removeSong = (dancerId, songIndex) => {
+    const current = [...(songAssignmentsRef.current[dancerId] || [])];
+    current.splice(songIndex, 1);
+    publishManualAssignment(dancerId, current);
+  };
+
+  const rerollSong = useCallback(async (dancerId, songIndex) => {
+    const key = `${dancerId}-${songIndex}`;
+    const assignmentAtStart = JSON.stringify(songAssignmentsRef.current[dancerId] || []);
+    if (rerollingRef.current.has(key)) return;
+    if (!songCooldownsReady) {
+      const message = 'Automatic history is not ready; no automatic re-roll was made';
+      console.warn(`⚠️ RotationPlaylist: ${message}`);
+      toast.error(message);
+      return;
+    }
+    rerollingRef.current.add(key);
+    setRerollingKeys(prev => new Set([...prev, key]));
+
+    const finish = () => {
+      rerollingRef.current.delete(key);
+      setRerollingKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+    };
+
+    try {
+      const allAssigned = [];
+      Object.entries(songAssignmentsRef.current).forEach(([id, songs]) => {
+        if (songs) songs.forEach(n => { if (id !== dancerId || songs.indexOf(n) !== songIndex) allAssigned.push(n); });
+      });
+
+      const dancer = dancers.find(d => d.id === dancerId);
+      const dancerPlaylist = dancer?.playlist || [];
+      const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
+      try {
+        const data = await musicApi.selectTracks({
+          count: 1,
+          excludeNames: [...new Set(allAssigned)],
+          genres: activeGenres,
+          dancerPlaylist,
+          automatic: true,
+        });
+        const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
+        if (newTrack) {
+          if (JSON.stringify(songAssignmentsRef.current[dancerId] || []) !== assignmentAtStart) return;
+          const current = [...(songAssignmentsRef.current[dancerId] || [])];
+          current[songIndex] = newTrack.name;
+          publishManualAssignment(dancerId, current);
+          toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
+          return;
+        }
+      } catch (err) {
+        console.warn('Re-roll failed:', err.message);
+        if (remoteMode) {
+          toast.error(`Could not pick a song: ${err.message}`);
+          return;
+        }
+      }
+
+      if (remoteMode) {
+        toast.error('No unplayed song is available for this entertainer');
+        return;
+      }
+      if (JSON.stringify(songAssignmentsRef.current[dancerId] || []) !== assignmentAtStart) return;
+      const excludeSet = new Set(allAssigned);
+      const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
+      const playlistSet = new Set(dancerPlaylist);
+      const candidatePool = dancerPlaylist.length > 0
+        ? allTracks.filter(t => playlistSet.has(t.name) && !excludeSet.has(t.name))
+        : filterByGenres(allTracks, activeGenres).filter(t => !excludeSet.has(t.name));
+      const available = filterUnplayedAutomaticTracks(candidatePool, songCooldowns);
+      if (available.length > 0) {
+        const pick = available[Math.floor(Math.random() * available.length)];
+        const current = [...(songAssignmentsRef.current[dancerId] || [])];
+        current[songIndex] = pick.name;
+        publishManualAssignment(dancerId, current);
+        toast.success(`Re-rolled: ${pick.name.replace(/\.[^.]+$/, '')}`);
+      } else {
+        console.warn(`⚠️ RotationPlaylist: automatic re-roll exhausted for ${dancer?.name || dancerId}`);
+        toast.error('No other songs available to pick from');
+      }
+    } finally {
+      finish();
+    }
+  }, [
+    djOptions,
+    tracks,
+    serverTracks,
+    dancers,
+    publishManualAssignment,
+    songCooldowns,
+    songCooldownsReady,
+  ]);
+
+  const handleAddToRotation = (dancerId) => {
+    if (!localRotation.includes(dancerId)) {
+      setLocalRotation([...localRotation, dancerId]);
+      onAddToRotation?.(dancerId);
+    }
+  };
+
+  const handleRemoveFromRotation = (dancerId) => {
+    setLocalRotation(localRotation.filter(id => id !== dancerId));
+    const updated = { ...songAssignments };
+    delete updated[dancerId];
+    setSongAssignments(updated);
+    const cleaned = { ...interstitialSongsRef.current };
+    delete cleaned[`after-${dancerId}`];
+    publishInterstitialSongs(cleaned);
+    onRemoveFromRotation?.(dancerId);
+  };
+
+  const addInterstitialSong = useCallback((breakKey, trackName) => {
+    const current = [...(interstitialSongsRef.current[breakKey] || [])];
+    if (current.includes(trackName)) {
+      toast.error('Song already in break slot');
+      return;
+    }
+    current.push(trackName);
+    publishInterstitialSongs({
+      ...interstitialSongsRef.current,
+      [breakKey]: current,
+    }, breakKey);
+  }, [publishInterstitialSongs]);
+
+  const handleLibraryTrackClick = useCallback((trackName) => {
+    if (breakReplacement) {
+      const { breakKey, songIndex } = breakReplacement;
+      const current = [...(interstitialSongsRef.current[breakKey] || [])];
+      if (current.includes(trackName)) {
+        toast.error('Song already in break slot');
+        return;
+      }
+      if (songIndex >= 0 && songIndex < current.length) {
+        current[songIndex] = trackName;
+        publishInterstitialSongs({ ...interstitialSongsRef.current, [breakKey]: current }, breakKey);
+      }
+      setBreakReplacement(null);
+      return;
+    }
+    if (selectedBreakKey) {
+      addInterstitialSong(selectedBreakKey, trackName);
+      return;
+    }
+    const targetId = selectedDancerId || (rotationDancers.length === 1 ? rotationDancers[0]?.id : null);
+    if (!targetId) {
+      toast('Tap an entertainer or break slot to select it', { icon: '👆' });
+      return;
+    }
+    addSongToDancer(targetId, trackName);
+  }, [breakReplacement, selectedBreakKey, selectedDancerId, rotationDancers, addSongToDancer, addInterstitialSong, publishInterstitialSongs]);
+
+  const removeInterstitialSong = useCallback((breakKey, songIndex) => {
+    const current = [...(interstitialSongsRef.current[breakKey] || [])];
+    current.splice(songIndex, 1);
+    const updated = { ...interstitialSongsRef.current };
+    if (current.length === 0) delete updated[breakKey];
+    else updated[breakKey] = current;
+    publishInterstitialSongs(updated, breakKey);
+  }, [publishInterstitialSongs]);
+
+  const replaceInterstitialSong = useCallback((breakKey, songIndex) => {
+    setBreakReplacement({ breakKey, songIndex });
+    setSelectedBreakKey(null);
+    setSelectedDancerId(null);
+    toast('Tap a library song to replace this break song', { icon: '🎵' });
+  }, []);
+
+  const moveActiveBreakSong = useCallback((upcomingIdx, direction) => {
+    if (!activeBreakInfo || !onUpdateActiveBreakSongs) return;
+    const { songs, currentIndex, breakKey } = activeBreakInfo;
+    const upcoming = [...songs.slice(currentIndex + 1)];
+    const targetIdx = upcomingIdx + direction;
+    if (targetIdx < 0 || targetIdx >= upcoming.length) return;
+    [upcoming[upcomingIdx], upcoming[targetIdx]] = [upcoming[targetIdx], upcoming[upcomingIdx]];
+    const newFullSongs = [...songs.slice(0, currentIndex + 1), ...upcoming];
+    onUpdateActiveBreakSongs(breakKey, newFullSongs);
+  }, [activeBreakInfo, onUpdateActiveBreakSongs]);
+
+  const lastBreakSwapTimeRef = useRef(0);
+  const replaceActiveBreakSong = useCallback((upcomingIdx) => {
+    if (!songCooldownsReady) {
+      const message = 'Automatic history is not ready; no automatic break swap was made';
+      console.warn(`⚠️ RotationPlaylist: ${message}`);
+      toast.error(message);
+      return;
+    }
+    const now = Date.now();
+    if (now - lastBreakSwapTimeRef.current < 1000) return;
+    lastBreakSwapTimeRef.current = now;
+    if (!activeBreakInfo || !onUpdateActiveBreakSongs) return;
+    const { songs, currentIndex, breakKey } = activeBreakInfo;
+    const upcoming = [...songs.slice(currentIndex + 1)];
+    const allBreakNames = new Set(songs.map(getSongName).filter(Boolean));
+    const allAssigned = new Set(
+      Object.values(songAssignmentsRef.current)
+        .flat()
+        .map(getSongName)
+        .filter(Boolean),
+    );
+    const sourceTracks = serverTracks.length > 0 ? serverTracks : tracks;
+    const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
+    const genrePool = filterByGenres(sourceTracks, activeGenres);
+    // This is an automatic replacement, not a manual library picker. Apply
+    // the same all-history and reserved-folder rules as every other automatic
+    // fallback, and exclude every song already present in this break/rotation.
+    const pool = filterUnplayedAutomaticTracks(
+      genrePool,
+      songCooldowns,
+      [...allBreakNames, ...allAssigned],
+    );
+    if (pool.length === 0) {
+      const message = 'Automatic break pool exhausted; no eligible unplayed song remains';
+      console.warn(`⚠️ RotationPlaylist: ${message}`);
+      toast.error(message);
+      return;
+    }
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    upcoming[upcomingIdx] = pick.name;
+    const newFullSongs = [...songs.slice(0, currentIndex + 1), ...upcoming];
+    onUpdateActiveBreakSongs(breakKey, newFullSongs);
+    toast.success(`Swapped: ${pick.name.replace(/\.[^.]+$/, '')}`);
+  }, [
+    activeBreakInfo,
+    onUpdateActiveBreakSongs,
+    tracks,
+    serverTracks,
+    djOptions,
+    songCooldowns,
+    songCooldownsReady,
+  ]);
+
+  const lastSaveTimeRef = useRef(0);
+  const lastSkipDancerTimeRef = useRef(0);
+  const lastSkipCurrentDancerTimeRef = useRef(0);
+  const lastSkipEntertainerNowTimeRef = useRef(0);
+  const lastMoveToTopTimeRef = useRef(0);
+  const handleSave = async () => {
+    if (remoteMode && Object.keys(pendingManualEditsRef.current).length > 0) {
+      toast.error('Check the unconfirmed sets before Save All. Your edits are kept.');
+      return;
+    }
+    const now = Date.now();
+    if (now - lastSaveTimeRef.current < 2000) return;
+    lastSaveTimeRef.current = now;
+    const playlists = {};
+    Object.entries(songAssignmentsRef.current).forEach(([dancerId, songs]) => {
+      const normalized = djOverridesRef.current.has(String(dancerId))
+        ? normalizeManualSongList(songs)
+        : normalizeSongList(songs, songsPerSet);
+      playlists[dancerId] = normalized;
+      appliedPlaylistsRef.current[dancerId] = normalized.join(',');
+    });
+
+    const finalInterstitials = { ...interstitialSongs };
+    const manualOverrides = [...djOverridesRef.current];
+    const savedEditRevisions = { ...manualEditRevisionsRef.current };
+
+    saveGuardRef.current = Date.now() + 30000;
+    try {
+      await onSaveAll?.(
+        localRotation,
+        playlists,
+        finalInterstitials,
+        manualOverrides,
+        manualInterstitialBreaksRef.current || {},
+      );
+      manualOverrides.forEach(id => {
+        const pending = pendingManualEditsRef.current[String(id)];
+        if (pending?.revision === savedEditRevisions[String(id)]) {
+          pending.acknowledged = true;
+        }
+      });
+      setManualEditRevision(value => value + 1);
+      persistEditorLedger();
+      toast.success('Save accepted. Sets show Saved when their lists are confirmed.');
+    } catch (error) {
+      // Keep every local edit intact on conflict/failure. The operator can
+      // review the authoritative update and retry instead of rebuilding work.
+      toast.error(error?.rejectedByServer === true
+        ? 'Save All was not applied. Your edits are kept.'
+        : 'Save All outcome unknown. Your edits are kept.');
+    }
+  };
+
+
+  return (
+    <div className="flex h-full bg-[#0d0d1f] rounded-xl border border-[#1e293b] overflow-hidden">
+      <DragDropContext onDragEnd={handleDragEnd} sensors={[useMouseSensor, useLongPressTouchSensor]} enableDefaultSensors={false}>
+        {/* Library + Rotation share whatever width remains after the VIP sidebar
+            takes its fixed 210px. Wrapping them in this flex-1 container guarantees
+            VIP can never be pushed off-screen by content inside Library or Rotation
+            (e.g. break songs being added to entertainer cards).
+            FIXED LAYOUT (no dynamic resize on VIP changes): the VIP sidebar is now
+            ALWAYS rendered (it shows an empty state when nobody's in VIP), and
+            Library/Rotation are pinned at w-1/3 / w-2/3 regardless of VIP count.
+            The three-column geometry never shifts when girls go in/out of VIP,
+            which fixes the booth "VIP column shoved off the right edge" bug — that
+            was a flex reflow race where the main area sometimes failed to shrink
+            when the VIP sidebar mounted/unmounted. The room for VIP is taken from
+            the music library, not the rotation column. */}
+        <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+        <div ref={libraryPanelRef} className="w-1/3 border-r border-[#1e293b] flex flex-col min-w-0">
+          <div className="p-4 border-b border-[#1e293b]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
+                Music Library
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">
+                  {musicSource === 'genres'
+                    ? `${serverTracks.length} of ${serverTotalTracks} tracks`
+                    : `${playlistSongs.length} songs`
+                  }
+                </span>
+              </div>
+            </div>
+            <select
+              value={musicSource}
+              onChange={(e) => {
+                setMusicSource(e.target.value);
+                setSearchQuery('');
+                setActiveGenre(null);
+              }}
+              className="w-full mb-2 px-3 py-2 bg-[#151528] border border-[#1e293b] rounded-lg text-sm text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff]"
+              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '28px' }}
+            >
+              <option value="genres">Entertainers</option>
+              {activeDancers.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name}'s Playlist ({(d.playlist || []).length})
+                </option>
+              ))}
+            </select>
+            {musicSource === 'genres' && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Input
+                  placeholder="Search by name, genre, or path..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 bg-[#151528] border-[#1e293b]"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {musicSource === 'genres' && genres.length > 0 && (
+            <div className="px-3 py-2 border-b border-[#1e293b]">
+              <div className="flex items-center gap-2">
+                <Folder className="w-4 h-4 text-gray-400 shrink-0" />
+                <select
+                  value={activeGenre || ''}
+                  onChange={(e) => setActiveGenre(e.target.value || null)}
+                  className="flex-1 bg-[#08081a] border border-[#1e293b] rounded-lg px-3 py-1.5 text-sm text-white appearance-none cursor-pointer focus:outline-none focus:border-[#00d4ff] hover:border-[#2563eb] transition-colors"
+                  style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '30px' }}
+                >
+                  <option value="">All Genres ({genres.reduce((sum, g) => sum + g.count, 0)})</option>
+                  {genres.map(g => (
+                    <option key={g.name} value={g.name}>{g.name} ({g.count})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {musicSource !== 'genres' ? (
+          <Droppable droppableId="library" isDropDisabled={true} type="song">
+            {(provided) => (
+            <ScrollArea className="flex-1">
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="p-2"
+              >
+                {playlistSongs.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    {selectedPlaylistDancer?.name} hasn't added any songs yet
+                  </div>
+                ) : (
+                  playlistSongs.map((songName, idx) => (
+                    <Draggable key={`playlist-${idx}-${songName}`} draggableId={`playlist-${idx}-${songName}`} index={idx}>
+                      {(provided, snapshot) => {
+                        const onCool = isOnCooldown(songName);
+                        return (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
+                      onClick={() => handleLibraryTrackClick(songName)}
+                      className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
+                        snapshot.isDragging
+                          ? 'bg-[#a855f7]/20 ring-2 ring-[#a855f7]'
+                          : 'bg-[#151528] hover:bg-[#1e293b]'
+                      } cursor-pointer`}
+                    >
+                      <ListMusic className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-[#a855f7]'}`} />
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{songName}</span>
+                      </div>
+                    </div>
+                        );
+                      }}
+                    </Draggable>
+                  ))
+                )}
+                {provided.placeholder}
+              </div>
+            </ScrollArea>
+            )}
+          </Droppable>
+          ) : (
+          <Droppable droppableId="library" isDropDisabled={true} type="song">
+            {(provided) => (
+              <ScrollArea className="flex-1">
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className="p-2"
+                >
+                  {displayedTracks.map((track, index) => (
+                    <Draggable key={`lib-${track.id}`} draggableId={`lib-${track.id}`} index={index}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          className={`flex items-center gap-2 px-3 py-2 mb-1 rounded-lg transition-colors ${
+                            snapshot.isDragging
+                              ? 'bg-[#00d4ff]/20 ring-2 ring-[#00d4ff]'
+                              : 'bg-[#151528] hover:bg-[#1e293b]'
+                          } cursor-grab active:cursor-grabbing cursor-pointer`}
+                          onClick={() => handleLibraryTrackClick(track.name)}
+                        >
+                          {(() => { const onCool = isOnCooldown(track.name); return (
+                          <Music2 className={`w-4 h-4 flex-shrink-0 ${onCool ? 'text-orange-400' : 'text-gray-500'}`} />
+                          ); })()}
+                          <div className="flex-1 min-w-0">
+                            {(() => { const onCool = isOnCooldown(track.name); return (
+                            <span className={`text-sm truncate block ${onCool ? 'text-orange-300' : 'text-white'}`}>{track.name}</span>
+                            ); })()}
+                            {!activeGenre && (track.genre || (track.path && track.path.includes('/'))) && (
+                              <span className="text-xs text-gray-500 truncate block">{track.genre || track.path.split('/')[0]}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {serverHasMore && (
+                    <div className="text-center py-3">
+                      <button
+                        onClick={loadMoreServerTracks}
+                        disabled={serverLoading}
+                        className="px-4 py-2 text-xs font-medium text-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 rounded-lg transition-colors"
+                      >
+                        {serverLoading ? 'Loading...' : `Load More (${serverTracks.length} of ${serverTotalTracks})`}
+                      </button>
+                    </div>
+                  )}
+                  {serverError ? (
+                    <div className="text-center py-8 px-3 text-red-400 text-sm">{serverError}</div>
+                  ) : serverTracks.length === 0 && !serverLoading && (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      {debouncedSearch.trim() || activeGenre ? 'No tracks match your search' : 'No music files found'}
+                    </div>
+                  )}
+                  {provided.placeholder}
+                </div>
+              </ScrollArea>
+            )}
+          </Droppable>
+          )}
+        </div>
+
+        <div className="w-2/3 flex flex-col min-w-0 min-h-0 overflow-hidden">
+          <div className="p-4 border-b border-[#1e293b] flex-shrink-0 min-w-0">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider">
+                  Rotation
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {rotationDancers.length} entertainers &bull; drag to reorder
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
+                  {[1, 2, 3].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => onSongsPerSetChange?.(n)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        songsPerSet === n
+                          ? 'bg-[#00d4ff] text-black'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-xs text-gray-500 px-1">songs</span>
+                </div>
+                <div className="flex items-center gap-1 bg-[#151528] rounded-lg border border-[#1e293b] p-0.5">
+                  {[0, 1, 2, 3].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => onBreakSongsPerSetChange?.(n)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        breakSongsPerSet === n
+                          ? 'bg-violet-500 text-white'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-xs text-gray-500 px-1">breaks</span>
+                </div>
+                <button
+                  onClick={() => onAnnouncementsToggle?.(!announcementsEnabled)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-colors ${
+                    announcementsEnabled
+                      ? 'bg-[#00d4ff]/20 border-[#00d4ff] text-[#00d4ff]'
+                      : 'bg-red-900/30 border-red-700 text-red-400'
+                  }`}
+                  title={announcementsEnabled ? 'Voice announcements ON — click to turn off' : 'Voice announcements OFF — click to turn on'}
+                >
+                  {announcementsEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                  <span className="text-xs font-bold">{announcementsEnabled ? 'Voice ON' : 'Voice OFF'}</span>
+                </button>
+                <Button
+                  onClick={handleSave}
+                  className="bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save All
+                </Button>
+                {(() => {
+                  // One shared derivation of what this control should say. It never
+                  // reports the rotation as active just because the button was pressed,
+                  // and when the kiosk is waiting for the current song to finish it says
+                  // so instead of looking like nothing happened.
+                  const startState = rotationStartState({ isRotationActive, rotationPending, starting: rotationStarting });
+                  if (rotationDancers.length > 0 && startState.kind === 'idle') {
+                    return (
+                      <Button onClick={onStartRotation} className="bg-green-600 hover:bg-green-700 text-white">
+                        <Play className="w-4 h-4 mr-2" />
+                        Start
+                      </Button>
+                    );
+                  }
+                  if (startState.kind === 'starting') {
+                    return (
+                      <Button disabled title={startState.hint} className="bg-green-700/60 text-white cursor-wait">
+                        <Clock className="w-4 h-4 mr-2 animate-pulse" />
+                        Starting…
+                      </Button>
+                    );
+                  }
+                  if (startState.kind === 'queued') {
+                    return (
+                      <Button
+                        onClick={onCancelPendingRotation}
+                        title={startState.hint}
+                        className="bg-yellow-600 hover:bg-yellow-700 text-white animate-pulse"
+                      >
+                        <Clock className="w-4 h-4 mr-2" />
+                        Starting after this song
+                      </Button>
+                    );
+                  }
+                  return null;
+                })()}
+                {isRotationActive && rotationDancers.length > 1 && (
+                  <Button
+                    disabled={skipLocked}
+                    onClick={() => {
+                      if (skipLocked) return;
+                      const now = Date.now();
+                      if (now - lastSkipEntertainerNowTimeRef.current < 2000) return;
+                      lastSkipEntertainerNowTimeRef.current = now;
+                      onSkipEntertainerNow?.();
+                    }}
+                    title={skipLocked
+                      ? "Announcement in progress — this button comes back the moment she's done talking"
+                      : "End current entertainer's set immediately and bring up the next entertainer (no break songs)"}
+                    className={`ml-16 font-bold border-2 ${skipLocked
+                      ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed opacity-70'
+                      : 'bg-orange-500 hover:bg-orange-600 text-black border-orange-300'}`}
+                  >
+                    {skipLocked ? (
+                      <>
+                        <Mic className="w-4 h-4 mr-2 animate-pulse" />
+                        Announcing…
+                      </>
+                    ) : (
+                      <>
+                        <SkipForward className="w-4 h-4 mr-2" />
+                        Next Entertainer
+                      </>
+                    )}
+                  </Button>
+                )}
+            </div>
+            
+          </div>
+
+          <Droppable droppableId="rotation-list" type="dancer">
+            {(provided) => (
+              <ScrollArea className="flex-1">
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className="p-4 space-y-1"
+                >
+                  {activeBreakInfo && activeBreakInfo.songs.length > 0 && (() => {
+                    const upcomingBreaks = activeBreakInfo.songs.slice(activeBreakInfo.currentIndex + 1);
+                    if (upcomingBreaks.length === 0) return null;
+                    return (
+                      <div className="mx-2 mb-2 rounded-lg border border-dashed border-violet-500/40 bg-violet-900/10 p-2">
+                        <div className="flex items-center gap-1 px-1 mb-1">
+                          <Music2 className="w-3 h-3 text-violet-400" />
+                          <span className="text-[10px] text-violet-400 uppercase font-semibold tracking-wider">Up Next — Break Song{upcomingBreaks.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="space-y-1">
+                          {upcomingBreaks.map((songName, i) => {
+                            const actualIndex = activeBreakInfo.currentIndex + 1 + i;
+                            return (
+                              <div
+                                key={`active-break-${i}`}
+                                className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-violet-900/20 border border-violet-500/20"
+                              >
+                                <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                                <span className="text-sm text-violet-300 truncate flex-1 mx-1">{songName}</span>
+                                <button
+                                  onClick={() => moveActiveBreakSong(i, -1)}
+                                  disabled={i === 0}
+                                  title="Move up"
+                                  className="p-0.5 text-violet-400/60 hover:text-violet-200 disabled:opacity-20 disabled:cursor-not-allowed rounded transition-colors flex-shrink-0"
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => moveActiveBreakSong(i, 1)}
+                                  disabled={i === upcomingBreaks.length - 1}
+                                  title="Move down"
+                                  className="p-0.5 text-violet-400/60 hover:text-violet-200 disabled:opacity-20 disabled:cursor-not-allowed rounded transition-colors flex-shrink-0"
+                                >
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => replaceActiveBreakSong(i)}
+                                  title="Swap for another song"
+                                  className="p-0.5 text-violet-400/60 hover:text-amber-400 rounded transition-colors flex-shrink-0"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                </button>
+                                {onRemoveActiveBreakSong && activeBreakInfo.breakKey && (
+                                  <button
+                                    onClick={() => onRemoveActiveBreakSong(activeBreakInfo.breakKey, actualIndex)}
+                                    title="Remove"
+                                    className="p-0.5 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {(() => { const isFoldersOnlyMode = djOptions?.musicMode === 'folders_only'; return rotationDancers.map((dancer, index) => {
+                    const assigned = songAssignments[dancer.id] || [];
+                    const breakKey = `after-${dancer.id}`;
+                    const breakSongs = interstitialSongs[breakKey] || [];
+                    const feature = placedFeatures[dancer.id] || null;
+                    
+                    return (
+                      <React.Fragment key={dancer.id}>
+                      <Draggable draggableId={`dancer-${dancer.id}`} index={index}>
+                        {(dragProvided, dragSnapshot) => (
+                          <div
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            className={`bg-[#151528] rounded-lg border overflow-hidden ${
+                              dragSnapshot.isDragging
+                                ? 'border-[#00d4ff] ring-2 ring-[#00d4ff]/30'
+                                : 'border-[#1e293b]'
+                            }`}
+                          >
+                            <div
+                              className={`px-2 py-2.5 border-b flex items-center gap-1.5 cursor-pointer transition-colors ${
+                                selectedDancerId === dancer.id
+                                  ? 'border-[#00d4ff] bg-[#00d4ff]/10'
+                                  : 'border-[#1e293b] hover:bg-[#1a1a35]'
+                              }`}
+                              onClick={() => { setSelectedDancerId(selectedDancerId === dancer.id ? null : dancer.id); setSelectedBreakKey(null); }}
+                            >
+                              <div
+                                {...dragProvided.dragHandleProps}
+                                className="cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-400"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+                              <div
+                                className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0"
+                                style={{ backgroundColor: dancer.color || '#00d4ff' }}
+                              >
+                                {dancer.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white font-semibold text-sm truncate flex items-center gap-1.5">
+                                  {feature && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40 flex-shrink-0">🌟 FEATURE</span>}
+                                  <span className="truncate">{dancer.name}</span>
+                                </p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {feature
+                                    ? (feature.chosenSetName ? `Feature set: ${feature.chosenSetName}` : 'Feature — set not chosen')
+                                    : assigned.length > 0
+                                      ? `${assigned.length} song${assigned.length !== 1 ? 's' : ''}`
+                                      : 'No songs assigned'}
+                                  {!feature && selectedDancerId === dancer.id && ' — tap songs to add'}
+                                </p>
+                              </div>
+                              {!feature && isRotationActive && index === currentDancerIndex && localRotation.length > 1 && (
+                                <button
+                                  type="button"
+                                  disabled={skipLocked}
+                                  className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border transition-colors ${skipLocked
+                                    ? 'border-gray-600 bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                                    : 'border-orange-500 bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'}`}
+                                  title={skipLocked
+                                    ? 'Announcement in progress — skip re-enables when it finishes'
+                                    : 'Skip to next dancer (ends her set, resets songs, she goes to bottom)'}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (skipLocked) return;
+                                    const now = Date.now();
+                                    if (now - lastSkipCurrentDancerTimeRef.current < 2000) return;
+                                    lastSkipCurrentDancerTimeRef.current = now;
+                                    onSkipCurrentDancer?.();
+                                  }}
+                                >
+                                  <SkipForward className="w-4 h-4 flex-shrink-0" />
+                                  <span className="text-sm font-bold">Skip</span>
+                                </button>
+                              )}
+                              {!feature && isRotationActive && index !== currentDancerIndex && localRotation.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-yellow-600 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 transition-colors"
+                                  title="Skip to bottom of rotation"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const now = Date.now();
+                                    if (now - lastSkipDancerTimeRef.current < 2000) return;
+                                    lastSkipDancerTimeRef.current = now;
+                                    onSkipDancer?.(dancer.id);
+                                  }}
+                                >
+                                  <SkipForward className="w-4 h-4 flex-shrink-0" />
+                                  <span className="text-sm font-bold">Skip</span>
+                                </button>
+                              )}
+                              {!feature && isRotationActive && onMoveDancerToTop && index !== currentDancerIndex && localRotation.length > 2 && (() => {
+                                const nextIdx = (currentDancerIndex + 1) % localRotation.length;
+                                if (index === nextIdx) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                                    title="TOP — move to next on stage (does not interrupt current dancer)"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const now = Date.now();
+                                      if (now - lastMoveToTopTimeRef.current < 2000) return;
+                                      lastMoveToTopTimeRef.current = now;
+                                      onMoveDancerToTop(dancer.id);
+                                    }}
+                                  >
+                                    <ChevronsUp className="w-4 h-4 flex-shrink-0" />
+                                    <span className="text-sm font-bold">Top</span>
+                                  </button>
+                                );
+                              })()}
+                              {!feature && isRotationActive && onSendToVip && !dancerVipMap[dancer.id] && (
+                                <button
+                                  type="button"
+                                  className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border transition-colors ${pendingVipMap[dancer.id] ? 'border-yellow-400 bg-yellow-400/30 text-yellow-300' : 'border-yellow-500 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'}`}
+                                  title={pendingVipMap[dancer.id] ? 'VIP pending — will enter after this set' : 'Send to VIP after current set'}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setVipModalDancerId(dancer.id);
+                                  }}
+                                >
+                                  <Crown className="w-4 h-4 flex-shrink-0" />
+                                  <span className="text-sm font-bold">VIP</span>
+                                </button>
+                              )}
+                              {feature && !(isRotationActive && index === currentDancerIndex) && (() => {
+                                const nextIdx = isRotationActive && localRotation.length > 0 ? (currentDancerIndex + 1) % localRotation.length : -1;
+                                return (
+                                  <>
+                                    {index !== nextIdx && (
+                                      <button
+                                        type="button"
+                                        className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                                        title="Move feature to next on stage"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onPlaceFeature?.(dancer.id, feature.chosenSetName, 1, { introExists: feature.introExists, outroExists: feature.outroExists });
+                                        }}
+                                      >
+                                        <ChevronsUp className="w-4 h-4 flex-shrink-0" />
+                                        <span className="text-sm font-bold">Next</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+                                      title="Hold — take the feature out of the line-up (stays armed in the Feature panel)"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onCancelFeature?.(dancer.id);
+                                      }}
+                                    >
+                                      <Clock className="w-4 h-4 flex-shrink-0" />
+                                      <span className="text-sm font-bold">Hold</span>
+                                    </button>
+                                  </>
+                                );
+                              })()}
+                              {!feature && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-10 h-10 text-gray-500 hover:text-red-400 hover:bg-[#1e293b] flex-shrink-0"
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveFromRotation(dancer.id); }}
+                                >
+                                  <X className="w-5 h-5" />
+                                </Button>
+                              )}
+                            </div>
+
+                            {!feature && (() => {
+                              const edit = pendingManualEditsRef.current[String(dancer.id)];
+                              const checking = checkingEdits.has(String(dancer.id));
+                              const saved = isManualAssignment(dancer.id);
+                              return (
+                                <div className="px-3 py-2 border-b border-[#1e293b] flex flex-wrap items-center gap-2"
+                                  data-set-save-status={String(dancer.id)}>
+                                  <span role="status" className={`text-xs font-semibold flex-1 min-w-[120px] ${edit ? 'text-amber-300' : saved ? 'text-emerald-300' : 'text-gray-400'}`}>
+                                    {manualEditorStatus(edit, saved)}
+                                  </span>
+                                  {edit && (
+                                    <button type="button"
+                                      className="min-h-[44px] px-3 py-2 rounded-lg border border-amber-500/50 text-amber-200 text-sm font-semibold hover:bg-amber-500/10 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300"
+                                      disabled={checking || edit.phase === 'sending'}
+                                      aria-label={`${edit.phase === 'rejected' || (!remoteMode && !edit.acknowledged) ? 'Check and retry save' : 'Check save'} for ${dancer.name}`}
+                                      onClick={() => handleRecoverEdit(dancer.id)}>
+                                      {checking ? 'Checking…' : edit.phase === 'sending' ? 'Saving…'
+                                        : edit.phase === 'rejected' || (!remoteMode && !edit.acknowledged)
+                                          ? 'Check & retry' : 'Check save'}
+                                    </button>
+                                  )}
+                                  {edit && <p className="w-full text-xs text-gray-400">
+                                    {edit.acknowledged ? 'Accepted; waiting for the booth’s matching song order.'
+                                      : edit.phase === 'rejected' ? 'The booth declined this edit. Check & retry checks it before sending a new save.'
+                                        : 'Your song order is protected until this exact edit is confirmed.'}
+                                  </p>}
+                                </div>
+                              );
+                            })()}
+
+                            {feature ? (
+                              <div className="px-3 py-2">
+                                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-fuchsia-900/10 border-fuchsia-500/30">
+                                  <span className="text-sm font-bold w-4 flex-shrink-0 text-fuchsia-300">★</span>
+                                  <span className="text-sm truncate flex-1 text-fuchsia-200">{feature.chosenSetName || 'Set not chosen — pick one in the Feature panel'}</span>
+                                </div>
+                                <p className="text-[10px] text-gray-500 mt-1 px-1">Feature show — intro, this set, then outro, then she auto-leaves. Manage in the Feature panel.</p>
+                              </div>
+                            ) : (
+                            <Droppable droppableId={`songs-${dancer.id}`} type="song">
+                              {(songProvided, songSnapshot) => (
+                                <div
+                                  ref={songProvided.innerRef}
+                                  {...songProvided.droppableProps}
+                                  className={`px-3 py-2 min-h-[40px] transition-colors ${
+                                    songSnapshot.isDraggingOver ? 'bg-[#00d4ff]/10' : ''
+                                  }`}
+                                >
+                                  {assigned.length > 0 ? (
+                                    <div className="space-y-1">
+                                      {assigned.map((songName, songIdx) => {
+                                           const normalizedSongName = getSongName(songName);
+                                           // Keep an invalid legacy entry visible and uniquely
+                                           // keyed while it is being replaced; never render
+                                           // undefined or reuse the same draggable key.
+                                           const displaySongName = normalizedSongName || `Unnamed track ${songIdx + 1}`;
+                                        const isCurrentDancer = isRotationActive && index === currentDancerIndex;
+                                           const currentTrackName = getSongName(currentTrack);
+                                           const currentTrackIdx = isCurrentDancer && currentTrackName
+                                             ? assigned.findIndex(track => getSongName(track) === currentTrackName)
+                                             : -1;
+                                           const isNowPlaying = isCurrentDancer && currentTrackName
+                                             ? normalizedSongName === currentTrackName
+                                             : isCurrentDancer && songIdx === (currentSongNumber - 1);
+                                        const isPlayed = isCurrentDancer && (currentTrackIdx >= 0 ? songIdx < currentTrackIdx : songIdx < (currentSongNumber - 1));
+                                        if (isPlayed) return null;
+                                        const rerollKey = `${dancer.id}-${songIdx}`;
+                                        const isRerollingSlot = rerollingKeys.has(rerollKey);
+                                        const canReroll = !isNowPlaying && !isRerollingSlot;
+                                        return (
+                                           <Draggable key={`${dancer.id}-${songIdx}-${displaySongName}`} draggableId={`assigned-${dancer.id}-${songIdx}-${displaySongName}`} index={songIdx}>
+                                            {(songDragProvided, songDragSnapshot) => (
+                                              <div
+                                                ref={songDragProvided.innerRef}
+                                                {...songDragProvided.draggableProps}
+                                                {...songDragProvided.dragHandleProps}
+                                                onClick={canReroll ? () => rerollSong(dancer.id, songIdx) : undefined}
+                                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${
+                                                  songDragSnapshot.isDragging
+                                                    ? 'bg-[#00d4ff]/20 border-[#00d4ff]'
+                                                    : isNowPlaying
+                                                      ? 'bg-[#00d4ff]/15 border-[#00d4ff]/50'
+                                                      : isRerollingSlot
+                                                        ? 'bg-[#0d0d1f] border-[#1e293b] opacity-60 cursor-wait'
+                                                        : canReroll
+                                                          ? 'bg-[#0d0d1f] border-[#1e293b] hover:border-amber-500/50 hover:bg-amber-900/10 cursor-pointer'
+                                                          : 'bg-[#0d0d1f] border-[#1e293b]'
+                                                }`}
+                                              >
+                                                <span className="text-sm font-bold w-4 flex-shrink-0 text-[#00d4ff]">{isNowPlaying ? '▶' : songIdx + 1}</span>
+                                                {isRerollingSlot ? (
+                                                  <RefreshCw className="w-3 h-3 flex-shrink-0 text-amber-400 animate-spin" />
+                                                ) : canReroll ? (
+                                                  <Shuffle className="w-3 h-3 flex-shrink-0 text-amber-400" />
+                                                ) : (
+                                                    <Music2 className={`w-3 h-3 flex-shrink-0 ${isNowPlaying ? 'text-[#00d4ff]' : (!isNowPlaying && normalizedSongName && isOnCooldown(normalizedSongName)) ? 'text-orange-400' : 'text-gray-500'}`} />
+                                                )}
+                                                  <span className={`text-sm truncate flex-1 ${isNowPlaying ? 'text-[#E0E0E0] font-medium' : (!isNowPlaying && normalizedSongName && isOnCooldown(normalizedSongName)) ? 'text-orange-300' : 'text-[#E0E0E0]'}`}>{displaySongName}</span>
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); removeSong(dancer.id, songIdx); }}
+                                                  className="p-1 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                                >
+                                                  <X className="w-5 h-5" />
+                                                </button>
+                                              </div>
+                                            )}
+                                          </Draggable>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-center h-[36px] border-2 border-dashed border-[#1e293b] rounded-lg">
+                                      <p className="text-xs text-gray-600">Drag songs here from library</p>
+                                    </div>
+                                  )}
+                                  {songProvided.placeholder}
+                                </div>
+                              )}
+                            </Droppable>
+                            )}
+                          </div>
+                        )}
+                      </Draggable>
+
+                      <Droppable droppableId={`break-${breakKey}`} type="song">
+                          {(breakProvided, breakSnapshot) => (
+                            <div
+                              ref={breakProvided.innerRef}
+                              {...breakProvided.droppableProps}
+                              className={`mx-2 my-1 rounded-lg transition-all border min-w-0 overflow-hidden ${
+                                selectedBreakKey === breakKey
+                                  ? 'border-[#00d4ff] bg-[#00d4ff]/5 ring-1 ring-[#00d4ff]/20'
+                                  : breakSnapshot.isDraggingOver
+                                    ? 'border-dashed border-[#00d4ff]/60 bg-[#00d4ff]/5'
+                                    : breakSongs.length > 0
+                                      ? 'border-dashed border-violet-500/40 bg-violet-900/10'
+                                      : 'border-dashed border-[#1e293b]/50'
+                              }`}
+                            >
+                              <div
+                                className={`flex items-center gap-1.5 px-2 py-1.5 cursor-pointer rounded-t-lg transition-colors ${
+                                  selectedBreakKey === breakKey ? 'bg-[#00d4ff]/10' : 'hover:bg-white/5'
+                                }`}
+                                onClick={() => {
+                                  setSelectedBreakKey(selectedBreakKey === breakKey ? null : breakKey);
+                                  setSelectedDancerId(null);
+                                }}
+                              >
+                                <Music2 className={`w-3 h-3 flex-shrink-0 ${selectedBreakKey === breakKey ? 'text-[#00d4ff]' : 'text-violet-400'}`} />
+                                <span className={`text-[10px] uppercase font-semibold tracking-wider flex-1 ${selectedBreakKey === breakKey ? 'text-[#00d4ff]' : 'text-violet-400'}`}>
+                                  Break{breakSongs.length > 0 ? ` — ${breakSongs.length} song${breakSongs.length !== 1 ? 's' : ''}` : ''}
+                                </span>
+                                {selectedBreakKey === breakKey && (
+                                  <span className="text-[10px] text-[#00d4ff]/70">tap songs to add</span>
+                                )}
+                              </div>
+                              <div className="px-2 pb-2">
+                                {breakSongs.length > 0 ? (
+                                  <div className="space-y-1 pt-1">
+                                    {breakSongs.map((songName, songIdx) => (
+                                      <Draggable
+                                        key={`breakitem-${breakKey}-${songIdx}`}
+                                        draggableId={`breakitem-${breakKey}-${songIdx}-${songName}`}
+                                        index={songIdx}
+                                        isDragDisabled={activeBreakInfo?.breakKey === breakKey}
+                                      >
+                                        {(itemProv, itemSnap) => (
+                                          <div
+                                            ref={itemProv.innerRef}
+                                            {...itemProv.draggableProps}
+                                            {...itemProv.dragHandleProps}
+                                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-grab active:cursor-grabbing bg-violet-900/20 border-violet-500/20 min-w-0 ${itemSnap.isDragging ? 'ring-2 ring-[#00d4ff] shadow-lg' : ''}`}
+                                          >
+                                            <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                                            <Music2 className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                                             <button
+                                               type="button"
+                                               onClick={(e) => {
+                                                 e.stopPropagation();
+                                                 replaceInterstitialSong(breakKey, songIdx);
+                                               }}
+                                               className="text-sm truncate flex-1 text-left text-violet-300 hover:text-[#00d4ff]"
+                                               title="Replace this break song from the music library"
+                                             >
+                                               {songName}
+                                             </button>
+                                            <button
+                                               disabled={activeBreakInfo?.breakKey === breakKey && activeBreakInfo.currentIndex === songIdx}
+                                              onClick={(e) => { e.stopPropagation(); removeInterstitialSong(breakKey, songIdx); }}
+                                               className="p-1 text-violet-400/60 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
+                                            >
+                                              <X className="w-5 h-5" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className={`flex items-center justify-center transition-colors rounded ${
+                                    breakSnapshot.isDraggingOver ? 'h-[36px]' : selectedBreakKey === breakKey ? 'h-[28px]' : 'h-[8px]'
+                                  }`}>
+                                    <p className="text-[10px] text-gray-600">
+                                      {breakSnapshot.isDraggingOver ? 'Drop song here' : selectedBreakKey === breakKey ? 'tap a song from the library' : ''}
+                                    </p>
+                                  </div>
+                                )}
+                                {breakProvided.placeholder}
+                              </div>
+                            </div>
+                          )}
+                        </Droppable>
+
+                      {(() => {
+                        if (commercialFreq === 'off') return null;
+                        const freqNum = parseInt(commercialFreq);
+                        if (!freqNum || freqNum < 1) return null;
+
+                        const totalEntertainers = rotationDancers.length;
+                        let stepsFromCurrent;
+                        if (isRotationActive && currentDancerIndex != null) {
+                          stepsFromCurrent = (index - currentDancerIndex + totalEntertainers) % totalEntertainers;
+                          if (stepsFromCurrent === 0) stepsFromCurrent = totalEntertainers;
+                        } else {
+                          stepsFromCurrent = index + 1;
+                        }
+                        const futureCount = commercialCounter + stepsFromCurrent;
+                        if (futureCount % freqNum !== 0) return null;
+
+                        const commercialId = `commercial-after-${index}`;
+                        if (effectiveSkippedCommercials.has(commercialId)) return null;
+
+                        let promoSlotIndex = 0;
+                        for (let i = 0; i < index; i++) {
+                          let prevSteps;
+                          if (isRotationActive && currentDancerIndex != null) {
+                            prevSteps = (i - currentDancerIndex + totalEntertainers) % totalEntertainers;
+                            if (prevSteps === 0) prevSteps = totalEntertainers;
+                          } else {
+                            prevSteps = i + 1;
+                          }
+                          const prevFuture = commercialCounter + prevSteps;
+                          if (prevFuture % freqNum === 0 && !effectiveSkippedCommercials.has(`commercial-after-${i}`)) {
+                            promoSlotIndex++;
+                          }
+                        }
+
+                        const promoKey = promoQueue[promoSlotIndex];
+                        const promo = promoKey ? availablePromos.find(p => p.cache_key === promoKey) : null;
+                        const promoName = promo ? (promo.dancer_name || promo.cache_key.replace(/^promo_/, '').replace(/_/g, ' ')) : null;
+
+                        return (
+                          <div className="mx-2 my-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/15 border border-dashed border-amber-500/30 opacity-70">
+                            <Radio className="w-4 h-4 text-amber-400 flex-shrink-0 animate-pulse" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Auto Commercial</p>
+                              {promoName ? (
+                                <p className="text-[10px] text-amber-300/80 truncate">{promoName}</p>
+                              ) : (
+                                <p className="text-[10px] text-amber-500/60">Promo will play here</p>
+                              )}
+                            </div>
+                            {availablePromos.length > 1 && onSwapPromo && promoSlotIndex < promoQueue.length && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSwapPromo(promoSlotIndex);
+                                }}
+                                className="px-2 py-1 text-[10px] text-amber-400/70 hover:text-amber-300 hover:bg-amber-900/30 rounded transition-colors flex-shrink-0 border border-amber-500/20"
+                                title="Change promo"
+                              >
+                                Swap
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                // A remote must not "skip" a commercial by editing its own
+                                // browser storage - the kiosk is what plays it.
+                                if (remoteMode) {
+                                  onSkipCommercial?.(commercialId);
+                                  return;
+                                }
+                                setSkippedCommercials(prev => {
+                                  const next = new Set([...prev, commercialId]);
+                                  try { localStorage.setItem('neonaidj_skipped_commercials', JSON.stringify([...next])); } catch {}
+                                  return next;
+                                });
+                              }}
+                              className="p-1.5 text-amber-400/50 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                              title="Skip this commercial"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      </React.Fragment>
+                    );
+                  }); })()}
+                  {provided.placeholder}
+
+                  {rotationDancers.length === 0 && (
+                    <Droppable droppableId="autoplay-queue" type="song">
+                      {(aqProvided, aqSnapshot) => (
+                        <div
+                          ref={aqProvided.innerRef}
+                          {...aqProvided.droppableProps}
+                          className={`mx-2 rounded-lg border border-dashed p-3 transition-colors ${
+                            aqSnapshot.isDraggingOver
+                              ? 'border-cyan-400/60 bg-cyan-900/20'
+                              : 'border-cyan-500/30 bg-cyan-900/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 px-1 mb-2">
+                            <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="text-[11px] text-cyan-400 uppercase font-semibold tracking-wider">Autoplay Queue</span>
+                            <span className="text-[10px] text-cyan-500/60 ml-2">{autoplayQueue.length} song{autoplayQueue.length !== 1 ? 's' : ''}</span>
+                            <button
+                              onClick={() => onAutoplayAutoFillToggle?.(!autoplayAutoFillEnabled)}
+                              className={`ml-auto px-2 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider border transition-colors ${
+                                autoplayAutoFillEnabled
+                                  ? 'border-cyan-500/40 bg-cyan-900/20 text-cyan-300 hover:bg-cyan-900/40'
+                                  : 'border-yellow-500/50 bg-yellow-900/20 text-yellow-300 hover:bg-yellow-900/40'
+                              }`}
+                              title={autoplayAutoFillEnabled
+                                ? 'Auto-fill ON — system keeps queue topped up to 10 with random songs (your manual picks are preserved)'
+                                : 'DJ-curated mode — only your manual picks play; no random fill (queue can be any length)'}
+                            >
+                              {autoplayAutoFillEnabled ? 'Auto-fill: ON' : 'DJ-curated'}
+                            </button>
+                          </div>
+                          {autoplayQueue.length === 0 ? (
+                            <div className="text-center py-6 text-gray-500">
+                              <Music2 className="w-8 h-8 mx-auto mb-2 text-gray-700" />
+                              <p className="text-xs">Drag songs here to build your queue</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              {autoplayQueue.map((track, i) => (
+                                <Draggable key={`aq-${track.id}`} draggableId={`aq-${track.id}`} index={i}>
+                                  {(aqDragProvided, aqDragSnapshot) => (
+                                    <div
+                                      ref={aqDragProvided.innerRef}
+                                      {...aqDragProvided.draggableProps}
+                                      {...aqDragProvided.dragHandleProps}
+                                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-colors ${
+                                        i === 0
+                                          ? 'bg-cyan-900/30 border-cyan-500/40 ring-1 ring-cyan-500/20'
+                                          : track.autoFilled
+                                            ? 'bg-gray-800/40 border-gray-700/30'
+                                            : 'bg-cyan-900/15 border-cyan-600/25'
+                                      } ${aqDragSnapshot.isDragging ? 'shadow-lg shadow-cyan-500/20' : ''}`}
+                                    >
+                                      <GripVertical className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                                      {i === 0 ? (
+                                        <Play className="w-3 h-3 text-cyan-400 flex-shrink-0" />
+                                      ) : (
+                                        <span className="text-[10px] text-gray-500 w-3 text-center flex-shrink-0">{i + 1}</span>
+                                      )}
+                                      <Music2 className={`w-3 h-3 flex-shrink-0 ${track.autoFilled ? 'text-gray-500' : 'text-cyan-400'}`} />
+                                      <span className={`text-sm truncate flex-1 ${
+                                        i === 0 ? 'text-cyan-300 font-medium' : track.autoFilled ? 'text-gray-400' : 'text-cyan-300/80'
+                                      }`}>{track.name}</span>
+                                      {track.genre && (
+                                        <span className="text-[9px] text-gray-600 flex-shrink-0">{track.genre}</span>
+                                      )}
+                                      <button
+                                        onClick={() => onAutoplayQueueRemove?.(i)}
+                                        className="p-0.5 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </Draggable>
+                              ))}
+                            </div>
+                          )}
+                          {aqProvided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </Droppable>
+        </div>
+        </div>
+      </DragDropContext>
+
+      {/* In VIP sidebar — sibling of the Library+Rotation wrapper (NOT inside it),
+          so the flex parent reserves a guaranteed 260px slot for VIP that no amount
+          of break songs / dancer rows / button additions can ever steal.
+          Card layout (stacked, full-width): row 1 = avatar + full name (wraps, never
+          truncated so booth staff can always read it), row 2 = icon-only controls
+          (+ add time, ↺ release), row 3 = "Returns in <time>". The entry list scrolls
+          like the rotation list when several VIPs are active. Prevents name clipping on
+          smaller booth screens (1440x900 on 003). */}
+      <div className="w-[210px] flex-shrink-0 border-l border-[#1e293b] overflow-hidden p-2 flex flex-col">
+          <div className="border border-yellow-500/30 rounded-xl bg-yellow-900/10 overflow-hidden flex flex-col min-h-0 flex-1">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-yellow-500/20 flex-shrink-0">
+              <Crown className="w-4 h-4 text-yellow-400" />
+              <span className="text-xs font-semibold text-yellow-400 uppercase tracking-wider">In VIP</span>
+              <span className="text-xs text-yellow-500/60 ml-1">({Object.keys(dancerVipMap).length})</span>
+            </div>
+            {Object.keys(dancerVipMap).length === 0 ? (
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-3 text-center">
+                <Crown className="w-6 h-6 text-yellow-500/30 mb-2" />
+                <p className="text-[11px] text-yellow-500/40 leading-snug">No one in VIP</p>
+              </div>
+            ) : (
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="divide-y divide-yellow-500/10">
+                {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
+                  const dancer = (dancers || []).find(d => String(d.id) === String(dancerId));
+                  if (!dancer) return null;
+                  const ms = decayVipRemaining(
+                      vipSnapshotReceiptRef.current.values?.[dancerId],
+                      vipSnapshotReceiptRef.current.at,
+                      performance.now(),
+                    );
+                  const totalMins = Math.floor(ms / 60000);
+                  const secs = Math.floor((ms % 60000) / 1000);
+                  const hrs = Math.floor(totalMins / 60);
+                  const mins = totalMins % 60;
+                  const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
+                  return (
+                    <div key={dancerId} className="px-2 py-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0" style={{ backgroundColor: dancer.color || '#00d4ff' }}>
+                          {dancer.name.charAt(0).toUpperCase()}
+                        </div>
+                        <p className="text-sm font-medium text-white leading-tight flex-1 min-w-0 break-words">{dancer.name}</p>
+                      </div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Add VIP time"
+                          aria-label={`Add VIP time for ${dancer.name}`}
+                          className="text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 h-7 w-7 p-0"
+                          onClick={() => setVipModalDancerId(dancerId)}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Release from VIP"
+                          aria-label={`Release ${dancer.name} from VIP`}
+                          className="text-yellow-500 hover:text-yellow-200 hover:bg-yellow-900/30 h-7 w-7 p-0"
+                          onClick={() => onReleaseFromVip?.(dancerId)}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                      <p className="text-sm font-semibold text-yellow-400 leading-none pl-1 whitespace-nowrap tabular-nums">Returns in {timeStr}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            )}
+          </div>
+        </div>
+
+      {/* VIP Duration Modal */}
+      {vipModalDancerId !== null && (() => {
+        const dancer = (dancers || []).find(d => String(d.id) === String(vipModalDancerId));
+        const isActive = !!dancerVipMap[vipModalDancerId];
+        const isPending = !!pendingVipMap[vipModalDancerId];
+        const addMins = Math.round(vipAddMs / 60000);
+        const aH = Math.floor(addMins / 60), aM = addMins % 60;
+        const addLabel = addMins === 0 ? '—' : (aH > 0 ? `${aH}h${aM ? ` ${aM}m` : ''}` : `${aM}m`);
+        const closeVip = () => setVipModalDancerId(null);
+        return (
+          <div
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center"
+            onClick={closeVip}
+          >
+            <div
+              className="bg-[#0a0a1a] border border-yellow-500/40 rounded-2xl p-6 w-80 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold flex-shrink-0" style={{ backgroundColor: dancer?.color || '#00d4ff' }}>
+                  {dancer?.name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-white font-semibold">{dancer?.name}</p>
+                  <p className="text-xs text-yellow-400">{isActive ? 'Extend VIP' : 'Send to VIP'}</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-400 mb-4">
+                {isActive
+                  ? 'She\u2019s in VIP. Add more time to her countdown.'
+                  : isPending
+                    ? 'VIP pending \u2014 she enters after this set. Add more time below.'
+                    : 'She\u2019ll finish her current set, then enter VIP. How long?'}
+              </p>
+              {/* Increments come from the shared list so the desktop remote, the phone
+                  remote and the kiosk always offer the same choices. Each press ADDS to
+                  the running total below - this is not a one-tap fixed duration. */}
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                {VIP_INCREMENT_OPTIONS.map(opt => (
+                  <button
+                    key={opt.minutes}
+                    className="bg-[#151528] border border-[#1e293b] hover:border-yellow-500/50 hover:bg-yellow-900/20 rounded-xl py-3 text-white font-semibold text-sm transition-all"
+                    onClick={() => setVipAddMs(v => v + opt.ms)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-center text-yellow-300 text-sm font-semibold mb-3">Total: {addLabel}</div>
+              <button
+                disabled={vipAddMs === 0}
+                className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-xl py-3 mb-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (vipAddMs > 0) onSendToVip?.(vipModalDancerId, vipAddMs);
+                  closeVip();
+                }}
+              >
+                {isActive ? 'Extend VIP' : 'Send to VIP'}{addMins > 0 ? ` (+${addLabel})` : ''}
+              </button>
+              <button
+                className="w-full text-xs text-gray-500 hover:text-gray-300 py-2 transition-colors"
+                onClick={closeVip}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}

@@ -32,17 +32,10 @@ echo "== 1/8  Making homebase permanent (this is the fix that finally sticks) ==
 # ignored IS_HOMEBASE (a variable it never assigned) and re-installed the kiosk +
 # flipped the session back to openbox. Two safeguards close that for good:
 #   1. a ~/.djbooth-no-kiosk marker (honored by the updater, openbox-autostart, watchdog)
-#   2. replacing the on-disk boot updater with the fixed version
+#   2. updater replacement requires a separately authenticated release
 touch "$HOME_DIR/.djbooth-no-kiosk"
-RAW_UPDATER="https://raw.githubusercontent.com/jebjarrell1974-debug/dj-booth-rotation-system/main/artifacts/dj-booth/public/public/djbooth-update-github.sh"
-if curl -fsSL "$RAW_UPDATER" -o "$HOME_DIR/djbooth-update.sh.new" 2>/dev/null; then
-  mv "$HOME_DIR/djbooth-update.sh.new" "$HOME_DIR/djbooth-update.sh"
-  chmod +x "$HOME_DIR/djbooth-update.sh"
-  echo "   Boot updater replaced with the homebase-safe version."
-else
-  rm -f "$HOME_DIR/djbooth-update.sh.new" 2>/dev/null || true
-  echo "   WARNING: could not download updater — the no-kiosk marker still protects this unit."
-fi
+echo "   Preserving the installed updater; raw GitHub script replacement is not authenticated."
+echo "   Updater changes must use the separately approved whole-release installer."
 
 echo "== 2/8  Setting the desktop session to GNOME (so it survives reboots) =="
 sudo mkdir -p /var/lib/AccountsService/users

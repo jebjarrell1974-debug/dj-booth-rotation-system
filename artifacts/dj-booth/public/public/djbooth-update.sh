@@ -6,6 +6,19 @@ APP_DIR="${DJBOOTH_APP_DIR:-/home/$(whoami)/djbooth}"
 SERVICE_NAME="${DJBOOTH_SERVICE:-djbooth}"
 BACKUP_DIR="${APP_DIR}.backup-$(date +%Y%m%d-%H%M%S)"
 
+INSTALLER_VERIFIER=/usr/local/lib/neon-installer/verify-release.mjs
+path="$INSTALLER_VERIFIER"
+while :; do
+  mode=$(stat -c '%a' "$path") || exit 42
+  if [ -L "$path" ] || [ "$(stat -c '%u' "$path")" != "0" ] || (( (8#$mode & 022) != 0 )); then
+    echo "ERROR: Installer verifier path is not independently protected" >&2
+    exit 42
+  fi
+  [ "$path" = "/" ] && break
+  path=$(dirname "$path")
+done
+env -i PATH=/usr/bin:/bin /usr/bin/node "$INSTALLER_VERIFIER" preflight || exit 42
+
 echo "================================================"
 echo "  DJ Booth Auto-Updater"
 echo "================================================"
@@ -36,7 +49,9 @@ if [ ! -f "$APP_DIR/package.json" ]; then
 fi
 
 echo "[2/6] Downloading update bundle..."
-TMPFILE=$(mktemp /tmp/djbooth-update-XXXXXX.tar.gz)
+DOWNLOAD_DIR=$(mktemp -d /tmp/djbooth-download-XXXXXX)
+trap 'rm -rf "$DOWNLOAD_DIR"' EXIT
+TMPFILE="$DOWNLOAD_DIR/bundle.tar.gz"
 HTTP_CODE=$(curl -sf -w "%{http_code}" -o "$TMPFILE" "${CLOUD_URL}/api/update-bundle" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" != "200" ]; then
   echo "ERROR: Download failed (HTTP $HTTP_CODE)"
@@ -45,6 +60,12 @@ if [ "$HTTP_CODE" != "200" ]; then
 fi
 FILESIZE=$(stat -f%z "$TMPFILE" 2>/dev/null || stat -c%s "$TMPFILE" 2>/dev/null)
 echo "Downloaded: ${FILESIZE} bytes"
+curl -fsSL --max-time 30 "${CLOUD_URL}/api/update-bundle.signature" -o "$DOWNLOAD_DIR/signature.json" || {
+  echo "ERROR: Release lacks whole-release installer evidence" >&2
+  exit 42
+}
+env -i PATH=/usr/bin:/bin /usr/bin/node "$INSTALLER_VERIFIER" verify \
+  "$TMPFILE" "$DOWNLOAD_DIR/signature.json" flat "$APP_DIR" || exit 42
 
 echo "[3/6] Backing up current installation..."
 cp -r "$APP_DIR" "$BACKUP_DIR"

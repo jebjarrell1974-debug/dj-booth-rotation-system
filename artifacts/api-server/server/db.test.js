@@ -22,6 +22,8 @@ const {
   cleanOldPlayHistory,
   stopCheckpoints,
   upsertMusicTrack,
+  blockTrack, unblockTrack, getBlockedTracks, getMusicTrackById,
+  filterDeactivatedFromNames, createDancer, updateDancer, getDancer, listDancers, getMusicTracks,
 } = await import('./db.js');
 
 function addTrack(name, genre = 'House') {
@@ -40,6 +42,34 @@ after(() => {
   stopCheckpoints();
   closeDatabase();
   rmSync(testDir, { recursive: true, force: true });
+});
+
+test('deactivated music disappears from saved playlists, lookup and automatic picks until reactivated', () => {
+  addTrack('Blocked Song.mp3');
+  addTrack('Safe Song.mp3');
+  const track = getMusicTrackByName('Blocked Song.mp3');
+  const dancer = createDancer('Availability fixture', '#fff', '61839');
+  updateDancer(dancer.id, { playlist: ['Blocked Song.mp3', 'Safe Song.mp3', 'Unresolved Name'] });
+  blockTrack('BLOCKED SONG');
+  assert.equal(getMusicTrackById(track.id), null);
+  assert.equal(getMusicTrackByName('Blocked Song.mp3'), null);
+  assert.equal(getMusicTrackByName('blocked song'), null);
+  assert.equal(getMusicTrackByName('Blocked Song.mp3', { includeBlocked: true }).id, track.id);
+  assert.equal(getMusicTrackById(track.id, { includeBlocked: true }).blocked, 1);
+  assert.deepEqual(filterDeactivatedFromNames(['BLOCKED SONG', 'Safe Song.mp3', 'Unresolved Name']), ['Safe Song.mp3', 'Unresolved Name']);
+  assert.deepEqual(getDancer(dancer.id).playlist, ['Safe Song.mp3', 'Unresolved Name']);
+  assert.deepEqual(listDancers().find(row => row.id === dancer.id).playlist, ['Safe Song.mp3', 'Unresolved Name']);
+  assert.equal(getMusicTracks().tracks.some(row => row.name === track.name), false);
+  assert.equal(getRandomTracks(10).some(row => row.name === track.name), false);
+  assert.equal(selectTracksForSet({ count: 2, dancerPlaylist: ['Blocked Song.mp3'], strictPlaylist: true }).length, 0);
+  // Rescanning the existing file must not reactivate it.
+  addTrack('Blocked Song.mp3');
+  assert.equal(getMusicTrackById(track.id), null);
+  assert.equal(getBlockedTracks().some(row => row.name === track.name), true);
+  unblockTrack('blocked song');
+  assert.equal(getMusicTrackById(track.id).name, track.name);
+  assert.equal(getMusicTrackByName('Blocked Song').name, track.name);
+  assert.deepEqual(getDancer(dancer.id).playlist, ['Blocked Song.mp3', 'Safe Song.mp3', 'Unresolved Name']);
 });
 
 test('automatic picks exclude recent global history across dancers and breaks', () => {

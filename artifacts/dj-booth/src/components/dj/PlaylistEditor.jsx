@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Music, X, Shuffle, Save, AlertCircle, ChevronUp, ChevronDown, Trash2, Search, Folder } from 'lucide-react';
+import { musicApi } from '@/api/serverApi';
 
 const PAGE_SIZE = 200;
 
@@ -13,6 +14,8 @@ export default function PlaylistEditor({
   onClose
 }) {
   const [playlist, setPlaylist] = useState(dancer?.playlist || []);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeGenre, setActiveGenre] = useState(null);
@@ -22,6 +25,7 @@ export default function PlaylistEditor({
   const [serverCurrentPage, setServerCurrentPage] = useState(1);
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
   const serverMountedRef = useRef(false);
   const searchTimeoutRef = useRef(null);
 
@@ -30,23 +34,16 @@ export default function PlaylistEditor({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const getAuthHeaders = useCallback(() => {
-    const token = localStorage.getItem('djbooth_token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   const fetchServerTracks = useCallback(async (page = 1, append = false) => {
     setServerLoading(true);
+    setServerError('');
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: PAGE_SIZE.toString(),
+      const data = await musicApi.getTracks({
+        page,
+        limit: PAGE_SIZE,
+        search: debouncedSearch.trim(),
+        genre: debouncedSearch.trim() ? '' : (activeGenre || ''),
       });
-      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      if (activeGenre && !debouncedSearch.trim()) params.set('genre', activeGenre);
-      const res = await fetch(`/api/music/tracks?${params}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
       const fetched = (data.tracks || []).map(t => ({ ...t, url: '/api/music/stream/' + t.id }));
       if (append) {
         setServerTracks(prev => [...prev, ...fetched]);
@@ -60,11 +57,12 @@ export default function PlaylistEditor({
         setServerGenres(data.genres);
       }
     } catch (err) {
+      setServerError(err.message || 'Could not load the music library.');
       console.error('PlaylistEditor: fetch tracks error', err);
     } finally {
       setServerLoading(false);
     }
-  }, [getAuthHeaders, debouncedSearch, activeGenre]);
+  }, [debouncedSearch, activeGenre]);
 
   useEffect(() => {
     if (!serverMountedRef.current) {
@@ -124,9 +122,18 @@ export default function PlaylistEditor({
     setPlaylist(a.slice(0, count).map(t => t.name));
   };
 
-  const handleSave = () => {
-    onSave(playlist);
-    onClose();
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave(playlist);
+      onClose();
+    } catch (error) {
+      setSaveError(error?.message || 'Playlist could not be saved. Please retry.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!dancer) return null;
@@ -162,6 +169,7 @@ export default function PlaylistEditor({
             <h3 className="text-sm font-semibold text-[#00d4ff] uppercase tracking-wider mb-3">
               Current Playlist ({playlist.length})
             </h3>
+            {saveError && <p role="alert" className="text-sm text-red-400 mb-2">{saveError}</p>}
 
             <ScrollArea className="flex-1 mb-4 min-h-0">
               <div className="space-y-1 pr-2">
@@ -239,9 +247,10 @@ export default function PlaylistEditor({
               <Button
                 className="flex-1 bg-[#00d4ff] hover:bg-[#00a3cc] text-black"
                 onClick={handleSave}
+                disabled={saving}
               >
                 <Save className="w-4 h-4 mr-2" />
-                Save Playlist
+                {saving ? 'Saving…' : 'Save Playlist'}
               </Button>
             </div>
           </div>
@@ -325,7 +334,9 @@ export default function PlaylistEditor({
                     </button>
                   </div>
                 )}
-                {serverTracks.length === 0 && !serverLoading && (
+                {serverError ? (
+                  <div className="p-8 text-center text-red-400 text-sm">{serverError}</div>
+                ) : serverTracks.length === 0 && !serverLoading && (
                   <div className="p-8 text-center text-gray-500 text-sm">
                     {debouncedSearch.trim() || activeGenre ? 'No tracks match your search' : 'No tracks found'}
                   </div>

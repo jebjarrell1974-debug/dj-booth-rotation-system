@@ -5,7 +5,7 @@
 //   node r2update-fetch.js manifest              -> prints manifest JSON
 //   node r2update-fetch.js bundle /tmp/x.tar.gz  -> downloads + sha256-verifies, prints result JSON
 //
-// Exits non-zero on any failure so the shell can fall back to GitHub.
+// Transport failures exit 1; authentication refusals exit 42 and MUST NOT fall back.
 import { fetchUpdateManifest, downloadUpdateBundle } from './r2update.js';
 
 const [cmd, arg] = process.argv.slice(2);
@@ -28,5 +28,5 @@ async function main() {
 
 main().catch(err => {
   process.stderr.write(`r2update-fetch: ${err.message}\n`);
-  process.exit(1);
+  process.exit(['FRONTEND_PRODUCER_AUTH_FAILED', 'INSTALLER_AUTH_FAILED'].includes(err.code) ? 42 : 1);
 });

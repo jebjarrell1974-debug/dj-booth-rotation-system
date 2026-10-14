@@ -5,9 +5,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Music2, X, Save, Search, Play, GripVertical, Mic, MicOff, Folder, AlertCircle, Clock, SkipForward, ChevronDown, ChevronUp, ChevronsUp, Radio, ListMusic, Shuffle, RefreshCw, Crown, RotateCcw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { musicApi, boothApi, rotationEditorSessionKey } from '@/api/serverApi';
 import { VIP_INCREMENT_OPTIONS } from '@/utils/vipDurations';
 import { decayVipRemaining } from '@/utils/vipCountdown';
 import { rotationStartState } from '@/utils/rotationStartState';
+import { getActiveMusicGenres } from '@/utils/shiftMusicOptions';
+import { reconcileManualEditorAssignments, restoreManualEditorEdits, editorCommandContext,
+  manualEditorStatus, recoverManualEditorEdit } from '@/utils/rotationEditorSync';
 import {
   capSongList,
   currentRotationDancerId,
@@ -143,6 +147,7 @@ export default function RotationPlaylistManager({
   tracks,
   onSaveAll,
   onAutoSavePlaylist,
+  onCheckPlaylistSnapshot,
   onAddToRotation,
   onRemoveFromRotation,
   onStartRotation,
@@ -235,15 +240,24 @@ export default function RotationPlaylistManager({
     : null;
   const playlistSongs = selectedPlaylistDancer?.playlist || [];
   const [localRotation, setLocalRotation] = useState(rotation);
+  const [editorStorage] = useState(() => ({
+    remote: remoteMode,
+    key: remoteMode ? rotationEditorSessionKey() : 'djbooth_planned_assignments',
+  }));
+  const [storedEditor] = useState(() => {
+    try {
+      const storage = editorStorage.remote ? sessionStorage : localStorage;
+      return JSON.parse(storage.getItem(editorStorage.key)) || {};
+    } catch { return {}; }
+  });
   // Restore the manager's displayed song picks across remounts (tab switch) and
   // full page/kiosk reloads. Without this, the rotation tab unmounts on tab
   // change and the auto-assign effect re-rolls every dancer's songs — wiping the
   // DJ's chosen picks. Display-layer only; playback uses the parent's
   // rotationSongs/djSavedSongsRef which are unaffected.
   const [songAssignments, setSongAssignments] = useState(() => {
-    if (remoteMode) return {};
     try {
-      const saved = localStorage.getItem('djbooth_planned_assignments');
+      const saved = JSON.stringify(storedEditor);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.assignments && typeof parsed.assignments === 'object') {
@@ -324,10 +338,11 @@ export default function RotationPlaylistManager({
       const now = Date.now();
       const next = {};
       for (const [id, entry] of Object.entries(dancerVipMap)) {
-        if (entry.expiresAt) {
-          const ms = Math.max(0, entry.expiresAt - now);
-          next[id] = ms;
-        }
+        next[id] = decayVipRemaining(
+          vipSnapshotReceiptRef.current.values?.[id],
+          vipSnapshotReceiptRef.current.at,
+          performance.now(),
+        );
       }
       setVipCountdowns(next);
     }, 1000);
@@ -346,25 +361,84 @@ export default function RotationPlaylistManager({
   const songAssignmentsRef = React.useRef({});
   const assignmentSongsPerSetRef = React.useRef(songsPerSet);
   const assignmentGenerationRef = React.useRef(0);
+  const authoritativeManualIdsRef = React.useRef(new Set());
+  const authoritativeManualKeysRef = React.useRef(null);
   // Restore the "DJ edited these — don't re-roll/clobber them" markers alongside
   // the displayed picks so a second Save All (after a tab switch) still reports
   // the DJ's overrides, and the active restore block keeps skipping them.
   const djOverridesRef = React.useRef((() => {
-    if (remoteMode) return new Set();
-    try {
-      const saved = localStorage.getItem('djbooth_planned_assignments');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.overrides)) return new Set(parsed.overrides);
-      }
-    } catch {}
-    return new Set();
+    return new Set(storedEditor.overrides || []);
   })());
-  // Overrides restored from storage are acknowledged kiosk state. Edits made
-  // in this editor are dirty until Save All succeeds, so an authoritative
-  // kiosk update can clear consumed overrides without discarding an unsaved
-  // remote edit.
-  const dirtyOverridesRef = React.useRef(new Set());
+  // Old stored overrides were acknowledged state. New snapshots also retain
+  // unconfirmed edits, so a tab remount cannot reclassify them as acknowledged.
+  // Remote browsers must never borrow this kiosk-only localStorage state.
+  const [restoredManualEdits] = useState(() => {
+    return restoreManualEditorEdits(storedEditor);
+  });
+  const dirtyOverridesRef = React.useRef(restoredManualEdits.dirtyIds);
+  const manualEditRevisionsRef = React.useRef(restoredManualEdits.revisions);
+  const pendingManualEditsRef = React.useRef(restoredManualEdits.pendingEdits);
+  const [manualEditRevision, setManualEditRevision] = useState(0);
+  const editorMountedRef = useRef(true);
+  const recoveryInFlightRef = useRef(new Set());
+  const [checkingEdits, setCheckingEdits] = useState(new Set());
+  const persistEditorLedger = useCallback(() => {
+    try {
+      const storage = editorStorage.remote ? sessionStorage : localStorage;
+      let snapshot = {
+        assignments: songAssignmentsRef.current,
+        overrides: [...djOverridesRef.current],
+        dirtyOverrides: [...dirtyOverridesRef.current],
+        pendingEdits: pendingManualEditsRef.current,
+      };
+      if (!editorMountedRef.current) {
+        // A detached tab's completion may update only its matching revision,
+        // never replace a remounted editor's newer draft or clean metadata.
+        snapshot = JSON.parse(storage.getItem(editorStorage.key)) || {};
+        for (const [id, edit] of Object.entries(pendingManualEditsRef.current)) {
+          if (snapshot.pendingEdits?.[id]?.revision === edit.revision
+              && snapshot.pendingEdits[id].context?.requestId === edit.context?.requestId) {
+            snapshot.pendingEdits[id] = edit;
+          }
+        }
+      }
+      storage.setItem(editorStorage.key, JSON.stringify(snapshot));
+      window.dispatchEvent(new CustomEvent('rotation-editor-ledger', { detail: editorStorage.key }));
+    } catch { /* unavailable browser storage does not discard the in-memory draft */ }
+  }, [editorStorage]);
+  useEffect(() => {
+    editorMountedRef.current = true;
+    const receive = event => {
+      if (event.detail !== editorStorage.key) return;
+      try {
+        const storage = editorStorage.remote ? sessionStorage : localStorage;
+        const saved = JSON.parse(storage.getItem(editorStorage.key));
+        let changed = false;
+        for (const [id, edit] of Object.entries(pendingManualEditsRef.current)) {
+          const incoming = saved?.pendingEdits?.[id];
+          if (incoming?.revision === edit.revision
+              && incoming.context?.requestId === edit.context?.requestId
+              && JSON.stringify(incoming) !== JSON.stringify(edit)) {
+            pendingManualEditsRef.current[id] = incoming;
+            changed = true;
+          }
+        }
+        if (changed) setManualEditRevision(value => value + 1);
+      } catch {}
+    };
+    window.addEventListener('rotation-editor-ledger', receive);
+    return () => {
+      editorMountedRef.current = false;
+      window.removeEventListener('rotation-editor-ledger', receive);
+    };
+  }, [editorStorage]);
+  const isManualAssignment = useCallback(dancerId => {
+    const key = String(dancerId);
+    return dirtyOverridesRef.current.has(key)
+      || djOverridesRef.current.has(key)
+      || djOverridesRef.current.has(dancerId)
+      || authoritativeManualIdsRef.current.has(key);
+  }, []);
   const markDjOverride = (dancerId) => {
     const normalizedId = String(dancerId);
     djOverridesRef.current.add(normalizedId);
@@ -377,15 +451,82 @@ export default function RotationPlaylistManager({
     const normalizedId = String(dancerId);
     const nextSongs = normalizeManualSongList(songs);
     markDjOverride(normalizedId);
+    const revision = (manualEditRevisionsRef.current[normalizedId] || 0) + 1;
+    manualEditRevisionsRef.current[normalizedId] = revision;
+    pendingManualEditsRef.current[normalizedId] = {
+      revision, songs: nextSongs, acknowledged: false, phase: 'sending',
+      context: remoteMode ? {
+        requestId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        submittedAt: Date.now(),
+      } : null,
+    };
     songAssignmentsRef.current = {
       ...songAssignmentsRef.current,
       [normalizedId]: nextSongs,
     };
     setSongAssignments(previous => ({ ...previous, [normalizedId]: nextSongs }));
-    Promise.resolve(onAutoSavePlaylist?.(dancerId, nextSongs)).catch(error => {
-      toast.error(error?.message || 'Could not apply the playlist edit');
+    persistEditorLedger();
+    // Do not let an older completion acknowledge a newer edit. Do not release
+    // dirty protection on a receipt alone: an older poll may still be in flight.
+    const edit = pendingManualEditsRef.current[normalizedId];
+    return Promise.resolve().then(() => onAutoSavePlaylist?.(dancerId, nextSongs, undefined, {
+      requestId: edit.context?.requestId,
+      onIdentity: identity => {
+        if (pendingManualEditsRef.current[normalizedId]?.revision !== revision) return;
+        edit.context = editorCommandContext(identity);
+        persistEditorLedger();
+      },
+    })).then(() => {
+      const pending = pendingManualEditsRef.current[normalizedId];
+      if (pending?.revision !== revision || !onAutoSavePlaylist) return;
+      pending.acknowledged = true;
+      pending.phase = 'awaiting';
+      persistEditorLedger();
+      setManualEditRevision(value => value + 1);
+    }).catch(error => {
+      if (manualEditRevisionsRef.current[normalizedId] === revision) {
+        edit.phase = error?.rejectedByServer === true ? 'rejected' : 'unknown';
+        edit.context = editorCommandContext(error?.requestId ? error : edit.context);
+        persistEditorLedger();
+        setManualEditRevision(value => value + 1);
+        toast.error(edit.phase === 'rejected'
+          ? 'Playlist not applied. Your edit is kept.'
+          : 'Playlist outcome unknown. Your edit is kept; use Check save.');
+      }
     });
-  }, [onAutoSavePlaylist]);
+  }, [onAutoSavePlaylist, remoteMode, persistEditorLedger]);
+
+  const handleRecoverEdit = async dancerId => {
+    const id = String(dancerId);
+    const edit = pendingManualEditsRef.current[id];
+    if (!edit || edit.phase === 'sending' || recoveryInFlightRef.current.has(id)) return;
+    recoveryInFlightRef.current.add(id);
+    setCheckingEdits(new Set(recoveryInFlightRef.current));
+    const isCurrent = () => editorMountedRef.current
+      && pendingManualEditsRef.current[id]?.revision === edit.revision;
+    try {
+      const update = await recoverManualEditorEdit(edit, {
+        remoteMode, isCurrent,
+        reconcile: context => boothApi.reconcileCommand(context),
+        refreshSnapshot: onCheckPlaylistSnapshot,
+        retry: () => publishManualAssignment(dancerId, edit.songs),
+      });
+      if (update && isCurrent()) {
+        Object.assign(edit, update);
+        persistEditorLedger();
+        setManualEditRevision(value => value + 1);
+        if (!edit.acknowledged) toast.error('Save is still unconfirmed. Nothing was resent.');
+      }
+      // Refresh through the parent's ordered snapshot acceptance path, not a
+      // second unversioned assignment writer.
+      if (isCurrent()) await onCheckPlaylistSnapshot?.();
+    } catch {
+      if (isCurrent()) toast.error('Could not refresh confirmation. Your edit is kept.');
+    } finally {
+      recoveryInFlightRef.current.delete(id);
+      if (editorMountedRef.current) setCheckingEdits(new Set(recoveryInFlightRef.current));
+    }
+  };
   // Break queues are live one-shot edits, not Save All drafts. Keep a ref so
   // rapid library drops/reorders compose from the newest queue and publish the
   // complete unlimited list to the kiosk immediately.
@@ -429,6 +570,7 @@ export default function RotationPlaylistManager({
   const [serverCurrentPage, setServerCurrentPage] = useState(1);
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
   const serverMountedRef = useRef(false);
   const searchTimeoutRef = useRef(null);
 
@@ -456,6 +598,18 @@ export default function RotationPlaylistManager({
   }, []);
 
   useLayoutEffect(() => {
+    const authorityKey = JSON.stringify([
+      authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey,
+    ]);
+    if (authoritativeManualKeysRef.current !== authorityKey) {
+      authoritativeManualKeysRef.current = authorityKey;
+      authoritativeManualIdsRef.current = new Set([
+        ...Object.keys(authoritativeManualAssignments || {}),
+        ...Object.keys(authoritativeManualSetLengths || {}),
+      ]);
+      // Manual changes supersede automatic requests based on an older snapshot.
+      assignmentGenerationRef.current += 1;
+    }
     if (assignmentSongsPerSetRef.current !== songsPerSet) {
       assignmentSongsPerSetRef.current = songsPerSet;
       assignmentGenerationRef.current += 1;
@@ -470,15 +624,8 @@ export default function RotationPlaylistManager({
     // Persist the displayed picks + DJ-edit markers so a remount (tab switch) or
     // full reload restores them instead of re-rolling. Cleared by the parent on
     // Start Rotation / Clear All (djbooth_planned_assignments).
-    if (!remoteMode) {
-      try {
-        localStorage.setItem('djbooth_planned_assignments', JSON.stringify({
-          assignments: songAssignments,
-          overrides: [...djOverridesRef.current],
-        }));
-      } catch {}
-    }
-  }, [songAssignments, songsPerSet, remoteMode, normalizeDisplayedAssignments]);
+    persistEditorLedger();
+  }, [songAssignments, songsPerSet, remoteMode, normalizeDisplayedAssignments, manualEditRevision]);
 
   useEffect(() => {
     if (musicSource === 'genres') return;
@@ -523,8 +670,14 @@ export default function RotationPlaylistManager({
     const currentId = String(currentRotationDancerId(localRotation, currentDancerIndex));
     if (prevCurrentDancerIdRef.current && prevCurrentDancerIdRef.current !== currentId) {
       const finishedId = prevCurrentDancerIdRef.current;
+      // Finishing playback is not evidence that this edit revision was saved.
+      if (dirtyOverridesRef.current.has(String(finishedId))) {
+        prevCurrentDancerIdRef.current = currentId;
+        return;
+      }
       djOverridesRef.current.delete(finishedId);
       dirtyOverridesRef.current.delete(String(finishedId));
+      delete pendingManualEditsRef.current[String(finishedId)];
       setSongAssignments(prev => {
         const updated = { ...prev };
         delete updated[finishedId];
@@ -533,6 +686,31 @@ export default function RotationPlaylistManager({
     }
     prevCurrentDancerIdRef.current = currentId;
   }, [localRotation, currentDancerIndex, isRotationActive]);
+
+  useEffect(() => {
+    const previous = songAssignmentsRef.current;
+    const previousDirtySize = dirtyOverridesRef.current.size;
+    const result = reconcileManualEditorAssignments(previous, {
+      assignments: authoritativeManualAssignments,
+      activeAssignments: activeRotationSongs,
+      manualLengths: authoritativeManualSetLengths,
+      dirtyIds: dirtyOverridesRef.current,
+      pendingEdits: pendingManualEditsRef.current,
+    });
+    dirtyOverridesRef.current = result.dirtyIds;
+    pendingManualEditsRef.current = result.pendingEdits;
+    if (result.assignments !== previous) {
+      songAssignmentsRef.current = result.assignments;
+      setSongAssignments(result.assignments);
+    }
+    // Confirmation can change only the ledger, not the displayed song names.
+    // Persist that cleanup even when reference-stable state skips a rerender.
+    if (previousDirtySize !== result.dirtyIds.size) {
+      persistEditorLedger();
+      setManualEditRevision(value => value + 1);
+    }
+  }, [authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey,
+    activeRotationSongsKey, manualEditRevision, remoteMode]);
 
   useEffect(() => {
     const hasRemoteSnapshot = remoteMode && activeRotationSongs != null;
@@ -552,7 +730,12 @@ export default function RotationPlaylistManager({
         const fromActive = { ...prev };
         let changed = false;
         Object.entries(activeRotationSongs).forEach(([dancerId, trackList]) => {
-          if (djOverridesRef.current.has(dancerId)) return;
+          if (dirtyOverridesRef.current.has(String(dancerId))) return;
+          // Manual entries were reconciled from their authoritative ledger
+          // above, including shorter and empty lists. Do not overwrite them
+          // with an older automatic/pre-pick snapshot.
+          if (Object.prototype.hasOwnProperty.call(authoritativeManualAssignments || {}, dancerId)
+              || Object.prototype.hasOwnProperty.call(authoritativeManualSetLengths || {}, dancerId)) return;
           const mapped = (Object.prototype.hasOwnProperty.call(authoritativeManualAssignments || {}, dancerId)
             || Object.prototype.hasOwnProperty.call(authoritativeManualSetLengths || {}, dancerId)
             || djOverridesRef.current.has(dancerId))
@@ -582,14 +765,14 @@ export default function RotationPlaylistManager({
     if (saveGuardRef.current > Date.now()) return;
 
     const dancersNeedingAssignment = localRotation.filter(dancerId => {
-      if (djOverridesRef.current.has(dancerId)) return false;
+      if (isManualAssignment(dancerId)) return false;
       const current = songAssignmentsRef.current[dancerId];
       return !current || current.length < songsPerSet;
     });
     if (dancersNeedingAssignment.length === 0) return;
 
     const isFoldersOnly = djOptions?.musicMode === 'folders_only';
-    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
     const requestGeneration = assignmentGenerationRef.current;
 
     (async () => {
@@ -687,7 +870,7 @@ export default function RotationPlaylistManager({
         setSongAssignments(prev => {
           const updated = { ...prev };
           for (const [dancerId, songs] of Object.entries(newAssignments)) {
-            if (!djOverridesRef.current.has(dancerId)) {
+            if (!isManualAssignment(dancerId)) {
               updated[dancerId] = capSongList(songs, assignmentSongsPerSetRef.current);
             }
           }
@@ -695,7 +878,9 @@ export default function RotationPlaylistManager({
         });
       }
     })();
-  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongsKey, djOptions, remoteMode, songCooldownsReady]);
+  }, [localRotation, dancers, tracks, songsPerSet, isRotationActive, activeRotationSongsKey,
+    authoritativeManualAssignmentsKey, authoritativeManualSetLengthsKey, manualEditRevision,
+    djOptions, remoteMode, songCooldownsReady, isManualAssignment]);
 
   // The kiosk is authoritative about which one-shot DJ overrides are still
   // pending. Once a saved set starts, it disappears from that ledger; remove
@@ -773,7 +958,7 @@ export default function RotationPlaylistManager({
     if (dancersNeedingMore.length === 0) return;
 
     const isFoldersOnly = djOptions?.musicMode === 'folders_only';
-    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
     const requestGeneration = assignmentGenerationRef.current;
 
     (async () => {
@@ -862,23 +1047,16 @@ export default function RotationPlaylistManager({
     })();
   }, [songsPerSet, tracks, dancers, djOptions, remoteMode, songCooldownsReady]);
 
-  const getAuthHeaders = useCallback(() => {
-    const token = localStorage.getItem('djbooth_token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   const fetchServerTracks = useCallback(async (page = 1, append = false) => {
     setServerLoading(true);
+    setServerError('');
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: TRACKS_PER_PAGE.toString(),
+      const data = await musicApi.getTracks({
+        page,
+        limit: TRACKS_PER_PAGE,
+        search: debouncedSearch.trim(),
+        genre: debouncedSearch.trim() ? '' : (activeGenre || ''),
       });
-      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      if (activeGenre && !debouncedSearch.trim()) params.set('genre', activeGenre);
-      const res = await fetch(`/api/music/tracks?${params}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
       const raw = (data.tracks || []).map(t => ({ ...t, url: '/api/music/stream/' + t.id }));
       const seen = new Set();
       const fetched = raw.filter(t => {
@@ -901,11 +1079,12 @@ export default function RotationPlaylistManager({
         setServerGenres(data.genres);
       }
     } catch (err) {
+      setServerError(err.message || 'Could not load the music library.');
       console.error('RotationPlaylistManager: fetch tracks error', err);
     } finally {
       setServerLoading(false);
     }
-  }, [getAuthHeaders, debouncedSearch, activeGenre]);
+  }, [debouncedSearch, activeGenre]);
 
   useEffect(() => {
     if (!serverMountedRef.current) {
@@ -956,10 +1135,19 @@ export default function RotationPlaylistManager({
       const newRotation = [...localRotation];
       const [moved] = newRotation.splice(source.index, 1);
       newRotation.splice(destination.index, 0, moved);
-      setLocalRotation(newRotation);
       if (isRotationActive && localRotation[0] !== newRotation[0]) {
-        onDancerDragReorder?.(newRotation, localRotation[0], newRotation[0]);
+        const outcome = onDancerDragReorder?.(
+          newRotation, localRotation[0], newRotation[0],
+          resolvedRotation => setLocalRotation(resolvedRotation),
+          moved, destination.index,
+        );
+        if (outcome === false || outcome === 'deferred') return;
+        if (Array.isArray(outcome)) {
+          setLocalRotation(outcome);
+          return;
+        }
       }
+      setLocalRotation(newRotation);
       return;
     }
 
@@ -1060,6 +1248,7 @@ export default function RotationPlaylistManager({
 
   const rerollSong = useCallback(async (dancerId, songIndex) => {
     const key = `${dancerId}-${songIndex}`;
+    const assignmentAtStart = JSON.stringify(songAssignmentsRef.current[dancerId] || []);
     if (rerollingRef.current.has(key)) return;
     if (!songCooldownsReady) {
       const message = 'Automatic history is not ready; no automatic re-roll was made';
@@ -1083,37 +1272,37 @@ export default function RotationPlaylistManager({
 
       const dancer = dancers.find(d => d.id === dancerId);
       const dancerPlaylist = dancer?.playlist || [];
-      const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+      const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
       try {
-        const token = localStorage.getItem('djbooth_token');
-        const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-        const res = await fetch('/api/music/select', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            count: 1,
-            excludeNames: [...new Set(allAssigned)],
-            genres: activeGenres,
-            dancerPlaylist,
-            automatic: true,
-          }),
-          signal: AbortSignal.timeout(5000)
+        const data = await musicApi.selectTracks({
+          count: 1,
+          excludeNames: [...new Set(allAssigned)],
+          genres: activeGenres,
+          dancerPlaylist,
+          automatic: true,
         });
-        if (res.ok) {
-          const data = await res.json();
-          const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
-          if (newTrack) {
-            const current = [...(songAssignmentsRef.current[dancerId] || [])];
-            current[songIndex] = newTrack.name;
-            publishManualAssignment(dancerId, current);
-            toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
-            return;
-          }
+        const newTrack = filterUnplayedAutomaticTracks(data.tracks || [], songCooldowns)[0];
+        if (newTrack) {
+          if (JSON.stringify(songAssignmentsRef.current[dancerId] || []) !== assignmentAtStart) return;
+          const current = [...(songAssignmentsRef.current[dancerId] || [])];
+          current[songIndex] = newTrack.name;
+          publishManualAssignment(dancerId, current);
+          toast.success(`Re-rolled: ${newTrack.name.replace(/\.[^.]+$/, '')}`);
+          return;
         }
       } catch (err) {
         console.warn('Re-roll failed:', err.message);
+        if (remoteMode) {
+          toast.error(`Could not pick a song: ${err.message}`);
+          return;
+        }
       }
 
+      if (remoteMode) {
+        toast.error('No unplayed song is available for this entertainer');
+        return;
+      }
+      if (JSON.stringify(songAssignmentsRef.current[dancerId] || []) !== assignmentAtStart) return;
       const excludeSet = new Set(allAssigned);
       const allTracks = serverTracks.length > 0 ? serverTracks : tracks;
       const playlistSet = new Set(dancerPlaylist);
@@ -1251,7 +1440,7 @@ export default function RotationPlaylistManager({
         .filter(Boolean),
     );
     const sourceTracks = serverTracks.length > 0 ? serverTracks : tracks;
-    const activeGenres = djOptions?.activeGenres?.length > 0 ? djOptions.activeGenres : [];
+    const activeGenres = getActiveMusicGenres(djOptions);   // the ACTIVE shift, not the Night list
     const genrePool = filterByGenres(sourceTracks, activeGenres);
     // This is an automatic replacement, not a manual library picker. Apply
     // the same all-history and reserved-folder rules as every other automatic
@@ -1288,11 +1477,15 @@ export default function RotationPlaylistManager({
   const lastSkipEntertainerNowTimeRef = useRef(0);
   const lastMoveToTopTimeRef = useRef(0);
   const handleSave = async () => {
+    if (remoteMode && Object.keys(pendingManualEditsRef.current).length > 0) {
+      toast.error('Check the unconfirmed sets before Save All. Your edits are kept.');
+      return;
+    }
     const now = Date.now();
     if (now - lastSaveTimeRef.current < 2000) return;
     lastSaveTimeRef.current = now;
     const playlists = {};
-    Object.entries(songAssignments).forEach(([dancerId, songs]) => {
+    Object.entries(songAssignmentsRef.current).forEach(([dancerId, songs]) => {
       const normalized = djOverridesRef.current.has(String(dancerId))
         ? normalizeManualSongList(songs)
         : normalizeSongList(songs, songsPerSet);
@@ -1302,6 +1495,7 @@ export default function RotationPlaylistManager({
 
     const finalInterstitials = { ...interstitialSongs };
     const manualOverrides = [...djOverridesRef.current];
+    const savedEditRevisions = { ...manualEditRevisionsRef.current };
 
     saveGuardRef.current = Date.now() + 30000;
     try {
@@ -1312,12 +1506,21 @@ export default function RotationPlaylistManager({
         manualOverrides,
         manualInterstitialBreaksRef.current || {},
       );
-      manualOverrides.forEach(id => dirtyOverridesRef.current.delete(String(id)));
-      toast.success('Rotation & playlists saved');
+      manualOverrides.forEach(id => {
+        const pending = pendingManualEditsRef.current[String(id)];
+        if (pending?.revision === savedEditRevisions[String(id)]) {
+          pending.acknowledged = true;
+        }
+      });
+      setManualEditRevision(value => value + 1);
+      persistEditorLedger();
+      toast.success('Save accepted. Sets show Saved when their lists are confirmed.');
     } catch (error) {
       // Keep every local edit intact on conflict/failure. The operator can
       // review the authoritative update and retry instead of rebuilding work.
-      toast.error(error?.message || 'Rotation was not saved');
+      toast.error(error?.rejectedByServer === true
+        ? 'Save All was not applied. Your edits are kept.'
+        : 'Save All outcome unknown. Your edits are kept.');
     }
   };
 
@@ -1504,7 +1707,9 @@ export default function RotationPlaylistManager({
                       </button>
                     </div>
                   )}
-                  {serverTracks.length === 0 && !serverLoading && (
+                  {serverError ? (
+                    <div className="text-center py-8 px-3 text-red-400 text-sm">{serverError}</div>
+                  ) : serverTracks.length === 0 && !serverLoading && (
                     <div className="text-center py-8 text-gray-500 text-sm">
                       {debouncedSearch.trim() || activeGenre ? 'No tracks match your search' : 'No music files found'}
                     </div>
@@ -1890,6 +2095,36 @@ export default function RotationPlaylistManager({
                                 </Button>
                               )}
                             </div>
+
+                            {!feature && (() => {
+                              const edit = pendingManualEditsRef.current[String(dancer.id)];
+                              const checking = checkingEdits.has(String(dancer.id));
+                              const saved = isManualAssignment(dancer.id);
+                              return (
+                                <div className="px-3 py-2 border-b border-[#1e293b] flex flex-wrap items-center gap-2"
+                                  data-set-save-status={String(dancer.id)}>
+                                  <span role="status" className={`text-xs font-semibold flex-1 min-w-[120px] ${edit ? 'text-amber-300' : saved ? 'text-emerald-300' : 'text-gray-400'}`}>
+                                    {manualEditorStatus(edit, saved)}
+                                  </span>
+                                  {edit && (
+                                    <button type="button"
+                                      className="min-h-[44px] px-3 py-2 rounded-lg border border-amber-500/50 text-amber-200 text-sm font-semibold hover:bg-amber-500/10 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300"
+                                      disabled={checking || edit.phase === 'sending'}
+                                      aria-label={`${edit.phase === 'rejected' || (!remoteMode && !edit.acknowledged) ? 'Check and retry save' : 'Check save'} for ${dancer.name}`}
+                                      onClick={() => handleRecoverEdit(dancer.id)}>
+                                      {checking ? 'Checking…' : edit.phase === 'sending' ? 'Saving…'
+                                        : edit.phase === 'rejected' || (!remoteMode && !edit.acknowledged)
+                                          ? 'Check & retry' : 'Check save'}
+                                    </button>
+                                  )}
+                                  {edit && <p className="w-full text-xs text-gray-400">
+                                    {edit.acknowledged ? 'Accepted; waiting for the booth’s matching song order.'
+                                      : edit.phase === 'rejected' ? 'The booth declined this edit. Check & retry checks it before sending a new save.'
+                                        : 'Your song order is protected until this exact edit is confirmed.'}
+                                  </p>}
+                                </div>
+                              );
+                            })()}
 
                             {feature ? (
                               <div className="px-3 py-2">
@@ -2278,13 +2513,11 @@ export default function RotationPlaylistManager({
                 {Object.entries(dancerVipMap).map(([dancerId, vipEntry]) => {
                   const dancer = (dancers || []).find(d => String(d.id) === String(dancerId));
                   if (!dancer) return null;
-                  const ms = remoteMode
-                    ? decayVipRemaining(
+                  const ms = decayVipRemaining(
                       vipSnapshotReceiptRef.current.values?.[dancerId],
                       vipSnapshotReceiptRef.current.at,
                       performance.now(),
-                    )
-                    : (vipCountdowns[dancerId] ?? (vipEntry.expiresAt ? Math.max(0, vipEntry.expiresAt - Date.now()) : 0));
+                    );
                   const totalMins = Math.floor(ms / 60000);
                   const secs = Math.floor((ms % 60000) / 1000);
                   const hrs = Math.floor(totalMins / 60);

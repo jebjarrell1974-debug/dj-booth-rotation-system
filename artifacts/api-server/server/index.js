@@ -3,7 +3,7 @@ import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, statSync, createReadStream, readdirSync, unlinkSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'fs';
-import { spawn as spawnProcess, execSync as execSyncChild } from 'child_process';
+import { execSync as execSyncChild } from 'child_process';
 import { networkInterfaces, hostname } from 'os';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import db, {
@@ -17,16 +17,17 @@ import db, {
   closeDatabase, stopCheckpoints,
   getMusicTracks, getMusicGenres, getMusicTrackById, getMusicTrackByName, getRandomTracks, selectTracksForSet, getMusicTrackCount, getLastScanTime, deleteMusicTrackFromDB, filterDjOnlyFromNames, scrubDjOnlyFromAllPlaylists,
   logPlayHistory, getPlayHistory, getPlayHistoryDates, getPlayHistoryStats, cleanOldPlayHistory, getRecentCooldowns, getAllPlayHistory,
-  blockTrack, unblockTrack, getBlockedTracks,
+  blockTrack, unblockTrack, getBlockedTracks, filterDeactivatedFromNames,
   logApiUsage, getApiUsageSummary, getApiUsageByDevice, cleanOldApiUsage,
   exportDancers, importDancers, saveClientSettings, getClientSettings,
   getLufsStats, bulkUpdateTrackAnalysis, getTracksNeedingAnyAnalysis,
-  createStaffAccount, listStaffAccounts, deleteStaffAccount, getStaffAccountByPin, isStaffPinTaken,
+  createStaffAccount, listStaffAccounts, deleteStaffAccount, updateStaffAccount, getStaffAccountByPin, isStaffPinTaken,
   createAuditEntry, getAuditLog, getAuditLogCsv, cleanOldAuditLog,
   listAllPromoTracks, setPromoTrackBlockedById, deletePromoTrackById, listHouseAnnouncements,
   listSoundboardSounds, saveSoundboardSound, getSoundboardSoundFilePath, renameSoundboardSound, deleteSoundboardSound,
   upsertSoundboardSoundFromSync, deleteSoundboardSoundByFileName, getSoundboardDirPath
 } from './db.js';
+import { canManageStaff, resolveDjIdentity, validateStaffInput } from './staff-access.js';
 import { startLufsAnalysis, getLufsAnalysisProgress, isLufsAnalysisRunning } from './lufsAnalyzer.js';
 import { startBpmAnalysis, isBpmAnalysisRunning } from './bpmAnalyzer.js';
 import { createPromoRequest, listPromoRequests } from './fleet-db.js';
@@ -36,12 +37,14 @@ import aichatRoutes from './aichat-routes.js';
 import { createZoneProRouter } from './zonepro-routes.js';
 import { isR2Configured, uploadVoiceover, syncVoiceoversFromR2, syncVoiceoversToR2, syncMusicFromR2, syncMusicToR2, getR2Stats, deleteFromR2Music, uploadSoundboardFile, deleteSoundboardFileFromR2, syncSoundboardToR2, syncSoundboardFromR2 } from './r2sync.js';
 import { publishUpdateBundle } from './r2update.js';
+import { approvedReleaseHandler } from './installer-release.js';
 import { setupFleetMonitorRoutes, startMonitoring, stopMonitoring } from './fleet-monitor.js';
 import { startHeartbeat, stopHeartbeat } from './heartbeat-client.js';
 import { processPromo, getMixStatus, getAllMixStatuses, convertAllExistingPromos, runFfmpeg, getAudioDuration } from './promo-mixer.js';
 import { listFeatureBeds, listMusicFolders, listFolderTracks, produceFeatureAudio, featureCacheKey, ensureFeatureBedsFolder } from './feature-producer.js';
 import { getAndClearErrors, updateSystemState, trackError } from './error-tracker.js';
 import { appendDiagBatch, readRecentDiag, getDiagDir } from './diag-writer.js';
+import { allowRemoteTelemetry, sanitizeRemoteTelemetry } from './remote-telemetry.js';
 import { startGenericVoiceoverRefresh } from './generic-voiceover-refresh.js';
 import {
   BoothCommandQueue,
@@ -187,6 +190,11 @@ function requireMaster(req, res, next) {
   next();
 }
 
+function requireStaffAdmin(req, res, next) {
+  if (!canManageStaff(req.session)) return res.status(403).json({ error: 'GM or ADMIN login required' });
+  next();
+}
+
 function writeAudit(req, action, details = null) {
   try {
     const name = req.session?.staff_name || 'Unknown';
@@ -236,35 +244,12 @@ app.get('/api/update/version', (req, res) => {
   res.json({ sha, shortSha: sha !== 'unknown' ? sha.slice(0, 7) : 'unknown', timestamp, prebuilt });
 });
 
-app.get('/api/update/bundle', (req, res) => {
-  const appDir = join(__dirname, '..');
-  const distDir = join(appDir, 'dist');
-  if (!existsSync(distDir)) {
-    return res.status(503).json({ error: 'No pre-built dist/ available — Pi must build from source via GitHub' });
-  }
-  const sha = getCommitSha();
-  const includes = ['server', 'dist', 'public', 'package.json', 'package-lock.json',
-    'vite.config.js', 'tailwind.config.js', 'postcss.config.js', 'index.html']
-    .filter(f => existsSync(join(appDir, f)));
-  res.setHeader('Content-Type', 'application/gzip');
-  res.setHeader('Content-Disposition', 'attachment; filename="djbooth-bundle.tar.gz"');
-  res.setHeader('X-Djbooth-Sha', sha);
-  const tar = spawnProcess('tar', [
-    'czf', '-', '-C', appDir,
-    '--exclude=node_modules', '--exclude=music', '--exclude=voiceovers',
-    '--exclude=.env', '--exclude=.env.local', '--exclude=.git',
-    ...includes
-  ]);
-  tar.stdout.pipe(res);
-  tar.stderr.on('data', d => console.error('Bundle tar stderr:', d.toString().trim()));
-  tar.on('error', err => {
-    console.error('Bundle endpoint error:', err.message);
-    if (!res.headersSent) res.status(500).json({ error: err.message });
-  });
-  tar.on('close', code => {
-    if (code !== 0) console.warn(`Bundle tar exited with code ${code}`);
-  });
-});
+// No dynamic tar generation: signatures authorize exact immutable archive bytes.
+app.get('/api/update/bundle', approvedReleaseHandler(join(__dirname, '..')));
+app.get('/api/update/bundle.signature', approvedReleaseHandler(join(__dirname, '..'), true));
+app.get('/api/update-bundle', approvedReleaseHandler(join(__dirname, '..')));
+app.get('/api/update-bundle.signature', approvedReleaseHandler(join(__dirname, '..'), true));
+app.get('/api/download-bundle', approvedReleaseHandler(join(__dirname, '..')));
 
 app.get('/api/fleet-env', (req, res) => {
   if (process.env.IS_HOMEBASE !== 'true') {
@@ -404,39 +389,19 @@ app.post('/api/auth/login', (req, res) => {
 
   const { role, pin } = req.body;
 
-  if (!role || !pin || pin.length !== 5) {
+  if (!role || typeof pin !== 'string' || pin.length !== 5) {
     return res.status(400).json({ error: 'Role and 5-digit PIN required' });
   }
 
   if (role === 'dj') {
-    const masterPin = getMasterPin();
-
-    // 1. Master PIN — always works, grants master-level access
-    if (pin === masterPin) {
-      const token = createSession('dj', null, 'Master', 1, 'master');
-      createAuditEntry('Master', 'master', 'login', 'Master PIN login');
-      return res.json({ token, role: 'dj', staffName: 'Master', staffRole: 'master', isMaster: true });
-    }
-
-    // 2. Named staff account (DJ or Manager)
-    const staffAccount = getStaffAccountByPin(pin);
-    if (staffAccount) {
-      const token = createSession('dj', null, staffAccount.name, 0, staffAccount.role);
-      createAuditEntry(staffAccount.name, staffAccount.role, 'login', `${staffAccount.role} login`);
-      return res.json({ token, role: 'dj', staffName: staffAccount.name, staffRole: staffAccount.role, isMaster: false });
-    }
-
-    // 3. Legacy single DJ PIN fallback (backward compat)
-    const djPinHash = getSetting('dj_pin');
-    if (!djPinHash) {
-      return res.status(400).json({ error: 'No staff accounts set up. Please set a DJ PIN or create staff accounts.' });
-    }
-    if (!verifyPin(pin, djPinHash)) {
-      return res.status(401).json({ error: 'Incorrect PIN' });
-    }
-    const token = createSession('dj', null, 'Staff', 0, 'dj');
-    createAuditEntry('Staff', 'dj', 'login', 'Legacy DJ PIN login');
-    return res.json({ token, role: 'dj', staffName: 'Staff', staffRole: 'dj', isMaster: false });
+    const identity = resolveDjIdentity(pin, {
+      masterPin: getMasterPin(), legacyHash: getSetting('dj_pin'),
+      verifyPin, findStaff: getStaffAccountByPin,
+    });
+    if (!identity) return res.status(401).json({ error: 'Incorrect PIN' });
+    const token = createSession('dj', null, identity.staffName, identity.isMaster, identity.staffRole);
+    createAuditEntry(identity.staffName, identity.staffRole, 'login', 'Staff login');
+    return res.json({ token, role: 'dj', ...identity });
   }
 
   if (role === 'dancer') {
@@ -478,7 +443,7 @@ app.post('/api/auth/ping', authenticate, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/settings/dj-pin', authenticate, requireDJ, (req, res) => {
+app.post('/api/settings/dj-pin', authenticate, requireDJ, requireStaffAdmin, (req, res) => {
   const { pin } = req.body;
   if (!pin || pin.length !== 5) return res.status(400).json({ error: '5-digit PIN required' });
   setSetting('dj_pin', hashPin(pin));
@@ -502,14 +467,17 @@ app.post('/api/settings/dj-pin/init', (req, res) => {
   const existing = getSetting('dj_pin');
   if (existing) {
     if (pin === getMasterPin() || verifyPin(pin, existing)) {
-      const token = createSession('dj', null, 'Staff', 0, 'dj');
-      return res.json({ ok: true, token, role: 'dj' });
+      const identity = resolveDjIdentity(pin, {
+        masterPin: getMasterPin(), legacyHash: existing, verifyPin, findStaff: getStaffAccountByPin,
+      });
+      const token = createSession('dj', null, identity.staffName, identity.isMaster, identity.staffRole);
+      return res.json({ ok: true, token, role: 'dj', ...identity });
     }
     return res.status(400).json({ error: 'DJ PIN already set' });
   }
   setSetting('dj_pin', hashPin(pin));
-  const token = createSession('dj', null, 'Staff', 0, 'dj');
-  res.json({ ok: true, token, role: 'dj' });
+  const token = createSession('dj', null, 'GM', 0, 'gm');
+  res.json({ ok: true, token, role: 'dj', staffName: 'GM', staffRole: 'gm', isMaster: false });
 });
 
 app.post('/api/fleet/auto-auth', requirePhysicalKiosk, (req, res) => {
@@ -523,19 +491,18 @@ app.get('/api/settings/has-dj-pin', (req, res) => {
   res.json({ hasPin: !!pin || staffCount > 0 });
 });
 
-// ─── Staff Accounts (master PIN required) ─────────────────────────────────────
+// ─── Staff Accounts (GM/ADMIN, physical kiosk only) ────────────────────────────
 
-app.get('/api/staff', authenticate, requireDJ, requireMaster, (req, res) => {
+app.get('/api/staff', authenticate, requireDJ, requireStaffAdmin, requirePhysicalKiosk, (req, res) => {
   res.json(listStaffAccounts());
 });
 
-app.post('/api/staff', authenticate, requireDJ, requireMaster, (req, res) => {
+app.post('/api/staff', authenticate, requireDJ, requireStaffAdmin, requirePhysicalKiosk, (req, res) => {
   const { name, role, pin } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
-  if (!['dj', 'manager'].includes(role)) return res.status(400).json({ error: 'Role must be dj or manager' });
-  if (!pin || pin.length !== 5) return res.status(400).json({ error: '5-digit PIN required' });
-  if (pin === getMasterPin()) return res.status(400).json({ error: 'Cannot use the master PIN' });
-  if (isStaffPinTaken(pin)) return res.status(400).json({ error: 'PIN already in use by another staff member' });
+  const error = validateStaffInput(req.body, {
+    masterPin: getMasterPin(), legacyHash: getSetting('dj_pin'), verifyPin, isTaken: isStaffPinTaken,
+  });
+  if (error) return res.status(400).json({ error });
   try {
     const account = createStaffAccount(name.trim(), role, pin);
     writeAudit(req, 'staff_created', `Created ${role} account: ${name.trim()}`);
@@ -545,24 +512,40 @@ app.post('/api/staff', authenticate, requireDJ, requireMaster, (req, res) => {
   }
 });
 
-app.delete('/api/staff/:id', authenticate, requireDJ, requireMaster, (req, res) => {
+app.put('/api/staff/:id', authenticate, requireDJ, requireStaffAdmin, requirePhysicalKiosk, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || !listStaffAccounts().some(account => account.id === id)) {
+    return res.status(404).json({ error: 'Staff account not found' });
+  }
+  const error = validateStaffInput(req.body, {
+    masterPin: getMasterPin(), legacyHash: getSetting('dj_pin'), verifyPin,
+    isTaken: pin => isStaffPinTaken(pin, id), editing: true,
+  });
+  if (error) return res.status(400).json({ error });
+  const account = updateStaffAccount(id, req.body.name.trim(), req.body.role, req.body.pin || null);
+  writeAudit(req, 'staff_updated', `Updated ${account.role} account: ${account.name}`);
+  res.json(account);
+});
+
+app.delete('/api/staff/:id', authenticate, requireDJ, requireStaffAdmin, requirePhysicalKiosk, (req, res) => {
   const accounts = listStaffAccounts();
-  const account = accounts.find(a => a.id === parseInt(req.params.id));
+  const id = Number(req.params.id);
+  const account = Number.isSafeInteger(id) && accounts.find(a => a.id === id);
   if (!account) return res.status(404).json({ error: 'Staff account not found' });
-  deleteStaffAccount(parseInt(req.params.id));
+  deleteStaffAccount(id);
   writeAudit(req, 'staff_deleted', `Deleted ${account.role} account: ${account.name}`);
   res.json({ ok: true });
 });
 
 // ─── Audit Log (master PIN required) ──────────────────────────────────────────
 
-app.get('/api/audit/log', authenticate, requireDJ, requireMaster, (req, res) => {
+app.get('/api/audit/log', authenticate, requireDJ, requireStaffAdmin, (req, res) => {
   const days = parseInt(req.query.days) || 30;
   const limit = parseInt(req.query.limit) || 500;
   res.json(getAuditLog({ limit, days }));
 });
 
-app.get('/api/audit/log.csv', authenticate, requireDJ, requireMaster, (req, res) => {
+app.get('/api/audit/log.csv', authenticate, requireDJ, requireStaffAdmin, (req, res) => {
   const days = parseInt(req.query.days) || 30;
   const csv = getAuditLogCsv(days);
   const filename = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
@@ -725,7 +708,7 @@ app.post('/api/dancers', authenticate, requireDJ, (req, res) => {
 
 app.put('/api/dancers/:id', authenticate, requireDJ, (req, res) => {
   const body = (req.body && Array.isArray(req.body.playlist))
-    ? { ...req.body, playlist: filterDjOnlyFromNames(req.body.playlist) }
+    ? { ...req.body, playlist: filterDeactivatedFromNames(filterDjOnlyFromNames(req.body.playlist)) }
     : req.body;
   const dancer = updateDancer(req.params.id, body);
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
@@ -750,11 +733,20 @@ app.get('/api/playlist', authenticate, (req, res) => {
   return res.status(400).json({ error: 'Use entertainer session' });
 });
 
+app.post('/api/music/availability', authenticate, (req, res) => {
+  const names = req.body?.names;
+  if (!Array.isArray(names) || names.length > 3000 || names.some(name => typeof name !== 'string')) {
+    return res.status(400).json({ error: 'Expected up to 3000 song names' });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ names: filterDeactivatedFromNames(names) });
+});
+
 app.put('/api/playlist', authenticate, (req, res) => {
   if (req.session.role !== 'dancer') return res.status(403).json({ error: 'Entertainer access only' });
   const { playlist } = req.body;
   if (!Array.isArray(playlist)) return res.status(400).json({ error: 'Playlist must be an array' });
-  const cleanPlaylist = filterDjOnlyFromNames(playlist.filter(name => !/dirty/i.test(name)));
+  const cleanPlaylist = filterDeactivatedFromNames(filterDjOnlyFromNames(playlist.filter(name => typeof name === 'string' && !/dirty/i.test(name))));
   const dancer = updateDancer(req.session.dancer_id, { playlist: cleanPlaylist });
   if (!dancer) return res.status(404).json({ error: 'Entertainer not found' });
   res.json({ playlist: dancer.playlist });
@@ -1146,6 +1138,7 @@ app.put('/api/promos/:id/blocked', authenticate, requireDJ, (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid id' });
   const blocked = req.body.blocked !== false;
   setPromoTrackBlockedById(id, blocked);
+  broadcastSSE('promoChanged', { id, cancelPlayback: blocked });
   res.json({ ok: true });
 });
 
@@ -1153,6 +1146,7 @@ app.delete('/api/promos/:id', authenticate, requireDJ, (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: 'Invalid id' });
   deletePromoTrackById(id);
+  broadcastSSE('promoChanged', { id, cancelPlayback: true });
   res.json({ ok: true });
 });
 
@@ -1674,10 +1668,13 @@ app.get('/api/booth/events', (req, res) => {
   req.session = session;
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
+    // compression() respects no-transform. Compressing a long-lived stream
+    // otherwise buffers small connected/music events until a later chunk.
+    'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no'
   });
+  res.flushHeaders();
   res.write('data: {"type":"connected"}\n\n');
   
   const client = {
@@ -1740,6 +1737,39 @@ app.post('/api/diag/log', authenticate, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Diagnostics must remain available when the configured target issued a token
+// that THIS page-serving unit cannot validate, or when target auth expires.
+// This write-only route grants no booth access; limit it to same-origin browser
+// requests, small batches and a per-IP budget. Never accept arbitrary fields.
+app.post('/api/diag/remote', (req, res) => {
+  let sameOrigin = false;
+  try {
+    sameOrigin = !!req.headers.origin
+      && new URL(req.headers.origin).host === req.headers.host;
+  } catch {}
+  if (!sameOrigin) return res.status(403).json({ error: 'Same-origin browser required' });
+  if (Number(req.headers['content-length']) > 16_384) {
+    return res.status(413).json({ error: 'Remote diagnostic batch too large' });
+  }
+  if (JSON.stringify(req.body || {}).length > 16_384) {
+    return res.status(413).json({ error: 'Remote diagnostic batch too large' });
+  }
+  const entries = req.body?.entries;
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 25) {
+    return res.status(400).json({ error: 'Expected 1–25 remote events' });
+  }
+  if (!allowRemoteTelemetry(req.ip, entries.length)) {
+    return res.status(429).json({ error: 'Remote diagnostic rate limit' });
+  }
+  const safe = entries.map(sanitizeRemoteTelemetry);
+  if (safe.some(entry => !entry)) return res.status(400).json({ error: 'Invalid remote event' });
+  const written = appendDiagBatch(safe, {
+    hostname: hostname(), source: 'staff_remote', remoteIp: req.ip,
+  });
+  if (written !== safe.length) return res.status(503).json({ error: 'Remote diagnostics unavailable' });
+  res.json({ written });
 });
 
 app.get('/api/diag/log/recent', authenticate, requireDJ, (req, res) => {
@@ -1881,6 +1911,7 @@ app.post('/api/booth/command', authenticate, requireDJ, (req, res) => {
     }
     throw error;
   }
+  if (!result.duplicate) writeAudit(req, 'command_queued', `${action}: ${result.command.id}`);
   res.status(202).json({
     ok: false,
     queued: true,
@@ -2183,12 +2214,13 @@ app.put('/api/dj-options', authenticate, requireDJ, (req, res) => {
   // didn't include — that is exactly what silently cleared the Day Shift folder
   // selection after a rotation/save.
   const storedDayShift = getSetting('dj_day_shift');
-  broadcastSSE('djOptions', {
+  const storedOptions = {
     activeGenres: activeGenres !== undefined ? activeGenres : JSON.parse(getSetting('dj_active_genres') || '[]'),
     musicMode: musicMode !== undefined ? musicMode : (getSetting('dj_music_mode') || 'dancer_first'),
     ...(storedDayShift ? { dayShift: JSON.parse(storedDayShift) } : {}),
-  });
-  res.json({ ok: true });
+  };
+  broadcastSSE('djOptions', storedOptions);
+  res.json({ ok: true, ...storedOptions });
 });
 
 app.get('/api/music/random', authenticate, (req, res) => {
@@ -2257,10 +2289,13 @@ app.post('/api/music/analyze', authenticate, requireDJ, (req, res) => {
 });
 
 app.post('/api/music/block', authenticate, requireDJ, (req, res) => {
-  const { trackName } = req.body;
-  if (!trackName) return res.status(400).json({ error: 'trackName required' });
+  const { trackName } = req.body || {};
+  if (typeof trackName !== 'string' || !trackName.trim()) {
+    return res.status(400).json({ error: 'trackName must be a non-empty string' });
+  }
   try {
     blockTrack(trackName);
+    broadcastSSE('musicBlocked', { trackName });
     res.json({ success: true, message: `Deactivated: ${trackName}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2268,10 +2303,13 @@ app.post('/api/music/block', authenticate, requireDJ, (req, res) => {
 });
 
 app.post('/api/music/unblock', authenticate, requireDJ, (req, res) => {
-  const { trackName } = req.body;
-  if (!trackName) return res.status(400).json({ error: 'trackName required' });
+  const { trackName } = req.body || {};
+  if (typeof trackName !== 'string' || !trackName.trim()) {
+    return res.status(400).json({ error: 'trackName must be a non-empty string' });
+  }
   try {
     unblockTrack(trackName);
+    broadcastSSE('musicUnblocked', { trackName });
     res.json({ success: true, message: `Reactivated: ${trackName}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2291,7 +2329,7 @@ app.delete('/api/music/track', authenticate, requireDJ, async (req, res) => {
   const { trackName } = req.body;
   if (!trackName) return res.status(400).json({ error: 'trackName required' });
   try {
-    const track = getMusicTrackByName(trackName);
+    const track = getMusicTrackByName(trackName, { includeBlocked: true });
     if (!track) return res.status(404).json({ error: 'Track not found in database' });
 
     const results = { db: false, local: false, r2: false };
@@ -2388,10 +2426,19 @@ app.get('/api/music/ambient', (req, res) => {
   }
 });
 
+app.head('/api/music/stream/:id', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const track = getMusicTrackById(parseInt(req.params.id), { includeBlocked: true });
+  if (!track || !MUSIC_PATH) return res.sendStatus(404);
+  if (track.blocked || filterDeactivatedFromNames([track.name]).length === 0) return res.sendStatus(403);
+  return res.sendStatus(existsSync(join(MUSIC_PATH, track.path)) ? 200 : 404);
+});
+
 app.get('/api/music/stream/:id', (req, res) => {
-  const track = getMusicTrackById(parseInt(req.params.id));
+  res.set('Cache-Control', 'no-store');
+  const track = getMusicTrackById(parseInt(req.params.id), { includeBlocked: true });
   if (!track || !MUSIC_PATH) return res.status(404).json({ error: 'Track not found' });
-  if (track.blocked) return res.status(403).json({ error: 'Track is deactivated' });
+  if (track.blocked || filterDeactivatedFromNames([track.name]).length === 0) return res.status(403).json({ error: 'Track is deactivated' });
 
   const filePath = join(MUSIC_PATH, track.path);
   if (!existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
@@ -2505,145 +2552,6 @@ app.post('/api/system/update', authenticate, requireMaster, requirePhysicalKiosk
       if (stdout) console.log('Update output:', stdout.slice(-500));
     });
   }, 1000);
-});
-
-app.get('/api/update-bundle', async (req, res) => {
-  const { readdirSync: readDir, statSync: statF, readFileSync: readF } = await import('fs');
-  const { gzipSync } = await import('zlib');
-  const projectRoot = join(__dirname, '..');
-
-  const includeDirs = ['server', 'dist'];
-  const includeRootFiles = ['package.json', 'package-lock.json', 'vite.config.js'];
-
-  try {
-    const files = [];
-    const collectFiles = (dir, prefix) => {
-      let entries;
-      try { entries = readDir(dir, { withFileTypes: true }); } catch { return; }
-      for (const entry of entries) {
-        const fullPath = join(dir, entry.name);
-        const entryPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) {
-          collectFiles(fullPath, entryPath);
-        } else if (entry.isFile()) {
-          files.push({ fullPath, entryPath });
-        }
-      }
-    };
-
-    for (const d of includeDirs) {
-      const dirPath = join(projectRoot, d);
-      if (existsSync(dirPath)) collectFiles(dirPath, d);
-    }
-    for (const f of includeRootFiles) {
-      const filePath = join(projectRoot, f);
-      if (existsSync(filePath)) files.push({ fullPath: filePath, entryPath: f });
-    }
-
-    const tarBlocks = [];
-    for (const { fullPath, entryPath } of files) {
-      try {
-        const content = readF(fullPath);
-        const nameBytes = Buffer.from(entryPath, 'utf8');
-        const header = Buffer.alloc(512, 0);
-        nameBytes.copy(header, 0, 0, Math.min(nameBytes.length, 100));
-        const stat = statF(fullPath);
-        const size = content.length;
-        Buffer.from(String(stat.mode & 0o7777).padStart(7, '0') + '\0').copy(header, 100);
-        Buffer.from(String(stat.uid || 0).padStart(7, '0') + '\0').copy(header, 108);
-        Buffer.from(String(stat.gid || 0).padStart(7, '0') + '\0').copy(header, 116);
-        Buffer.from(size.toString(8).padStart(11, '0') + '\0').copy(header, 124);
-        Buffer.from(Math.floor(stat.mtime.getTime() / 1000).toString(8).padStart(11, '0') + '\0').copy(header, 136);
-        Buffer.from('        ').copy(header, 148);
-        header[156] = 48;
-        let chksum = 0;
-        for (let i = 0; i < 512; i++) chksum += header[i];
-        Buffer.from(chksum.toString(8).padStart(6, '0') + '\0 ').copy(header, 148);
-        tarBlocks.push(header);
-        tarBlocks.push(content);
-        const remainder = 512 - (size % 512);
-        if (remainder < 512) tarBlocks.push(Buffer.alloc(remainder, 0));
-      } catch {}
-    }
-    tarBlocks.push(Buffer.alloc(1024, 0));
-    const gzipped = gzipSync(Buffer.concat(tarBlocks));
-
-    res.set('Content-Type', 'application/gzip');
-    res.set('Content-Disposition', 'attachment; filename=djbooth-update.tar.gz');
-    res.set('Content-Length', gzipped.length);
-    res.send(gzipped);
-  } catch (err) {
-    console.error('Update bundle creation failed:', err.message);
-    if (!res.headersSent) res.status(500).json({ error: 'Failed to create update bundle' });
-  }
-});
-
-app.get('/api/download-bundle', async (req, res) => {
-  const { readdirSync, statSync, readFileSync } = await import('fs');
-  const { createGzip } = await import('zlib');
-  const projectRoot = join(__dirname, '..');
-  const excludeDirs = new Set(['node_modules', '.git', 'voiceovers', 'attached_assets', '.local', '.cache', '.config', '.upm']);
-  const excludeExts = new Set(['.db', '.db-wal', '.db-shm']);
-
-  try {
-    const files = [];
-    const collectFiles = (dir, prefix) => {
-      let entries;
-      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-      for (const entry of entries) {
-        if (excludeDirs.has(entry.name)) continue;
-        if (entry.name.startsWith('.') && entry.name !== '.replit') continue;
-        const fullPath = join(dir, entry.name);
-        const entryPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) {
-          collectFiles(fullPath, entryPath);
-        } else if (entry.isFile()) {
-          const ext = entry.name.substring(entry.name.lastIndexOf('.'));
-          if (excludeExts.has(ext)) continue;
-          files.push({ fullPath, entryPath });
-        }
-      }
-    };
-    collectFiles(projectRoot, '');
-
-    const tarBlocks = [];
-    for (const { fullPath, entryPath } of files) {
-      try {
-        const content = readFileSync(fullPath);
-        const nameBytes = Buffer.from(entryPath, 'utf8');
-        const header = Buffer.alloc(512, 0);
-        nameBytes.copy(header, 0, 0, Math.min(nameBytes.length, 100));
-        const stat = statSync(fullPath);
-        const size = content.length;
-        Buffer.from(String(stat.mode & 0o7777).padStart(7, '0') + '\0').copy(header, 100);
-        Buffer.from(String(stat.uid || 0).padStart(7, '0') + '\0').copy(header, 108);
-        Buffer.from(String(stat.gid || 0).padStart(7, '0') + '\0').copy(header, 116);
-        Buffer.from(size.toString(8).padStart(11, '0') + '\0').copy(header, 124);
-        Buffer.from(Math.floor(stat.mtime.getTime() / 1000).toString(8).padStart(11, '0') + '\0').copy(header, 136);
-        Buffer.from('        ').copy(header, 148);
-        header[156] = 48;
-        let chksum = 0;
-        for (let i = 0; i < 512; i++) chksum += header[i];
-        Buffer.from(chksum.toString(8).padStart(6, '0') + '\0 ').copy(header, 148);
-        tarBlocks.push(header);
-        tarBlocks.push(content);
-        const remainder = 512 - (size % 512);
-        if (remainder < 512) tarBlocks.push(Buffer.alloc(remainder, 0));
-      } catch {}
-    }
-    tarBlocks.push(Buffer.alloc(1024, 0));
-    const tarBuffer = Buffer.concat(tarBlocks);
-    const { gzipSync } = await import('zlib');
-    const gzipped = gzipSync(tarBuffer);
-
-    res.set('Content-Type', 'application/gzip');
-    res.set('Content-Disposition', 'attachment; filename=djbooth-bundle.tar.gz');
-    res.set('Content-Length', gzipped.length);
-    res.send(gzipped);
-  } catch (err) {
-    console.error('Bundle creation failed:', err.message);
-    if (!res.headersSent) res.status(500).json({ error: 'Failed to create bundle' });
-  }
 });
 
 const isProduction = process.env.NODE_ENV === 'production';
