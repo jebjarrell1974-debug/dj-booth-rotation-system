@@ -5826,11 +5826,13 @@ export default function DJBooth() {
             if (firstBreakTrack?.url) {
               console.log('🎵 HandleSkip: Playing break song during outro:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
-              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name, firstBreakTrack.genre, { dancerId: nextDancer.id });
-              if (!ok) await playFallbackTrack(false, null, { dancerId: nextDancer.id });
+              // This is break music, not the incoming entertainer's song.
+              // nextDancer is initialized only in the no-break branch below.
+              const ok = await playTrack(firstBreakTrack.url, false, firstBreakTrack.name, firstBreakTrack.genre);
+              if (!ok) await playFallbackTrack(false);
             } else {
               console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
-              await playFallbackTrack(false, null, { dancerId: nextDancer.id });
+              await playFallbackTrack(false);
             }
             await announcementDone;
             audioEngineRef.current?.unduck();
@@ -5838,11 +5840,11 @@ export default function DJBooth() {
             if (firstBreakTrack?.url) {
               console.log('🎵 HandleSkip: Playing break song:', firstBreakTrack.name);
               lastAudioActivityRef.current = Date.now();
-              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre, { dancerId: nextDancer.id });
-              if (!ok) await playFallbackTrack(true, null, { dancerId: nextDancer.id });
+              const ok = await playTrack(firstBreakTrack.url, true, firstBreakTrack.name, firstBreakTrack.genre);
+              if (!ok) await playFallbackTrack(true);
             } else {
               console.error('❌ HandleSkip: Could not resolve break song:', firstBreakName);
-              await playFallbackTrack(true, null, { dancerId: nextDancer.id });
+              await playFallbackTrack(true);
             }
           }
 

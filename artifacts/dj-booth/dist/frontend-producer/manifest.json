@@ -3,8 +3,8 @@
   "scope": "frontend-boot-assets",
   "releaseOrder": {
     "workspaceId": "0da5aa4c-60fb-40ad-aa80-e907281bc9d5",
-    "sequence": 2,
-    "nonce": "4dc4c68a-e81f-41b8-bc48-1340805af1cd"
+    "sequence": 3,
+    "nonce": "04f3da30-bfab-470a-9fbd-a389c4f72af3"
   },
   "build": {
     "command": "build:homebase",
@@ -2317,7 +2317,7 @@
     "artifacts/dj-booth/src/main.jsx": "ec595cfe7d1410dabf4fef248809f01fd2d5d9c192653ecf8b00e7cd65302007",
     "artifacts/dj-booth/src/pages.config.js": "633905fc882d1e88a7602267f57f40c4788645ce45e9a0bd3e16cb653885d960",
     "artifacts/dj-booth/src/pages/Configuration.jsx": "9c8a6cd211550af797f86c3042198ce50c4239a4635ab971dc516f9286fbe0d6",
-    "artifacts/dj-booth/src/pages/DJBooth.jsx": "546b570ed31302d0d3f2934ce08c51bfa7477abb4aeb18f2a33344f4023c8737",
+    "artifacts/dj-booth/src/pages/DJBooth.jsx": "8a35352ee4e295b15a9656565ad9ef5459f5c6fd49619789c837ade255ece3f7",
     "artifacts/dj-booth/src/pages/DancerView.jsx": "9fe48aa062a2b613702c3045ac69d76ed037c758a921f450214a0e87304ed10b",
     "artifacts/dj-booth/src/pages/FleetDashboard.jsx": "53e56c8fbec5b229dc6c57f42cd9a0dfd98ce42ccd5f8455fa44adca0b991eb4",
     "artifacts/dj-booth/src/pages/Help.jsx": "6e37e43ab8177b1955adf4f019efef9fcf65f45d876c9f3675fdaa99bcfd9344",
@@ -2406,6 +2406,7 @@
     "artifacts/dj-booth/src/utils/shiftMusicOptions.test.js": "a76ec53a3e18f3618a614966601b3094833dff6c3a211858fc892736144c3c9a",
     "artifacts/dj-booth/src/utils/skipPlayback.js": "8d6fb616d77e731ae4267c4aeb386f536e01dad4345c14c98c06d1e38936c27d",
     "artifacts/dj-booth/src/utils/skipPlayback.test.js": "d820cc94b0a580b8dcfb3b1edb28470cea178ddcb17342d0583b94004f0e03b2",
+    "artifacts/dj-booth/src/utils/skipSavedBreak.test.js": "7fbb9656ceae34ae0e8dd1107ee237e3da595adf1ff3368216a5938d93ce8572",
     "artifacts/dj-booth/src/utils/soundboard.js": "63dfb14a3fae8a33044ea93829b4e1ec6a6661efab64c4c05ddcbe2acd672022",
     "artifacts/dj-booth/src/utils/staffLoginTransport.test.js": "eb5173d965e0e06be9b9d1abceebf922249b4a361d5826e047f4f27e32c338f1",
     "artifacts/dj-booth/src/utils/ttsText.js": "f4e82a7fb20fd4b54b7cc0ab93344f08824d160ed1d1e5f57caf0c421e50bed5",
@@ -2442,8 +2443,8 @@
   },
   "bootAssets": {
     "assets/index-C6Y7xRl3.css": "533eb20364c8f769f784bf23f2103390a5e35d0f2ec356b80e52f9353f54c451",
-    "assets/index-F969LiTg.js": "fcc406b40f3723c9ee424f50c30b30d30879d42d634a8b9b004c24b71088e9b3",
+    "assets/index-CxzsoJoW.js": "066dc5a7a31d4a8bab43438633bb9176527713b54d697c1cc93d52143b159313",
     "assets/lamejs-Do3B6Rdb.js": "f8a5c9ca8583cc3b9d66d5459616c6f15d5b7a7864d7817a1ccbd13798290430",
-    "index.html": "13fe8d064fa0908d32a7bbcec2bcc887bbec9f3550dea8776abbc0b6ce3db447"
+    "index.html": "fe9ad170d94ef8f6745c3bb246c7d4236b00b662752021d470214938c8a74430"
   }
 }
